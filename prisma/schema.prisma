@@ -1,0 +1,362 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["public"]
+}
+
+model account_access {
+  id                                                  Int      @id @default(autoincrement())
+  source_account_id                                   String
+  target_account_id                                   String
+  access_level                                        String   @default("read")
+  created_at                                          DateTime @default(now())
+  accounts_account_access_source_account_idToaccounts accounts @relation("account_access_source_account_idToaccounts", fields: [source_account_id], references: [qcode])
+  accounts_account_access_target_account_idToaccounts accounts @relation("account_access_target_account_idToaccounts", fields: [target_account_id], references: [qcode])
+
+  @@unique([source_account_id, target_account_id], map: "source_target_unique")
+  @@schema("public")
+}
+
+model accounts {
+  id                                                        Int                          @id @default(autoincrement())
+  account_id                                                String?                      @unique
+  qcode                                                     String                       @unique @default(dbgenerated("('QAC'::text || lpad((nextval('accounts_qcode_seq'::regclass))::text, 5, '0'::text))"))
+  account_name                                              String
+  broker                                                    String
+  account_type                                              String
+  email_linked                                              String?
+  contact_number                                            String?
+  login_id                                                  String?
+  login_password                                            String?
+  totp_secret                                               String?
+  api_details                                               Json?
+  nominees                                                  String?
+  aadhar                                                    String?
+  pan                                                       String?
+  remarks                                                   String?                      @default("NA")
+  created_at                                                DateTime                     @default(now())
+  account_access_account_access_source_account_idToaccounts account_access[]             @relation("account_access_source_account_idToaccounts")
+  account_access_account_access_target_account_idToaccounts account_access[]             @relation("account_access_target_account_idToaccounts")
+  account_custodian_codes                                   account_custodian_codes[]
+  pooled_account_allocations                                pooled_account_allocations[]
+  pooled_account_users                                      pooled_account_users[]
+
+  @@schema("public")
+}
+
+model allocation_table_pms {
+  id             Int       @id @default(autoincrement())
+  date           DateTime  @db.Date
+  stock_name     String    @db.VarChar(200)
+  asset_class    String    @db.VarChar(50)
+  sector         String    @db.VarChar(50)
+  strategy_code  String    @db.VarChar(10)
+  qcode          String    @db.VarChar(10)
+  custodian_code String    @db.VarChar(10)
+  total_percent  Decimal   @db.Decimal
+  units          Decimal   @db.Decimal
+  rate           Decimal   @db.Decimal
+  value          Decimal   @db.Decimal
+  total          Decimal   @db.Decimal
+  created_at     DateTime? @default(now()) @db.Timestamp(6)
+
+  @@schema("public")
+}
+
+model capital_in_out {
+  id             Int       @id @default(autoincrement())
+  qcode          String    @db.VarChar(20)
+  date           DateTime  @db.Date
+  account        String    @db.VarChar(100)
+  system_tag     String    @db.VarChar(50)
+  capital_in_out Decimal   @db.Decimal(15, 2)
+  custom_fields  Json?     @db.Json
+  status         String?   @default("P") @db.Char(1)
+  created_at     DateTime? @default(now()) @db.Timestamp(6)
+  updated_at     DateTime? @db.Timestamp(6)
+  updated_by     Int?
+
+  @@index([date], map: "idx_capital_in_out_date")
+  @@index([qcode], map: "idx_capital_in_out_qcode")
+  @@schema("public")
+}
+
+model clients {
+  id                         Int                          @id(map: "users_pkey") @default(autoincrement())
+  user_id                    String                       @unique(map: "users_user_id_key")
+  icode                      String                       @unique(map: "users_icode_key") @default(dbgenerated("('QUS'::text || lpad((nextval('clients_icode_seq'::regclass))::text, 4, '0'::text))"))
+  user_name                  String
+  email                      String
+  contact_number             String
+  birth_date                 DateTime?
+  birth_time                 String?
+  birth_location             String?
+  mother_name                String?
+  father_name                String?
+  husband_name               String?
+  nominees                   String?
+  emergency_contact_name     String?
+  emergency_contact_number   String?
+  aadhar                     String?
+  pan                        String?
+  residential_address        String?
+  gender                     String?
+  occupation                 String?
+  remarks                    String?                      @default("NA")
+  created_at                 DateTime                     @default(now())
+  password                   String?
+  pooled_account_allocations pooled_account_allocations[]
+  pooled_account_users       pooled_account_users[]
+
+  @@schema("public")
+}
+
+model equity_holding {
+  id              Int       @id @default(autoincrement())
+  qcode           String    @db.VarChar(20)
+  account         String    @db.VarChar(100)
+  mastersheet_tag String    @db.VarChar(50)
+  date            DateTime  @db.Date
+  trade_type      String    @db.Char(1)
+  symbol          String    @db.VarChar(150)
+  exchange        String    @db.VarChar(10)
+  quantity        Int
+  price           Decimal   @db.Decimal(15, 2)
+  broker          String    @db.VarChar(50)
+  debt_equity     String    @db.Char(6)
+  collateral      String    @db.Char(8)
+  sub_category    String    @db.VarChar(50)
+  exposure        Decimal?  @db.Decimal(15, 2)
+  status          String    @db.VarChar(10)
+  custom_fields   Json?     @db.Json
+  created_at      DateTime? @default(now()) @db.Timestamp(6)
+  updated_at      DateTime? @db.Timestamp(6)
+  updated_by      Int?
+
+  @@index([date], map: "idx_equity_holding_date")
+  @@index([qcode], map: "idx_equity_holding_qcode")
+  @@index([symbol], map: "idx_equity_holding_symbol")
+  @@schema("public")
+}
+
+model gold_tradebook {
+  id              Int       @id @default(autoincrement())
+  qcode           String    @db.VarChar(20)
+  account_name    String    @db.VarChar(100)
+  mastersheet_tag String    @db.VarChar(100)
+  action          String    @db.VarChar(10)
+  basket          String    @db.VarChar(50)
+  date            DateTime  @db.Date
+  trade_type      String    @db.VarChar(10)
+  symbol          String    @db.VarChar(200)
+  expiry          DateTime  @db.Date
+  exchange        String    @db.VarChar(10)
+  quantity        Int
+  lotsize         Int
+  no_of_lots      Int
+  price           Decimal   @db.Decimal(15, 4)
+  exposure        Decimal   @db.Decimal(18, 4)
+  custom_fields   Json?     @db.Json
+  status          String?   @default("P") @db.Char(1)
+  created_at      DateTime? @default(now()) @db.Timestamp(6)
+  updated_at      DateTime? @db.Timestamp(6)
+  updated_by      Int?
+
+  @@index([date], map: "idx_gold_tradebook_date")
+  @@index([qcode], map: "idx_gold_tradebook_qcode")
+  @@index([symbol], map: "idx_gold_tradebook_symbol")
+  @@schema("public")
+}
+
+model liquidbees_tradebook {
+  id              Int       @id @default(autoincrement())
+  qcode           String    @db.VarChar(20)
+  account         String    @db.VarChar(100)
+  mastersheet_tag String    @db.VarChar(50)
+  date            DateTime  @db.Date
+  trade_type      String    @db.VarChar(10)
+  symbol          String    @db.VarChar(150)
+  exchange        String    @db.VarChar(10)
+  quantity        Int
+  price           Decimal   @db.Decimal(15, 2)
+  broker          String    @db.VarChar(50)
+  debt_equity     String    @db.Char(6)
+  collateral      String    @db.Char(8)
+  sub_category    String    @db.VarChar(50)
+  custom_fields   Json?     @db.Json
+  status          String?   @default("P") @db.Char(1)
+  created_at      DateTime? @default(now()) @db.Timestamp(6)
+  updated_at      DateTime? @db.Timestamp(6)
+  updated_by      Int?
+
+  @@index([date], map: "idx_liquidbees_tradebook_date")
+  @@index([qcode], map: "idx_liquidbees_tradebook_qcode")
+  @@index([symbol], map: "idx_liquidbees_tradebook_symbol")
+  @@schema("public")
+}
+
+model master_sheet {
+  id                   Int       @id @default(autoincrement())
+  qcode                String    @db.VarChar(20)
+  date                 DateTime  @db.Date
+  portfolio_value      Decimal?  @db.Decimal(20, 4)
+  capital_in_out       Decimal?  @db.Decimal(20, 4)
+  nav                  Decimal?  @db.Decimal(20, 4)
+  prev_nav             Decimal?  @db.Decimal(20, 4)
+  pnl                  Decimal?  @db.Decimal(20, 4)
+  daily_p_l            Decimal?  @db.Decimal(20, 4)
+  exposure_value       Decimal?  @db.Decimal(20, 4)
+  prev_portfolio_value Decimal?  @db.Decimal(20, 4)
+  prev_exposure_value  Decimal?  @db.Decimal(20, 4)
+  prev_pnl             Decimal?  @db.Decimal(20, 4)
+  drawdown             Decimal?  @db.Decimal(20, 4)
+  system_tag           String?   @db.VarChar(50)
+  created_at           DateTime? @default(now()) @db.Date
+
+  @@schema("public")
+}
+
+model mutual_fund_holding {
+  id              Int       @id @default(autoincrement())
+  qcode           String    @db.VarChar(20)
+  account_name    String    @db.VarChar(100)
+  mastersheet_tag String    @db.VarChar(50)
+  date            DateTime  @db.Date
+  trade_type      String    @db.VarChar(10)
+  symbol          String    @db.VarChar(300)
+  isin            String    @db.VarChar(12)
+  quantity        Decimal   @db.Decimal(15, 3)
+  price           Decimal   @db.Decimal(15, 5)
+  broker          String    @db.VarChar(50)
+  debt_equity     String    @db.Char(6)
+  collateral      String    @db.Char(8)
+  sub_category    String    @db.VarChar(50)
+  custom_fields   Json?     @db.Json
+  status          String?   @default("P") @db.Char(1)
+  created_at      DateTime? @default(now()) @db.Timestamp(6)
+  updated_at      DateTime? @db.Timestamp(6)
+  updated_by      Int?
+
+  @@index([date], map: "idx_mutual_fund_holding_date")
+  @@index([qcode], map: "idx_mutual_fund_holding_qcode")
+  @@index([symbol], map: "idx_mutual_fund_holding_symbol")
+  @@schema("public")
+}
+
+model pooled_account_allocations {
+  id                  Int       @id @default(autoincrement())
+  qcode               String?
+  icode               String?
+  allocation_date     DateTime  @db.Date
+  contribution_amount Decimal?  @db.Decimal
+  allocation_percent  Decimal?  @db.Decimal
+  created_at          DateTime? @default(now()) @db.Timestamp(6)
+  clients             clients?  @relation(fields: [icode], references: [icode], onDelete: Restrict)
+  accounts            accounts? @relation(fields: [qcode], references: [qcode], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([qcode, icode, allocation_date])
+  @@schema("public")
+}
+
+model pooled_account_users {
+  id           Int      @id @default(autoincrement())
+  qcode        String
+  icode        String
+  access_level String   @default("read")
+  created_at   DateTime @default(now())
+  accounts     accounts @relation(fields: [qcode], references: [qcode], map: "pooled_account_users_account_id_fkey")
+  clients      clients  @relation(fields: [icode], references: [icode], map: "pooled_account_users_user_id_fkey")
+
+  @@unique([qcode, icode], map: "pooled_account_users_account_id_user_id_key")
+  @@schema("public")
+}
+
+model slippage {
+  id             Int       @id @default(autoincrement())
+  qcode          String    @db.VarChar(20)
+  date           DateTime  @db.Date
+  account        String    @db.VarChar(100)
+  system_tag     String    @db.VarChar(50)
+  capital_in_out Decimal   @db.Decimal(15, 2)
+  custom_fields  Json?     @db.Json
+  status         String?   @default("P") @db.Char(1)
+  created_at     DateTime? @default(now()) @db.Timestamp(6)
+  updated_at     DateTime? @db.Timestamp(6)
+  updated_by     Int?
+
+  @@index([date], map: "idx_slippage_date")
+  @@index([qcode], map: "idx_slippage_qcode")
+  @@schema("public")
+}
+
+model tradebook {
+  id                    Int       @id @default(autoincrement())
+  qcode                 String    @db.VarChar(20)
+  timestamp_entry       DateTime  @db.Timestamp(6)
+  system_tag_entry      String    @db.VarChar(50)
+  action_entry          String    @db.Char(4)
+  symbol_entry          String    @db.VarChar(150)
+  price_entry           Decimal   @db.Decimal(15, 2)
+  qty_entry             Int
+  contract_value_entry  Decimal   @db.Decimal(15, 2)
+  timestamp_exit        DateTime? @db.Timestamp(6)
+  system_tag_exit       String?   @db.VarChar(50)
+  action_exit           String?   @db.Char(4)
+  symbol_exit           String?   @db.VarChar(150)
+  price_exit            Decimal?  @db.Decimal(15, 2)
+  qty_exit              Int?
+  contract_value_exit   Decimal?  @db.Decimal(15, 2)
+  pnl_amount            Decimal?  @db.Decimal(15, 2)
+  pnl_amount_settlement Decimal?  @db.Decimal(15, 2)
+  custom_fields         Json?     @db.Json
+  status                String?   @default("P") @db.Char(1)
+  created_at            DateTime? @default(now()) @db.Timestamp(6)
+  updated_at            DateTime? @db.Timestamp(6)
+  updated_by            Int?
+
+  @@index([qcode], map: "idx_tradebook_qcode")
+  @@index([symbol_entry], map: "idx_tradebook_symbol_entry")
+  @@index([timestamp_entry], map: "idx_tradebook_timestamp_entry")
+  @@schema("public")
+}
+
+model account_custodian_codes {
+  id             Int      @id @default(autoincrement())
+  qcode          String   @db.VarChar(20)
+  custodian_code String   @db.VarChar(50)
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  accounts       accounts @relation(fields: [qcode], references: [qcode], onDelete: Cascade, onUpdate: NoAction, map: "fk_account_custodian_codes_account")
+
+  @@unique([qcode, custodian_code], map: "uq_account_custodian_codes_qcode_custodian_code")
+  @@index([qcode], map: "idx_account_custodian_codes_qcode")
+  @@schema("public")
+}
+
+model pms_master_sheet {
+  id                        Int       @id @default(autoincrement())
+  client_name               String    @db.VarChar(255)
+  account_code              String    @db.VarChar(50)
+  report_date               DateTime  @db.Date
+  portfolio_value           Decimal?  @db.Decimal(20, 2)
+  cash_in_out               Decimal?  @db.Decimal(20, 2)
+  nav                       Decimal?  @db.Decimal(20, 4)
+  prev_nav                  Decimal?  @db.Decimal(20, 4)
+  pnl                       Decimal?  @db.Decimal(20, 2)
+  pnl_percent               Decimal?  @db.Decimal(10, 2)
+  exposure_value            Decimal?  @db.Decimal(20, 2)
+  prev_portfolio_value      Decimal?  @db.Decimal(20, 2)
+  prev_exposure_value       Decimal?  @db.Decimal(20, 2)
+  prev_pnl                  Decimal?  @db.Decimal(20, 2)
+  drawdown_percent          Decimal?  @db.Decimal(10, 2)
+  system_tag                String?   @db.VarChar(50)
+  period_return_percent     Decimal?  @db.Decimal(10, 4)
+  cumulative_return_percent Decimal?  @db.Decimal(10, 4)
+  created_at                DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@schema("public")
+}

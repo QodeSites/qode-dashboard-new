@@ -1,0 +1,74 @@
+name: CI/CD - Deploy Client Dashboard
+
+# Trigger on push to main branch (adjust if your default branch is "master" or something else)
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Build & Deploy to VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Install rsync & ssh-client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rsync openssh-client
+        shell: bash
+
+      - name: Set up SSH key for VPS
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          # disable StrictHostKeyChecking
+          printf "Host *\n    StrictHostKeyChecking no\n    UserKnownHostsFile=/dev/null\n" > ~/.ssh/config
+        shell: bash
+
+      - name: Rsync repository to VPS
+        run: |
+          # NOTE: TARGET_DIR should be set in your repository secrets, e.g. /var/www/client-dashboard
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -p ${{ secrets.VPS_PORT || 22 }}" \
+            ./ \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ secrets.TARGET_DIR }}
+        shell: bash
+
+      - name: SSH → Build & Restart Docker Container
+        run: |
+          ssh -i ~/.ssh/id_rsa -p ${{ secrets.VPS_PORT || 22 }} \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
+            set -e
+
+            cd "${{ secrets.TARGET_DIR }}"
+
+            # Build a fresh Docker image for the client dashboard:
+            # (Name it "client-dashboard-app" unless CONTAINER_NAME overrides)
+            IMAGE_NAME="client-dashboard-app"
+            docker build -t "$IMAGE_NAME" .
+
+            # Stop & remove any existing container
+            if docker ps -q --filter "name=$IMAGE_NAME" >/dev/null; then
+              docker stop "$IMAGE_NAME"
+              docker rm "$IMAGE_NAME"
+            fi
+
+            # Run the new container:
+            # Listen on port 3000 inside; map to host port 3040.
+            docker run -d \
+              --name "$IMAGE_NAME" \
+              -e NODE_ENV=production \
+              -e NEXT_PUBLIC_API_BASE_URL="http://localhost:8010/api" \
+              -p 3040:3000 \
+              "$IMAGE_NAME"
+
+            # Clean up dangling images
+            docker image prune -f
+
+            EOF
+        shell: bash
