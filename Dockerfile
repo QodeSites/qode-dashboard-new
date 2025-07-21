@@ -2,7 +2,6 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-
 # Copy package files & install dependencies
 COPY package.json package-lock.json ./
 # If you use pnpm: COPY pnpm-lock.yaml .; RUN npm install -g pnpm; RUN pnpm install
@@ -43,6 +42,8 @@ USER nextjs
 # Expose Next.js default port (3000). You can override via env if needed.
 ENV NODE_ENV=production
 ENV PORT=3000
+# Add SSH timeout configuration (e.g., 30 seconds)
+ENV SSH_TIMEOUT=30
 EXPOSE 3000
 
 # Start Next.js
