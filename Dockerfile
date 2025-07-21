@@ -23,8 +23,8 @@ WORKDIR /app
 RUN addgroup -g 1001 -S nodejs && adduser -u 1001 -S nextjs
 RUN chown nextjs:nodejs /app
 
-# Copy production-ready artifacts from builder (assuming output: standalone in next.config.js)
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+# Copy production-ready artifacts from builder
+COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 # If Prisma is used at runtime, copy prisma folder and generate client
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
@@ -47,4 +47,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s CMD wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1
 
 # Start Next.js
-CMD ["node", "server.js"]
+CMD ["npm", "start"]
