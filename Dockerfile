@@ -31,7 +31,7 @@ COPY --from=builder /app/node_modules/.prisma            ./node_modules/.prisma
 COPY --from=builder --chown=1001:1001 /app/.next       ./.next
 COPY --from=builder --chown=1001:1001 /app/public      ./public
 COPY --from=builder          /app/prisma               ./prisma
-COPY --from=builder          /app/.env                 ./.env
+COPY --from=builder          /app/.env                 ./env
 
 # 4) Healthcheck tooling & non-root user
 RUN apk add --no-cache curl \
