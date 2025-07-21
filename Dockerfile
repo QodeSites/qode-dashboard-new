@@ -32,7 +32,7 @@ RUN chown nextjs:nodejs /app && \
 COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY package*.json ./
-RUN npm ci --production
+RUN npm ci --legacy-peer-deps
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 # If you rely on prisma at runtime, also copy prisma folder
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
