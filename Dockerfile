@@ -4,11 +4,10 @@ WORKDIR /app
 
 # Copy package files & install dependencies
 COPY package.json package-lock.json ./
-# If you use pnpm: COPY pnpm-lock.yaml .; RUN npm install -g pnpm; RUN pnpm install
 RUN npm ci --legacy-peer-deps
 
 # Copy Prisma schema (if used) and generate client
-# If you don’t have prisma in production, remove these two lines.
+# Remove these lines if Prisma is not used
 COPY prisma ./prisma
 RUN npx prisma generate
 
@@ -22,30 +21,30 @@ WORKDIR /app
 
 # Create a non-root user
 RUN addgroup -g 1001 -S nodejs && adduser -u 1001 -S nextjs
+RUN chown nextjs:nodejs /app
 
-# Make sure /app is owned by nextjs, and npm cache is owned by nextjs
-RUN chown nextjs:nodejs /app && \
-    mkdir -p /home/nextjs/.npm && \
-    chown nextjs:nodejs /home/nextjs/.npm
-
-# Copy only production-ready artifacts from builder
-COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
+# Copy production-ready artifacts from builder (assuming output: standalone in next.config.js)
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-COPY package*.json ./
-RUN npm ci --legacy-peer-deps
-COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
-# If you rely on prisma at runtime, also copy prisma folder
+# If Prisma is used at runtime, copy prisma folder and generate client
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+RUN [ -d "./prisma" ] && npx prisma generate || true
+
+# Install production dependencies
+COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
+COPY --from=builder --chown=nextjs:nodejs /app/package-lock.json ./package-lock.json
+RUN npm ci --legacy-peer-deps --production && npm cache clean --force
 
 # Switch to non-root user
 USER nextjs
 
-# Expose Next.js default port (3000). You can override via env if needed.
+# Expose Next.js default port
 ENV NODE_ENV=production
 ENV PORT=3000
-# Add SSH timeout configuration (e.g., 30 seconds)
-ENV SSH_TIMEOUT=30
 EXPOSE 3000
 
+# Add healthcheck
+HEALTHCHECK --interval=30s --timeout=3s CMD wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1
+
 # Start Next.js
-CMD ["npm", "start"]
+CMD ["node", "server.js"]
