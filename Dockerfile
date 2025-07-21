@@ -27,22 +27,18 @@ RUN apk add --no-cache openssh-client
 RUN addgroup -g 1001 -S nodejs && adduser -u 1001 -S nextjs
 
 # Create SSH directory and set permissions
-RUN mkdir -p /home/nextjs/.ssh && \
-    chown nextjs:nodejs /home/nextjs/.ssh && \
-    chmod 700 /home/nextjs/.ssh
+RUN mkdir -p /home/nextjs/.ssh \
+ && chown nextjs:nodejs /home/nextjs/.ssh \
+ && chmod 700 /home/nextjs/.ssh
 
 # Configure SSH keep-alive settings globally
-RUN echo "Host *" > /etc/ssh/ssh_config && \
-    echo "    ServerAliveInterval 60" >> /etc/ssh/ssh_config && \
-    echo "    ServerAliveCountMax 3" >> /etc/ssh/ssh_config && \
-    echo "    TCPKeepAlive yes" >> /etc/ssh/ssh_config && \
-    echo "    ClientAliveInterval 60" >> /etc/ssh/ssh_config && \
-    echo "    ClientAliveCountMax 3" >> /etc/ssh/ssh_config
+RUN printf 'Host *\n    ServerAliveInterval 60\n    ServerAliveCountMax 3\n    TCPKeepAlive yes\n    ClientAliveInterval 60\n    ClientAliveCountMax 3\n' \
+    > /etc/ssh/ssh_config
 
 # Make sure /app is owned by nextjs, and npm cache is owned by nextjs
-RUN chown nextjs:nodejs /app && \
-    mkdir -p /home/nextjs/.npm && \
-    chown nextjs:nodejs /home/nextjs/.npm
+RUN chown nextjs:nodejs /app \
+ && mkdir -p /home/nextjs/.npm \
+ && chown nextjs:nodejs /home/nextjs/.npm
 
 # Copy only production-ready artifacts from builder
 COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
@@ -52,13 +48,12 @@ COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 # If you rely on prisma at runtime, also copy prisma folder
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 
-# Create a startup script that handles SSH keep-alive and starts the app
-COPY <<'EOF' /app/start.sh
+# Create the startup script in-image via RUN-heredoc
+RUN cat << 'EOF' > /app/start.sh
 #!/bin/sh
 
 # Function to keep SSH connections alive
 setup_ssh_keepalive() {
-    # Create user-specific SSH config if it doesn't exist
     if [ ! -f /home/nextjs/.ssh/config ]; then
         cat > /home/nextjs/.ssh/config << 'SSHEOF'
 Host *
@@ -73,12 +68,10 @@ SSHEOF
 # Set up SSH keep-alive
 setup_ssh_keepalive
 
-# Start a background process to maintain SSH connections if any exist
+# Background loop to ping existing SSH connections every 30s
 (
     while true; do
-        # Check if there are any SSH processes and send keep-alive
         if pgrep ssh > /dev/null 2>&1; then
-            # Send a simple command to keep connections alive
             ssh -O check -q > /dev/null 2>&1 || true
         fi
         sleep 30
@@ -88,7 +81,6 @@ setup_ssh_keepalive
 # Start the Next.js application
 exec npm start
 EOF
-
 RUN chmod +x /app/start.sh && chown nextjs:nodejs /app/start.sh
 
 # Switch to non-root user
