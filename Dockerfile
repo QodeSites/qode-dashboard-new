@@ -1,50 +1,51 @@
-# ── Stage 1: build the Next.js app ────────────────────────────────────────────
+# ── Stage 1: install all deps & build (with devDependencies) ─────────────────
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Copy package files & install dependencies
+# Install everything so we can generate Prisma client
 COPY package.json package-lock.json ./
 RUN npm ci --legacy-peer-deps
 
-# Copy Prisma schema (if used) and generate client
-# Remove these lines if Prisma is not used
+# Generate Prisma client (and engine)
 COPY prisma ./prisma
+COPY .env ./.env
 RUN npx prisma generate
 
-# Copy everything else & build
+# Build Next.js
 COPY . .
 RUN npm run build
 
-# ── Stage 2: run the built app ────────────────────────────────────────────────
+# ── Stage 2: production image ──────────────────────────────────────────────
 FROM node:20-alpine AS runner
 WORKDIR /app
 
-# Create a non-root user
-RUN addgroup -g 1001 -S nodejs && adduser -u 1001 -S nextjs
-RUN chown nextjs:nodejs /app
+# 1) Install only production dependencies
+COPY package.json package-lock.json ./
+RUN npm ci --legacy-peer-deps --production
 
-# Copy production-ready artifacts from builder
-COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-# If Prisma is used at runtime, copy prisma folder and generate client
-COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-RUN [ -d "./prisma" ] && npx prisma generate || true
+# 2) Pull in the already-generated Prisma client + engine from builder
+COPY --from=builder /app/node_modules/@prisma/client     ./node_modules/@prisma/client
+COPY --from=builder /app/node_modules/.prisma            ./node_modules/.prisma
 
-# Install production dependencies
-COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
-COPY --from=builder --chown=nextjs:nodejs /app/package-lock.json ./package-lock.json
-RUN npm ci --legacy-peer-deps --production && npm cache clean --force
+# 3) Copy build output, Prisma schema (optional), and env
+COPY --from=builder --chown=1001:1001 /app/.next       ./.next
+COPY --from=builder --chown=1001:1001 /app/public      ./public
+COPY --from=builder          /app/prisma               ./prisma
+COPY --from=builder          /app/.env                 ./.env
 
-# Switch to non-root user
+# 4) Healthcheck tooling & non-root user
+RUN apk add --no-cache curl \
+ && addgroup -g 1001 -S nodejs \
+ && adduser  -u 1001 -S nextjs \
+ && chown -R nextjs:nodejs /app
 USER nextjs
 
-# Expose Next.js default port
+# 5) Runtime config
 ENV NODE_ENV=production
 ENV PORT=3000
 EXPOSE 3000
 
-# Add healthcheck
-HEALTHCHECK --interval=30s --timeout=3s CMD wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1
+HEALTHCHECK --interval=30s --timeout=3s \
+  CMD curl --fail http://localhost:3000 || exit 1
 
-# Start Next.js
 CMD ["npm", "start"]

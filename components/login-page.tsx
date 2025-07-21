@@ -54,14 +54,14 @@ export default function LoginPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label htmlFor="identifier" className="block text-sm font-medium text-card-text-secondary mb-1">
-                  Email or ICode
+                  Email or IQode
                 </label>
                 <Input
                   id="identifier"
                   type="text"
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder="Enter your email or ICode"
+                  placeholder="Enter your email or IQode"
                   required
                   className="bg-primary-bg border-card-text-secondary/30 text-card-text placeholder:text-card-text-secondary/60"
                 />
