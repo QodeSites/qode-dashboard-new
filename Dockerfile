@@ -51,7 +51,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 
 # Create a startup script that handles SSH keep-alive and starts the app
-COPY <<'EOF' /app/start.sh
+COPY << EOF  /app/start.sh
 #!/bin/sh
 
 # Function to keep SSH connections alive
