@@ -9,8 +9,8 @@ RUN apk add --no-cache libc6-compat
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
 
-# Install dependencies with optimizations
-RUN npm ci --only=production --legacy-peer-deps && \
+# Install ALL dependencies (including devDependencies needed for build)
+RUN npm ci --legacy-peer-deps && \
     npm cache clean --force
 
 # Generate Prisma client if needed
@@ -18,7 +18,10 @@ RUN npx prisma generate
 
 # Copy source code and build
 COPY . .
-RUN npm run build && \
+
+# Install production dependencies for runtime
+RUN npm ci --only=production --legacy-peer-deps --prefix /tmp/prod && \
+    npm run build && \
     rm -rf .next/cache
 
 # ── Stage 2: run the built app ────────────────────────────────────────────────
@@ -37,6 +40,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+COPY --from=builder --chown=nextjs:nodejs /tmp/prod/node_modules ./node_modules
 
 # Switch to non-root user
 USER nextjs
