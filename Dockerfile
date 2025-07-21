@@ -8,7 +8,7 @@ RUN npm ci --legacy-peer-deps
 
 # Generate Prisma client (and engine)
 COPY prisma ./prisma
-COPY .env ./.env
+COPY .env ./env
 RUN npx prisma generate
 
 # Build Next.js
