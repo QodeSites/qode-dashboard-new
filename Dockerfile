@@ -1,72 +1,53 @@
-# File: .github/workflows/ci-cd.yml
-name: CI/CD Pipeline
+# ── Stage 1: build the Next.js app ────────────────────────────────────────────
+FROM node:20-alpine AS builder
+WORKDIR /app
 
-on:
-  push:
-    branches:
-      - main
+# Install dependencies for native modules if needed
+RUN apk add --no-cache libc6-compat
 
-env:
-  IMAGE_NAME: my-app          # <-- your Docker image name
-  SSH_REMOTE_USER: ${{ secrets.REMOTE_USER }}
-  SSH_REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
-  SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+# Copy package files first for better caching
+COPY package.json package-lock.json ./
+COPY prisma ./prisma
 
-jobs:
-  build-and-push:
-    name: Build & Push Docker Image
-    runs-on: ubuntu-latest
+# Install dependencies with optimizations
+RUN npm ci --only=production --legacy-peer-deps && \
+    npm cache clean --force
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+# Generate Prisma client if needed
+RUN npx prisma generate
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '20'
+# Copy source code and build
+COPY . .
+RUN npm run build && \
+    rm -rf .next/cache
 
-      - name: Install dependencies
-        run: npm ci --legacy-peer-deps
+# ── Stage 2: run the built app ────────────────────────────────────────────────
+FROM node:20-alpine AS runner
+WORKDIR /app
 
-      - name: Build Next.js
-        run: npm run build
+# Install dumb-init for proper signal handling
+RUN apk add --no-cache dumb-init
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+# Create non-root user
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
 
-      - name: Build & tag image
-        run: docker build -t $IMAGE_NAME:${{ github.sha }} .
+# Copy built application with proper ownership
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 
-      - name: Push image
-        run: docker push $IMAGE_NAME:${{ github.sha }}
+# Switch to non-root user
+USER nextjs
 
-  deploy:
-    name: Deploy to Remote
-    needs: build-and-push
-    runs-on: ubuntu-latest
+# Set production environment
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 
-    steps:
-      - name: Start ssh-agent
-        uses: webfactory/ssh-agent@v0.6.0
-        with:
-          ssh-private-key: ${{ env.SSH_KEY }}
+EXPOSE 3000
 
-      - name: Deploy via SSH (with keepalive & retries)
-        # fail the step if it takes over 20 minutes
-        timeout-minutes: 20
-        run: |
-          for i in {1..3}; do
-            ssh -o StrictHostKeyChecking=no \
-                -o ServerAliveInterval=60 \
-                -o ServerAliveCountMax=5 \
-                $SSH_REMOTE_USER@$SSH_REMOTE_HOST \
-                "docker pull $IMAGE_NAME:${{ github.sha }} && \
-                 docker service update --image $IMAGE_NAME:${{ github.sha }} my-service" \
-            && break
-            echo "🔁 SSH attempt $i failed — retrying in 10s…" >&2
-            sleep 10
-          done
+# Use dumb-init for proper signal handling
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "server.js"]
