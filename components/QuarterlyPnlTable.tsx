@@ -35,7 +35,7 @@ export function QuarterlyPnlTable({ quarterlyPnl }: QuarterlyPnlTableProps) {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left Side - Percentage Returns */}
           <div>
-            <h3 className="text-lg font-semibold text-card-text mb-3">Percentage Returns (%)</h3>
+            <h3 className="text-sm sm:text-lg font-semibold text-card-text mb-3">Percentage Returns (%)</h3>
             <div className="overflow-x-auto">
               <table className="w-full border-collapse border border-gray-200">
                 <thead>
@@ -93,7 +93,7 @@ export function QuarterlyPnlTable({ quarterlyPnl }: QuarterlyPnlTableProps) {
 
           {/* Right Side - Cash P&L */}
           <div>
-            <h3 className="text-lg font-semibold text-card-text mb-3">Cash P&L</h3>
+            <h3 className="text-sm sm:text-lg font-semibold text-card-text mb-3">Cash P&L</h3>
             <div className="overflow-x-auto">
               <table className="w-full border-collapse border border-gray-200">
                 <thead>

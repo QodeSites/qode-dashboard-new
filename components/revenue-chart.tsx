@@ -32,10 +32,9 @@ interface RevenueChartProps {
     sinceInception: string;
   };
   drawdown: string;
-  lastDate: string | null; // New prop for last date
 }
 
-export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, drawdown, lastDate }: RevenueChartProps) {
+export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, drawdown }: RevenueChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chart = useRef<any>(null);
   const { bse500Data, error } = useBse500Data(equityCurve);
@@ -48,17 +47,16 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
     const max = Math.max(...data);
     const range = max - min;
 
-    // Dynamic buffer based on range - smaller buffer for smaller ranges
     let bufferPercent;
-    if (range < 5) bufferPercent = 0.5; // 50% buffer for very small ranges
-    else if (range < 20) bufferPercent = 0.3; // 30% buffer for small ranges
-    else if (range < 50) bufferPercent = 0.2; // 20% buffer for medium ranges
-    else bufferPercent = 0.1; // 10% buffer for large ranges
+    if (range < 5) bufferPercent = 0.5;
+    else if (range < 20) bufferPercent = 0.3;
+    else if (range < 50) bufferPercent = 0.2;
+    else bufferPercent = 0.1;
 
     const buffer = range * bufferPercent;
 
     return {
-      min: Math.max(0, min - buffer), // Don't go below 0 for NAV
+      min: Math.max(0, min - buffer),
       max: max + buffer,
       buffer: buffer
     };
@@ -68,20 +66,18 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
     const allDrawdowns = [...portfolioDD, ...benchmarkDD].filter(val => !isNaN(val));
     if (!allDrawdowns.length) return { min: -10, max: 0 };
 
-    const minDrawdown = Math.min(...allDrawdowns, 0); // Ensure we include 0
-    const maxDrawdown = Math.max(...allDrawdowns, 0); // Should typically be 0 or close to 0
+    const minDrawdown = Math.min(...allDrawdowns, 0);
+    const maxDrawdown = Math.max(...allDrawdowns, 0);
 
-    // Add buffer to drawdown range
     const range = Math.abs(minDrawdown - maxDrawdown);
-    const buffer = Math.max(range * 0.1, 1); // At least 1% buffer
+    const buffer = Math.max(range * 0.1, 1);
 
     return {
-      min: Math.min(minDrawdown - buffer, -2), // At least -2% minimum
-      max: Math.max(maxDrawdown + buffer / 2, 1) // Small positive buffer at top
+      min: Math.min(minDrawdown - buffer, -2),
+      max: Math.max(maxDrawdown + buffer / 2, 1)
     };
   }, []);
 
-  // Process data series: normalize benchmark, handle portfolio with prepend or normalize
   const processDataSeries = useCallback(
     (data: Array<[number, number] | { date: string; nav: string }>, isBenchmark: boolean = false, baseValue?: number, prependDate?: number) => {
       if (!data.length) return [];
@@ -94,20 +90,17 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
       const firstDate = "date" in data[0] ? new Date(data[0].date).getTime() : data[0][0];
 
       if (isBenchmark) {
-        // Normalize benchmark to base 100
         const result = data.map((d) => {
           const timestamp = "date" in d ? new Date(d.date).getTime() : d[0];
           const value = "nav" in d ? parseFloat(d.nav) : d[1];
           return [timestamp, (value / firstValue) * 100];
         });
-        // If prependDate is provided and earlier than firstDate, prepend a point
         if (prependDate && prependDate < firstDate) {
           return [[prependDate, 100], ...result];
         }
         return result;
       }
 
-      // For portfolio: normalize to base 100
       return data.map((d) => {
         const timestamp = "date" in d ? new Date(d.date).getTime() : d[0];
         const value = "nav" in d ? parseFloat(d.nav) : d[1];
@@ -124,52 +117,42 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         chart.current.destroy();
       }
 
-      // Prepare performance (NAV) series
       const portfolioData = equityCurve.map((p) => [
         new Date(p.date).getTime(),
         p.value,
       ]);
       const processedPortfolioData = processDataSeries(portfolioData, false, portfolioData[0][1]);
 
-      // Determine prepend date from portfolio data
       const portfolioFirstValue = portfolioData[0][1];
       const firstPortfolioDate = processedPortfolioData[0][0];
       const prependDate = Math.abs(portfolioFirstValue - 100) > 0.01
-        ? firstPortfolioDate - 24 * 60 * 60 * 1000 // One day before portfolio start
+        ? firstPortfolioDate - 24 * 60 * 60 * 1000
         : undefined;
 
-      // Filter benchmark data to not exceed lastDate
-      const filteredBse500Data = lastDate
-        ? bse500Data.filter((item) => new Date(item.date) <= new Date(lastDate))
-        : bse500Data;
-
-      const benchmarkDataPoints = filteredBse500Data.map((item) => [
+      const benchmarkDataPoints = bse500Data.map((item) => [
         new Date(item.date).getTime(),
         parseFloat(item.nav),
       ]);
       const processedBenchmarkData = processDataSeries(benchmarkDataPoints, true, benchmarkDataPoints[0]?.[1], prependDate);
 
-      // Get the earliest date for prepending drawdown
       const firstBenchmarkDate = processedBenchmarkData[0]?.[0];
       const earliestDate = firstPortfolioDate && firstBenchmarkDate
         ? Math.min(firstPortfolioDate, firstBenchmarkDate)
         : firstPortfolioDate || firstBenchmarkDate;
 
-      // Prepare drawdown series
       const portfolioDrawdownData = drawdownCurve.map((point) => {
         const dd = typeof point.value === "string" ? parseFloat(point.value) : point.value;
         return [new Date(point.date).getTime(), -Math.abs(dd)];
       });
-      // Prepend 0 drawdown if the first date matches the prepended date
       if (portfolioDrawdownData.length && earliestDate && portfolioDrawdownData[0][0] > earliestDate) {
         portfolioDrawdownData.unshift([earliestDate, 0]);
       }
 
       let benchmarkDrawdownCurve: [number, number][] = [];
-      if (filteredBse500Data.length > 0) {
-        let maxBenchmark = parseFloat(filteredBse500Data[0]?.nav) || 100;
+      if (bse500Data.length > 0) {
+        let maxBenchmark = parseFloat(bse500Data[0]?.nav) || 100;
         benchmarkDrawdownCurve = [[earliestDate, 0]];
-        filteredBse500Data.forEach((point) => {
+        bse500Data.forEach((point) => {
           const timestamp = new Date(point.date).getTime();
           const nav = parseFloat(point.nav);
           maxBenchmark = Math.max(maxBenchmark, nav);
@@ -178,7 +161,6 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         });
       }
 
-      // Calculate dynamic scaling for NAV chart
       const allNavValues = [
         ...processedPortfolioData.map(d => d[1]),
         ...(processedBenchmarkData.length > 0 ? processedBenchmarkData.map(d => d[1]) : []),
@@ -186,19 +168,16 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
 
       const navScaling = calculateScalingParams(allNavValues);
 
-      // Calculate dynamic scaling for drawdown chart
       const portfolioDrawdownValues = portfolioDrawdownData.map(d => d[1]);
       const benchmarkDrawdownValues = benchmarkDrawdownCurve.length > 0 ? benchmarkDrawdownCurve.map(d => d[1]) : [];
       const drawdownScaling = calculateDrawdownScaling(portfolioDrawdownValues, benchmarkDrawdownValues);
 
-      // Dynamic tick amount based on range
       const navRange = navScaling.max - navScaling.min;
       const navTickAmount = Math.max(5, Math.min(12, Math.ceil(navRange / 10)));
 
       const drawdownRange = Math.abs(drawdownScaling.max - drawdownScaling.min);
       const drawdownTickAmount = Math.max(3, Math.min(4, Math.ceil(drawdownRange / 2)));
 
-      // Combine all series
       const mergedSeries = [];
       if (processedPortfolioData.length > 0) {
         mergedSeries.push({
@@ -339,7 +318,6 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
             const hoveredX = this.x;
             const chart = this.points[0].series.chart;
 
-            // Helper: find the nearest point in a series to the given x value
             function getNearestPoint(series: any, x: number) {
               let nearestPoint = null;
               let minDiff = Infinity;
@@ -405,7 +383,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         chart.current = null;
       }
     };
-  }, [equityCurve, drawdownCurve, bse500Data, lastDate, processDataSeries, calculateScalingParams, calculateDrawdownScaling]);
+  }, [equityCurve, drawdownCurve, bse500Data, processDataSeries, calculateScalingParams, calculateDrawdownScaling]);
 
   if (!equityCurve?.length || error) {
     return (

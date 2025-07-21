@@ -38,7 +38,7 @@ export function TrailingReturnsTable({
   broker,
 }: TrailingReturnsTableProps) {
   const { bse500Data, error } = useBse500Data(equityCurve);
-  console.log(trailingReturns);
+  console.log("TrailingReturns input data:", trailingReturns);
 
   const allPeriods = [
     { key: "5d", label: "5d", duration: 5, type: "days" },
@@ -105,6 +105,10 @@ export function TrailingReturnsTable({
   }, [equityCurve]);
 
   const calculateBenchmarkReturns = useCallback(() => {
+    console.log("🔍 Starting benchmark returns calculation...");
+    console.log("BSE500 data length:", bse500Data.length);
+    console.log("Equity curve length:", equityCurve.length);
+    
     const benchmarkReturns: { [key: string]: string } = {};
 
     allPeriods.forEach(period => {
@@ -112,60 +116,156 @@ export function TrailingReturnsTable({
     });
 
     if (!bse500Data.length || !equityCurve.length) {
+      console.log("❌ Missing data - BSE500:", bse500Data.length, "EquityCurve:", equityCurve.length);
       return benchmarkReturns;
     }
 
     const endDate = new Date(equityCurve[equityCurve.length - 1].date);
     const startDate = new Date(equityCurve[0].date);
+    
+    console.log("📅 Date range:");
+    console.log("Start date:", startDate.toISOString());
+    console.log("End date:", endDate.toISOString());
+    console.log("BSE500 date range:", 
+      new Date(bse500Data[0]?.date || '').toISOString(), 
+      "to", 
+      new Date(bse500Data[bse500Data.length - 1]?.date || '').toISOString()
+    );
 
     const findNav = (targetDate: Date) => {
-      const closestPoint = bse500Data.reduce(
-        (closest, point) => {
-          const pointDate = new Date(point.date);
-          const diff = Math.abs(pointDate.getTime() - targetDate.getTime());
-          if (diff < closest.diff) {
-            return { diff, nav: parseFloat(point.nav) };
+      console.log("🔍 Finding NAV for date:", targetDate.toISOString());
+      
+      // First, try to find exact match
+      const exactMatch = bse500Data.find(point => {
+        const pointDate = new Date(point.date);
+        return pointDate.toDateString() === targetDate.toDateString();
+      });
+      
+      if (exactMatch) {
+        console.log("📊 Exact NAV match found:", {
+          targetDate: targetDate.toISOString(),
+          foundDate: exactMatch.date,
+          nav: parseFloat(exactMatch.nav),
+          daysDiff: 0
+        });
+        return parseFloat(exactMatch.nav);
+      }
+      
+      // If no exact match, find the closest PREVIOUS date
+      let closestPrevious = null;
+      let closestPreviousDiff = Infinity;
+      
+      // Also track the closest future date as fallback
+      let closestFuture = null;
+      let closestFutureDiff = Infinity;
+      
+      bse500Data.forEach(point => {
+        const pointDate = new Date(point.date);
+        const timeDiff = targetDate.getTime() - pointDate.getTime();
+        
+        // If point is before or on target date (previous data)
+        if (timeDiff >= 0) {
+          if (timeDiff < closestPreviousDiff) {
+            closestPreviousDiff = timeDiff;
+            closestPrevious = {
+              diff: timeDiff,
+              nav: parseFloat(point.nav),
+              date: point.date
+            };
           }
-          return closest;
-        },
-        { diff: Infinity, nav: 0 }
-      );
-      return closestPoint.nav;
+        } 
+        // If point is after target date (future data)
+        else {
+          const futureDiff = Math.abs(timeDiff);
+          if (futureDiff < closestFutureDiff) {
+            closestFutureDiff = futureDiff;
+            closestFuture = {
+              diff: futureDiff,
+              nav: parseFloat(point.nav),
+              date: point.date
+            };
+          }
+        }
+      });
+      
+      // Prefer previous data, fallback to future if no previous data exists
+      const selectedPoint = closestPrevious || closestFuture;
+      
+      if (selectedPoint) {
+        console.log("📊 NAV found:", {
+          targetDate: targetDate.toISOString(),
+          foundDate: selectedPoint.date,
+          nav: selectedPoint.nav,
+          daysDiff: Math.round(selectedPoint.diff / (1000 * 60 * 60 * 24)),
+          type: closestPrevious ? 'PREVIOUS' : 'FUTURE (fallback)',
+          availablePrevious: !!closestPrevious,
+          availableFuture: !!closestFuture
+        });
+        return selectedPoint.nav;
+      }
+      
+      console.log("❌ No NAV data found for target date");
+      return 0;
     };
 
     const calculateReturn = (start: Date, end: Date) => {
+      console.log("💰 Calculating return from", start.toISOString(), "to", end.toISOString());
+      
       const startNav = findNav(start);
       const endNav = findNav(end);
+      
+      console.log("NAV values - Start:", startNav, "End:", endNav);
+      
       if (startNav && endNav && startNav !== 0) {
-        return (((endNav - startNav) / startNav) * 100).toFixed(2);
+        const returnValue = (((endNav - startNav) / startNav) * 100).toFixed(2);
+        console.log("✅ Calculated return:", returnValue + "%");
+        return returnValue;
       }
+      
+      console.log("❌ Invalid NAV values, returning '-'");
       return "-";
     };
 
+    console.log("📈 Calculating returns for all periods...");
     allPeriods.forEach(period => {
+      console.log(`\n--- Processing period: ${period.key} (${period.label}) ---`);
+      
       if (period.type === "days" || period.type === "months" || period.type === "years") {
         const start = new Date(endDate);
 
         if (period.type === "days") {
           start.setDate(endDate.getDate() - period.duration!);
+          console.log(`Going back ${period.duration} days`);
         } else if (period.type === "months") {
           start.setMonth(endDate.getMonth() - period.duration!);
+          console.log(`Going back ${period.duration} months`);
         } else if (period.type === "years") {
           start.setFullYear(endDate.getFullYear() - period.duration!);
+          console.log(`Going back ${period.duration} years`);
         }
 
-        benchmarkReturns[period.key] = calculateReturn(start, endDate);
+        const returnValue = calculateReturn(start, endDate);
+        benchmarkReturns[period.key] = returnValue;
+        console.log(`${period.key} benchmark return: ${returnValue}`);
+        
       } else if (period.type === "inception") {
-        benchmarkReturns[period.key] = calculateReturn(startDate, endDate);
+        console.log("Calculating since inception return");
+        const returnValue = calculateReturn(startDate, endDate);
+        benchmarkReturns[period.key] = returnValue;
+        console.log(`Since inception benchmark return: ${returnValue}`);
       }
     });
 
+    // Drawdown calculations
+    console.log("\n📉 Calculating benchmark drawdowns...");
     if (bse500Data.length) {
       let maxDrawdown = 0;
       let peakNav = -Infinity;
       let currentNav = parseFloat(bse500Data[bse500Data.length - 1].nav);
 
-      bse500Data.forEach(point => {
+      console.log("Current NAV for drawdown calc:", currentNav);
+
+      bse500Data.forEach((point, index) => {
         const nav = parseFloat(point.nav);
 
         if (nav > peakNav) {
@@ -176,6 +276,7 @@ export function TrailingReturnsTable({
 
         if (drawdownValue < maxDrawdown) {
           maxDrawdown = drawdownValue;
+          console.log(`New max drawdown found at index ${index}: ${maxDrawdown.toFixed(2)}% (NAV: ${nav}, Peak: ${peakNav})`);
         }
       });
 
@@ -189,10 +290,17 @@ export function TrailingReturnsTable({
 
       const currentDrawdown = allTimePeak > 0 ? ((currentNav - allTimePeak) / allTimePeak) * 100 : 0;
 
+      console.log("Drawdown calculations:");
+      console.log("All-time peak NAV:", allTimePeak);
+      console.log("Current NAV:", currentNav);
+      console.log("Max drawdown:", maxDrawdown.toFixed(2) + "%");
+      console.log("Current drawdown:", currentDrawdown.toFixed(2) + "%");
+
       benchmarkReturns.maxDD = (-Math.abs(maxDrawdown)).toFixed(2);
       benchmarkReturns.currentDD = (-Math.abs(currentDrawdown)).toFixed(2);
     }
 
+    console.log("\n🎯 Final benchmark returns:", benchmarkReturns);
     return benchmarkReturns;
   }, [bse500Data, equityCurve, allPeriods]);
 
@@ -201,6 +309,8 @@ export function TrailingReturnsTable({
   const getDisplayValue = (periodKey: string, isScheme: boolean) => {
     const schemeValue = getSchemeReturn(periodKey);
     const benchmarkValue = benchmarkReturns[periodKey];
+
+    console.log(`Display value for ${periodKey} - Scheme: ${schemeValue}, Benchmark: ${benchmarkValue}, IsScheme: ${isScheme}`);
 
     if (periodKey === "currentDD" || periodKey === "maxDD") {
       return isScheme ? schemeValue : benchmarkValue;
@@ -243,7 +353,7 @@ export function TrailingReturnsTable({
   return (
     <div className="mb-6">
       <div className="flex justify-between items-center mb-6">
-        <CardTitle className="text-card-text text-lg">
+        <CardTitle className="text-card-text text-sm sm:text-lg">
           Trailing Returns & Drawdown
         </CardTitle>
       </div>

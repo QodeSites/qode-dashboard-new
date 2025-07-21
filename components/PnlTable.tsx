@@ -93,7 +93,7 @@ export function PnlTable({ quarterlyPnl, monthlyPnl }: PnlTableProps) {
     <Card className="bg-white/70 backdrop-blur-sm p-0 card-shadow border-0">
       <CardHeader>
         <div className="flex justify-between items-center">
-          <CardTitle className="text-lg text-gray-900">
+          <CardTitle className="text-sm sm:text-lg text-gray-900">
             Quarterly Profit and Loss ({viewType === "percent" ? "%" : "₹"})
           </CardTitle>
           <div className="space-x-2">
@@ -193,7 +193,7 @@ export function PnlTable({ quarterlyPnl, monthlyPnl }: PnlTableProps) {
     <Card className="bg-white/70 backdrop-blur-sm p-0 card-shadow border-0">
       <CardHeader>
         <div className="flex justify-between items-center">
-          <CardTitle className="text-lg text-gray-900">
+          <CardTitle className="text-sm sm:text-lg text-gray-900">
             Monthly Profit and Loss ({viewType === "percent" ? "%" : "₹"})
           </CardTitle>
           <div className="space-x-2">

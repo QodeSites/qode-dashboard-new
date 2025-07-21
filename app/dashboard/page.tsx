@@ -308,7 +308,7 @@ export default function Portfolio() {
       return (
         <Card className="bg-white/70 backdrop-blur-sm card-shadow border-0">
           <CardHeader>
-            <CardTitle className="text-card-text text-lg">Cash In / Out</CardTitle>
+            <CardTitle className="text-card-text text-sm sm:text-lg">Cash In / Out</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-center py-3 px-4 text-gray-900 dark:text-gray-100">
@@ -322,7 +322,7 @@ export default function Portfolio() {
     return (
       <Card className="bg-white/70 backdrop-blur-sm card-shadow border-0">
         <CardHeader>
-          <CardTitle className="text-card-text text-lg">Cash In / Out</CardTitle>
+          <CardTitle className="text-card-text text-sm sm:text-lg">Cash In / Out</CardTitle>
         </CardHeader>
         <CardContent className="px-4 py-2">
           <div className="overflow-x-auto">
@@ -463,7 +463,7 @@ export default function Portfolio() {
         {metadata && (
           <Button
             variant="outline"
-            className="bg-logo-green mt-4 font-heading text-button-text text-lg  px-3 py-1 rounded-full"
+            className="bg-logo-green mt-4 font-heading text-button-text text-sm sm:text-lg  px-3 py-1 rounded-full"
           >
             {metadata.strategyName || "Unknown Strategy"}
           </Button>
@@ -485,7 +485,7 @@ export default function Portfolio() {
                 <div key={index} className="space-y-6">
                   <Card className="bg-white/70 backdrop-blur-sm card-shadow border-0">
                     <CardHeader>
-                      <CardTitle className="text-card-text text-lg">
+                      <CardTitle className="text-card-text text-sm sm:text-lg">
                         {item.metadata.account_name} ({item.metadata.account_type.toUpperCase()} - {item.metadata.broker})
                       </CardTitle>
                       <div className="text-sm text-card-text-secondary">

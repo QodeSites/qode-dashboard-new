@@ -53,7 +53,7 @@ const HomePage = () => {
             >
               <Card className="bg-white/70 card-shadow border-none">
                 <CardHeader>
-                  <CardTitle className="text-card-text text-lg flex items-center justify-between">
+                  <CardTitle className="text-card-text text-sm sm:text-lg flex items-center justify-between">
                     Visit website
                     <svg
                       stroke="currentColor"

@@ -5,7 +5,7 @@ const StockTable = () => {
   return (
     <Card className="bg-white/70 backdrop-blur-sm card-shadow border-0 relative">
       <CardHeader>
-        <CardTitle className="text-card-text text-lg">
+        <CardTitle className="text-card-text text-sm sm:text-lg">
           Current Stock Holdings
         </CardTitle>
       </CardHeader>
