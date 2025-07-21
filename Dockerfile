@@ -5,7 +5,7 @@ WORKDIR /app
 # Copy package files & install dependencies
 COPY package.json package-lock.json ./
 # If you use pnpm: COPY pnpm-lock.yaml .; RUN npm install -g pnpm; RUN pnpm install
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 
 # Copy Prisma schema (if used) and generate client
 # If you don’t have prisma in production, remove these two lines.
