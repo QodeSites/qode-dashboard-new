@@ -4,8 +4,8 @@ WORKDIR /app
 
 # Copy package files & install dependencies
 COPY package.json package-lock.json ./
-# If you use pnpm: COPY pnpm-lock.yaml .; RUN npm install -g pnpm; RUN pnpm install
-RUN npm ci --legacy-peer-deps
+# Install only production dependencies to reduce node_modules size
+RUN npm ci --legacy-peer-deps --omit=dev
 
 # Copy Prisma schema (if used) and generate client
 # If you don't have prisma in production, remove these two lines.
@@ -20,13 +20,13 @@ RUN npm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 
-# Install OpenSSH client for SSH functionality
+# Install OpenSSH client for SSH functionality (if needed at runtime)
 RUN apk add --no-cache openssh-client
 
 # Create a non-root user
 RUN addgroup -g 1001 -S nodejs && adduser -u 1001 -S nextjs
 
-# Create SSH directory and set permissions
+# Create SSH directory and set permissions (if needed at runtime)
 RUN mkdir -p /home/nextjs/.ssh && \
     chown nextjs:nodejs /home/nextjs/.ssh && \
     chmod 700 /home/nextjs/.ssh
