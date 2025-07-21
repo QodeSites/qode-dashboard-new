@@ -441,10 +441,10 @@ export function TrailingReturnsTable({
             <p><strong>Legend:</strong> 5d = 5 days, 1m = 1 month, 1y = 1 year, DD = Drawdown</p>
             <p><strong>Returns:</strong> Periods under 1 year are presented as absolute, while those over 1 year are annualized</p>
           </div>
-          <div className="flex gap-4">
+          {/* <div className="flex gap-4">
             <p className="text-green-600">Green: Positive values</p>
             <p className="text-red-600">Red: Negative values</p>
-          </div>
+          </div> */}
         </div>
       </div>
     </div>
