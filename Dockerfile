@@ -31,7 +31,8 @@ RUN chown nextjs:nodejs /app && \
 # Copy only production-ready artifacts from builder
 COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY package*.json ./
+RUN npm ci --production
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 # If you rely on prisma at runtime, also copy prisma folder
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
