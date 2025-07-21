@@ -4,9 +4,11 @@ WORKDIR /app
 
 # Copy package files & install dependencies
 COPY package.json package-lock.json ./
+# If you use pnpm: COPY pnpm-lock.yaml .; RUN npm install -g pnpm; RUN pnpm install
 RUN npm ci --legacy-peer-deps
 
 # Copy Prisma schema (if used) and generate client
+# If you don't have prisma in production, remove these two lines.
 COPY prisma ./prisma
 RUN npx prisma generate
 
@@ -14,44 +16,47 @@ RUN npx prisma generate
 COPY . .
 RUN npm run build
 
-
 # ── Stage 2: run the built app ────────────────────────────────────────────────
 FROM node:20-alpine AS runner
 WORKDIR /app
 
-# 1) Install SSH client
-# 2) Create non-root user/group
-RUN apk add --no-cache openssh-client \
- && addgroup -g 1001 -S nodejs \
- && adduser -u 1001 -S nextjs -G nodejs
+# Install OpenSSH client for SSH functionality
+RUN apk add --no-cache openssh-client
 
-# Prepare SSH directory for nextjs user
-RUN mkdir -p /home/nextjs/.ssh \
- && chown nextjs:nodejs /home/nextjs/.ssh \
- && chmod 700 /home/nextjs/.ssh
+# Create a non-root user
+RUN addgroup -g 1001 -S nodejs && adduser -u 1001 -S nextjs
 
-# Global SSH keep-alive defaults
-RUN printf "Host *\n    ServerAliveInterval 60\n    ServerAliveCountMax 5\n    TCPKeepAlive yes\n" \
-    > /etc/ssh/ssh_config
+# Create SSH directory and set permissions
+RUN mkdir -p /home/nextjs/.ssh && \
+    chown nextjs:nodejs /home/nextjs/.ssh && \
+    chmod 700 /home/nextjs/.ssh
 
-# Ensure /app and npm cache are writable by nextjs
-RUN chown nextjs:nodejs /app \
- && mkdir -p /home/nextjs/.npm \
- && chown nextjs:nodejs /home/nextjs/.npm
+# Configure SSH keep-alive settings globally with updated values
+RUN echo "Host *" > /etc/ssh/ssh_config && \
+    echo "    ServerAliveInterval 60" >> /etc/ssh/ssh_config && \
+    echo "    ServerAliveCountMax 5" >> /etc/ssh/ssh_config && \
+    echo "    TCPKeepAlive yes" >> /etc/ssh/ssh_config
 
-# Copy built artifacts from builder
+# Make sure /app is owned by nextjs, and npm cache is owned by nextjs
+RUN chown nextjs:nodejs /app && \
+    mkdir -p /home/nextjs/.npm && \
+    chown nextjs:nodejs /home/nextjs/.npm
+
+# Copy only production-ready artifacts from builder
 COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
+# If you rely on prisma at runtime, also copy prisma folder
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 
-# Inline creation of the startup script inside the image
-RUN cat > /app/start.sh << 'EOF'
+# Create a startup script that handles SSH keep-alive and starts the app
+COPY <<-EOF /app/start.sh
 #!/bin/sh
 
 # Function to keep SSH connections alive
 setup_ssh_keepalive() {
+    # Create user-specific SSH config if it doesn't exist
     if [ ! -f /home/nextjs/.ssh/config ]; then
         cat > /home/nextjs/.ssh/config << 'SSHEOF'
 Host *
@@ -67,31 +72,31 @@ SSHEOF
 # Set up SSH keep-alive
 setup_ssh_keepalive
 
-# Background “health-check” to ping any open SSH connections
+# Start a background process to maintain SSH connections if any exist
 (
     while true; do
+        # Check if there are any SSH processes and send keep-alive
         if pgrep ssh > /dev/null 2>&1; then
-            ssh -O check -q >/dev/null 2>&1 || true
+            # Send a simple command to keep connections alive
+            ssh -O check -q > /dev/null 2>&1 || true
         fi
         sleep 30
     done
 ) &
 
-# Launch Next.js
+# Start the Next.js application
 exec npm start
 EOF
 
-# Make the script executable and owned by nextjs
-RUN chmod +x /app/start.sh \
- && chown nextjs:nodejs /app/start.sh
+RUN chmod +x /app/start.sh && chown nextjs:nodejs /app/start.sh
 
 # Switch to non-root user
 USER nextjs
 
-# Environment & port
+# Expose Next.js port 3030
 ENV NODE_ENV=production
 ENV PORT=3030
 EXPOSE 3030
 
-# Start the app
+# Start with our custom script
 CMD ["/app/start.sh"]
