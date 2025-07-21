@@ -6,9 +6,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --legacy-peer-deps
 
-# Copy Prisma schema and .env file
+# Copy Prisma schema (if used) and generate client
+# Remove these lines if Prisma is not used
 COPY prisma ./prisma
-COPY .env ./
 RUN npx prisma generate
 
 # Copy everything else & build
@@ -26,9 +26,8 @@ RUN chown nextjs:nodejs /app
 # Copy production-ready artifacts from builder
 COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-# Copy prisma folder and .env file
+# If Prisma is used at runtime, copy prisma folder and generate client
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-COPY --from=builder --chown=nextjs:nodejs /app/.env ./.env
 RUN [ -d "./prisma" ] && npx prisma generate || true
 
 # Install production dependencies
@@ -45,8 +44,7 @@ ENV PORT=3000
 EXPOSE 3000
 
 # Add healthcheck
-RUN apk add --no-cache curl
-HEALTHCHECK --interval=30s --timeout=3s CMD curl --fail http://localhost:3000 || exit 1
+HEALTHCHECK --interval=30s --timeout=3s CMD wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1
 
 # Start Next.js
 CMD ["npm", "start"]
