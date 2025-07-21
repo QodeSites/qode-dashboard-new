@@ -31,13 +31,11 @@ RUN mkdir -p /home/nextjs/.ssh && \
     chown nextjs:nodejs /home/nextjs/.ssh && \
     chmod 700 /home/nextjs/.ssh
 
-# Configure SSH keep-alive settings globally
+# Configure SSH keep-alive settings globally with updated values
 RUN echo "Host *" > /etc/ssh/ssh_config && \
     echo "    ServerAliveInterval 60" >> /etc/ssh/ssh_config && \
-    echo "    ServerAliveCountMax 3" >> /etc/ssh/ssh_config && \
-    echo "    TCPKeepAlive yes" >> /etc/ssh/ssh_config && \
-    echo "    ClientAliveInterval 60" >> /etc/ssh/ssh_config && \
-    echo "    ClientAliveCountMax 3" >> /etc/ssh/ssh_config
+    echo "    ServerAliveCountMax 5" >> /etc/ssh/ssh_config && \
+    echo "    TCPKeepAlive yes" >> /etc/ssh/ssh_config
 
 # Make sure /app is owned by nextjs, and npm cache is owned by nextjs
 RUN chown nextjs:nodejs /app && \
@@ -63,9 +61,10 @@ setup_ssh_keepalive() {
         cat > /home/nextjs/.ssh/config << 'SSHEOF'
 Host *
     ServerAliveInterval 60
-    ServerAliveCountMax 3
+    ServerAliveCountMax 5
     TCPKeepAlive yes
 SSHEOF
+        chown nextjs:nodejs /home/nextjs/.ssh/config
         chmod 600 /home/nextjs/.ssh/config
     fi
 }
