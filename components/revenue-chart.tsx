@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback } from "react";
 import Highcharts from "highcharts";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { useBse500Data } from "@/hooks/useBse500Data";
+import { TrailingReturnsTable } from "./trailing-returns-table";
 
 interface EquityCurvePoint {
   date: string;
@@ -18,9 +19,23 @@ interface DrawdownCurvePoint {
 interface RevenueChartProps {
   equityCurve: EquityCurvePoint[];
   drawdownCurve: DrawdownCurvePoint[];
+  trailingReturns: {
+    fiveDays?: string;
+    tenDays: string;
+    fifteenDays?: string;
+    oneMonth: string;
+    threeMonths: string;
+    sixMonths: string;
+    oneYear: string;
+    twoYears: string;
+    fiveYears: string;
+    sinceInception: string;
+  };
+  drawdown: string;
+  lastDate: string | null; // New prop for last date
 }
 
-export function RevenueChart({ equityCurve, drawdownCurve }: RevenueChartProps) {
+export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, drawdown, lastDate }: RevenueChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chart = useRef<any>(null);
   const { bse500Data, error } = useBse500Data(equityCurve);
@@ -66,9 +81,9 @@ export function RevenueChart({ equityCurve, drawdownCurve }: RevenueChartProps) 
     };
   }, []);
 
-  // Normalize data series to base 100
-  const normalizeDataSeries = useCallback(
-    (data: Array<[number, number] | { date: string; nav: string }>, baseValue?: number) => {
+  // Process data series: normalize benchmark, handle portfolio with prepend or normalize
+  const processDataSeries = useCallback(
+    (data: Array<[number, number] | { date: string; nav: string }>, isBenchmark: boolean = false, baseValue?: number, prependDate?: number) => {
       if (!data.length) return [];
       const firstValue =
         baseValue !== undefined
@@ -76,6 +91,23 @@ export function RevenueChart({ equityCurve, drawdownCurve }: RevenueChartProps) 
           : "nav" in data[0]
             ? parseFloat(data[0].nav)
             : data[0][1];
+      const firstDate = "date" in data[0] ? new Date(data[0].date).getTime() : data[0][0];
+
+      if (isBenchmark) {
+        // Normalize benchmark to base 100
+        const result = data.map((d) => {
+          const timestamp = "date" in d ? new Date(d.date).getTime() : d[0];
+          const value = "nav" in d ? parseFloat(d.nav) : d[1];
+          return [timestamp, (value / firstValue) * 100];
+        });
+        // If prependDate is provided and earlier than firstDate, prepend a point
+        if (prependDate && prependDate < firstDate) {
+          return [[prependDate, 100], ...result];
+        }
+        return result;
+      }
+
+      // For portfolio: normalize to base 100
       return data.map((d) => {
         const timestamp = "date" in d ? new Date(d.date).getTime() : d[0];
         const value = "nav" in d ? parseFloat(d.nav) : d[1];
@@ -97,40 +129,66 @@ export function RevenueChart({ equityCurve, drawdownCurve }: RevenueChartProps) 
         new Date(p.date).getTime(),
         p.value,
       ]);
-      const normalizedPortfolioData = normalizeDataSeries(portfolioData, portfolioData[0][1]);
+      const processedPortfolioData = processDataSeries(portfolioData, false, portfolioData[0][1]);
 
-      const benchmarkDataPoints = bse500Data.map((item) => [
+      // Determine prepend date from portfolio data
+      const portfolioFirstValue = portfolioData[0][1];
+      const firstPortfolioDate = processedPortfolioData[0][0];
+      const prependDate = Math.abs(portfolioFirstValue - 100) > 0.01
+        ? firstPortfolioDate - 24 * 60 * 60 * 1000 // One day before portfolio start
+        : undefined;
+
+      // Filter benchmark data to not exceed lastDate
+      const filteredBse500Data = lastDate
+        ? bse500Data.filter((item) => new Date(item.date) <= new Date(lastDate))
+        : bse500Data;
+
+      const benchmarkDataPoints = filteredBse500Data.map((item) => [
         new Date(item.date).getTime(),
         parseFloat(item.nav),
       ]);
-      const normalizedBenchmarkData = normalizeDataSeries(benchmarkDataPoints, benchmarkDataPoints[0]?.[1]);
+      const processedBenchmarkData = processDataSeries(benchmarkDataPoints, true, benchmarkDataPoints[0]?.[1], prependDate);
+
+      // Get the earliest date for prepending drawdown
+      const firstBenchmarkDate = processedBenchmarkData[0]?.[0];
+      const earliestDate = firstPortfolioDate && firstBenchmarkDate
+        ? Math.min(firstPortfolioDate, firstBenchmarkDate)
+        : firstPortfolioDate || firstBenchmarkDate;
 
       // Prepare drawdown series
       const portfolioDrawdownData = drawdownCurve.map((point) => {
         const dd = typeof point.value === "string" ? parseFloat(point.value) : point.value;
         return [new Date(point.date).getTime(), -Math.abs(dd)];
       });
+      // Prepend 0 drawdown if the first date matches the prepended date
+      if (portfolioDrawdownData.length && earliestDate && portfolioDrawdownData[0][0] > earliestDate) {
+        portfolioDrawdownData.unshift([earliestDate, 0]);
+      }
 
-      let maxBenchmark = -Infinity;
-      const benchmarkDrawdownCurve = bse500Data.map((point) => {
-        const timestamp = new Date(point.date).getTime();
-        const nav = parseFloat(point.nav);
-        maxBenchmark = Math.max(maxBenchmark, nav);
-        const dd = ((nav - maxBenchmark) / maxBenchmark) * 100;
-        return [timestamp, dd];
-      });
+      let benchmarkDrawdownCurve: [number, number][] = [];
+      if (filteredBse500Data.length > 0) {
+        let maxBenchmark = parseFloat(filteredBse500Data[0]?.nav) || 100;
+        benchmarkDrawdownCurve = [[earliestDate, 0]];
+        filteredBse500Data.forEach((point) => {
+          const timestamp = new Date(point.date).getTime();
+          const nav = parseFloat(point.nav);
+          maxBenchmark = Math.max(maxBenchmark, nav);
+          const dd = ((nav - maxBenchmark) / maxBenchmark) * 100;
+          benchmarkDrawdownCurve.push([timestamp, dd]);
+        });
+      }
 
       // Calculate dynamic scaling for NAV chart
       const allNavValues = [
-        ...normalizedPortfolioData.map(d => d[1]),
-        ...normalizedBenchmarkData.map(d => d[1])
+        ...processedPortfolioData.map(d => d[1]),
+        ...(processedBenchmarkData.length > 0 ? processedBenchmarkData.map(d => d[1]) : []),
       ].filter(val => !isNaN(val));
 
       const navScaling = calculateScalingParams(allNavValues);
 
       // Calculate dynamic scaling for drawdown chart
       const portfolioDrawdownValues = portfolioDrawdownData.map(d => d[1]);
-      const benchmarkDrawdownValues = benchmarkDrawdownCurve.map(d => d[1]);
+      const benchmarkDrawdownValues = benchmarkDrawdownCurve.length > 0 ? benchmarkDrawdownCurve.map(d => d[1]) : [];
       const drawdownScaling = calculateDrawdownScaling(portfolioDrawdownValues, benchmarkDrawdownValues);
 
       // Dynamic tick amount based on range
@@ -138,14 +196,14 @@ export function RevenueChart({ equityCurve, drawdownCurve }: RevenueChartProps) 
       const navTickAmount = Math.max(5, Math.min(12, Math.ceil(navRange / 10)));
 
       const drawdownRange = Math.abs(drawdownScaling.max - drawdownScaling.min);
-      const drawdownTickAmount = Math.max(3, Math.min(8, Math.ceil(drawdownRange / 2)));
+      const drawdownTickAmount = Math.max(3, Math.min(4, Math.ceil(drawdownRange / 2)));
 
       // Combine all series
       const mergedSeries = [];
-      if (normalizedPortfolioData.length > 0) {
+      if (processedPortfolioData.length > 0) {
         mergedSeries.push({
           name: "Portfolio",
-          data: normalizedPortfolioData,
+          data: processedPortfolioData,
           color: "#2E8B57",
           zIndex: 2,
           yAxis: 0,
@@ -153,10 +211,10 @@ export function RevenueChart({ equityCurve, drawdownCurve }: RevenueChartProps) 
           marker: { enabled: false },
         });
       }
-      if (normalizedBenchmarkData.length > 0) {
+      if (processedBenchmarkData.length > 0) {
         mergedSeries.push({
           name: "BSE500",
-          data: normalizedBenchmarkData,
+          data: processedBenchmarkData,
           color: "#4169E1",
           zIndex: 1,
           yAxis: 0,
@@ -196,9 +254,9 @@ export function RevenueChart({ equityCurve, drawdownCurve }: RevenueChartProps) 
       const options = {
         chart: {
           zoomType: "xy",
-          height: 700,
-          backgroundColor: "transparent", // Make chart background transparent
-          plotBackgroundColor: "transparent", // Make plot area background transparent
+          height: 600,
+          backgroundColor: "transparent",
+          plotBackgroundColor: "transparent",
         },
         title: {
           text: "",
@@ -222,11 +280,11 @@ export function RevenueChart({ equityCurve, drawdownCurve }: RevenueChartProps) 
         yAxis: [
           {
             title: { text: "NAV Curve" },
-            height: "70%",
+            height: "50%",
             top: "0%",
             labels: {
               formatter: function () {
-                return Math.round(this.value * 100) / 100; // Show decimals for small ranges
+                return Math.round(this.value * 100) / 100;
               },
               style: {
                 color: "#2E8B57",
@@ -252,11 +310,11 @@ export function RevenueChart({ equityCurve, drawdownCurve }: RevenueChartProps) 
           },
           {
             title: { text: "Drawdown" },
-            height: "20%",
-            top: "80%",
+            height: "30%",
+            top: "65%",
             offset: 0,
             min: drawdownScaling.min,
-            max: drawdownScaling.max,
+            max: 0,
             tickAmount: drawdownTickAmount,
             labels: {
               formatter: function () {
@@ -347,7 +405,7 @@ export function RevenueChart({ equityCurve, drawdownCurve }: RevenueChartProps) 
         chart.current = null;
       }
     };
-  }, [equityCurve, drawdownCurve, bse500Data, normalizeDataSeries, calculateScalingParams, calculateDrawdownScaling]);
+  }, [equityCurve, drawdownCurve, bse500Data, lastDate, processDataSeries, calculateScalingParams, calculateDrawdownScaling]);
 
   if (!equityCurve?.length || error) {
     return (
@@ -362,13 +420,18 @@ export function RevenueChart({ equityCurve, drawdownCurve }: RevenueChartProps) 
   }
 
   return (
-    <Card className="bg-white/70 backdrop-blur-sm card-shadow border-0">
-      <CardContent>
+    <Card className="bg-white/70 backdrop-blur-sm p-0 card-shadow border-0">
+      <CardContent className="p-0 px-4 py-5">
+        <TrailingReturnsTable
+          trailingReturns={trailingReturns}
+          drawdown={drawdown}
+          equityCurve={equityCurve}
+        />
         <div className="flex items-center justify-between text-center">
-          <CardTitle className="text-card-text text-md py-5">Portfolio Performance & Drawdown</CardTitle>
+          <CardTitle className="text-card-text text-lg py-5">Portfolio Performance & Drawdown</CardTitle>
         </div>
         <div className="w-full py-4">
-          <div ref={chartRef} className="w-full h-[700px]" />
+          <div ref={chartRef} className="w-full h-[600px]" />
         </div>
       </CardContent>
     </Card>

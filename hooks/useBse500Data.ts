@@ -33,7 +33,7 @@ export function useBse500Data(equityCurve: EquityCurvePoint[]): UseBse500DataRes
         const endDate = equityCurve[equityCurve.length - 1].date;
 
         const queryParams = new URLSearchParams({
-          indices: "BSE500",
+          indices: "NIFTY 50",
           start_date: startDate,
           end_date: endDate,
         });

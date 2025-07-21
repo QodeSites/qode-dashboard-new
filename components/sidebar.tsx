@@ -6,25 +6,19 @@ import { usePathname } from "next/navigation"
 import { Dialog, Transition } from "@headlessui/react"
 import {
   HomeIcon,
-  FolderIcon,
-  UsersIcon,
   ChartBarIcon,
-  CogIcon,
   XMarkIcon,
-  DocumentTextIcon,
-  CreditCardIcon,
+  ArrowRightOnRectangleIcon,
 } from "@heroicons/react/24/outline"
 import { cn } from "@/lib/utils"
+import { signOut, useSession } from "next-auth/react"
+import { Button } from "./ui/button"
+import { BellIcon } from "lucide-react"
 
 const navigation = [
-  { name: "Dashboard", href: "/", icon: HomeIcon },
-  // { name: "Projects", href: "/projects", icon: FolderIcon },
-  // { name: "Clients", href: "/clients", icon: UsersIcon },
-  // { name: "Analytics", href: "/analytics", icon: ChartBarIcon },
-  // { name: "Invoices", href: "/invoices", icon: CreditCardIcon },
-  // { name: "Documents", href: "/documents", icon: DocumentTextIcon },
-  // { name: "Settings", href: "/settings", icon: CogIcon },
-]
+  { name: "Home", href: "/", icon: HomeIcon },
+  { name: "Portfolio", href: "/dashboard", icon: ChartBarIcon },
+];
 
 interface SidebarProps {
   open: boolean
@@ -83,13 +77,35 @@ export function Sidebar({ open, setOpen }: SidebarProps) {
 }
 
 function SidebarContent({ pathname }: { pathname: string }) {
+  const { data: session } = useSession();
+  
+  // Get user info from session with fallbacks
+  const userName = session?.user?.name || "User";
+  const userEmail = session?.user?.email || "";
+  const userIcode = session?.user?.icode || "";
+  const userInitials = userName
+    .split(" ")
+    .map(name => name.charAt(0))
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+
+  const handleLogout = async () => {
+    try {
+      await signOut({ redirect: false });
+      router.push("/");
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
+  };
+
   return (
     <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-primary-bg px-6 pb-4">
       <div className="flex h-16 shrink-0 items-center">
         <h1 className="text-3xl font-serif font-bold text-logo-green">Qode</h1>
       </div>
-      <nav className="flex flex-1 flex-col">
-        <ul role="list" className="flex flex-1 flex-col gap-y-7">
+      <nav className="flex flex-1 flex-col justify-center">
+        <ul role="list" className="flex flex-col gap-y-7">
           <li>
             <ul role="list" className="-mx-2 space-y-1">
               {navigation.map((item) => (
@@ -119,6 +135,26 @@ function SidebarContent({ pathname }: { pathname: string }) {
           </li>
         </ul>
       </nav>
+      <div className="mt-auto">
+        <div className="flex items-center gap-x-4 lg:gap-x-6">
+          <div className="flex items-center gap-x-3">
+            <div className="h-8 w-8 rounded-full bg-logo-green flex items-center justify-center">
+              <span className="text-sm font-medium text-button-text">{userInitials}</span>
+            </div>
+            <div className="hidden lg:flex lg:flex-col">
+              <p className="text-sm font-medium text-card-text">{userName}</p>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleLogout}
+              className="text-card-text-secondary hover:text-logo-green"
+            >
+              <ArrowRightOnRectangleIcon className="h-5 w-5" />
+            </Button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

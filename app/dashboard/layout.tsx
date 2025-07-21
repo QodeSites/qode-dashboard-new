@@ -1,25 +1,29 @@
-"use client"
+"use client";
 
-import type React from "react"
-import { useState } from "react"
-import { Sidebar } from "@/components/sidebar"
-import  Header  from "@/components/header"
+import { useState } from "react";
+import { Sidebar } from "@/components/sidebar";
+import Header from "@/components/header";
 
+// Define the props interface for DashboardLayout
+interface DashboardLayoutProps {
+  children: React.ReactNode;
+}
 
-export function DashboardLayout({children}) {
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+// Define the component as a React Functional Component
+const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-primary-bg">
       <Sidebar open={sidebarOpen} setOpen={setSidebarOpen} />
-
       <div className="lg:pl-64">
-        <Header setSidebarOpen={setSidebarOpen} />
-
+    <Header setSidebarOpen={setSidebarOpen} />
         <main className="p-6">
           <div className="max-w-8xl mx-auto">{children}</div>
-        </main>
+        </main> 
       </div>
     </div>
-  )
-}
+  );
+};
+
+export default DashboardLayout;

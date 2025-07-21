@@ -1,3 +1,4 @@
+// app/lib/portfolio-utils.ts
 import { prisma } from "@/lib/prisma";
 import { Decimal } from "@prisma/client/runtime/library";
 
@@ -9,7 +10,6 @@ interface Stats {
   totalProfit: string;
   trailingReturns: {
     fiveDays: string;
-    fifteenDays: string;
     tenDays: string;
     oneMonth: string;
     threeMonths: string;
@@ -40,7 +40,6 @@ interface Stats {
     };
   };
   cashFlows: { date: string; amount: number }[];
-  strategyName: string; // Add this line
 }
 
 // Interface for data fetching strategy
@@ -53,7 +52,6 @@ interface DataFetchingStrategy {
   getFirstNav(qcode: string): Promise<{ nav: number; date: Date } | null>;
   getNavAtDate(qcode: string, targetDate: Date, direction: 'before' | 'after' | 'closest'): Promise<{ nav: number; date: Date } | null>;
   getCashFlows?(qcode: string): Promise<{ date: Date; amount: number }[]>;
-  getStrategyName(): string; // Added method to return strategy name
 }
 
 // Strategy for Managed Accounts (Jainam)
@@ -82,44 +80,12 @@ class JainamManagedStrategy implements DataFetchingStrategy {
     };
   }
 
-  async getPortfolioReturns(qcode: string): Promise<number> {
-    try {
-      const portfolioReturn = await prisma.master_sheet.aggregate({
-        where: { qcode, system_tag: "Jainam Total Portfolio Exposure", daily_p_l: { not: null } },
-        _sum: { daily_p_l: true },
-      });
-      return Number(portfolioReturn._sum.daily_p_l) || 0;
-    } catch (error) {
-      console.error(`Error calculating portfolio returns for qcode ${qcode}:`, error);
-      return 0;
-    }
-  }
-
   async getTotalProfit(qcode: string): Promise<number> {
     const profitSum = await prisma.master_sheet.aggregate({
       where: { qcode, system_tag: "Jainam Total Portfolio Exposure" },
       _sum: { pnl: true },
     });
     return Number(profitSum._sum.pnl) || 0;
-  }
-
-  async getCashFlows(qcode: string): Promise<{ date: Date; amount: number }[]> {
-    const rows = await prisma.master_sheet.findMany({
-      where: {
-        qcode,
-        system_tag: "Jainam Total Portfolio Deposit",
-        capital_in_out: {
-          not: null,
-          not: new Decimal(0),
-        },
-      },
-      select: { date: true, capital_in_out: true },
-      orderBy: { date: "asc" },
-    });
-    return rows.map(r => ({
-      date: r.date,
-      amount: Number(r.capital_in_out),
-    }));
   }
 
   async getHistoricalData(qcode: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]> {
@@ -175,10 +141,6 @@ class JainamManagedStrategy implements DataFetchingStrategy {
     }
     return { nav: Number(result.nav), date: result.date };
   }
-
-  getStrategyName(): string {
-    return "Jainam Managed Strategy";
-  }
 }
 
 // Strategy for Managed Accounts (Zerodha)
@@ -208,57 +170,11 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
 
   async getPortfolioReturns(qcode: string): Promise<number> {
     try {
-      // Fetch the earliest NAV
-      const firstNavRecord = await prisma.master_sheet.findFirst({
-        where: {
-          qcode,
-          system_tag: "Total Portfolio Value",
-          nav: { not: null },
-        },
-        orderBy: { date: "asc" },
-        select: { nav: true, date: true },
+      const portfolioReturn = await prisma.master_sheet.aggregate({
+        where: { qcode, system_tag: "Total Portfolio Value", daily_p_l: { not: null } },
+        _sum: { daily_p_l: true },
       });
-
-      // Fetch the latest NAV
-      const latestNavRecord = await prisma.master_sheet.findFirst({
-        where: {
-          qcode,
-          system_tag: "Total Portfolio Value",
-          nav: { not: null },
-        },
-        orderBy: { date: "desc" },
-        select: { nav: true, date: true },
-      });
-
-      // Fetch total capital inflows/outflows between the earliest and latest dates
-      const capitalFlows = await prisma.master_sheet.aggregate({
-        where: {
-          qcode,
-          system_tag: "Total Portfolio Value",
-          capital_in_out: { not: null },
-        },
-        _sum: { capital_in_out: true },
-      });
-
-      if (!firstNavRecord || !latestNavRecord) {
-        return 0;
-      }
-
-      const originalInitialNav = Number(firstNavRecord.nav) || 0;
-      const finalNav = Number(latestNavRecord.nav) || 0;
-      const totalCapitalInOut = Number(capitalFlows._sum.capital_in_out) || 0;
-
-      // Normalize initial NAV to 100 if it's not already 100
-      const initialNav = originalInitialNav !== 100 ? 100 : originalInitialNav;
-
-      console.log('finalNav', finalNav);
-      console.log('initialNav', initialNav);
-
-      // Calculate return: (Final NAV / Initial NAV - 1) * 100
-      const portfolioReturn = initialNav !== 0 ? ((finalNav / initialNav) - 1) * 100 : 0;
-      console.log('portfolioReturn',portfolioReturn)
-
-      return portfolioReturn;
+      return Number(portfolioReturn._sum.daily_p_l) || 0;
     } catch (error) {
       console.error(`Error calculating portfolio returns for qcode ${qcode}:`, error);
       return 0;
@@ -317,7 +233,7 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
     if (!record) return null;
     return { nav: Number(record.nav), date: record.date };
   }
-
+  
   async getNavAtDate(qcode: string, targetDate: Date, direction: 'before' | 'after' | 'closest'): Promise<{ nav: number; date: Date } | null> {
     let whereClause: any = { qcode, system_tag: "Total Portfolio Value", nav: { not: null } };
     let orderBy: any = { date: "desc" };
@@ -345,10 +261,6 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
       return null;
     }
     return { nav: Number(result.nav), date: result.date };
-  }
-
-  getStrategyName(): string {
-    return "Qode Yield Enhancer";
   }
 }
 
@@ -385,19 +297,6 @@ class PmsStrategy implements DataFetchingStrategy {
       nav: Number(record.nav) || 0,
       date: record.report_date,
     };
-  }
-
-  async getPortfolioReturns(qcode: string): Promise<number> {
-    try {
-      const portfolioReturn = await prisma.pms_master_sheet.aggregate({
-        where: { qcode, daily_p_l: { not: null } },
-        _sum: { daily_p_l: true },
-      });
-      return Number(portfolioReturn._sum.daily_p_l) || 0;
-    } catch (error) {
-      console.error(`Error calculating portfolio returns for qcode ${qcode}:`, error);
-      return 0;
-    }
   }
 
   async getTotalProfit(qcode: string): Promise<number> {
@@ -481,10 +380,6 @@ class PmsStrategy implements DataFetchingStrategy {
     }
     return { nav: Number(result.nav), date: result.report_date };
   }
-
-  getStrategyName(): string {
-    return "PMS Strategy";
-  }
 }
 
 // Strategy factory to select the appropriate strategy
@@ -522,48 +417,22 @@ export async function getUserQcodes(icode: string): Promise<{ qcode: string; acc
   }
 }
 
+// Helper function to get quarter from month
+const getQuarter = (month: number): string => {
+  if (month < 3) return "q1";
+  if (month < 6) return "q2";
+  if (month < 9) return "q3";
+  return "q4";
+};
+
 // Helper function to get month name
 const getMonthName = (month: number): string => {
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   return monthNames[month];
 };
 
-function getNavEntriesAgo(
-  equityCurve: { date: string; value: number }[],
-  daysBack: number
-): { date: string; value: number } | null {
-  if (equityCurve.length === 0) return null;
-
-  // 1) Sort ascending
-  const sorted = equityCurve
-    .map(e => ({ date: new Date(e.date), value: e.value }))
-    .sort((a, b) => a.date.getTime() - b.date.getTime());
-
-  // 2) Compute calendar target date
-  const latest = sorted[sorted.length - 1].date;
-  const target = new Date(latest);
-  target.setDate(target.getDate() - daysBack);
-
-  console.log(`DEBUG: target calendar date = ${target.toISOString().slice(0,10)}`);
-
-  // 3) Filter all entries <= target
-  const candidates = sorted.filter(e => e.date.getTime() <= target.getTime());
-  if (candidates.length === 0) {
-    console.log(`DEBUG: no data on or before ${target.toISOString().slice(0,10)}`);
-    return null;
-  }
-
-  // 4) Pick the _last_ one (closest to target)
-  const pick = candidates[candidates.length - 1];
-  console.log(
-    `DEBUG: picked ${pick.value.toFixed(4)} on ${pick.date.toISOString().slice(0,10)}`
-  );
-
-  return { date: pick.date.toISOString().slice(0,10), value: pick.value };
-}
-
 // Calculate portfolio metrics
-export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: string; account_type: string; broker: string }[]): Promise<Stats | null> {
+export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: string; account_type: string; broker: string }[]): Promise<any> {
   try {
     if (!qcodesWithDetails.length) {
       console.log("No qcodes provided for portfolio metrics calculation");
@@ -580,18 +449,32 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
     let accountMaxDrawdowns: { [qcode: string]: number } = {};
     let accountCurrentDrawdowns: { [qcode: string]: number } = {};
 
-    // For weighted returns calculation (used only for MDD and currentDD)
+    // For weighted returns calculation
     const portfolioValues: { [qcode: string]: number } = {};
+    const accountReturns: { [period: string]: { [qcode: string]: number } } = {};
     const navCurveMap = new Map<string, { totalNav: number; count: number }>();
     const drawdownCurveMap = new Map<string, { total: number; count: number }>();
 
-    // Structure for quarterly/monthly PnL tracking
+    // FIXED: Better structure for quarterly/monthly PnL tracking
+    const quarterlyPnl: {
+      [year: string]: {
+        [quarter: string]: {
+          startNav: number;
+          endNav: number;
+          capitalInOut: number;
+          cashPnL: number;
+          accountCount: number;
+        };
+      };
+    } = {};
+
     const monthlyPnl: {
       [yearMonth: string]: {
         startNav: number;
         endNav: number;
         capitalInOut: number;
         cashPnL: number;
+        accountCount: number;
       };
     } = {};
 
@@ -600,11 +483,15 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
       total: number;
     } = { transactions: [], total: 0 };
 
-    const periodLabels = ["fiveDays", "tenDays", "fifteenDays", "oneMonth", "threeMonths", "sixMonths", "oneYear", "twoYears", "fiveYears", "sinceInception", "MDD", "currentDD"];
+    // Initialize account returns structure
+    const periodLabels = ["fiveDays", "tenDays", "oneMonth", "threeMonths", "sixMonths", "oneYear", "twoYears", "fiveYears", "sinceInception", "MDD", "currentDD"];
+    periodLabels.forEach(label => {
+      accountReturns[label] = {};
+    });
 
     // Process each qcode
     for (const { qcode, account_type, broker } of qcodesWithDetails) {
-      console.log(`Processing qcode: ${qcode}, type: ${account_type}, broker: ${broker}, strategy: ${getDataFetchingStrategy({ account_type, broker }).getStrategyName()}`);
+      console.log(`Processing qcode: ${qcode}, type: ${account_type}, broker: ${broker}`);
       const strategy = getDataFetchingStrategy({ account_type, broker });
 
       // 1. Amount Deposited
@@ -636,68 +523,174 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
         );
       }
 
-      // 6. Historical Data for NAV and Drawdown Curves
-      const historicalData = await strategy.getHistoricalData(qcode);
-      historicalData.sort((a, b) => a.date.getTime() - b.date.getTime());
+      // 6. Get latest NAV for calculations
+      if (!latestExposure?.nav) continue;
+      const latestNavData = { nav: latestExposure.nav, date: latestExposure.date };
+      const asOfDate = latestNavData.date;
 
-      if (historicalData.length === 0) {
-        console.log(`DEBUG: No historical data for qcode ${qcode}, skipping`);
-        continue;
+      const MS_PER_DAY = 24 * 60 * 60 * 1000;
+      const periods = [
+        { date: new Date(asOfDate.getTime() - 5 * MS_PER_DAY), label: "fiveDays" },
+        { date: new Date(asOfDate.getTime() - 10 * MS_PER_DAY), label: "tenDays" },
+        { date: new Date(asOfDate.getTime() - 30 * MS_PER_DAY), label: "oneMonth" },
+        { date: new Date(asOfDate.getTime() - 90 * MS_PER_DAY), label: "threeMonths" },
+        { date: new Date(asOfDate.getTime() - 180 * MS_PER_DAY), label: "sixMonths" },
+        { date: new Date(asOfDate.getTime() - 365 * MS_PER_DAY), label: "oneYear" },
+        { date: new Date(asOfDate.getTime() - 2 * 365 * MS_PER_DAY), label: "twoYears" },
+        { date: new Date(asOfDate.getTime() - 5 * 365 * MS_PER_DAY), label: "fiveYears" },
+      ];
+
+      // Since inception calculation
+      const firstNav = await strategy.getFirstNav(qcode);
+      if (firstNav) {
+        const startNav = firstNav.nav;
+        const endNav = latestNavData.nav;
+        const sinceInceptionReturn = startNav > 0 ? ((endNav - startNav) / startNav) * 100 : 0;
+        accountReturns.sinceInception[qcode] = sinceInceptionReturn;
+        console.log(`Qcode ${qcode} - Since Inception: ${startNav} -> ${endNav} = ${sinceInceptionReturn.toFixed(2)}%`);
+      }
+
+      // Calculate returns for each period
+      for (const period of periods) {
+        const periodStartData = await strategy.getNavAtDate(qcode, period.date, 'before');
+        if (periodStartData) {
+          const startNav = periodStartData.nav;
+          const endNav = latestNavData.nav;
+          const periodReturn = startNav > 0 ? ((endNav - startNav) / startNav) * 100 : 0;
+          accountReturns[period.label][qcode] = periodReturn;
+          console.log(`DEBUG: Qcode ${qcode} - ${period.label}: startNav=${startNav.toFixed(4)}, endNav=${endNav.toFixed(4)}, return=${periodReturn.toFixed(2)}%, startDate=${periodStartData.date.toISOString().split("T")[0]}, endDate=${latestNavData.date.toISOString().split("T")[0]}`);
+        } else {
+          console.log(`DEBUG: Qcode ${qcode} - ${period.label}: No start data found for date ${period.date.toISOString().split("T")[0]}`);
+        }
       }
 
       // Calculate MDD for the account
+      // Calculate returns for each period - UPDATED LOGIC
+      const historicalData = await strategy.getHistoricalData(qcode);
+      historicalData.sort((a, b) => a.date.getTime() - b.date.getTime());
+      
+      if (historicalData.length === 0) continue;
+      
+      // Get the latest data point from historical data
+      const latestHistoricalData = historicalData[historicalData.length - 1];
+      const currentNav = latestHistoricalData.nav;
+      const currentDate = latestHistoricalData.date;
+      
+      // Define periods in days
+      const periodDays = {
+        fiveDays: 5,
+        tenDays: 10,
+        oneMonth: 30,
+        threeMonths: 90,
+        sixMonths: 180,
+        oneYear: 365,
+        twoYears: 730,
+        fiveYears: 1825
+      };
+
+      for (const period of periods) {
+        const periodLabel = period.label;
+        const days = periodDays[periodLabel];
+        
+        if (days) {
+          const targetDate = new Date(currentDate.getTime() - days * 24 * 60 * 60 * 1000);
+          
+          // Find the closest data point to the target date (at or before)
+          let startData = null;
+          let minDiff = Infinity;
+          
+          for (const dataPoint of historicalData) {
+            const dateDiff = targetDate.getTime() - dataPoint.date.getTime();
+            
+            // We want data at or before the target date
+            if (dateDiff >= 0 && dateDiff < minDiff) {
+              minDiff = dateDiff;
+              startData = dataPoint;
+            }
+          }
+          
+          if (startData) {
+            const startNav = startData.nav;
+            const periodReturn = startNav > 0 ? ((currentNav - startNav) / startNav) * 100 : 0;
+            accountReturns[periodLabel][qcode] = periodReturn;
+            console.log(`DEBUG: Qcode ${qcode} - ${periodLabel}: startNav=${startNav.toFixed(4)} (${startData.date.toISOString().split("T")[0]}), endNav=${currentNav.toFixed(4)} (${currentDate.toISOString().split("T")[0]}), return=${periodReturn.toFixed(4)}%`);
+          } else {
+            console.log(`DEBUG: Qcode ${qcode} - ${periodLabel}: No data found for period (need data from ${targetDate.toISOString().split("T")[0]} or earlier)`);
+          }
+        }
+      }
+
+      // Since inception calculation - UPDATED LOGIC
+      if (historicalData.length > 0) {
+        const firstData = historicalData[0];
+        const startNav = firstData.nav;
+        const endNav = currentNav;
+        const sinceInceptionReturn = startNav > 0 ? ((endNav - startNav) / startNav) * 100 : 0;
+        accountReturns.sinceInception[qcode] = sinceInceptionReturn;
+        console.log(`Qcode ${qcode} - Since Inception: ${startNav.toFixed(4)} (${firstData.date.toISOString().split("T")[0]}) -> ${endNav.toFixed(4)} (${currentDate.toISOString().split("T")[0]}) = ${sinceInceptionReturn.toFixed(4)}%`);
+      }
+
+      // Calculate MDD for the account - UPDATED LOGIC
       let maxDrawdownForAccount = 0;
       let peakNav = 0;
+      
       for (const entry of historicalData) {
         peakNav = Math.max(peakNav, entry.nav);
         const drawdown = peakNav > 0 ? ((peakNav - entry.nav) / peakNav) * 100 : 0;
         maxDrawdownForAccount = Math.max(maxDrawdownForAccount, drawdown);
       }
+      
+      // Current drawdown calculation - NEW
+      const currentDrawdown = peakNav > 0 ? ((peakNav - currentNav) / peakNav) * 100 : 0;
+      accountCurrentDrawdowns[qcode] = currentDrawdown;
+      
       accountMaxDrawdowns[qcode] = maxDrawdownForAccount;
       maxDrawdown = Math.max(maxDrawdown, maxDrawdownForAccount);
 
-      // Current drawdown calculation
-      const latestHistoricalData = historicalData[historicalData.length - 1];
-      const currentNav = latestHistoricalData.nav;
-      const currentDrawdown = peakNav > 0 ? ((peakNav - currentNav) / peakNav) * 100 : 0;
-      accountCurrentDrawdowns[qcode] = currentDrawdown;
+      // 7. Monthly and Quarterly PnL calculation - UPDATED LOGIC
+      const monthlyData: { [yearMonth: string]: { entries: any[], startNav?: number, endNav?: number } } = {};
 
-      // NAV and Drawdown Curves
+      // Group historical data by month
       for (const entry of historicalData) {
         const dateKey = entry.date.toISOString().split("T")[0];
+        const year = entry.date.getUTCFullYear();
+        const month = entry.date.getUTCMonth();
+        const yearMonth = `${year}-${String(month + 1).padStart(2, '0')}`;
+
+        // NAV and Drawdown Curves
         navCurveMap.set(dateKey, {
           totalNav: (navCurveMap.get(dateKey)?.totalNav || 0) + entry.nav,
           count: (navCurveMap.get(dateKey)?.count || 0) + 1,
         });
-
-        const entryDrawdown = entry.drawdown;
+        
+        // Calculate drawdown for this entry
+        const entryDrawdown = peakNav > 0 ? ((peakNav - entry.nav) / peakNav) * 100 : 0;
         drawdownCurveMap.set(dateKey, {
           total: (drawdownCurveMap.get(dateKey)?.total || 0) + entryDrawdown,
           count: (drawdownCurveMap.get(dateKey)?.count || 0) + 1,
         });
 
+        // Group by month for proper start/end calculation
+        if (!monthlyData[yearMonth]) {
+          monthlyData[yearMonth] = { entries: [] };
+        }
+        monthlyData[yearMonth].entries.push(entry);
+
+        // Cash In/Out
         if (entry.capitalInOut !== 0) {
           cashInOut.transactions.push({ date: dateKey, amount: entry.capitalInOut });
           cashInOut.total += entry.capitalInOut;
         }
       }
 
-      // Monthly PnL calculation
-      const monthlyData: { [yearMonth: string]: { entries: any[] } } = {};
-      for (const entry of historicalData) {
-        const year = entry.date.getUTCFullYear();
-        const month = entry.date.getUTCMonth();
-        const yearMonth = `${year}-${String(month + 1).padStart(2, '0')}`;
-        if (!monthlyData[yearMonth]) {
-          monthlyData[yearMonth] = { entries: [] };
-        }
-        monthlyData[yearMonth].entries.push(entry);
-      }
-
+      // Calculate monthly PnL properly - UPDATED LOGIC
       Object.keys(monthlyData).forEach(yearMonth => {
         const entries = monthlyData[yearMonth].entries.sort((a, b) => a.date.getTime() - b.date.getTime());
         if (entries.length === 0) return;
 
+        // Use first and last entries for the month
+        const firstEntry = entries[0];
+        const lastEntry = entries[entries.length - 1];
         const totalCapitalInOut = entries.reduce((sum, entry) => sum + entry.capitalInOut, 0);
         const totalCashPnL = entries.reduce((sum, entry) => sum + entry.pnl, 0);
 
@@ -707,326 +700,212 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
             endNav: 0,
             capitalInOut: 0,
             cashPnL: 0,
+            accountCount: 0
           };
         }
 
-        const startEntry = entries[0];
-        const endEntry = entries[entries.length - 1];
-        monthlyPnl[yearMonth].startNav = startEntry.nav;
-        monthlyPnl[yearMonth].endNav = endEntry.nav;
+        // Accumulate properly across accounts
+        monthlyPnl[yearMonth].startNav += firstEntry.nav;
+        monthlyPnl[yearMonth].endNav += lastEntry.nav;
         monthlyPnl[yearMonth].capitalInOut += totalCapitalInOut;
         monthlyPnl[yearMonth].cashPnL += totalCashPnL;
+        monthlyPnl[yearMonth].accountCount += 1;
+      });
 
-        console.log(
-          `DEBUG Monthly PnL ${yearMonth}: ` +
-          `startDate=${startEntry.date.toISOString().split('T')[0]}, startNav=${startEntry.nav.toFixed(4)}; ` +
-          `endDate=${endEntry.date.toISOString().split('T')[0]}, endNav=${endEntry.nav.toFixed(4)}`
-        );
-        console.log(
-          `DEBUG Monthly PnL - ${yearMonth}: startNav=${monthlyPnl[yearMonth].startNav}, ` +
-          `endNav=${monthlyPnl[yearMonth].endNav}, capitalInOut=${monthlyPnl[yearMonth].capitalInOut}, ` +
-          `cashPnL=${monthlyPnl[yearMonth].cashPnL}`
-        );
+      // Calculate quarterly data from monthly data - UPDATED LOGIC
+      Object.keys(monthlyData).forEach(yearMonth => {
+        const [year, month] = yearMonth.split('-');
+        const monthNum = parseInt(month);
+        const quarter = `q${Math.ceil(monthNum / 3)}`;
+
+        if (!quarterlyPnl[year]) {
+          quarterlyPnl[year] = {};
+        }
+        if (!quarterlyPnl[year][quarter]) {
+          quarterlyPnl[year][quarter] = {
+            startNav: 0,
+            endNav: 0,
+            capitalInOut: 0,
+            cashPnL: 0,
+            accountCount: 0
+          };
+        }
+
+        const entries = monthlyData[yearMonth].entries.sort((a, b) => a.date.getTime() - b.date.getTime());
+        if (entries.length > 0) {
+          const firstEntry = entries[0];
+          const lastEntry = entries[entries.length - 1];
+          const totalCapitalInOut = entries.reduce((sum, entry) => sum + entry.capitalInOut, 0);
+          const totalCashPnL = entries.reduce((sum, entry) => sum + entry.pnl, 0);
+
+          quarterlyPnl[year][quarter].startNav += firstEntry.nav;
+          quarterlyPnl[year][quarter].endNav += lastEntry.nav;
+          quarterlyPnl[year][quarter].capitalInOut += totalCapitalInOut;
+          quarterlyPnl[year][quarter].cashPnL += totalCashPnL;
+          quarterlyPnl[year][quarter].accountCount += 1;
+        }
       });
     }
 
-    // Calculate equityCurve after processing all qcodes
-    let equityCurve = Array.from(navCurveMap.entries())
-      .map(([date, { totalNav }]) => ({
+    // Calculate weighted trailing returns, including MDD and currentDD
+    // Calculate weighted trailing returns, including MDD and currentDD
+const totalPortfolioValue = Object.values(portfolioValues).reduce((sum, value) => sum + value, 0);
+console.log('=== RAW TRAILING‐RETURNS INPUT DATA ===');
+
+const finalTrailingReturns: { [key: string]: number } = {};
+periodLabels.forEach(period => {
+  let weightedReturn = 0;
+  let totalWeight = 0;
+  if (period === "MDD") {
+    console.log(`DEBUG: Calculating weighted MDD`);
+    Object.keys(accountMaxDrawdowns).forEach(qcode => {
+      const weight = portfolioValues[qcode] || 0;
+      const drawdownValue = accountMaxDrawdowns[qcode] || 0;
+      weightedReturn += drawdownValue * weight;
+      totalWeight += weight;
+      console.log(`DEBUG: Qcode ${qcode} - MDD: drawdown=${drawdownValue.toFixed(2)}%, weight=${weight.toFixed(2)}, contribution=${(drawdownValue * weight).toFixed(2)}`);
+    });
+  } else if (period === "currentDD") {
+    console.log(`DEBUG: Calculating weighted currentDD`);
+    Object.keys(accountCurrentDrawdowns).forEach(qcode => {
+      const weight = portfolioValues[qcode] || 0;
+      const drawdownValue = accountCurrentDrawdowns[qcode] || 0;
+      weightedReturn += drawdownValue * weight;
+      totalWeight += weight;
+      console.log(`DEBUG: Qcode ${qcode} - currentDD: drawdown=${drawdownValue.toFixed(2)}%, weight=${weight.toFixed(2)}, contribution=${(drawdownValue * weight).toFixed(2)}`);
+    });
+  } else {
+    console.log(`DEBUG: Calculating weighted ${period}`);
+    Object.keys(accountReturns[period]).forEach(qcode => {
+      const weight = portfolioValues[qcode] || 0;
+      const returnValue = accountReturns[period][qcode] || 0;
+      weightedReturn += returnValue * weight;
+      totalWeight += weight;
+      console.log(`DEBUG: Qcode ${qcode} - ${period}: return=${returnValue.toFixed(2)}%, weight=${weight.toFixed(2)}, contribution=${(returnValue * weight).toFixed(2)}`);
+    });
+  }
+  finalTrailingReturns[period] = totalWeight > 0 ? weightedReturn / totalWeight : 0;
+  console.log(`DEBUG: Final weighted ${period}: ${finalTrailingReturns[period].toFixed(2)}%, totalWeight=${totalWeight.toFixed(2)}`);
+});   
+
+    // Convert NAV and drawdown curves to sorted arrays
+    const equityCurve = Array.from(navCurveMap.entries())
+      .map(([date, { totalNav, count }]) => ({
         date,
-        value: totalNav,
+        value: count > 0 ? totalNav / count : 0,
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
-
-    if (equityCurve.length > 0 && equityCurve[0].value !== 100) {
-      const firstDate = new Date(equityCurve[0].date);
-      const prev = new Date(firstDate);
-      prev.setUTCDate(firstDate.getUTCDate() - 1);
-      const prevDateStr = prev.toISOString().split("T")[0];
-      equityCurve.unshift({ date: prevDateStr, value: 100 });
-    }
-
-    const initialAnchorNav = equityCurve.length ? equityCurve[0].value : 0;
-    const initialAnchorYM = equityCurve.length ? equityCurve[0].date.slice(0, 7) : "";
-
-    const initialAnchorDate = equityCurve.length ? new Date(equityCurve[0].date) : null;
-    const initialAnchorQtr = initialAnchorDate
-      ? `q${Math.ceil((initialAnchorDate.getUTCMonth() + 1) / 3)}`
-      : "";
-
+      console.log('equity curve', equityCurve)
     const drawdownCurve = Array.from(drawdownCurveMap.entries())
       .map(([date, { total, count }]) => ({
         date,
-        value: count > 0 ? (total / count) : 0,
+        value: count > 0 ? total / count : 0,
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
-    // Set monthlyPnl startNav and endNav using equityCurve
-    Object.keys(monthlyPnl).forEach(yearMonth => {
-      const [year, month] = yearMonth.split('-');
-      const monthNum = parseInt(month) - 1;
-      const startDate = new Date(Date.UTC(parseInt(year), monthNum, 1));
-      const endDate = new Date(Date.UTC(parseInt(year), monthNum + 1, 0));
-      const startDateStr = startDate.toISOString().split('T')[0];
-      const endDateStr = endDate.toISOString().split('T')[0];
-
-      // Sort equity curve by date to ensure proper ordering
-      const sortedEquityCurve = equityCurve.sort((a, b) => a.date.localeCompare(b.date));
-
-      let startEntry = null;
-      for (let i = 0; i < sortedEquityCurve.length; i++) {
-        if (sortedEquityCurve[i].date >= startDateStr) {
-          startEntry = sortedEquityCurve[i];
-          break;
-        }
-      }
-      if (!startEntry) {
-        startEntry = sortedEquityCurve[0];
-      }
-
-      let endEntry = null;
-      for (let i = 0; i < sortedEquityCurve.length; i++) {
-        if (sortedEquityCurve[i].date <= endDateStr) {
-          endEntry = sortedEquityCurve[i];
-        } else {
-          break;
-        }
-      }
-      if (!endEntry) {
-        endEntry = sortedEquityCurve[sortedEquityCurve.length - 1];
-      }
-
-      console.log(
-        `DEBUG Monthly PnL ${yearMonth}: ` +
-        `startDate=${startEntry.date}, startNav=${startEntry.value.toFixed(4)}; ` +
-        `endDate=${endEntry.date}, endNav=${endEntry.value.toFixed(4)}`
-      );
-
-      monthlyPnl[yearMonth].startNav = startEntry ? startEntry.value : 0;
-      monthlyPnl[yearMonth].endNav = endEntry ? endEntry.value : 0;
-
-      console.log(
-        `DEBUG Monthly PnL - ${yearMonth}: startNav=${monthlyPnl[yearMonth].startNav}, ` +
-        `endNav=${monthlyPnl[yearMonth].endNav}, capitalInOut=${monthlyPnl[yearMonth].capitalInOut}, ` +
-        `cashPnL=${monthlyPnl[yearMonth].cashPnL}`
-      );
-    });
-
-    // Format monthly PnL
-    const formattedMonthlyPnl = Object.keys(monthlyPnl)
-      .sort((a, b) => a.localeCompare(b))
-      .reduce((acc, yearMonth, index, yearMonths) => {
-        const [year, month] = yearMonth.split('-');
-        const monthNum = parseInt(month) - 1;
-        const monthName = getMonthName(monthNum);
-
-        if (!acc[year]) {
-          acc[year] = {
-            months: {},
-            totalPercent: 0,
-            totalCash: 0,
-            totalCapitalInOut: 0,
-          };
-        }
-
-        const data = monthlyPnl[yearMonth];
-        let totalStartNav = data.startNav;
-        const totalEndNav = data.endNav;
-        const totalCapitalInOut = data.capitalInOut;
-        const monthCash = data.cashPnL;
-
-        if (yearMonth === initialAnchorYM) {
-          totalStartNav = initialAnchorNav;
-        } else if (index > 0) {
-          const prevYearMonth = yearMonths[index - 1];
-          totalStartNav = monthlyPnl[prevYearMonth].endNav;
-        }
-
-        const monthReturn = totalStartNav > 0
-          ? ((totalEndNav - totalStartNav) / totalStartNav) * 100
-          : 0;
-
-        acc[year].months[monthName] = {
-          percent: monthReturn.toFixed(2),
-          cash: monthCash.toFixed(2),
-          capitalInOut: totalCapitalInOut.toFixed(2),
-        };
-
-        acc[year].totalCash += monthCash;
-        acc[year].totalCapitalInOut += totalCapitalInOut;
-
-        return acc;
-      }, {} as Stats["monthlyPnl"]);
-
-    // Calculate yearly percentage totals by compounding monthly returns
-    Object.keys(formattedMonthlyPnl).forEach(year => {
-      const monthNames = Object.keys(formattedMonthlyPnl[year].months);
-      const monthOrder = ['January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'];
-      const sortedMonths = monthNames.sort((a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b));
-
-      let compoundedReturn = 1;
-      sortedMonths.forEach(month => {
-        const monthReturn = Number(formattedMonthlyPnl[year].months[month].percent) / 100;
-        compoundedReturn *= (1 + monthReturn);
-      });
-
-      const yearReturn = ((compoundedReturn - 1) * 100).toFixed(2);
-      formattedMonthlyPnl[year].totalPercent = Number(yearReturn);
-      formattedMonthlyPnl[year].totalCash = Number(formattedMonthlyPnl[year].totalCash.toFixed(2));
-      formattedMonthlyPnl[year].totalCapitalInOut = Number(formattedMonthlyPnl[year].totalCapitalInOut.toFixed(2));
-
-      console.log(
-        `DEBUG Yearly PnL - ${year}: totalPercent=${yearReturn}%, ` +
-        `totalCash=${formattedMonthlyPnl[year].totalCash}, ` +
-        `totalCapitalInOut=${formattedMonthlyPnl[year].totalCapitalInOut}`
-      );
-    });
-
-    // Format quarterly PnL
-    const formattedQuarterlyPnl = Object.keys(formattedMonthlyPnl).reduce((acc, year) => {
+    // FIXED: Format quarterly PnL with proper percentage calculation
+    const formattedQuarterlyPnl = Object.keys(quarterlyPnl).reduce((acc, year) => {
       acc[year] = {
         percent: { q1: "0.00", q2: "0.00", q3: "0.00", q4: "0.00", total: "0.00" },
         cash: { q1: "0.00", q2: "0.00", q3: "0.00", q4: "0.00", total: "0.00" },
         yearCash: "0.00",
       };
 
-      const monthOrder = ['January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'];
-      const months = Object.keys(formattedMonthlyPnl[year].months);
-
-      const quarters = {
-        q1: ['January', 'February', 'March'],
-        q2: ['April', 'May', 'June'],
-        q3: ['July', 'August', 'September'],
-        q4: ['October', 'November', 'December'],
-      };
-
+      let yearTotalPercent = 0;
       let yearTotalCash = 0;
-      let yearCompoundedReturn = 1;
+      let yearTotalCapitalInOut = 0;
 
-      Object.keys(quarters).forEach(quarter => {
-        let quarterCompoundedReturn = 1;
-        let quarterCash = 0;
-        let quarterCapitalInOut = 0;
+      ["q1", "q2", "q3", "q4"].forEach(quarter => {
+        if (quarterlyPnl[year][quarter]) {
+          const data = quarterlyPnl[year][quarter];
+          const avgStartNav = data.accountCount > 0 ? data.startNav / data.accountCount : 0;
+          const avgEndNav = data.accountCount > 0 ? data.endNav / data.accountCount : 0;
+          const avgCapitalInOut = data.accountCount > 0 ? data.capitalInOut / data.accountCount : 0;
 
-        const quarterMonths = quarters[quarter].filter(month => months.includes(month));
-        if (quarterMonths.length > 0) {
-          quarterMonths.forEach(month => {
-            const monthReturn = Number(formattedMonthlyPnl[year].months[month].percent) / 100;
-            quarterCompoundedReturn *= (1 + monthReturn);
-            quarterCash += Number(formattedMonthlyPnl[year].months[month].cash);
-            quarterCapitalInOut += Number(formattedMonthlyPnl[year].months[month].capitalInOut);
-          });
+          console.log(avgStartNav)
+          console.log(avgEndNav)
+
+
+          // FIXED: Calculate percentage return properly
+          const percentReturn = avgStartNav > 0 ?
+            ((avgEndNav - avgStartNav) / avgStartNav) * 100 : 0;
+
+
+          acc[year].percent[quarter as keyof typeof acc[string]['percent']] = percentReturn.toFixed(2);
+          acc[year].cash[quarter as keyof typeof acc[string]['cash']] = data.cashPnL.toFixed(2);
+
+          yearTotalPercent += percentReturn;
+          yearTotalCash += data.cashPnL;
+          yearTotalCapitalInOut += data.capitalInOut;
         }
-
-        const quarterReturn = quarterCompoundedReturn !== 1 ? ((quarterCompoundedReturn - 1) * 100).toFixed(2) : "0.00";
-        acc[year].percent[quarter] = quarterReturn;
-        acc[year].cash[quarter] = quarterCash.toFixed(2);
-        yearTotalCash += quarterCash;
-        yearCompoundedReturn *= quarterCompoundedReturn;
       });
 
-      acc[year].percent.total = ((yearCompoundedReturn - 1) * 100).toFixed(2);
+      acc[year].percent.total = yearTotalPercent.toFixed(2);
       acc[year].cash.total = yearTotalCash.toFixed(2);
-      acc[year].yearCash = yearTotalCash.toFixed(2);
+      acc[year].yearCash = yearTotalCapitalInOut.toFixed(2);
 
       return acc;
-    }, {} as Stats["quarterlyPnl"]);
+    }, {} as { [year: string]: { percent: { q1: string; q2: string; q3: string; q4: string; total: string }; cash: { q1: string; q2: string; q3: string; q4: string; total: string }; yearCash: string } });
 
-    // Calculate trailing returns based on equityCurve
-    const finalTrailingReturns: { [key: string]: number } = {};
-    const periodDays = {
-      fiveDays: 5,
-      tenDays: 10,
-      fifteenDays: 15,
-      oneMonth: 30,
-      threeMonths: 90,
-      sixMonths: 180,
-      oneYear: 365,
-      twoYears: 730,
-      fiveYears: 1825,
-      sinceInception: Infinity,
+    // FIXED: Format monthly PnL with proper percentage calculation
+    const formattedMonthlyPnl = Object.keys(monthlyPnl)
+      .sort()
+      .reduce((acc, yearMonth) => {
+        const [year, month] = yearMonth.split('-');
+        const monthIndex = parseInt(month) - 1;
+        const monthName = getMonthName(monthIndex);
+
+        if (!acc[year]) {
+          acc[year] = { months: {}, totalPercent: 0, totalCash: 0, totalCapitalInOut: 0 };
+        }
+
+        const data = monthlyPnl[yearMonth];
+        const avgStartNav = data.accountCount > 0 ? data.startNav / data.accountCount : 0;
+        const avgEndNav = data.accountCount > 0 ? data.endNav / data.accountCount : 0;
+        const avgCapitalInOut = data.accountCount > 0 ? data.capitalInOut / data.accountCount : 0;
+
+        // FIXED: Calculate percentage return properly
+        const percentReturn = avgStartNav > 0 ?
+          ((avgEndNav - avgStartNav) / avgStartNav) * 100 : 0;
+
+        acc[year].months[monthName] = {
+          percent: percentReturn.toFixed(2),
+          cash: data.cashPnL.toFixed(2),
+          capitalInOut: data.capitalInOut.toFixed(2),
+        };
+
+        acc[year].totalPercent += percentReturn;
+        acc[year].totalCash += data.cashPnL;
+        acc[year].totalCapitalInOut += data.capitalInOut;
+
+        return acc;
+      }, {} as { [year: string]: { months: { [month: string]: { percent: string; cash: string; capitalInOut: string } }; totalPercent: number; totalCash: number; totalCapitalInOut: number } });
+
+    // Format cash in/out
+    const formattedCashInOut = {
+      transactions: cashInOut.transactions.map(tx => ({
+        date: tx.date,
+        amount: tx.amount.toFixed(2),
+      })),
+      total: cashInOut.total.toFixed(2),
     };
 
-    periodLabels.forEach(period => {
-      if (period === "MDD" || period === "currentDD") {
-        let weightedValue = 0;
-        let totalWeight = 0;
-        if (period === "MDD") {
-          Object.keys(accountMaxDrawdowns).forEach(qcode => {
-            const weight = portfolioValues[qcode] || 0;
-            const drawdownValue = accountMaxDrawdowns[qcode] || 0;
-            weightedValue += drawdownValue * weight;
-            totalWeight += weight;
-          });
-        } else if (period === "currentDD") {
-          Object.keys(accountCurrentDrawdowns).forEach(qcode => {
-            const weight = portfolioValues[qcode] || 0;
-            const drawdownValue = accountCurrentDrawdowns[qcode] || 0;
-            weightedValue += drawdownValue * weight;
-            totalWeight += weight;
-          });
-        }
-        finalTrailingReturns[period] = totalWeight > 0 ? weightedValue / totalWeight : 0;
-      } else {
-        const latestNavEntry = equityCurve[equityCurve.length - 1];
-        if (!latestNavEntry) {
-          finalTrailingReturns[period] = 0;
-          return;
-        }
-        const startNav = latestNavEntry.value;
-        const startDate = new Date(latestNavEntry.date);
-
-        let endNav = 0;
-        let endDate: Date | null = null;
-
-        console.log(`\nDEBUG TRAILING: period=${period}`);
-        console.log(`  → using latest NAV: ${startNav.toFixed(4)} on ${startDate}`);
-
-        if (period === "sinceInception") {
-          const firstNavEntry = equityCurve[0];
-          if (firstNavEntry) {
-            endNav = firstNavEntry.value;
-            endDate = new Date(firstNavEntry.date);
-            console.log(`  → sinceInception picks first NAV: ${endNav.toFixed(4)} on ${endDate}`);
-          }
-        } else {
-          const days = periodDays[period];
-          const targetEntry = getNavEntriesAgo(equityCurve, days);
-          if (targetEntry) {
-            endNav = targetEntry.value;
-            endDate = new Date(targetEntry.date);
-            console.log(`  → ${days} days ago NAV: ${endNav.toFixed(4)} on ${endDate}`);
-          }
-        }
-
-        if (endNav > 0 && endDate) {
-          const periodReturn = ((startNav / endNav) - 1) * 100;
-          console.log(
-            `  → computed return: ((${startNav.toFixed(4)} / ` +
-            `${endNav.toFixed(4)}) - 1) × 100 = ${periodReturn.toFixed(2)}%`
-          );
-          finalTrailingReturns[period] = periodReturn;
-        } else {
-          finalTrailingReturns[period] = 0;
-        }
-      }
+    // Add totals to monthly PnL
+    Object.keys(formattedMonthlyPnl).forEach(year => {
+      formattedMonthlyPnl[year].totalPercent = parseFloat(formattedMonthlyPnl[year].totalPercent.toFixed(2));
+      formattedMonthlyPnl[year].totalCash = parseFloat(formattedMonthlyPnl[year].totalCash.toFixed(2));
+      formattedMonthlyPnl[year].totalCapitalInOut = parseFloat(formattedMonthlyPnl[year].totalCapitalInOut.toFixed(2));
     });
 
-    const strategy = getDataFetchingStrategy(qcodesWithDetails[0]);
-    const strategyName = strategy.getStrategyName();
-
-
-    // Format final stats
-    const stats: Stats = {
+    // Prepare final metrics
+    const result = {
       amountDeposited: amountDeposited.toFixed(2),
       currentExposure: currentExposure.toFixed(2),
-      return: totalReturn.toFixed(2),
+      return: finalTrailingReturns.sinceInception.toFixed(2),
+      totalReturn: totalReturn.toFixed(2),
       totalProfit: totalProfit.toFixed(2),
       trailingReturns: {
         fiveDays: finalTrailingReturns.fiveDays.toFixed(2),
-        fifteenDays: finalTrailingReturns.fifteenDays.toFixed(2),
         tenDays: finalTrailingReturns.tenDays.toFixed(2),
         oneMonth: finalTrailingReturns.oneMonth.toFixed(2),
         threeMonths: finalTrailingReturns.threeMonths.toFixed(2),
@@ -1039,35 +918,32 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
         currentDD: finalTrailingReturns.currentDD.toFixed(2),
       },
       drawdown: maxDrawdown.toFixed(2),
-      equityCurve,
       drawdownCurve,
+      equityCurve,
       quarterlyPnl: formattedQuarterlyPnl,
-      strategyName,
       monthlyPnl: formattedMonthlyPnl,
-      cashFlows: allCashFlows.sort((a, b) => a.date.localeCompare(b.date)),
+      cashInOut: formattedCashInOut,
+      cashFlows: allCashFlows,
     };
 
-   return {
-  ...stats,
-  strategyName
-};
-
+    console.log("Final trailing returns:", result.trailingReturns);
+    return result;
   } catch (error) {
     console.error("Error calculating portfolio metrics:", error);
     return null;
   }
 }
 
+// Format portfolio stats to match Stats interface
 export function formatPortfolioStats(metrics: any): Stats {
   return {
     amountDeposited: metrics?.amountDeposited || "0.00",
     currentExposure: metrics?.currentExposure || "0.00",
-    return: metrics?.return || "0.00",
+    return: metrics?.totalReturn || "0.00",
     totalProfit: metrics?.totalProfit || "0.00",
     trailingReturns: metrics?.trailingReturns || {
       fiveDays: "0.00",
       tenDays: "0.00",
-      fifteenDays: "0.00",
       oneMonth: "0.00",
       threeMonths: "0.00",
       sixMonths: "0.00",
@@ -1083,7 +959,7 @@ export function formatPortfolioStats(metrics: any): Stats {
     drawdownCurve: metrics?.drawdownCurve || [],
     quarterlyPnl: metrics?.quarterlyPnl || {},
     monthlyPnl: metrics?.monthlyPnl || {},
-    cashFlows: metrics?.cashFlows || (metrics?.cashInOut?.transactions || []),
-    strategyName: metrics?.strategyName || "Unknown Strategy", // Add this line
+    cashInOut: metrics?.cashInOut || { transactions: [], total: "0.00" },
+    cashFlows: metrics?.cashFlows || [],
   };
 }

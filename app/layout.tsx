@@ -1,3 +1,5 @@
+
+// layout.tsx - Add overflow prevention to root layout
 import type React from "react"
 import type { Metadata } from "next"
 import { Plus_Jakarta_Sans, Playfair_Display, Inria_Serif } from "next/font/google"
@@ -34,9 +36,13 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${plusJakartaSans.variable} ${playfairDisplay.variable} ${inriaSerif.variable} font-sans antialiased bg-primary-bg min-h-screen`}
+        className={`${plusJakartaSans.variable} ${playfairDisplay.variable} ${inriaSerif.variable} font-sans antialiased bg-primary-bg min-h-screen overflow-x-hidden`}
       >
-        <Providers>{children}</Providers>
+        <Providers>
+          <div className="w-full max-w-full overflow-x-hidden">
+            {children}
+          </div>
+        </Providers>
       </body>
     </html>
   )
