@@ -10,7 +10,7 @@ const HomePage = () => {
   const [loading, setLoading] = useState(true);
   // IMPORTANT: For client-side env variables in Next.js, prefix with NEXT_PUBLIC_
   const key = process.env.NEXT_PUBLIC_GHOST_BLOG_KEY;
-  const url = `https://blogs.qodeinvest.com/ghost/api/content/posts/?key=${key}&filter=tag:qode-dashboard`;
+  const url = `https://portfolio.qodeinvest.com/blogs-api/ghost/api/content/posts/?key=${key}&filter=tag:qode-dashboard`;
 
   useEffect(() => {
     axios
