@@ -44,22 +44,24 @@ jobs:
           ssh -i ~/.ssh/id_rsa -p ${{ secrets.VPS_PORT || 22 }} \
             ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
             set -e
+            set -x  # Enable debug output
 
             cd "${{ secrets.TARGET_DIR }}"
 
-            # Build a fresh Docker image for the client dashboard:
-            # (Name it "client-dashboard-app" unless CONTAINER_NAME overrides)
+            # Ensure docker is available
+            command -v docker >/dev/null 2>&1 || { echo "Docker not found"; exit 1; }
+
+            # Build a fresh Docker image
             IMAGE_NAME="client-dashboard-app"
             docker build -t "$IMAGE_NAME" .
 
             # Stop & remove any existing container
-            if docker ps -q --filter "name=$IMAGE_NAME" >/dev/null; then
+            if [ "$(docker ps -q --filter name=$IMAGE_NAME)" ]; then
               docker stop "$IMAGE_NAME"
               docker rm "$IMAGE_NAME"
             fi
 
-            # Run the new container:
-            # Listen on port 3000 inside; map to host port 3040.
+            # Run the new container
             docker run -d \
               --name "$IMAGE_NAME" \
               -e NODE_ENV=production \
@@ -69,6 +71,5 @@ jobs:
 
             # Clean up dangling images
             docker image prune -f
-
             EOF
         shell: bash
