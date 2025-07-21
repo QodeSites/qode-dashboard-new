@@ -19,23 +19,24 @@ RUN npm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 
-# Ensure the app directory is owned by the existing non-root user sanket
-RUN chown sanket:sanket /app
+# Create a non-root user
+RUN addgroup -g 1001 -S nodejs && adduser -u 1001 -S nextjs
+RUN chown nextjs:nodejs /app
 
 # Copy production-ready artifacts from builder
-COPY --from=builder --chown=sanket:sanket /app/.next ./.next
-COPY --from=builder --chown=sanket:sanket /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 # If Prisma is used at runtime, copy prisma folder and generate client
-COPY --from=builder --chown=sanket:sanket /app/prisma ./prisma
+COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 RUN [ -d "./prisma" ] && npx prisma generate || true
 
 # Install production dependencies
-COPY --from=builder --chown=sanket:sanket /app/package.json ./package.json
-COPY --from=builder --chown=sanket:sanket /app/package-lock.json ./package-lock.json
+COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
+COPY --from=builder --chown=nextjs:nodejs /app/package-lock.json ./package-lock.json
 RUN npm ci --legacy-peer-deps --production && npm cache clean --force
 
-# Switch to non-root user sanket
-USER sanket
+# Switch to non-root user
+USER nextjs
 
 # Expose Next.js default port
 ENV NODE_ENV=production
