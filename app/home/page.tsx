@@ -42,7 +42,7 @@ const HomePage = () => {
       </Head>
       <DashboardLayout>
         <div className="sm:p-2 space-y-6">
-          <h1 className="text-3xl font-bold text-card-text font-heading-bold">Home</h1>
+          <h1 className="text-3xl font-semibold text-card-text-secondary font-heading">Home</h1>
 
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
             <a
