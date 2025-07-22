@@ -54,14 +54,14 @@ export default function LoginPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label htmlFor="identifier" className="block text-sm font-medium text-card-text-secondary mb-1">
-                  Email or IQode
+                  Email or iQode
                 </label>
                 <Input
                   id="identifier"
                   type="text"
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder="Enter your email or IQode"
+                  placeholder="Enter your email or iQode"
                   required
                   className="bg-primary-bg border-card-text-secondary/30 text-card-text placeholder:text-card-text-secondary/60"
                 />
@@ -93,9 +93,9 @@ export default function LoginPage() {
               </Button>
             </form>
 
-            <div className="mt-6 text-center">
+            {/* <div className="mt-6 text-center">
               <p className="text-sm text-card-text-secondary">Demo credentials: admin@qode.com or QUS00003 / password</p>
-            </div>
+            </div> */}
           </CardContent>
         </Card>
       </div>
