@@ -53,7 +53,7 @@ export function TrailingReturnsTable({
     { key: "maxDD", label: "Max DD", duration: null, type: "maxDrawdown" }
   ];
 
-  // Don't filter out zero — only null/undefined/empty/"---" become "no data"
+  // 1. Don’t filter out zero — only null/undefined/empty/“---” become “no data”
   const isValidReturn = (
     value: string | number | null | undefined
   ): boolean => {
@@ -64,6 +64,9 @@ export function TrailingReturnsTable({
     return !isNaN(numValue);
   };
 
+
+
+
   const getSchemeReturn = (periodKey: string) => {
     switch (periodKey) {
       case "5d":
@@ -73,13 +76,13 @@ export function TrailingReturnsTable({
       case "15d":
         return isValidReturn(trailingReturns.fifteenDays) ? trailingReturns.fifteenDays : "-";
       case "1m":
-        return isValidReturn (trailingReturns.oneMonth) ? trailingReturns.oneMonth : "-";
-      case "3m":
-        return isValidReturn(trailingReturns.threeMonths) ? trailingReturns.threeMonths : "-";
+        return isValidReturn(trailingReturns.oneMonth) ? trailingReturns.oneMonth : "-";
       case "1y":
         return isValidReturn(trailingReturns.oneYear) ? trailingReturns.oneYear : "-";
       case "2y":
         return isValidReturn(trailingReturns.twoYears) ? trailingReturns.twoYears : "-";
+      case "3m":
+        return isValidReturn(trailingReturns.threeMonths) ? trailingReturns.threeMonths : "-";
       case "sinceInception":
         return isValidReturn(trailingReturns.sinceInception) ? trailingReturns.sinceInception : "-";
       case "maxDD":
@@ -319,12 +322,13 @@ export function TrailingReturnsTable({
       return isScheme ? schemeValue : benchmarkValue;
     }
 
-    // Return the appropriate value directly - don't require both to have data
-    if (isScheme) {
-      return schemeValue;
-    } else {
-      return benchmarkValue;
+    const bothHaveData = schemeValue !== "-" && benchmarkValue !== "-";
+
+    if (bothHaveData) {
+      return isScheme ? schemeValue : benchmarkValue;
     }
+
+    return "-";
   };
 
   const getReturnColor = (value: string) => {
@@ -339,30 +343,38 @@ export function TrailingReturnsTable({
     if (value === "-" || value === "---" || value === "") return "px-4 py-3 text-center whitespace-nowrap";
     const numValue = parseFloat(value);
     let cellClass = "px-4 py-3 text-center whitespace-nowrap";
+
+    // Only apply green background for positive values
+    // if (numValue > 0) cellClass += " bg-green-100";
+
     return cellClass;
   };
 
-  const formatDisplayValue = (value: string, periodKey: string, isScheme: boolean = true): string => {
+  const formatDisplayValue = (value: string, periodKey: string, isScheme: boolean): string => {
+    // For benchmark returns in periods >= 1 month, always return "-"
+    const periodsGteOneMonth = ["1m", "3m", "1y", "2y", "5y"];
+    if (!isScheme && periodsGteOneMonth.includes(periodKey)) {
+      return "-";
+    }
+
+    // Handle invalid or missing values
     if (value === "-" || value === "" || value === undefined || value === null) {
       return "-";
     }
+
     const numValue = parseFloat(value);
     if (isNaN(numValue)) {
       return "-";
     }
-    
-    // Only apply the "zero to dash" logic for SCHEME returns, not benchmark returns
-    if (isScheme) {
-      // For periods >= 1 month (1m, 3m, 1y, 2y, 5y, sinceInception), show "-" for 0
-      const periodsGteOneMonth = ["1m", "3m", "1y", "2y", "5y", "sinceInception"];
-      if (numValue === 0 && periodsGteOneMonth.includes(periodKey)) {
-        return "-";
-      }
+
+    // For scheme returns in periods >= 1 month, show "-" for 0
+    if (isScheme && numValue === 0 && periodsGteOneMonth.includes(periodKey)) {
+      return "-";
     }
-    
-    // Positive numbers get "+", zero gets no sign (→ "0.00%"), negatives keep their "-"
+
+    // Format valid values: positive numbers get "+", zero gets no sign, negatives keep "-"
     const sign = numValue > 0 ? "+" : "";
-    return `${sign}${numValue}%`;
+    return `${sign}${numValue.toFixed(2)}%`;
   };
 
   return (
@@ -388,7 +400,7 @@ export function TrailingReturnsTable({
                 {allPeriods.map((period) => (
                   <th
                     key={period.key}
-                    className={`text-center px-4 py-2 font-medium text-gray-500 uppercase tracking-wider min-w-[80px]
+                    className={`text-center px-4 py-2  font-medium text-gray-500 uppercase tracking-wider min-w-[80px]
                       ${period.key === "currentDD" ? "border-l-2 border-gray-300" : ""}`}
                   >
                     <div className="truncate text-[10px]" title={period.label}>
@@ -406,7 +418,7 @@ export function TrailingReturnsTable({
                 </td>
                 {allPeriods.map((period) => {
                   const rawValue = getDisplayValue(period.key, true);
-                  const displayValue = formatDisplayValue(rawValue, period.key, true); // isScheme = true
+                  const displayValue = formatDisplayValue(rawValue, period.key); // Pass period.key
                   const cellClass = getCellClass(rawValue);
 
                   return (
@@ -429,7 +441,7 @@ export function TrailingReturnsTable({
                 </td>
                 {allPeriods.map((period) => {
                   const rawValue = getDisplayValue(period.key, false);
-                  const displayValue = formatDisplayValue(rawValue, period.key, false); // isScheme = false
+                  const displayValue = formatDisplayValue(rawValue, period.key); // Pass period.key
                   const cellClass = getCellClass(rawValue);
 
                   return (
@@ -456,6 +468,10 @@ export function TrailingReturnsTable({
             <p><strong>Legend:</strong> 5d = 5 days, 1m = 1 month, 1y = 1 year, DD = Drawdown</p>
             <p><strong>Returns:</strong> Periods under 1 year are presented as absolute, while those over 1 year are annualized</p>
           </div>
+          {/* <div className="flex gap-4">
+            <p className="text-green-600">Green: Positive values</p>
+            <p className="text-red-600">Red: Negative values</p>
+          </div> */}
         </div>
       </div>
     </div>
