@@ -2,6 +2,7 @@
 
 import { useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { useBse500Data } from "@/hooks/useBse500Data";
 
 interface EquityCurvePoint {
@@ -53,19 +54,14 @@ export function TrailingReturnsTable({
     { key: "maxDD", label: "Max DD", duration: null, type: "maxDrawdown" }
   ];
 
-  // 1. Don’t filter out zero — only null/undefined/empty/“---” become “no data”
   const isValidReturn = (
     value: string | number | null | undefined
   ): boolean => {
     if (value === null || value === undefined || value === "---" || value === "") {
       return false;
     }
-    const numValue = parseFloat(String(value));
-    return !isNaN(numValue);
+    return true; // Allow 0.00 to be considered valid
   };
-
-
-
 
   const getSchemeReturn = (periodKey: string) => {
     switch (periodKey) {
@@ -141,7 +137,6 @@ export function TrailingReturnsTable({
     const findNav = (targetDate: Date) => {
       console.log("🔍 Finding NAV for date:", targetDate.toISOString());
 
-      // First, try to find exact match
       const exactMatch = bse500Data.find(point => {
         const pointDate = new Date(point.date);
         return pointDate.toDateString() === targetDate.toDateString();
@@ -157,11 +152,8 @@ export function TrailingReturnsTable({
         return parseFloat(exactMatch.nav);
       }
 
-      // If no exact match, find the closest PREVIOUS date
       let closestPrevious = null;
       let closestPreviousDiff = Infinity;
-
-      // Also track the closest future date as fallback
       let closestFuture = null;
       let closestFutureDiff = Infinity;
 
@@ -169,7 +161,6 @@ export function TrailingReturnsTable({
         const pointDate = new Date(point.date);
         const timeDiff = targetDate.getTime() - pointDate.getTime();
 
-        // If point is before or on target date (previous data)
         if (timeDiff >= 0) {
           if (timeDiff < closestPreviousDiff) {
             closestPreviousDiff = timeDiff;
@@ -179,9 +170,7 @@ export function TrailingReturnsTable({
               date: point.date
             };
           }
-        }
-        // If point is after target date (future data)
-        else {
+        } else {
           const futureDiff = Math.abs(timeDiff);
           if (futureDiff < closestFutureDiff) {
             closestFutureDiff = futureDiff;
@@ -194,7 +183,6 @@ export function TrailingReturnsTable({
         }
       });
 
-      // Prefer previous data, fallback to future if no previous data exists
       const selectedPoint = closestPrevious || closestFuture;
 
       if (selectedPoint) {
@@ -262,7 +250,6 @@ export function TrailingReturnsTable({
       }
     });
 
-    // Drawdown calculations
     console.log("\n📉 Calculating benchmark drawdowns...");
     if (bse500Data.length) {
       let maxDrawdown = 0;
@@ -322,13 +309,11 @@ export function TrailingReturnsTable({
       return isScheme ? schemeValue : benchmarkValue;
     }
 
-    const bothHaveData = schemeValue !== "-" && benchmarkValue !== "-";
-
-    if (bothHaveData) {
-      return isScheme ? schemeValue : benchmarkValue;
+    if (!isScheme && ["1m", "3m", "1y", "2y", "5y"].includes(periodKey)) {
+      return "-";
     }
 
-    return "-";
+    return isScheme ? schemeValue : benchmarkValue;
   };
 
   const getReturnColor = (value: string) => {
@@ -343,23 +328,20 @@ export function TrailingReturnsTable({
     if (value === "-" || value === "---" || value === "") return "px-4 py-3 text-center whitespace-nowrap";
     const numValue = parseFloat(value);
     let cellClass = "px-4 py-3 text-center whitespace-nowrap";
-
-    // Only apply green background for positive values
-    // if (numValue > 0) cellClass += " bg-green-100";
-
     return cellClass;
   };
 
   const formatDisplayValue = (value: string, periodKey: string, isScheme: boolean): string => {
-    // For benchmark returns in periods >= 1 month, always return "-"
-    const periodsGteOneMonth = ["1m", "3m", "1y", "2y", "5y"];
-    if (!isScheme && periodsGteOneMonth.includes(periodKey)) {
+    if (!isScheme && ["1m", "3m", "1y", "2y", "5y"].includes(periodKey)) {
       return "-";
     }
 
-    // Handle invalid or missing values
     if (value === "-" || value === "" || value === undefined || value === null) {
       return "-";
+    }
+
+    if (value === "0.00") {
+      return isScheme ? "0.00%" : "-";
     }
 
     const numValue = parseFloat(value);
@@ -367,12 +349,6 @@ export function TrailingReturnsTable({
       return "-";
     }
 
-    // For scheme returns in periods >= 1 month, show "-" for 0
-    if (isScheme && numValue === 0 && periodsGteOneMonth.includes(periodKey)) {
-      return "-";
-    }
-
-    // Format valid values: positive numbers get "+", zero gets no sign, negatives keep "-"
     const sign = numValue > 0 ? "+" : "";
     return `${sign}${numValue.toFixed(2)}%`;
   };
@@ -400,7 +376,7 @@ export function TrailingReturnsTable({
                 {allPeriods.map((period) => (
                   <th
                     key={period.key}
-                    className={`text-center px-4 py-2  font-medium text-gray-500 uppercase tracking-wider min-w-[80px]
+                    className={`text-center px-4 py-2 font-medium text-gray-500 uppercase tracking-wider min-w-[80px]
                       ${period.key === "currentDD" ? "border-l-2 border-gray-300" : ""}`}
                   >
                     <div className="truncate text-[10px]" title={period.label}>
@@ -411,14 +387,13 @@ export function TrailingReturnsTable({
               </tr>
             </thead>
             <tbody className="divide-y">
-              {/* Scheme Row */}
               <tr className="hover:bg-gray-50 border-gray-300 text-xs">
                 <td className="px-4 py-3 text-start whitespace-nowrap min-w-[100px] font-medium text-gray-900">
                   Scheme (%)
                 </td>
                 {allPeriods.map((period) => {
                   const rawValue = getDisplayValue(period.key, true);
-                  const displayValue = formatDisplayValue(rawValue, period.key); // Pass period.key
+                  const displayValue = formatDisplayValue(rawValue, period.key, true);
                   const cellClass = getCellClass(rawValue);
 
                   return (
@@ -433,15 +408,13 @@ export function TrailingReturnsTable({
                   );
                 })}
               </tr>
-
-              {/* Benchmark Row */}
               <tr className="hover:bg-gray-50 border-gray-300 text-xs">
                 <td className="px-4 py-3 text-start whitespace-nowrap min-w-[100px] font-medium text-gray-900">
                   Benchmark (%)
                 </td>
                 {allPeriods.map((period) => {
                   const rawValue = getDisplayValue(period.key, false);
-                  const displayValue = formatDisplayValue(rawValue, period.key); // Pass period.key
+                  const displayValue = formatDisplayValue(rawValue, period.key, false);
                   const cellClass = getCellClass(rawValue);
 
                   return (
@@ -461,17 +434,12 @@ export function TrailingReturnsTable({
         </div>
       )}
 
-      {/* Legend */}
       <div className="mt-6 pt-4 border-t border-gray-200">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-gray-600">
           <div>
             <p><strong>Legend:</strong> 5d = 5 days, 1m = 1 month, 1y = 1 year, DD = Drawdown</p>
             <p><strong>Returns:</strong> Periods under 1 year are presented as absolute, while those over 1 year are annualized</p>
           </div>
-          {/* <div className="flex gap-4">
-            <p className="text-green-600">Green: Positive values</p>
-            <p className="text-red-600">Red: Negative values</p>
-          </div> */}
         </div>
       </div>
     </div>

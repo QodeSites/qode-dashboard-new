@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,7 +30,6 @@ interface PnlTableProps {
   monthlyPnl: MonthlyPnlData;
 }
 
-// Indian currency formatter
 const formatter = new Intl.NumberFormat("en-IN", {
   style: "currency",
   currency: "INR",
@@ -44,7 +41,7 @@ export function PnlTable({ quarterlyPnl, monthlyPnl }: PnlTableProps) {
   const [viewType, setViewType] = useState<"percent" | "cash">("percent");
 
   const getReturnColor = (value: string) => {
-    if (value === "-" || value === "---" || value === "") return "text-gray-500";
+    if (value === "-" || value === "---") return "text-gray-500";
     const numValue = parseFloat(value.replace(/₹|,/g, ""));
     if (numValue > 0) return "text-black";
     if (numValue < 0) return "text-black";
@@ -55,22 +52,23 @@ export function PnlTable({ quarterlyPnl, monthlyPnl }: PnlTableProps) {
     if (value === "-" || value === "---" || value === "") return "px-4 py-3 text-center whitespace-nowrap";
     const numValue = parseFloat(value.replace(/₹|,/g, ""));
     let cellClass = "px-4 py-3 text-center whitespace-nowrap";
-
     if (numValue > 0) cellClass += " bg-green-100";
-
     return cellClass;
   };
 
-  const formatValue = (value: string | number) => {
-    if (value === "0" || parseFloat(value.toString()) === 0) return "-";
-    return value.toString();
-  };
-
   const formatDisplayValue = (value: string, isPercent: boolean) => {
-    if (!value || value === "0" || parseFloat(value) === 0) return "-";
+    if (value === "-" || value === "" || value === undefined || value === null) {
+      return "-";
+    }
+    if (value === "0.00") {
+      return isPercent ? "0.00%" : "₹0.00";
+    }
     const numValue = parseFloat(value);
+    if (isNaN(numValue)) {
+      return "-";
+    }
     if (isPercent) {
-      return numValue > 0 ? `+${value}%` : `${value}%`;
+      return numValue > 0 ? `+${numValue.toFixed(2)}%` : `${numValue.toFixed(2)}%`;
     } else {
       const absValue = Math.abs(numValue);
       const formattedValue = absValue.toLocaleString('en-IN', {
@@ -269,22 +267,26 @@ export function PnlTable({ quarterlyPnl, monthlyPnl }: PnlTableProps) {
                         : monthlyPnl[year]?.totalCash.toString() || "-"
                     )}>
                       {viewType === "percent"
-                        ? monthlyPnl[year]?.totalPercent && monthlyPnl[year].totalPercent !== 0
-                          ? monthlyPnl[year].totalPercent > 0
-                            ? `+${monthlyPnl[year].totalPercent.toFixed(2)}%`
-                            : `${monthlyPnl[year].totalPercent.toFixed(2)}%`
-                          : "-"
-                        : monthlyPnl[year]?.totalCash && monthlyPnl[year].totalCash !== 0
-                          ? monthlyPnl[year].totalCash >= 0
-                            ? `+₹${Math.abs(monthlyPnl[year].totalCash).toLocaleString('en-IN', {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}`
-                            : `-₹${Math.abs(monthlyPnl[year].totalCash).toLocaleString('en-IN', {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}`
-                          : "-"}
+                        ? monthlyPnl[year]?.totalPercent.toString() === "0.00"
+                          ? "0.00%"
+                          : monthlyPnl[year]?.totalPercent && monthlyPnl[year].totalPercent !== 0
+                            ? monthlyPnl[year].totalPercent > 0
+                              ? `+${monthlyPnl[year].totalPercent.toFixed(2)}%`
+                              : `${monthlyPnl[year].totalPercent.toFixed(2)}%`
+                            : "-"
+                        : monthlyPnl[year]?.totalCash.toString() === "0.00"
+                          ? "₹0.00"
+                          : monthlyPnl[year]?.totalCash && monthlyPnl[year].totalCash !== 0
+                            ? monthlyPnl[year].totalCash >= 0
+                              ? `+₹${Math.abs(monthlyPnl[year].totalCash).toLocaleString('en-IN', {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}`
+                              : `-₹${Math.abs(monthlyPnl[year].totalCash).toLocaleString('en-IN', {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}`
+                            : "-"}
                     </span>
                   </td>
                 </tr>
