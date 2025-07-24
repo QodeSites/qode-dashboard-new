@@ -305,15 +305,19 @@ export function TrailingReturnsTable({
 
     console.log(`Display value for ${periodKey} - Scheme: ${schemeValue}, Benchmark: ${benchmarkValue}, IsScheme: ${isScheme}`);
 
-    if (periodKey === "currentDD" || periodKey === "maxDD") {
-      return isScheme ? schemeValue : benchmarkValue;
+    // If it's for the scheme row, return the scheme value
+    if (isScheme) {
+      return schemeValue;
     }
 
-    if (!isScheme && ["1m", "3m", "1y", "2y", "5y"].includes(periodKey)) {
+    // For benchmark row: only show benchmark value if scheme value is present (not "-")
+    // If scheme value is "-", show "-" for benchmark regardless of benchmark data availability
+    if (schemeValue === "-") {
       return "-";
     }
 
-    return isScheme ? schemeValue : benchmarkValue;
+    // If scheme value is present, show the benchmark value
+    return benchmarkValue;
   };
 
   const getReturnColor = (value: string) => {
@@ -332,10 +336,6 @@ export function TrailingReturnsTable({
   };
 
   const formatDisplayValue = (value: string, periodKey: string, isScheme: boolean): string => {
-    if (!isScheme && ["1m", "3m", "1y", "2y", "5y"].includes(periodKey)) {
-      return "-";
-    }
-
     if (value === "-" || value === "" || value === undefined || value === null) {
       return "-";
     }
