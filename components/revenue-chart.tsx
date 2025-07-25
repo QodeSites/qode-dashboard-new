@@ -35,6 +35,7 @@ interface RevenueChartProps {
 }
 
 export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, drawdown }: RevenueChartProps) {
+  console.log("Rendering RevenueChart with equityCurve length:", equityCurve);
   const chartRef = useRef<HTMLDivElement>(null);
   const chart = useRef<any>(null);
   const { bse500Data, error } = useBse500Data(equityCurve);
@@ -119,7 +120,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
 
       const portfolioData = equityCurve.map((p) => [
         new Date(p.date).getTime(),
-        p.value,
+        p.value || p.nav,
       ]);
       const processedPortfolioData = processDataSeries(portfolioData, false, portfolioData[0][1]);
 
@@ -141,7 +142,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         : firstPortfolioDate || firstBenchmarkDate;
 
       const portfolioDrawdownData = drawdownCurve.map((point) => {
-        const dd = typeof point.value === "string" ? parseFloat(point.value) : point.value;
+        const dd = typeof point.value || point.drawdown === "string" ? parseFloat(point.value || point.drawdown) : point.value || point.drawdown;
         return [new Date(point.date).getTime(), -Math.abs(dd)];
       });
       if (portfolioDrawdownData.length && earliestDate && portfolioDrawdownData[0][0] > earliestDate) {

@@ -28,6 +28,7 @@ interface MonthlyPnlData {
 interface PnlTableProps {
   quarterlyPnl: QuarterlyPnlData;
   monthlyPnl: MonthlyPnlData;
+  showOnlyQuarterlyCash?: boolean;
 }
 
 const formatter = new Intl.NumberFormat("en-IN", {
@@ -37,8 +38,8 @@ const formatter = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 2,
 });
 
-export function PnlTable({ quarterlyPnl, monthlyPnl }: PnlTableProps) {
-  const [viewType, setViewType] = useState<"percent" | "cash">("percent");
+export function PnlTable({ quarterlyPnl, monthlyPnl, showOnlyQuarterlyCash = false }: PnlTableProps) {
+  const [viewType, setViewType] = useState<"percent" | "cash">("cash");
 
   const getReturnColor = (value: string) => {
     if (value === "-" || value === "---") return "text-gray-500";
@@ -94,24 +95,26 @@ export function PnlTable({ quarterlyPnl, monthlyPnl }: PnlTableProps) {
           <CardTitle className="text-sm sm:text-lg text-gray-900">
             Quarterly Profit and Loss ({viewType === "percent" ? "%" : "₹"})
           </CardTitle>
-          <div className="space-x-2">
-            <Button
-              onClick={() => setViewType("percent")}
-              size="sm"
-              variant={viewType === "percent" ? "default" : "outline"}
-              className="border-green-700"
-            >
-              %
-            </Button>
-            <Button
-              onClick={() => setViewType("cash")}
-              size="sm"
-              variant={viewType === "cash" ? "default" : "outline"}
-              className="border-green-700"
-            >
-              ₹
-            </Button>
-          </div>
+          {!showOnlyQuarterlyCash && (
+            <div className="space-x-2">
+              <Button
+                onClick={() => setViewType("percent")}
+                size="sm"
+                variant={viewType === "percent" ? "default" : "outline"}
+                className="border-green-700"
+              >
+                %
+              </Button>
+              <Button
+                onClick={() => setViewType("cash")}
+                size="sm"
+                variant={viewType === "cash" ? "default" : "outline"}
+                className="border-green-700"
+              >
+                ₹
+              </Button>
+            </div>
+          )}
         </div>
       </CardHeader>
       <CardContent className="p-0 px-4 py-5">
@@ -144,12 +147,12 @@ export function PnlTable({ quarterlyPnl, monthlyPnl }: PnlTableProps) {
                 <tr key={`${year}-${viewType}`} className="hover:bg-gray-50 border-gray-300 text-xs">
                   <td className="px-4 py-3 text-center whitespace-nowrap text-black min-w-[60px]">{year}</td>
                   {["q1", "q2", "q3", "q4", "total"].map((quarter) => {
-                    const rawValue = viewType === "percent"
-                      ? quarterlyPnl[year].percent[quarter as keyof typeof quarterlyPnl[string]["percent"]]
-                      : quarterlyPnl[year].cash[quarter as keyof typeof quarterlyPnl[string]["cash"]];
+                    const rawValue = showOnlyQuarterlyCash || viewType === "cash"
+                      ? quarterlyPnl[year].cash[quarter as keyof typeof quarterlyPnl[string]["cash"]]
+                      : quarterlyPnl[year].percent[quarter as keyof typeof quarterlyPnl[string]["percent"]];
 
-                    const displayValue = formatDisplayValue(rawValue, viewType === "percent");
-                    const cellClass = getCellClass(rawValue, viewType === "percent");
+                    const displayValue = formatDisplayValue(rawValue, viewType === "percent" && !showOnlyQuarterlyCash);
+                    const cellClass = getCellClass(rawValue, viewType === "percent" && !showOnlyQuarterlyCash);
                     const isTotal = quarter === "total";
 
                     return (
@@ -319,7 +322,7 @@ export function PnlTable({ quarterlyPnl, monthlyPnl }: PnlTableProps) {
   return (
     <div className="flex flex-col gap-6">
       {renderQuarterlyTable()}
-      {renderMonthlyTable()}
+      {!showOnlyQuarterlyCash && renderMonthlyTable()}
     </div>
   );
 }

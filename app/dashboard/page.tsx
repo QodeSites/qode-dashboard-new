@@ -51,6 +51,7 @@ interface Stats {
     };
   };
   cashFlows: { date: string; amount: number }[];
+  strategyName?: string;
 }
 
 interface PmsStats {
@@ -89,6 +90,7 @@ interface PmsStats {
     currentDD: string;
   };
   cashFlows: { date: string; amount: number }[];
+  strategyName?: string;
 }
 
 interface Account {
@@ -104,7 +106,7 @@ interface Metadata {
   inceptionDate: string | null;
   dataAsOfDate: string | null;
   lastUpdated: string;
-  strategyName: string; // Added strategyName
+  strategyName: string;
   filtersApplied: {
     accountType: string | null;
     broker: string | null;
@@ -114,16 +116,21 @@ interface Metadata {
 }
 
 interface ApiResponse {
-  data: Stats | PmsStats | { stats: Stats | PmsStats; metadata: Account & { strategyName: string } }[]; // Updated to include strategyName in metadata
+  data: Stats | PmsStats | { stats: Stats | PmsStats; metadata: Account & { strategyName: string } }[];
   metadata?: Metadata;
 }
 
-// Helper function to check if stats is PmsStats
+interface SarlaApiResponse {
+  [strategyName: string]: {
+    data: Stats | PmsStats;
+    metadata: Metadata;
+  };
+}
+
 function isPmsStats(stats: Stats | PmsStats): stats is PmsStats {
   return 'totalPortfolioValue' in stats;
 }
 
-// Helper function to convert PmsStats to Stats format for components
 function convertPmsStatsToStats(pmsStats: PmsStats): Stats {
   return {
     amountDeposited: pmsStats.totalPortfolioValue,
@@ -171,7 +178,6 @@ function convertPmsStatsToStats(pmsStats: PmsStats): Stats {
   };
 }
 
-// Helper function to filter equityCurve by start and end dates
 function filterEquityCurve(equityCurve: { date: string; value: number }[], startDate: string | null, endDate: string | null) {
   if (!startDate || !endDate) return equityCurve;
 
@@ -184,7 +190,6 @@ function filterEquityCurve(equityCurve: { date: string; value: number }[], start
   });
 }
 
-// Indian currency formatter
 const formatter = new Intl.NumberFormat("en-IN", {
   style: "currency",
   currency: "INR",
@@ -192,7 +197,6 @@ const formatter = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 2,
 });
 
-// Date formatter for DD-MM-YYYY
 const dateFormatter = (dateStr: string) => {
   const date = new Date(dateStr);
   return date.toLocaleDateString("en-IN", {
@@ -204,6 +208,7 @@ const dateFormatter = (dateStr: string) => {
 
 export default function Portfolio() {
   const { data: session, status } = useSession();
+  const isSarla = session?.user?.icode === "QUS0007";
   const router = useRouter();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
@@ -213,6 +218,10 @@ export default function Portfolio() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [sarlaData, setSarlaData] = useState<SarlaApiResponse | null>(null);
+  const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
+  const [availableStrategies, setAvailableStrategies] = useState<string[]>([]);
+
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push("/");
@@ -220,31 +229,59 @@ export default function Portfolio() {
     }
 
     if (status === "authenticated") {
-      const fetchAccounts = async () => {
-        try {
-          const res = await fetch("/api/accounts", { credentials: "include" });
-          if (!res.ok) {
-            const errorData = await res.json();
-            throw new Error(errorData.error || "Failed to load accounts");
-          }
-          const data: Account[] = await res.json();
-          setAccounts(data);
-          if (data.length > 0) {
-            setSelectedAccount(data[0].qcode);
-          }
-          setIsLoading(false);
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "An unexpected error occurred");
-          setIsLoading(false);
-        }
-      };
+      if (isSarla) {
+        const fetchSarlaData = async () => {
+          try {
+            const res = await fetch("/api/sarla-api?qcode=QAC00041", { credentials: "include" });
+            if (!res.ok) {
+              const errorData = await res.json();
+              throw new Error(errorData.error || "Failed to load Sarla data");
+            }
+            const data: SarlaApiResponse = await res.json();
+            setSarlaData(data);
 
-      fetchAccounts();
+            const strategies = Object.keys(data);
+            setAvailableStrategies(strategies);
+
+            if (strategies.length > 0) {
+              setSelectedStrategy(strategies[0]);
+            }
+
+            setIsLoading(false);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "An unexpected error occurred");
+            setIsLoading(false);
+          }
+        };
+
+        fetchSarlaData();
+      } else {
+        const fetchAccounts = async () => {
+          try {
+            const res = await fetch("/api/accounts", { credentials: "include" });
+            if (!res.ok) {
+              const errorData = await res.json();
+              throw new Error(errorData.error || "Failed to load accounts");
+            }
+            const data: Account[] = await res.json();
+            setAccounts(data);
+            if (data.length > 0) {
+              setSelectedAccount(data[0].qcode);
+            }
+            setIsLoading(false);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "An unexpected error occurred");
+            setIsLoading(false);
+          }
+        };
+
+        fetchAccounts();
+      }
     }
-  }, [status, router]);
+  }, [status, router, isSarla]);
 
   useEffect(() => {
-    if (selectedAccount && status === "authenticated") {
+    if (selectedAccount && status === "authenticated" && !isSarla) {
       const fetchAccountData = async () => {
         setIsLoading(true);
         setError(null);
@@ -265,7 +302,6 @@ export default function Portfolio() {
           }
           const response: ApiResponse = await res.json();
 
-          // Handle response based on viewMode
           if (viewMode === "individual" && Array.isArray(response.data)) {
             setStats(response.data);
             setMetadata(null);
@@ -282,14 +318,19 @@ export default function Portfolio() {
 
       fetchAccountData();
     }
-  }, [selectedAccount, accounts, status, viewMode]);
+  }, [selectedAccount, accounts, status, viewMode, isSarla]);
 
   const renderCashFlowsTable = () => {
-    const transactions = Array.isArray(stats)
-      ? stats.flatMap((item) => item.stats.cashFlows || [])
-      : stats?.cashFlows || [];
+    let transactions: { date: string; amount: number }[] = [];
 
-    // Calculate totals
+    if (isSarla && sarlaData && selectedStrategy) {
+      transactions = sarlaData[selectedStrategy]?.data?.cashFlows || [];
+    } else if (Array.isArray(stats)) {
+      transactions = stats.flatMap((item) => item.stats.cashFlows || []);
+    } else {
+      transactions = stats?.cashFlows || [];
+    }
+
     const cashFlowTotals = transactions.reduce(
       (acc, tx) => {
         const amount = Number(tx.amount);
@@ -353,8 +394,7 @@ export default function Portfolio() {
                         {dateFormatter(transaction.date)}
                       </TableCell>
                       <TableCell
-                        className={`px-4 py-2 text-xs font-medium text-right ${Number(transaction.amount) > 0 ? "text-green-600" : "text-red-600"
-                          }`}
+                        className={`px-4 py-2 text-xs font-medium text-right ${Number(transaction.amount) > 0 ? "text-green-600" : "text-red-600"}`}
                       >
                         {formatter.format(Number(transaction.amount))}
                       </TableCell>
@@ -383,8 +423,7 @@ export default function Portfolio() {
                 <TableRow className="font-semibold">
                   <TableCell className="px-4 py-2 text-xs text-gray-800 dark:text-gray-100">Net Flow</TableCell>
                   <TableCell
-                    className={`px-4 py-2 text-xs text-right font-semibold ${cashFlowTotals.netFlow >= 0 ? "text-green-800" : "text-red-800"
-                      } dark:${cashFlowTotals.netFlow >= 0 ? "text-green-600" : "text-red-600"}`}
+                    className={`px-4 py-2 text-xs text-right font-semibold ${cashFlowTotals.netFlow >= 0 ? "text-green-800" : "text-red-800"} dark:${cashFlowTotals.netFlow >= 0 ? "text-green-600" : "text-red-600"}`}
                   >
                     {formatter.format(cashFlowTotals.netFlow)}
                   </TableCell>
@@ -410,13 +449,84 @@ export default function Portfolio() {
     lastUpdated: string | null
   ): string | null => {
     if (equityCurve.length > 0) {
-      // Sort by date to get the latest
       const sortedCurve = [...equityCurve].sort(
         (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
       );
       return sortedCurve[0].date;
     }
     return lastUpdated || null;
+  };
+
+  const renderSarlaStrategyTabs = () => {
+    if (!isSarla || !sarlaData || availableStrategies.length === 0) return null;
+
+    return (
+      <div className="mb-6">
+        <div className="flex flex-wrap gap-2">
+          {availableStrategies.map((strategy) => (
+            <Button
+              key={strategy}
+              variant={selectedStrategy === strategy ? "default" : "outline"}
+              onClick={() => setSelectedStrategy(strategy)}
+              className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${selectedStrategy === strategy
+                  ? "bg-logo-green text-button-text"
+                  : "bg-white/70 text-card-text hover:bg-logo-green/20"
+                }`}
+            >
+              {strategy}
+            </Button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderSarlaContent = () => {
+    if (!isSarla || !sarlaData || !selectedStrategy || !sarlaData[selectedStrategy]) {
+      return null;
+    }
+
+    const strategyData = sarlaData[selectedStrategy];
+    const convertedStats = isPmsStats(strategyData.data) ? convertPmsStatsToStats(strategyData.data) : strategyData.data;
+    const filteredEquityCurve = filterEquityCurve(
+      strategyData.data.equityCurve,
+      strategyData.metadata?.filtersApplied?.startDate,
+      strategyData.metadata?.lastUpdated
+    );
+    const lastDate = getLastDate(filteredEquityCurve, strategyData.metadata?.lastUpdated);
+    const isTotalPortfolio = selectedStrategy === "Total Portfolio";
+
+    return (
+      <div className="space-y-6">
+        <StatsCards
+          stats={convertedStats}
+          accountType="sarla"
+          broker="Sarla"
+        />
+        {!isTotalPortfolio && (
+          <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
+            <div className="flex-1 min-w-0 sm:w-5/6">
+              <RevenueChart
+                equityCurve={filteredEquityCurve}
+                drawdownCurve={strategyData.data.drawdownCurve}
+                trailingReturns={convertedStats.trailingReturns}
+                drawdown={convertedStats.drawdown}
+                lastDate={lastDate}
+              />
+            </div>
+            <div className="flex-1 min-w-0 sm:w-1/6 sm:max-w-[25%]">
+              <StockTable />
+            </div>
+          </div>
+        )}
+        <PnlTable
+          quarterlyPnl={convertedStats.quarterlyPnl}
+          monthlyPnl={convertedStats.monthlyPnl}
+          showOnlyQuarterlyCash={isTotalPortfolio}
+        />
+        {renderCashFlowsTable()}
+      </div>
+    );
   };
 
   if (status === "loading" || isLoading) {
@@ -433,13 +543,25 @@ export default function Portfolio() {
     );
   }
 
-  if (accounts.length === 0) {
+  if (!isSarla && accounts.length === 0) {
     return (
       <div className="p-6 text-center bg-gray-100 rounded-lg text-gray-900 dark:bg-gray-900/10 dark:text-gray-100">
         No accounts found for this user.
       </div>
     );
   }
+
+  if (isSarla && (!sarlaData || availableStrategies.length === 0)) {
+    return (
+      <div className="p-6 text-center bg-gray-100 rounded-lg text-gray-900 dark:bg-gray-900/10 dark:text-gray-100">
+        No strategy data found for Sarla user.
+      </div>
+    );
+  }
+
+  const currentMetadata = isSarla && sarlaData && selectedStrategy
+    ? sarlaData[selectedStrategy].metadata
+    : metadata;
 
   return (
     <div className="sm:p-2 space-y-6">
@@ -450,113 +572,119 @@ export default function Portfolio() {
           </h1>
         </div>
         <div>
-          {metadata && (
+          {currentMetadata && (
             <div className="flex items-center gap-2 text-sm mt-4 text-card-text-secondary font-heading-bold">
-              <span>Inception Date: <strong>{metadata.inceptionDate ? dateFormatter(metadata.inceptionDate) : "N/A"}</strong></span>
+              <span>Inception Date: <strong>{currentMetadata.inceptionDate ? dateFormatter(currentMetadata.inceptionDate) : "N/A"}</strong></span>
               <span>|</span>
-              <span>Data as of: <strong>{metadata.dataAsOfDate ? dateFormatter(metadata.dataAsOfDate) : "N/A"}</strong></span>
+              <span>Data as of: <strong>{currentMetadata.dataAsOfDate ? dateFormatter(currentMetadata.dataAsOfDate) : "N/A"}</strong></span>
               <span>|</span>
-
             </div>
           )}
         </div>
-        {metadata && (
+        {(currentMetadata?.strategyName || (isSarla && sarlaData && selectedStrategy ? sarlaData[selectedStrategy]?.data?.strategyName || selectedStrategy : null)) && (
           <Button
             variant="outline"
-            className="bg-logo-green mt-4 font-heading text-button-text text-sm sm:text-lg  px-3 py-1 rounded-full"
+            className="bg-logo-green mt-4 font-heading text-button-text text-sm sm:text-lg px-3 py-1 rounded-full"
           >
-            {metadata.strategyName || "Unknown Strategy"}
+            {isSarla && sarlaData && selectedStrategy
+              ? sarlaData[selectedStrategy]?.data?.strategyName || selectedStrategy
+              : currentMetadata?.strategyName || "Unknown Strategy"}
           </Button>
         )}
       </div>
 
-      {stats && (
-        <div className="space-y-6">
-          {Array.isArray(stats) ? (
-            stats.map((item, index) => {
-              const convertedStats = isPmsStats(item.stats) ? convertPmsStatsToStats(item.stats) : item.stats;
-              const filteredEquityCurve = filterEquityCurve(
-                item.stats.equityCurve,
-                item.metadata.startDate,
-                item.metadata.lastUpdated
-              );
-              const lastDate = getLastDate(filteredEquityCurve, item.metadata.lastUpdated);
-              return (
-                <div key={index} className="space-y-6">
-                  <Card className="bg-white/70 backdrop-blur-sm card-shadow border-0">
-                    <CardHeader>
-                      <CardTitle className="text-card-text text-sm sm:text-lg">
-                        {item.metadata.account_name} ({item.metadata.account_type.toUpperCase()} - {item.metadata.broker})
-                      </CardTitle>
-                      <div className="text-sm text-card-text-secondary">
-                        Strategy: <strong>{item.metadata.strategyName || "Unknown Strategy"}</strong>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
+      {renderSarlaStrategyTabs()}
+
+      {isSarla ? (
+        renderSarlaContent()
+      ) : (
+        stats && (
+          <div className="space-y-6">
+            {Array.isArray(stats) ? (
+              stats.map((item, index) => {
+                const convertedStats = isPmsStats(item.stats) ? convertPmsStatsToStats(item.stats) : item.stats;
+                const filteredEquityCurve = filterEquityCurve(
+                  item.stats.equityCurve,
+                  item.metadata.startDate,
+                  item.metadata.lastUpdated
+                );
+                const lastDate = getLastDate(filteredEquityCurve, item.metadata.lastUpdated);
+                return (
+                  <div key={index} className="space-y-6">
+                    <Card className="bg-white/70 backdrop-blur-sm card-shadow border-0">
+                      <CardHeader>
+                        <CardTitle className="text-card-text text-sm sm:text-lg">
+                          {item.metadata.account_name} ({item.metadata.account_type.toUpperCase()} - {item.metadata.broker})
+                        </CardTitle>
+                        <div className="text-sm text-card-text-secondary">
+                          Strategy: <strong>{item.metadata.strategyName || "Unknown Strategy"}</strong>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <StatsCards
+                          stats={convertedStats}
+                          accountType={item.metadata.account_type}
+                          broker={item.metadata.broker}
+                        />
+                        <RevenueChart
+                          equityCurve={filteredEquityCurve}
+                          drawdownCurve={item.stats.drawdownCurve}
+                          trailingReturns={convertedStats.trailingReturns}
+                          drawdown={convertedStats.drawdown}
+                          lastDate={lastDate}
+                        />
+                        <PnlTable
+                          quarterlyPnl={convertedStats.quarterlyPnl}
+                          monthlyPnl={convertedStats.monthlyPnl}
+                        />
+                      </CardContent>
+                    </Card>
+                  </div>
+                );
+              })
+            ) : (
+              <>
+                {(() => {
+                  const convertedStats = isPmsStats(stats) ? convertPmsStatsToStats(stats) : stats;
+                  const filteredEquityCurve = filterEquityCurve(
+                    stats.equityCurve,
+                    metadata?.filtersApplied.startDate,
+                    metadata?.lastUpdated
+                  );
+                  const lastDate = getLastDate(filteredEquityCurve, metadata?.lastUpdated);
+                  return (
+                    <>
                       <StatsCards
                         stats={convertedStats}
-                        accountType={item.metadata.account_type}
-                        broker={item.metadata.broker}
+                        accountType={accounts.find((acc) => acc.qcode === selectedAccount)?.account_type || "unknown"}
+                        broker={accounts.find((acc) => acc.qcode === selectedAccount)?.broker || "Unknown"}
                       />
-                      <RevenueChart
-                        equityCurve={filteredEquityCurve}
-                        drawdownCurve={item.stats.drawdownCurve}
-                        trailingReturns={convertedStats.trailingReturns}
-                        drawdown={convertedStats.drawdown}
-                        lastDate={lastDate} // Pass the last date
-                      />
+                      <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
+                        <div className="flex-1 min-w-0 sm:w-5/6">
+                          <RevenueChart
+                            equityCurve={filteredEquityCurve}
+                            drawdownCurve={stats.drawdownCurve}
+                            trailingReturns={convertedStats.trailingReturns}
+                            drawdown={convertedStats.drawdown}
+                            lastDate={lastDate}
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0 sm:w-1/6 sm:max-w-[25%]">
+                          <StockTable />
+                        </div>
+                      </div>
                       <PnlTable
                         quarterlyPnl={convertedStats.quarterlyPnl}
                         monthlyPnl={convertedStats.monthlyPnl}
                       />
-                    </CardContent>
-                  </Card>
-                </div>
-              );
-            })
-          ) : (
-            <>
-              {(() => {
-                const convertedStats = isPmsStats(stats) ? convertPmsStatsToStats(stats) : stats;
-
-                const filteredEquityCurve = filterEquityCurve(
-                  stats.equityCurve,
-                  metadata?.filtersApplied.startDate,
-                  metadata?.lastUpdated
-                );
-                const lastDate = getLastDate(filteredEquityCurve, metadata?.lastUpdated);
-                return (
-                  <>
-                    <StatsCards
-                      stats={convertedStats}
-                      accountType={accounts.find((acc) => acc.qcode === selectedAccount)?.account_type || "unknown"}
-                      broker={accounts.find((acc) => acc.qcode === selectedAccount)?.broker || "Unknown"}
-                    />
-                    <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
-                      <div className="flex-1 min-w-0 sm:w-5/6">
-                        <RevenueChart
-                          equityCurve={filteredEquityCurve}
-                          drawdownCurve={stats.drawdownCurve}
-                          trailingReturns={convertedStats.trailingReturns}
-                          drawdown={convertedStats.drawdown}
-                          lastDate={lastDate} // Pass the last date
-                        />
-                      </div>
-                      <div className="flex-1 min-w-0 sm:w-1/6 sm:max-w-[25%]">
-                        <StockTable />
-                      </div>
-                    </div>
-                    <PnlTable
-                      quarterlyPnl={convertedStats.quarterlyPnl}
-                      monthlyPnl={convertedStats.monthlyPnl}
-                    />
-                    {renderCashFlowsTable()}
-                  </>
-                );
-              })()}
-            </>
-          )}
-        </div>
+                      {renderCashFlowsTable()}
+                    </>
+                  );
+                })()}
+              </>
+            )}
+          </div>
+        )
       )}
     </div>
   );

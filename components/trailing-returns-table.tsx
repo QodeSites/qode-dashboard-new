@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { CardTitle } from "@/components/ui/card";
 import { useBse500Data } from "@/hooks/useBse500Data";
 
 interface EquityCurvePoint {
@@ -24,7 +23,7 @@ interface TrailingReturnsData {
 }
 
 interface TrailingReturnsTableProps {
-  trailingReturns: TrailingReturnsData;
+  trailingReturns: Partial<TrailingReturnsData> & { [key: string]: string | number }; // allows both types
   drawdown: string;
   equityCurve: EquityCurvePoint[];
   accountType?: string;
@@ -39,7 +38,24 @@ export function TrailingReturnsTable({
   broker,
 }: TrailingReturnsTableProps) {
   const { bse500Data, error } = useBse500Data(equityCurve);
-  console.log("TrailingReturns input data:", trailingReturns);
+
+  // 🔁 Normalize trailingReturns for internal use
+  const normalizeTrailingReturns = (
+    input: TrailingReturnsTableProps["trailingReturns"]
+  ): TrailingReturnsData => ({
+    fiveDays: String(input["fiveDays"] ?? input["5d"] ?? "-"),
+    tenDays: String(input["tenDays"] ?? input["10d"] ?? "-"),
+    fifteenDays: String(input["fifteenDays"] ?? input["15d"] ?? "-"),
+    oneMonth: String(input["oneMonth"] ?? input["1m"] ?? "-"),
+    threeMonths: String(input["threeMonths"] ?? input["3m"] ?? "-"),
+    sixMonths: String(input["sixMonths"] ?? input["6m"] ?? "-"),
+    oneYear: String(input["oneYear"] ?? input["1y"] ?? "-"),
+    twoYears: String(input["twoYears"] ?? input["2y"] ?? "-"),
+    fiveYears: String(input["fiveYears"] ?? input["5y"] ?? "-"),
+    sinceInception: String(input["sinceInception"] ?? "-"),
+  });
+
+  const normalizedTrailingReturns = normalizeTrailingReturns(trailingReturns);
 
   const allPeriods = [
     { key: "5d", label: "5d", duration: 5, type: "days" },
@@ -51,7 +67,7 @@ export function TrailingReturnsTable({
     { key: "2y", label: "2y", duration: 2, type: "years" },
     { key: "sinceInception", label: "Since Inception", duration: null, type: "inception" },
     { key: "currentDD", label: "Current DD", duration: null, type: "drawdown" },
-    { key: "maxDD", label: "Max DD", duration: null, type: "maxDrawdown" }
+    { key: "maxDD", label: "Max DD", duration: null, type: "maxDrawdown" },
   ];
 
   const isValidReturn = (
@@ -66,21 +82,21 @@ export function TrailingReturnsTable({
   const getSchemeReturn = (periodKey: string) => {
     switch (periodKey) {
       case "5d":
-        return isValidReturn(trailingReturns.fiveDays) ? trailingReturns.fiveDays : "-";
+        return isValidReturn(normalizedTrailingReturns.fiveDays) ? normalizedTrailingReturns.fiveDays : "-";
       case "10d":
-        return isValidReturn(trailingReturns.tenDays) ? trailingReturns.tenDays : "-";
+        return isValidReturn(normalizedTrailingReturns.tenDays) ? normalizedTrailingReturns.tenDays : "-";
       case "15d":
-        return isValidReturn(trailingReturns.fifteenDays) ? trailingReturns.fifteenDays : "-";
+        return isValidReturn(normalizedTrailingReturns.fifteenDays) ? normalizedTrailingReturns.fifteenDays : "-";
       case "1m":
-        return isValidReturn(trailingReturns.oneMonth) ? trailingReturns.oneMonth : "-";
+        return isValidReturn(normalizedTrailingReturns.oneMonth) ? normalizedTrailingReturns.oneMonth : "-";
       case "1y":
-        return isValidReturn(trailingReturns.oneYear) ? trailingReturns.oneYear : "-";
+        return isValidReturn(normalizedTrailingReturns.oneYear) ? normalizedTrailingReturns.oneYear : "-";
       case "2y":
-        return isValidReturn(trailingReturns.twoYears) ? trailingReturns.twoYears : "-";
+        return isValidReturn(normalizedTrailingReturns.twoYears) ? normalizedTrailingReturns.twoYears : "-";
       case "3m":
-        return isValidReturn(trailingReturns.threeMonths) ? trailingReturns.threeMonths : "-";
+        return isValidReturn(normalizedTrailingReturns.threeMonths) ? normalizedTrailingReturns.threeMonths : "-";
       case "sinceInception":
-        return isValidReturn(trailingReturns.sinceInception) ? trailingReturns.sinceInception : "-";
+        return isValidReturn(normalizedTrailingReturns.sinceInception) ? normalizedTrailingReturns.sinceInception : "-";
       case "maxDD":
         return isValidReturn(drawdown) ? (-Math.abs(parseFloat(drawdown))).toFixed(2) : "-";
       case "currentDD":
@@ -444,4 +460,4 @@ export function TrailingReturnsTable({
       </div>
     </div>
   );
-}
+} 

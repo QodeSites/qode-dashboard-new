@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils"
 import { signOut, useSession } from "next-auth/react"
 import { Button } from "./ui/button"
 import { BellIcon } from "lucide-react"
-
+import { useRouter } from "next/navigation"
 const navigation = [
   { name: "Home", href: "/", icon: HomeIcon },
   { name: "Portfolio", href: "/dashboard", icon: ChartBarIcon },
@@ -27,7 +27,7 @@ interface SidebarProps {
 
 export function Sidebar({ open, setOpen }: SidebarProps) {
   const pathname = usePathname()
-
+  const router = useRouter()
   return (
     <>
       {/* Mobile sidebar */}
