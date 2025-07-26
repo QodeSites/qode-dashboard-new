@@ -497,136 +497,158 @@ private static async getPortfolioReturns(qcode: string, scheme: string): Promise
     return { currentDD: ddCurve[ddCurve.length - 1]?.drawdown || 0, mdd, ddCurve };
   }
 
-  private static async calculateTrailingReturns(
-  qcode: string,
-  scheme: string,
-  drawdownMetrics?: DrawdownMetrics,
-  periods: Record<string, number | null> = {
-    "5d": 5,
-    "10d": 10,
-    "15d": 15,
-    "1m": 30,
-    "3m": 90,
-    "6m": 180,
-    "1y": 366,
-    "2y": 731,
-    "sinceInception": null,
-  }
-): Promise<Record<string, number | null | string>> {
-  const navData = await PortfolioApi.getHistoricalData(qcode, scheme);
-  console.log(`Nav data for ${scheme} in trailing returns:`, navData.length, navData);
-
-  if (!navData || navData.length === 0) {
-    console.warn(`No NAV data found for ${scheme} in trailing returns calculation`);
-    return {
-      MDD: "0.00",
-      currentDD: "0.00",
-    };
-  }
-
-  const normalizedNavData = navData
-    .filter(item => PortfolioApi.normalizeDate(item.date))
-    .map(item => ({
-      date: PortfolioApi.normalizeDate(item.date)!,
-      nav: item.nav,
-    }))
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-  const lastNav = normalizedNavData[normalizedNavData.length - 1]?.nav;
-  const currentDate = normalizedNavData[normalizedNavData.length - 1]?.date;
-  const oldestDate = normalizedNavData[0]?.date;
-
-  if (!currentDate || lastNav === undefined) {
-    console.warn(`Invalid current date or last NAV for ${scheme}`);
-    return {
-      MDD: drawdownMetrics?.mdd.toFixed(2) || "0.00",
-      currentDD: drawdownMetrics?.currentDD.toFixed(2) || "0.00",
-    };
-  }
-
-  const dataRangeDays = (new Date(currentDate).getTime() - new Date(oldestDate).getTime()) / (1000 * 60 * 60 * 24);
-  const returns: Record<string, number | null | string> = {};
-
-  for (const [period, targetCount] of Object.entries(periods)) {
-    if (period === "sinceInception") {
-      const oldestEntry = normalizedNavData[0];
-      if (oldestEntry) {
-        const years = (new Date(currentDate).getTime() - new Date(oldestEntry.date).getTime()) / (365 * 24 * 60 * 60 * 1000);
-        returns[period] = years < 1
-          ? ((lastNav - oldestEntry.nav) / oldestEntry.nav) * 100
-          : (Math.pow(lastNav / oldestEntry.nav, 1 / years) - 1) * 100;
-      } else {
-        returns[period] = null;
-      }
-      continue;
+private static async calculateTrailingReturns(
+    qcode: string,
+    scheme: string,
+    drawdownMetrics?: DrawdownMetrics,
+    periods: Record<string, number | null> = {
+      "5d": 5,
+      "10d": 10,
+      "15d": 15,
+      "1m": 30,
+      "3m": 90,
+      "6m": 180,
+      "1y": 366,
+      "2y": 731,
+      "sinceInception": null,
     }
+  ): Promise<Record<string, number | null | string>> {
+    const navData = await PortfolioApi.getHistoricalData(qcode, scheme);
 
-    const requiredDays = targetCount as number;
-    if (requiredDays > dataRangeDays) {
-      returns[period] = null;
-      continue;
-    }
-
-    let targetDate = new Date(currentDate);
-    if (["1m", "3m", "6m", "1y", "2y"].includes(period)) {
-      const periodMap: Record<string, () => void> = {
-        "1m": () => targetDate.setMonth(targetDate.getMonth() - 1),
-        "3m": () => targetDate.setMonth(targetDate.getMonth() - 3),
-        "6m": () => targetDate.setMonth(targetDate.getMonth() - 6),
-        "1y": () => targetDate.setFullYear(targetDate.getFullYear() - 1),
-        "2y": () => targetDate.setFullYear(targetDate.getFullYear() - 2),
+    if (!navData || navData.length === 0) {
+      console.warn(`No NAV data found for ${scheme} in trailing returns calculation`);
+      return {
+        MDD: "0.00",
+        currentDD: "0.00",
       };
-      periodMap[period]();
-    } else {
-      targetDate.setDate(targetDate.getDate() - requiredDays);
     }
 
-    if (targetDate < new Date(oldestDate)) {
-      returns[period] = null;
-      continue;
+    const normalizedNavData = navData
+      .filter(item => PortfolioApi.normalizeDate(item.date))
+      .map(item => ({
+        date: PortfolioApi.normalizeDate(item.date)!,
+        nav: item.nav,
+      }))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    const lastNav = normalizedNavData[normalizedNavData.length - 1]?.nav;
+    const currentDate = normalizedNavData[normalizedNavData.length - 1]?.date;
+    const oldestDate = normalizedNavData[0]?.date;
+
+    if (!currentDate || lastNav === undefined) {
+      console.warn(`Invalid current date or last NAV for ${scheme}`);
+      return {
+        MDD: drawdownMetrics?.mdd.toFixed(2) || "0.00",
+        currentDD: drawdownMetrics?.currentDD.toFixed(2) || "0.00",
+      };
     }
 
-    const targetTime = targetDate.getTime();
-    let candidate = null;
-    let minDiff = Infinity;
+    const dataRangeDays = (new Date(currentDate).getTime() - new Date(oldestDate).getTime()) / (1000 * 60 * 60 * 24);
+    const returns: Record<string, number | null | string> = {};
 
-    for (const dataPoint of normalizedNavData) {
-      const dataTime = new Date(dataPoint.date).getTime();
-      const diff = Math.abs(dataTime - targetTime);
-
-      const isCloser = diff < minDiff || (diff === minDiff && dataTime <= targetTime);
-      if (isCloser) {
-        minDiff = diff;
-        candidate = { nav: dataPoint.nav, date: new Date(dataPoint.date) };
+    for (const [period, targetCount] of Object.entries(periods)) {
+      if (period === "sinceInception") {
+        const oldestEntry = normalizedNavData[0];
+        if (oldestEntry) {
+          const years = (new Date(currentDate).getTime() - new Date(oldestEntry.date).getTime()) / (365 * 24 * 60 * 60 * 1000);
+          returns[period] = years < 1
+            ? ((lastNav - oldestEntry.nav) / oldestEntry.nav) * 100
+            : (Math.pow(lastNav / oldestEntry.nav, 1 / years) - 1) * 100;
+        } else {
+          returns[period] = null;
+        }
+        continue;
       }
-    }
 
-    if (candidate) {
-      const daysDiff = Math.round(minDiff / (1000 * 60 * 60 * 24));
-      const maxAllowedDiff = requiredDays <= 30 ? 7 : 30;
-
-      if (daysDiff > maxAllowedDiff) {
+      const requiredDays = targetCount as number;
+      if (requiredDays > dataRangeDays) {
         returns[period] = null;
         continue;
       }
 
-      const durationYears = (new Date(currentDate).getTime() - candidate.date.getTime()) / (365 * 24 * 60 * 60 * 1000);
-      returns[period] =
-        durationYears >= 1
-          ? (Math.pow(lastNav / candidate.nav, 1 / durationYears) - 1) * 100
-          : ((lastNav - candidate.nav) / candidate.nav) * 100;
-    } else {
-      returns[period] = null;
+      let targetDate = new Date(currentDate);
+      if (["1m", "3m", "6m", "1y", "2y"].includes(period)) {
+        const periodMap: Record<string, () => void> = {
+          "1m": () => targetDate.setMonth(targetDate.getMonth() - 1),
+          "3m": () => targetDate.setMonth(targetDate.getMonth() - 3),
+          "6m": () => targetDate.setMonth(targetDate.getMonth() - 6),
+          "1y": () => targetDate.setFullYear(targetDate.getFullYear() - 1),
+          "2y": () => targetDate.setFullYear(targetDate.getFullYear() - 2),
+        };
+        periodMap[period]();
+      } else {
+        targetDate.setDate(targetDate.getDate() - requiredDays);
+      }
+
+      if (targetDate < new Date(oldestDate)) {
+        returns[period] = null;
+        continue;
+      }
+
+      const targetTime = targetDate.getTime();
+      let candidate = null;
+
+      // First, try to find exact match or closest date on or before target
+      for (const dataPoint of normalizedNavData) {
+        const dataTime = new Date(dataPoint.date).getTime();
+        
+        if (dataTime <= targetTime) {
+          if (!candidate || dataTime > new Date(candidate.date).getTime()) {
+            candidate = { nav: dataPoint.nav, date: new Date(dataPoint.date) };
+          }
+        }
+      }
+
+      // If no date found on or before target, find the closest date after target
+      if (!candidate) {
+        let minDiff = Infinity;
+        for (const dataPoint of normalizedNavData) {
+          const dataTime = new Date(dataPoint.date).getTime();
+          const diff = dataTime - targetTime;
+          
+          if (diff > 0 && diff < minDiff) {
+            minDiff = diff;
+            candidate = { nav: dataPoint.nav, date: new Date(dataPoint.date) };
+          }
+        }
+      }
+
+      if (candidate) {
+        const candidateTime = new Date(candidate.date).getTime();
+        const daysDiff = Math.abs(candidateTime - targetTime) / (1000 * 60 * 60 * 24);
+        const maxAllowedDiff = requiredDays <= 30 ? 7 : 30;
+
+        if (daysDiff > maxAllowedDiff) {
+          returns[period] = null;
+          continue;
+        }
+
+        const durationYears = (new Date(currentDate).getTime() - candidate.date.getTime()) / (365 * 24 * 60 * 60 * 1000);
+        let returnValue: number;
+        if (durationYears >= 1) {
+          returnValue = (Math.pow(lastNav / candidate.nav, 1 / durationYears) - 1) * 100;
+        } else {
+          returnValue = ((lastNav - candidate.nav) / candidate.nav) * 100;
+        }
+
+        console.log(
+          `[${scheme}] Trailing Return for ${period}: Start NAV (${candidate.date.toISOString().split('T')[0]}) = ${candidate.nav.toFixed(2)}, ` +
+          `End NAV (${currentDate}) = ${lastNav.toFixed(2)}, Return = ${returnValue.toFixed(2)}%`
+        );
+
+        returns[period] = returnValue;
+      } else {
+        returns[period] = null;
+      }
     }
+
+    // Ensure MDD and currentDD are always included
+    returns["MDD"] = drawdownMetrics?.mdd.toFixed(2) || "0.00";
+    returns["currentDD"] = drawdownMetrics?.currentDD.toFixed(2) || "0.00";
+    console.log(`Trailing returns for ${scheme} with MDD and currentDD:`, returns);
+
+    return returns;
   }
-
-  // Ensure MDD and currentDD are always included
-  returns["MDD"] = drawdownMetrics?.mdd.toFixed(2) || "0.00";
-  returns["currentDD"] = drawdownMetrics?.currentDD.toFixed(2) || "0.00";
-  console.log(`Trailing returns for ${scheme} with MDD and currentDD:`, returns);
-
-  return returns;
-}
 
   private static getMonthName(month: number): string {
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
