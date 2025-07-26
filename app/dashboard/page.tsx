@@ -31,6 +31,8 @@ interface Stats {
     twoYears: string;
     fiveYears: string;
     sinceInception: string;
+    MDD?: string; // Add MDD
+    currentDD?: string; // Add currentDD
   };
   drawdown: string;
   equityCurve: { date: string; value: number }[];
@@ -86,8 +88,8 @@ interface PmsStats {
     twoYears: string;
     fiveYears: string;
     sinceInception: string;
-    MDD: string;
-    currentDD: string;
+    MDD: string; // Already includes MDD
+    currentDD: string; // Already includes currentDD
   };
   cashFlows: { date: string; amount: number }[];
   strategyName?: string;
@@ -148,6 +150,8 @@ function convertPmsStatsToStats(pmsStats: PmsStats): Stats {
       twoYears: pmsStats.trailingReturns.twoYears,
       fiveYears: pmsStats.trailingReturns.fiveYears,
       sinceInception: pmsStats.trailingReturns.sinceInception,
+      MDD: pmsStats.trailingReturns.MDD, // Add MDD
+      currentDD: pmsStats.trailingReturns.currentDD, // Add currentDD
     },
     drawdown: pmsStats.maxDrawdown,
     equityCurve: pmsStats.equityCurve,

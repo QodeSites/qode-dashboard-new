@@ -30,6 +30,8 @@ interface RevenueChartProps {
     twoYears: string;
     fiveYears: string;
     sinceInception: string;
+    MDD?: string; // Add MDD
+    currentDD?: string; // Add currentDD
   };
   drawdown: string;
 }

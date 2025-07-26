@@ -20,13 +20,12 @@ interface TrailingReturnsData {
   twoYears: string;
   fiveYears: string;
   sinceInception: string;
-  maxDrawdown: string;
-  currentDrawdown: string;
 }
 
 interface TrailingReturnsTableProps {
   trailingReturns: Partial<TrailingReturnsData> & { [key: string]: string | number };
   drawdown: string;
+  maxDrawdown?: string;
   equityCurve: EquityCurvePoint[];
   accountType?: string;
   broker?: string;
@@ -36,9 +35,12 @@ export function TrailingReturnsTable({
   trailingReturns,
   drawdown,
   equityCurve,
+  maxDrawdown,
+  accountType,
+  broker,
 }: TrailingReturnsTableProps) {
   const { bse500Data, error } = useBse500Data(equityCurve);
-
+  console.log('maxDrawdown:', drawdown);
   // Normalize trailingReturns for internal use
   const normalizeTrailingReturns = (
     input: TrailingReturnsTableProps["trailingReturns"]
@@ -53,8 +55,6 @@ export function TrailingReturnsTable({
     twoYears: String(input["twoYears"] ?? input["2y"] ?? "-"),
     fiveYears: String(input["fiveYears"] ?? input["5y"] ?? "-"),
     sinceInception: String(input["sinceInception"] ?? "-"),
-    maxDrawdown: String(input["maxDrawdown"] ?? input["MDD"] ?? "-"),
-    currentDrawdown: String(input["currentDrawdown"] ?? input["currentDD"] ?? "-"),
   });
 
   const normalizedTrailingReturns = normalizeTrailingReturns(trailingReturns);
@@ -69,15 +69,52 @@ export function TrailingReturnsTable({
     { key: "2y", label: "2y", duration: 2, type: "years" },
     { key: "sinceInception", label: "Since Inception", duration: null, type: "inception" },
     { key: "currentDD", label: "Current DD", duration: null, type: "drawdown" },
-    { key: "MDD", label: "Max DD", duration: null, type: "maxDrawdown" },
+    { key: "maxDD", label: "Max DD", duration: null, type: "maxDrawdown" },
   ];
 
-  const isValidReturn = (value: string | number | null | undefined): boolean => {
-    if (value === null || value === undefined || value === "---" || value === "") {
+  const isValidReturn = (
+    value: string | number | null | undefined
+  ): boolean => {
+    if (value === null || value === undefined || value === "-" || value === "") {
       return false;
     }
-    return true;
+    return true; // Allow 0.00 to be considered valid
   };
+
+  const calculatePortfolioCurrentDD = useCallback(() => {
+    if (!equityCurve.length) return "-";
+
+    let peakValue = -Infinity;
+    let currentValue = equityCurve[equityCurve.length - 1].value;
+
+    equityCurve.forEach(point => {
+      peakValue = Math.max(peakValue, point.value);
+    });
+
+    if (peakValue <= 0) return "-";
+
+    const currentDD = ((currentValue - peakValue) / peakValue) * 100;
+    return (-Math.abs(currentDD)).toFixed(0);
+  }, [equityCurve]);
+
+  const calculatePortfolioMaxDD = useCallback(() => {
+    if (!equityCurve.length) return "-";
+
+    let maxDrawdown = 0;
+    let peakValue = -Infinity;
+
+    equityCurve.forEach(point => {
+      const value = point.value;
+      peakValue = Math.max(peakValue, value);
+      if (peakValue > 0) {
+        const drawdown = ((value - peakValue) / peakValue) * 100;
+        maxDrawdown = Math.min(maxDrawdown, drawdown);
+      }
+    });
+
+    if (maxDrawdown === 0) return "-";
+    return maxDrawdown;
+  }, [equityCurve]);
 
   const getSchemeReturn = (periodKey: string) => {
     switch (periodKey) {
@@ -86,59 +123,71 @@ export function TrailingReturnsTable({
       case "10d":
         return isValidReturn(normalizedTrailingReturns.tenDays) ? normalizedTrailingReturns.tenDays : "-";
       case "15d":
-        // Fixed bug: was returning fiveDays instead of fifteenDays
         return isValidReturn(normalizedTrailingReturns.fifteenDays) ? normalizedTrailingReturns.fifteenDays : "-";
       case "1m":
         return isValidReturn(normalizedTrailingReturns.oneMonth) ? normalizedTrailingReturns.oneMonth : "-";
+      case "3m":
+        return isValidReturn(normalizedTrailingReturns.threeMonths) ? normalizedTrailingReturns.threeMonths : "-";
       case "1y":
         return isValidReturn(normalizedTrailingReturns.oneYear) ? normalizedTrailingReturns.oneYear : "-";
       case "2y":
         return isValidReturn(normalizedTrailingReturns.twoYears) ? normalizedTrailingReturns.twoYears : "-";
-      case "3m":
-        return isValidReturn(normalizedTrailingReturns.threeMonths) ? normalizedTrailingReturns.threeMonths : "-";
       case "sinceInception":
         return isValidReturn(normalizedTrailingReturns.sinceInception) ? normalizedTrailingReturns.sinceInception : "-";
-      case "MDD":
-        return isValidReturn(normalizedTrailingReturns.maxDrawdown) ? normalizedTrailingReturns.maxDrawdown : "-";
       case "currentDD":
-        return isValidReturn(normalizedTrailingReturns.currentDrawdown) ? normalizedTrailingReturns.currentDrawdown : "-";
+        return isValidReturn(calculatePortfolioCurrentDD()) ? calculatePortfolioCurrentDD() : "-";
+      case "maxDD":
+        return isValidReturn(maxDrawdown) ? (-Math.abs(parseFloat(maxDrawdown))).toFixed(2) :
+              isValidReturn(calculatePortfolioMaxDD()) ? calculatePortfolioMaxDD() : "-";
       default:
         return "-";
     }
   };
 
   const calculateBenchmarkReturns = useCallback(() => {
-    console.log("🔍 Starting benchmark returns calculation...");
-    console.log("BSE500 data length:", bse500Data.length);
-    console.log("Equity curve length:", equityCurve.length);
+    //console.log("🔍 Starting benchmark returns calculation...");
+    //console.log("BSE500 data length:", bse500Data.length);
+    //console.log("Equity curve length:", equityCurve.length);
 
     const benchmarkReturns: { [key: string]: string } = {};
 
-    // Initialize all periods with "-"
     allPeriods.forEach(period => {
       benchmarkReturns[period.key] = "-";
     });
 
     if (!bse500Data.length || !equityCurve.length) {
-      console.log("❌ Missing data - BSE500:", bse500Data.length, "EquityCurve:", equityCurve.length);
+      //console.log("❌ Missing data - BSE500:", bse500Data.length, "EquityCurve:", equityCurve.length);
       return benchmarkReturns;
     }
 
     const endDate = new Date(equityCurve[equityCurve.length - 1].date);
     const startDate = new Date(equityCurve[0].date);
 
-    console.log("📅 Date range:");
-    console.log("Start date:", startDate.toISOString());
-    console.log("End date:", endDate.toISOString());
+    //console.log("📅 Date range:");
+    //console.log("Start date:", startDate.toISOString());
+    //console.log("End date:", endDate.toISOString());
+    //console.log("BSE500 date range:",
+    //   new Date(bse500Data[0]?.date || '').toISOString(),
+    //   "to",
+    //   new Date(bse500Data[bse500Data.length - 1]?.date || '').toISOString()
+    // );
 
     const findNav = (targetDate: Date) => {
+      //console.log("🔍 Finding NAV for date:", targetDate.toISOString());
+
       const exactMatch = bse500Data.find(point => {
         const pointDate = new Date(point.date);
         return pointDate.toDateString() === targetDate.toDateString();
       });
 
       if (exactMatch) {
-        return parseFloat(exactMatch.nav);
+        //console.log("📊 Exact NAV match found:", {
+        //   targetDate: targetDate.toISOString(),
+        //   foundDate: exactMatch.date,
+        //   nav: parseFloat(exactMatch.nav),
+        //   daysDiff: 0
+        // });
+        // return parseFloat(exactMatch.nav);
       }
 
       let closestPrevious = null;
@@ -173,50 +222,81 @@ export function TrailingReturnsTable({
       });
 
       const selectedPoint = closestPrevious || closestFuture;
-      return selectedPoint ? selectedPoint.nav : 0;
+
+      if (selectedPoint) {
+        //console.log("📊 NAV found:", {
+        //   targetDate: targetDate.toISOString(),
+        //   foundDate: selectedPoint.date,
+        //   nav: selectedPoint.nav,
+        //   daysDiff: Math.round(selectedPoint.diff / (1000 * 60 * 60 * 24)),
+        //   type: closestPrevious ? 'PREVIOUS' : 'FUTURE (fallback)',
+        //   availablePrevious: !!closestPrevious,
+        //   availableFuture: !!closestFuture
+        // });
+        return selectedPoint.nav;
+      }
+
+      //console.log("❌ No NAV data found for target date");
+      return 0;
     };
 
     const calculateReturn = (start: Date, end: Date) => {
+      //console.log("💰 Calculating return from", start.toISOString(), "to", end.toISOString());
+
       const startNav = findNav(start);
       const endNav = findNav(end);
 
+      //console.log("NAV values - Start:", startNav, "End:", endNav);
+
       if (startNav && endNav && startNav !== 0) {
         const returnValue = (((endNav - startNav) / startNav) * 100).toFixed(2);
+        //console.log("✅ Calculated return:", returnValue + "%");
         return returnValue;
       }
 
+      //console.log("❌ Invalid NAV values, returning '-'");
       return "-";
     };
 
-    // Calculate returns for all periods
+    //console.log("📈 Calculating returns for all periods...");
     allPeriods.forEach(period => {
+      //console.log(`\n--- Processing period: ${period.key} (${period.label}) ---`);
+
       if (period.type === "days" || period.type === "months" || period.type === "years") {
         const start = new Date(endDate);
 
         if (period.type === "days") {
           start.setDate(endDate.getDate() - period.duration!);
+          //console.log(`Going back ${period.duration} days`);
         } else if (period.type === "months") {
           start.setMonth(endDate.getMonth() - period.duration!);
+          //console.log(`Going back ${period.duration} months`);
         } else if (period.type === "years") {
           start.setFullYear(endDate.getFullYear() - period.duration!);
+          //console.log(`Going back ${period.duration} years`);
         }
 
         const returnValue = calculateReturn(start, endDate);
         benchmarkReturns[period.key] = returnValue;
+        //console.log(`${period.key} benchmark return: ${returnValue}`);
 
       } else if (period.type === "inception") {
+        //console.log("Calculating since inception return");
         const returnValue = calculateReturn(startDate, endDate);
         benchmarkReturns[period.key] = returnValue;
+        //console.log(`Since inception benchmark return: ${returnValue}`);
       }
     });
 
-    // Calculate benchmark drawdowns
+    // //console.log("\n📉 Calculating benchmark drawdowns...");
     if (bse500Data.length) {
       let maxDrawdown = 0;
       let peakNav = -Infinity;
       let currentNav = parseFloat(bse500Data[bse500Data.length - 1].nav);
 
-      bse500Data.forEach(point => {
+      // //console.log("Current NAV for drawdown calc:", currentNav);
+
+      bse500Data.forEach((point, index) => {
         const nav = parseFloat(point.nav);
 
         if (nav > peakNav) {
@@ -227,6 +307,7 @@ export function TrailingReturnsTable({
 
         if (drawdownValue < maxDrawdown) {
           maxDrawdown = drawdownValue;
+          // //console.log(`New max drawdown found at index ${index}: ${maxDrawdown.toFixed(2)}% (NAV: ${nav}, Peak: ${peakNav})`);
         }
       });
 
@@ -240,11 +321,17 @@ export function TrailingReturnsTable({
 
       const currentDrawdown = allTimePeak > 0 ? ((currentNav - allTimePeak) / allTimePeak) * 100 : 0;
 
-      benchmarkReturns.MDD = (-Math.abs(maxDrawdown)).toFixed(2);
+      // //console.log("Drawdown calculations:");
+      // //console.log("All-time peak NAV:", allTimePeak);
+      // //console.log("Current NAV:", currentNav);
+      // //console.log("Max drawdown:", maxDrawdown.toFixed(2) + "%");
+      // //console.log("Current drawdown:", currentDrawdown.toFixed(2) + "%");
+
+      benchmarkReturns.maxDD = (-Math.abs(maxDrawdown)).toFixed(2);
       benchmarkReturns.currentDD = (-Math.abs(currentDrawdown)).toFixed(2);
     }
 
-    console.log("🎯 Final benchmark returns:", benchmarkReturns);
+    // //console.log("\n🎯 Final benchmark returns:", benchmarkReturns);
     return benchmarkReturns;
   }, [bse500Data, equityCurve, allPeriods]);
 
@@ -254,16 +341,16 @@ export function TrailingReturnsTable({
     const schemeValue = getSchemeReturn(periodKey);
     const benchmarkValue = benchmarkReturns[periodKey];
 
+    // //console.log(`Display value for ${periodKey} - Scheme: ${schemeValue}, Benchmark: ${benchmarkValue}, IsScheme: ${isScheme}`);
+
     if (isScheme) {
       return schemeValue;
     }
 
-    // For benchmark: only show benchmark value if scheme value is available and not "-"
-    if (schemeValue === "-" || schemeValue === "---" || schemeValue === "" || !schemeValue) {
+    if (schemeValue === "-") {
       return "-";
     }
 
-    // If scheme value is available, show the benchmark value
     return benchmarkValue;
   };
 
@@ -276,7 +363,10 @@ export function TrailingReturnsTable({
   };
 
   const getCellClass = (value: string) => {
-    return "px-4 py-3 text-center whitespace-nowrap";
+    if (value === "-" || value === "---" || value === "") return "px-4 py-3 text-center whitespace-nowrap";
+    const numValue = parseFloat(value);
+    let cellClass = "px-4 py-3 text-center whitespace-nowrap";
+    return cellClass;
   };
 
   const formatDisplayValue = (value: string, periodKey: string, isScheme: boolean): string => {
@@ -285,17 +375,12 @@ export function TrailingReturnsTable({
     }
 
     if (value === "0.00") {
-      return "0.00%";
+      return isScheme ? "0.00%" : "-";
     }
 
     const numValue = parseFloat(value);
     if (isNaN(numValue)) {
       return "-";
-    }
-
-    // For MDD and currentDD, ensure negative display
-    if (periodKey === "MDD" || periodKey === "currentDD") {
-      return `${(-Math.abs(numValue)).toFixed(2)}%`;
     }
 
     const sign = numValue > 0 ? "+" : "";
