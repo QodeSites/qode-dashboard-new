@@ -104,7 +104,7 @@ const PORTFOLIO_MAPPING = {
       metrics: "Zerodha Total Portfolio F",
       nav: "Zerodha Total Portfolio F",
     },
-    "Scheme PMS_QAW": {
+    "Scheme PMS QAW": {
       current: "PMS QAW Portfolio",
       metrics: "PMS QAW Portfolio",
       nav: "PMS QAW Portfolio",
@@ -206,7 +206,7 @@ export class PortfolioApi {
       "Scheme D": "Zerodha Total Portfolio D",
       "Scheme E": "Zerodha Total Portfolio E",
       "Scheme F": "Zerodha Total Portfolio F",
-      "Scheme PMS_QAW": "PMS QAW Portfolio",
+      "Scheme PMS QAW": "PMS QAW Portfolio",
     };
     return systemTagMap[scheme] || `Zerodha Total Portfolio ${scheme}`;
   }
@@ -322,7 +322,7 @@ export class PortfolioApi {
       return totalDeposited;
     }
 
-    if (scheme === "Scheme PMS_QAW") {
+    if (scheme === "Scheme PMS QAW") {
       const pmsData = await this.getPMSData();
       return pmsData.amountDeposited;
     }
@@ -386,7 +386,7 @@ export class PortfolioApi {
       return latestDate ? { portfolioValue: totalPortfolioValue, drawdown: latestDrawdown, nav: latestNav, date: latestDate } : null;
     }
 
-    if (scheme === "Scheme PMS_QAW") {
+    if (scheme === "Scheme PMS QAW") {
       const pmsData = await this.getPMSData();
       return pmsData.latestData;
     }
@@ -425,7 +425,7 @@ export class PortfolioApi {
   }
 
   private static async getPortfolioReturns(qcode: string, scheme: string): Promise<number> {
-    if (scheme === "Scheme PMS_QAW") {
+    if (scheme === "Scheme PMS QAW") {
       const pmsData = await this.getPMSData();
       if (pmsData.historicalData.length < 2) return 0;
 
@@ -525,7 +525,7 @@ export class PortfolioApi {
   }
 
   private static async getTotalProfit(qcode: string, scheme: string): Promise<number> {
-    if (scheme === "Scheme PMS_QAW") {
+    if (scheme === "Scheme PMS QAW") {
       const pmsData = await this.getPMSData();
       return pmsData.totalProfit;
     }
@@ -555,7 +555,7 @@ export class PortfolioApi {
   }
 
   private static async getHistoricalData(qcode: string, scheme: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]> {
-    if (scheme === "Scheme PMS_QAW") {
+    if (scheme === "Scheme PMS QAW") {
       const pmsData = await this.getPMSData();
       return pmsData.historicalData.map(item => ({
         date: new Date(item.date),
@@ -592,7 +592,7 @@ export class PortfolioApi {
   }
 
   private static async getCashFlows(qcode: string, scheme: string): Promise<CashFlow[]> {
-    if (scheme === "Scheme PMS_QAW") {
+    if (scheme === "Scheme PMS QAW") {
       const pmsData = await this.getPMSData();
       return pmsData.cashFlows;
     }
@@ -1010,7 +1010,7 @@ export class PortfolioApi {
     return combinedQuarterlyPnL;
   }
 
-  if (scheme === "Scheme PMS_QAW") {
+  if (scheme === "Scheme PMS QAW") {
     // For PMS data, we'll calculate quarterly P&L from the navData
     return this.calculateQuarterlyPnLFromNavData(navData);
   }
@@ -1166,140 +1166,144 @@ export class PortfolioApi {
     return PORTFOLIO_MAPPING[accountCode][scheme];
   }
 
-  public static async GET(request: Request): Promise<NextResponse> {
-    try {
-      let results: Record<string, PortfolioResponse> = {};
-      const accountCode = "AC5";
-      const allSchemes = Object.keys(PORTFOLIO_MAPPING[accountCode]).filter(s => s !== "Scheme PMS-QAW");
-      const schemes = ["Total Portfolio", ...allSchemes.filter(s => s !== "Total Portfolio")];
+ public static async GET(request: Request): Promise<NextResponse> {
+  try {
+    let results: Record<string, PortfolioResponse> = {};
+    const accountCode = "AC5";
+    const allSchemes = Object.keys(PORTFOLIO_MAPPING[accountCode]).filter(s => s !== "Scheme PMS-QAW");
+    
+    // Define the desired order: Total Portfolio, Scheme B, Scheme PMS QAW, then rest
+    const prioritySchemes = ["Total Portfolio", "Scheme B", "Scheme PMS QAW"];
+    const remainingSchemes = allSchemes.filter(s => !prioritySchemes.includes(s));
+    const schemes = [...prioritySchemes, ...remainingSchemes];
 
-      console.log(`Processing schemes: ${schemes.join(', ')}`);
+    console.log(`Processing schemes in order: ${schemes.join(', ')}`);
 
-      for (const scheme of schemes) {
-        const qcode = `QAC00041`;
-        const portfolioNames = PortfolioApi.getPortfolioNames(accountCode, scheme);
-        const systemTag = PortfolioApi.getSystemTag(scheme);
+    for (const scheme of schemes) {
+      const qcode = `QAC00041`;
+      const portfolioNames = PortfolioApi.getPortfolioNames(accountCode, scheme);
+      const systemTag = PortfolioApi.getSystemTag(scheme);
 
-        console.log(`Processing ${scheme} with qcode: ${qcode}, systemTag: ${systemTag}`);
+      console.log(`Processing ${scheme} with qcode: ${qcode}, systemTag: ${systemTag}`);
 
-        let cashInOutData, masterSheetData;
+      let cashInOutData, masterSheetData;
 
-        if (scheme === "Scheme PMS_QAW") {
-          // For PMS scheme, we don't need to fetch from master_sheet
-          cashInOutData = [];
-          masterSheetData = [];
-        } else {
-          [cashInOutData, masterSheetData] = await Promise.all([
-            prisma.master_sheet.findMany({
-              where: { qcode, system_tag: systemTag, capital_in_out: { not: null } },
-              select: { date: true, capital_in_out: true },
-              orderBy: { date: "asc" },
-            }),
-            prisma.master_sheet.findMany({
-              where: { qcode, system_tag: systemTag },
-              select: { date: true, nav: true, drawdown: true, portfolio_value: true, daily_p_l: true, pnl: true, capital_in_out: true },
-              orderBy: { date: "asc" },
-            }),
-          ]);
-        }
-
-        console.log(`Found ${cashInOutData.length} cash in/out records and ${masterSheetData.length} master sheet records for ${scheme}`);
-
-        const normalizedData = {
-          cashInOut: cashInOutData.map(item => ({
-            ...item,
-            date: PortfolioApi.normalizeDate(item.date)!,
-            capital_in_out: Number(item.capital_in_out) || 0,
-          })),
-          masterSheet: masterSheetData.map(item => ({
-            ...item,
-            date: PortfolioApi.normalizeDate(item.date)!,
-            nav: Number(item.nav) || 0,
-            drawdown: Number(item.drawdown) || 0,
-            portfolio_value: Number(item.portfolio_value) || 0,
-            daily_pl: Number(item.daily_p_l) || 0,
-            pnl: Number(item.pnl) || 0,
-            capital_in_out: Number(item.capital_in_out) || 0,
-          })),
-        };
-
-        const investedAmount = await PortfolioApi.getAmountDeposited(qcode, scheme);
-        const latestExposure = await PortfolioApi.getLatestExposure(qcode, scheme);
-        const totalProfit = await PortfolioApi.getTotalProfit(qcode, scheme);
-        const returns = await PortfolioApi.getPortfolioReturns(qcode, scheme);
-        const historicalData = await PortfolioApi.getHistoricalData(qcode, scheme);
-        const cashFlows = await PortfolioApi.getCashFlows(qcode, scheme);
-        const drawdownMetrics = PortfolioApi.calculateDrawdownMetrics(historicalData.map(d => ({ date: PortfolioApi.normalizeDate(d.date)!, nav: d.nav })));
-        const trailingReturns = await PortfolioApi.calculateTrailingReturns(qcode, scheme, drawdownMetrics);
-        const monthlyPnl = PortfolioApi.calculateMonthlyPnL(historicalData.map(d => ({
-          date: PortfolioApi.normalizeDate(d.date)!,
-          nav: d.nav,
-          pnl: d.pnl,
-          capitalInOut: d.capitalInOut
-        })));
-        const quarterlyPnl = await PortfolioApi.calculateQuarterlyPnLWithDailyPL(
-          qcode,
-          scheme,
-          historicalData.map(d => ({
-            date: PortfolioApi.normalizeDate(d.date)!,
-            nav: d.nav,
-            pnl: d.pnl
-          }))
-        );
-
-        console.log(`Processed data for ${scheme}:`, {
-          investedAmount,
-          currentExposure: latestExposure?.portfolioValue || 0,
-          returns,
-          historicalDataPoints: historicalData.length,
-          cashFlowsCount: cashFlows.length,
-        });
-
-        const portfolioData: PortfolioData = {
-          amountDeposited: investedAmount.toFixed(2),
-          currentExposure: latestExposure?.portfolioValue.toFixed(2) || "0",
-          return: returns.toFixed(2),
-          totalProfit: totalProfit.toFixed(2),
-          trailingReturns,
-          drawdown: drawdownMetrics.currentDD.toFixed(2),
-          maxDrawdown: drawdownMetrics.mdd.toFixed(2),
-          equityCurve: historicalData.map(d => ({ date: PortfolioApi.normalizeDate(d.date)!, nav: d.nav })),
-          drawdownCurve: drawdownMetrics.ddCurve,
-          quarterlyPnl,
-          monthlyPnl,
-          cashFlows,
-          strategyName: scheme,
-        };
-
-        const metadata: Metadata = {
-          icode: `${scheme}`,
-          accountCount: 1,
-          lastUpdated: new Date().toISOString(),
-          filtersApplied: {
-            accountType: null,
-            broker: null,
-            startDate: null,
-            endDate: null,
-          },
-          inceptionDate: scheme === "Scheme PMS_QAW" ? "2024-01-01" : "2024-03-18",
-          dataAsOfDate: latestExposure?.date.toISOString().split('T')[0] || "2025-07-18",
-          strategyName: scheme,
-        };
-
-        results = {
-          ...results,
-          [scheme]: { data: portfolioData, metadata },
-        };
+      if (scheme === "Scheme PMS QAW") {
+        // For PMS scheme, we don't need to fetch from master_sheet
+        cashInOutData = [];
+        masterSheetData = [];
+      } else {
+        [cashInOutData, masterSheetData] = await Promise.all([
+          prisma.master_sheet.findMany({
+            where: { qcode, system_tag: systemTag, capital_in_out: { not: null } },
+            select: { date: true, capital_in_out: true },
+            orderBy: { date: "asc" },
+          }),
+          prisma.master_sheet.findMany({
+            where: { qcode, system_tag: systemTag },
+            select: { date: true, nav: true, drawdown: true, portfolio_value: true, daily_p_l: true, pnl: true, capital_in_out: true },
+            orderBy: { date: "asc" },
+          }),
+        ]);
       }
 
-      console.log(`Successfully processed ${Object.keys(results).length} schemes`);
-      return NextResponse.json(results, { status: 200 });
-    } catch (error) {
-      console.error("Sarla Portfolio API Error:", error);
-      return NextResponse.json({
-        error: "Internal server error",
-        message: error instanceof Error ? error.message : "Unknown error",
-      }, { status: 500 });
+      console.log(`Found ${cashInOutData.length} cash in/out records and ${masterSheetData.length} master sheet records for ${scheme}`);
+
+      const normalizedData = {
+        cashInOut: cashInOutData.map(item => ({
+          ...item,
+          date: PortfolioApi.normalizeDate(item.date)!,
+          capital_in_out: Number(item.capital_in_out) || 0,
+        })),
+        masterSheet: masterSheetData.map(item => ({
+          ...item,
+          date: PortfolioApi.normalizeDate(item.date)!,
+          nav: Number(item.nav) || 0,
+          drawdown: Number(item.drawdown) || 0,
+          portfolio_value: Number(item.portfolio_value) || 0,
+          daily_pl: Number(item.daily_p_l) || 0,
+          pnl: Number(item.pnl) || 0,
+          capital_in_out: Number(item.capital_in_out) || 0,
+        })),
+      };
+
+      const investedAmount = await PortfolioApi.getAmountDeposited(qcode, scheme);
+      const latestExposure = await PortfolioApi.getLatestExposure(qcode, scheme);
+      const totalProfit = await PortfolioApi.getTotalProfit(qcode, scheme);
+      const returns = await PortfolioApi.getPortfolioReturns(qcode, scheme);
+      const historicalData = await PortfolioApi.getHistoricalData(qcode, scheme);
+      const cashFlows = await PortfolioApi.getCashFlows(qcode, scheme);
+      const drawdownMetrics = PortfolioApi.calculateDrawdownMetrics(historicalData.map(d => ({ date: PortfolioApi.normalizeDate(d.date)!, nav: d.nav })));
+      const trailingReturns = await PortfolioApi.calculateTrailingReturns(qcode, scheme, drawdownMetrics);
+      const monthlyPnl = PortfolioApi.calculateMonthlyPnL(historicalData.map(d => ({
+        date: PortfolioApi.normalizeDate(d.date)!,
+        nav: d.nav,
+        pnl: d.pnl,
+        capitalInOut: d.capitalInOut
+      })));
+      const quarterlyPnl = await PortfolioApi.calculateQuarterlyPnLWithDailyPL(
+        qcode,
+        scheme,
+        historicalData.map(d => ({
+          date: PortfolioApi.normalizeDate(d.date)!,
+          nav: d.nav,
+          pnl: d.pnl
+        }))
+      );
+
+      console.log(`Processed data for ${scheme}:`, {
+        investedAmount,
+        currentExposure: latestExposure?.portfolioValue || 0,
+        returns,
+        historicalDataPoints: historicalData.length,
+        cashFlowsCount: cashFlows.length,
+      });
+
+      const portfolioData: PortfolioData = {
+        amountDeposited: investedAmount.toFixed(2),
+        currentExposure: latestExposure?.portfolioValue.toFixed(2) || "0",
+        return: returns.toFixed(2),
+        totalProfit: totalProfit.toFixed(2),
+        trailingReturns,
+        drawdown: drawdownMetrics.currentDD.toFixed(2),
+        maxDrawdown: drawdownMetrics.mdd.toFixed(2),
+        equityCurve: historicalData.map(d => ({ date: PortfolioApi.normalizeDate(d.date)!, nav: d.nav })),
+        drawdownCurve: drawdownMetrics.ddCurve,
+        quarterlyPnl,
+        monthlyPnl,
+        cashFlows,
+        strategyName: scheme,
+      };
+
+      const metadata: Metadata = {
+        icode: `${scheme}`,
+        accountCount: 1,
+        lastUpdated: new Date().toISOString(),
+        filtersApplied: {
+          accountType: null,
+          broker: null,
+          startDate: null,
+          endDate: null,
+        },
+        inceptionDate: scheme === "Scheme PMS QAW" ? "2024-01-01" : "2024-03-18",
+        dataAsOfDate: latestExposure?.date.toISOString().split('T')[0] || "2025-07-18",
+        strategyName: scheme,
+      };
+
+      results = {
+        ...results,
+        [scheme]: { data: portfolioData, metadata },
+      };
     }
+
+    console.log(`Successfully processed ${Object.keys(results).length} schemes`);
+    return NextResponse.json(results, { status: 200 });
+  } catch (error) {
+    console.error("Sarla Portfolio API Error:", error);
+    return NextResponse.json({
+      error: "Internal server error",
+      message: error instanceof Error ? error.message : "Unknown error",
+    }, { status: 500 });
   }
+}
 }
