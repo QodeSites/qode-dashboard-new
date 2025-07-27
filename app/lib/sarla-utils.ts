@@ -67,7 +67,6 @@ interface PortfolioResponse {
   metadata: Metadata;
 }
 
-
 const PORTFOLIO_MAPPING = {
   AC5: {
     "Scheme B": {
@@ -105,6 +104,11 @@ const PORTFOLIO_MAPPING = {
       metrics: "Zerodha Total Portfolio F",
       nav: "Zerodha Total Portfolio F",
     },
+    "Scheme PMS_QAW": {
+      current: "PMS QAW Portfolio",
+      metrics: "PMS QAW Portfolio",
+      nav: "PMS QAW Portfolio",
+    },
     "Total Portfolio": {
       current: "Sarla Performance fibers Scheme Total Portfolio",
       metrics: "Sarla Performance fibers Scheme Total Portfolio",
@@ -112,7 +116,6 @@ const PORTFOLIO_MAPPING = {
     },
   },
 };
-
 
 // Frozen return values for specific schemes
 const FROZEN_RETURN_VALUES = {
@@ -203,36 +206,131 @@ export class PortfolioApi {
       "Scheme D": "Zerodha Total Portfolio D",
       "Scheme E": "Zerodha Total Portfolio E",
       "Scheme F": "Zerodha Total Portfolio F",
+      "Scheme PMS_QAW": "PMS QAW Portfolio",
     };
     return systemTagMap[scheme] || `Zerodha Total Portfolio ${scheme}`;
   }
 
+  // New function to get PMS data
+  private static async getPMSData(accountCode: string = "QAW00023"): Promise<{
+    amountDeposited: number;
+    currentExposure: number;
+    totalProfit: number;
+    historicalData: { date: string; nav: number; drawdown: number; pnl: number; capitalInOut: number }[];
+    cashFlows: CashFlow[];
+    latestData: { portfolioValue: number; drawdown: number; nav: number; date: Date } | null;
+  }> {
+    console.log(`Getting PMS data for account code: ${accountCode}`);
+
+    const pmsData = await prisma.pms_master_sheet.findMany({
+      where: { account_code: accountCode },
+      select: {
+        report_date: true,
+        portfolio_value: true,
+        cash_in_out: true,
+        nav: true,
+        pnl: true,
+        drawdown_percent: true,
+      },
+      orderBy: { report_date: "asc" },
+    });
+
+    console.log(`Found ${pmsData.length} PMS records`);
+
+    if (!pmsData.length) {
+      return {
+        amountDeposited: 0,
+        currentExposure: 0,
+        totalProfit: 0,
+        historicalData: [],
+        cashFlows: [],
+        latestData: null,
+      };
+    }
+
+    // Calculate amount deposited (sum of all cash_in_out)
+    const amountDeposited = pmsData.reduce((sum, record) => 
+      sum + (Number(record.cash_in_out) || 0), 0);
+
+    // Get latest data
+    const latestRecord = pmsData[pmsData.length - 1];
+    const latestData = {
+      portfolioValue: Number(latestRecord.portfolio_value) || 0,
+      drawdown: Math.abs(Number(latestRecord.drawdown_percent) || 0),
+      nav: Number(latestRecord.nav) || 0,
+      date: latestRecord.report_date,
+    };
+
+    // Calculate total profit (sum of all pnl)
+    const totalProfit = pmsData.reduce((sum, record) => 
+      sum + (Number(record.pnl) || 0), 0);
+
+    // Prepare historical data
+    const historicalData = pmsData.map(record => ({
+      date: this.normalizeDate(record.report_date)!,
+      nav: Number(record.nav) || 0,
+      drawdown: Math.abs(Number(record.drawdown_percent) || 0),
+      pnl: Number(record.pnl) || 0,
+      capitalInOut: Number(record.cash_in_out) || 0,
+    }));
+
+    // Prepare cash flows (only non-zero cash_in_out)
+    const cashFlows: CashFlow[] = pmsData
+      .filter(record => Number(record.cash_in_out) !== 0)
+      .map(record => ({
+        date: this.normalizeDate(record.report_date)!,
+        amount: Number(record.cash_in_out) || 0,
+        dividend: 0,
+      }));
+
+    return {
+      amountDeposited,
+      currentExposure: latestData.portfolioValue,
+      totalProfit,
+      historicalData,
+      cashFlows,
+      latestData,
+    };
+  }
+
   private static async getAmountDeposited(qcode: string, scheme: string): Promise<number> {
     if (scheme === "Total Portfolio") {
-      const schemes = Object.keys(PORTFOLIO_MAPPING.AC5).filter(s => s !== "Total Portfolio" && s !== "Scheme PMS-QAW");
+      const schemes = Object.keys(PORTFOLIO_MAPPING.AC5).filter(s => 
+        s !== "Total Portfolio" && s !== "Scheme PMS-QAW");
       let totalDeposited = 0;
+      
+      // Add regular schemes
       for (const s of schemes) {
-        if (s !== "Scheme B") continue;
-        // Use "Zerodha Total Portfolio" for Scheme B amount invested
-        const systemTag = "Zerodha Total Portfolio";
-        const depositSum = await prisma.master_sheet.aggregate({
-          where: {
-            qcode,
-            system_tag: systemTag,
-            capital_in_out: { not: null }
-          },
-          _sum: { capital_in_out: true },
-        });
-        totalDeposited += Number(depositSum._sum.capital_in_out) || 0;
+        if (s === "Scheme B") {
+          const systemTag = "Zerodha Total Portfolio";
+          const depositSum = await prisma.master_sheet.aggregate({
+            where: {
+              qcode,
+              system_tag: systemTag,
+              capital_in_out: { not: null }
+            },
+            _sum: { capital_in_out: true },
+          });
+          totalDeposited += Number(depositSum._sum.capital_in_out) || 0;
+        }
       }
+      
+      // Add PMS data
+      const pmsData = await this.getPMSData();
+      totalDeposited += pmsData.amountDeposited;
+      
       return totalDeposited;
+    }
+
+    if (scheme === "Scheme PMS_QAW") {
+      const pmsData = await this.getPMSData();
+      return pmsData.amountDeposited;
     }
 
     if (scheme !== "Scheme B") {
       return 0;
     }
 
-    // Use "Zerodha Total Portfolio" for Scheme B amount invested
     const systemTag = "Zerodha Total Portfolio";
     console.log(`Getting amount deposited for qcode: ${qcode}, systemTag: ${systemTag}`);
 
@@ -249,12 +347,14 @@ export class PortfolioApi {
 
   private static async getLatestExposure(qcode: string, scheme: string): Promise<{ portfolioValue: number; drawdown: number; nav: number; date: Date } | null> {
     if (scheme === "Total Portfolio") {
-      const schemes = Object.keys(PORTFOLIO_MAPPING.AC5).filter(s => s !== "Total Portfolio" && s !== "Scheme PMS-QAW");
+      const schemes = Object.keys(PORTFOLIO_MAPPING.AC5).filter(s => 
+        s !== "Total Portfolio" && s !== "Scheme PMS-QAW");
       let totalPortfolioValue = 0;
       let latestDrawdown = 0;
       let latestNav = 0;
       let latestDate: Date | null = null;
 
+      // Add regular schemes
       for (const s of schemes) {
         const systemTag = PortfolioApi.getSystemTag(s);
         const record = await prisma.master_sheet.findFirst({
@@ -271,7 +371,24 @@ export class PortfolioApi {
           }
         }
       }
+
+      // Add PMS data
+      const pmsData = await this.getPMSData();
+      if (pmsData.latestData) {
+        totalPortfolioValue += pmsData.latestData.portfolioValue;
+        latestNav += pmsData.latestData.nav;
+        if (!latestDate || pmsData.latestData.date > latestDate) {
+          latestDate = pmsData.latestData.date;
+          latestDrawdown = pmsData.latestData.drawdown;
+        }
+      }
+
       return latestDate ? { portfolioValue: totalPortfolioValue, drawdown: latestDrawdown, nav: latestNav, date: latestDate } : null;
+    }
+
+    if (scheme === "Scheme PMS_QAW") {
+      const pmsData = await this.getPMSData();
+      return pmsData.latestData;
     }
 
     if (scheme !== "Scheme B") {
@@ -307,84 +424,112 @@ export class PortfolioApi {
     };
   }
 
-private static async getPortfolioReturns(qcode: string, scheme: string): Promise<number> {
-  if (scheme === "Total Portfolio") {
-    const systemTag = PortfolioApi.getSystemTag(scheme);
-    const firstNavRecord = await prisma.master_sheet.findFirst({
-      where: { qcode, system_tag: systemTag, nav: { not: null } },
-      orderBy: { date: "asc" },
-      select: { nav: true, date: true },
-    });
+  private static async getPortfolioReturns(qcode: string, scheme: string): Promise<number> {
+    if (scheme === "Scheme PMS_QAW") {
+      const pmsData = await this.getPMSData();
+      if (pmsData.historicalData.length < 2) return 0;
 
-    const latestNavRecord = await prisma.master_sheet.findFirst({
-      where: { qcode, system_tag: systemTag, nav: { not: null } },
-      orderBy: { date: "desc" },
-      select: { nav: true, date: true },
-    });
+      const firstRecord = pmsData.historicalData[0];
+      const lastRecord = pmsData.historicalData[pmsData.historicalData.length - 1];
 
-    if (!firstNavRecord || !latestNavRecord) {
-      console.log(`No NAV records found for qcode: ${qcode}, systemTag: ${systemTag}`);
-      return 0;
+      const initialNav = firstRecord.nav;
+      const finalNav = lastRecord.nav;
+
+      const durationYears = (new Date(lastRecord.date).getTime() - new Date(firstRecord.date).getTime()) / (365 * 24 * 60 * 60 * 1000);
+
+      console.log(`PMS NAV calculation - Initial: ${initialNav}, Final: ${finalNav}, Duration (years): ${durationYears}`);
+
+      if (initialNav === 0) return 0;
+
+      return durationYears >= 1
+        ? (Math.pow(finalNav / initialNav, 1 / durationYears) - 1) * 100  // CAGR
+        : ((finalNav - initialNav) / initialNav) * 100;                    // Absolute
     }
 
-    const initialNav = Number(firstNavRecord.nav) || 0;
-    const finalNav = Number(latestNavRecord.nav) || 0;
+    if (scheme === "Total Portfolio") {
+      // For Total Portfolio, we need to calculate combined returns
+      // This is complex as we need to combine multiple data sources
+      // For now, let's use the existing logic and add PMS contribution
+      const systemTag = PortfolioApi.getSystemTag(scheme);
+      const firstNavRecord = await prisma.master_sheet.findFirst({
+        where: { qcode, system_tag: systemTag, nav: { not: null } },
+        orderBy: { date: "asc" },
+        select: { nav: true, date: true },
+      });
 
-    const durationYears = (new Date(latestNavRecord.date).getTime() - new Date(firstNavRecord.date).getTime()) / (365 * 24 * 60 * 60 * 1000);
+      const latestNavRecord = await prisma.master_sheet.findFirst({
+        where: { qcode, system_tag: systemTag, nav: { not: null } },
+        orderBy: { date: "desc" },
+        select: { nav: true, date: true },
+      });
 
-    console.log(`NAV calculation for Total Portfolio - Initial: ${initialNav}, Final: ${finalNav}, Duration (years): ${durationYears}`);
+      if (!firstNavRecord || !latestNavRecord) {
+        console.log(`No NAV records found for qcode: ${qcode}, systemTag: ${systemTag}`);
+        return 0;
+      }
 
-    if (initialNav === 0) return 0;
+      const initialNav = Number(firstNavRecord.nav) || 0;
+      const finalNav = Number(latestNavRecord.nav) || 0;
 
-    return durationYears >= 1
-      ? (Math.pow(finalNav / initialNav, 1 / durationYears) - 1) * 100  // CAGR
-      : ((finalNav - initialNav) / initialNav) * 100;                    // Absolute
-  }
+      const durationYears = (new Date(latestNavRecord.date).getTime() - new Date(firstNavRecord.date).getTime()) / (365 * 24 * 60 * 60 * 1000);
 
-  if (FROZEN_RETURN_VALUES[scheme]) {
-    return FROZEN_RETURN_VALUES[scheme];
-  }
+      console.log(`NAV calculation for Total Portfolio - Initial: ${initialNav}, Final: ${finalNav}, Duration (years): ${durationYears}`);
 
-  try {
-    const systemTag = PortfolioApi.getSystemTag(scheme);
+      if (initialNav === 0) return 0;
 
-    const firstNavRecord = await prisma.master_sheet.findFirst({
-      where: { qcode, system_tag: systemTag, nav: { not: null } },
-      orderBy: { date: "asc" },
-      select: { nav: true, date: true },
-    });
-
-    const latestNavRecord = await prisma.master_sheet.findFirst({
-      where: { qcode, system_tag: systemTag, nav: { not: null } },
-      orderBy: { date: "desc" },
-      select: { nav: true, date: true },
-    });
-
-    if (!firstNavRecord || !latestNavRecord) {
-      console.log(`No NAV records found for qcode: ${qcode}, systemTag: ${systemTag}`);
-      return 0;
+      return durationYears >= 1
+        ? (Math.pow(finalNav / initialNav, 1 / durationYears) - 1) * 100  // CAGR
+        : ((finalNav - initialNav) / initialNav) * 100;                    // Absolute
     }
 
-    const initialNav = Number(firstNavRecord.nav) || 0;
-    const finalNav = Number(latestNavRecord.nav) || 0;
+    if (FROZEN_RETURN_VALUES[scheme]) {
+      return FROZEN_RETURN_VALUES[scheme];
+    }
 
-    const durationYears = (new Date(latestNavRecord.date).getTime() - new Date(firstNavRecord.date).getTime()) / (365 * 24 * 60 * 60 * 1000);
+    try {
+      const systemTag = PortfolioApi.getSystemTag(scheme);
 
-    console.log(`NAV calculation - Initial: ${initialNav}, Final: ${finalNav}, Duration (years): ${durationYears}`);
+      const firstNavRecord = await prisma.master_sheet.findFirst({
+        where: { qcode, system_tag: systemTag, nav: { not: null } },
+        orderBy: { date: "asc" },
+        select: { nav: true, date: true },
+      });
 
-    if (initialNav === 0) return 0;
+      const latestNavRecord = await prisma.master_sheet.findFirst({
+        where: { qcode, system_tag: systemTag, nav: { not: null } },
+        orderBy: { date: "desc" },
+        select: { nav: true, date: true },
+      });
 
-    return durationYears >= 1
-      ? (Math.pow(finalNav / initialNav, 1 / durationYears) - 1) * 100  // CAGR
-      : ((finalNav - initialNav) / initialNav) * 100;                    // Absolute
-  } catch (error) {
-    console.error(`Error calculating portfolio returns for qcode ${qcode}, scheme ${scheme}:`, error);
-    return 0;
+      if (!firstNavRecord || !latestNavRecord) {
+        console.log(`No NAV records found for qcode: ${qcode}, systemTag: ${systemTag}`);
+        return 0;
+      }
+
+      const initialNav = Number(firstNavRecord.nav) || 0;
+      const finalNav = Number(latestNavRecord.nav) || 0;
+
+      const durationYears = (new Date(latestNavRecord.date).getTime() - new Date(firstNavRecord.date).getTime()) / (365 * 24 * 60 * 60 * 1000);
+
+      console.log(`NAV calculation - Initial: ${initialNav}, Final: ${finalNav}, Duration (years): ${durationYears}`);
+
+      if (initialNav === 0) return 0;
+
+      return durationYears >= 1
+        ? (Math.pow(finalNav / initialNav, 1 / durationYears) - 1) * 100  // CAGR
+        : ((finalNav - initialNav) / initialNav) * 100;                    // Absolute
+    } catch (error) {
+      console.error(`Error calculating portfolio returns for qcode ${qcode}, scheme ${scheme}:`, error);
+      return 0;
+    }
   }
-}
-
 
   private static async getTotalProfit(qcode: string, scheme: string): Promise<number> {
+    if (scheme === "Scheme PMS_QAW") {
+      const pmsData = await this.getPMSData();
+      return pmsData.totalProfit;
+    }
+
     if (scheme === "Total Portfolio") {
       const systemTag = PortfolioApi.getSystemTag(scheme);
       console.log(`Getting total profit for qcode: ${qcode}, systemTag: ${systemTag}`);
@@ -393,7 +538,10 @@ private static async getPortfolioReturns(qcode: string, scheme: string): Promise
         where: { qcode, system_tag: systemTag },
         _sum: { pnl: true },
       });
-      return Number(profitSum._sum.pnl) || 0;
+
+      // Add PMS profit
+      const pmsData = await this.getPMSData();
+      return (Number(profitSum._sum.pnl) || 0) + pmsData.totalProfit;
     }
 
     const systemTag = PortfolioApi.getSystemTag(scheme);
@@ -407,6 +555,17 @@ private static async getPortfolioReturns(qcode: string, scheme: string): Promise
   }
 
   private static async getHistoricalData(qcode: string, scheme: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]> {
+    if (scheme === "Scheme PMS_QAW") {
+      const pmsData = await this.getPMSData();
+      return pmsData.historicalData.map(item => ({
+        date: new Date(item.date),
+        nav: item.nav,
+        drawdown: item.drawdown,
+        pnl: item.pnl,
+        capitalInOut: item.capitalInOut,
+      }));
+    }
+
     const systemTag = PortfolioApi.getSystemTag(scheme);
     console.log(`Getting historical data for qcode: ${qcode}, systemTag: ${systemTag}`);
 
@@ -433,12 +592,19 @@ private static async getPortfolioReturns(qcode: string, scheme: string): Promise
   }
 
   private static async getCashFlows(qcode: string, scheme: string): Promise<CashFlow[]> {
+    if (scheme === "Scheme PMS_QAW") {
+      const pmsData = await this.getPMSData();
+      return pmsData.cashFlows;
+    }
+
     if (scheme === "Total Portfolio") {
-      const schemes = Object.keys(PORTFOLIO_MAPPING.AC5).filter(s => s !== "Total Portfolio" && s !== "Scheme PMS-QAW");
+      const schemes = Object.keys(PORTFOLIO_MAPPING.AC5).filter(s => 
+        s !== "Total Portfolio" && s !== "Scheme PMS-QAW");
       let cashFlows: CashFlow[] = [];
+      
+      // Add regular schemes cash flows
       for (const s of schemes) {
         if (s !== "Scheme B") continue;
-        // Use "Zerodha Total Portfolio" for Scheme B cash flows
         const systemTag = "Zerodha Total Portfolio";
         const schemeCashFlows = await prisma.master_sheet.findMany({
           where: {
@@ -455,6 +621,11 @@ private static async getPortfolioReturns(qcode: string, scheme: string): Promise
           dividend: 0,
         })));
       }
+      
+      // Add PMS cash flows
+      const pmsData = await this.getPMSData();
+      cashFlows = cashFlows.concat(pmsData.cashFlows);
+      
       return cashFlows.sort((a, b) => a.date.localeCompare(b.date));
     }
 
@@ -462,7 +633,6 @@ private static async getPortfolioReturns(qcode: string, scheme: string): Promise
       return [];
     }
 
-    // Use "Zerodha Total Portfolio" for Scheme B cash flows
     const systemTag = "Zerodha Total Portfolio";
     console.log(`Getting cash flows for qcode: ${qcode}, systemTag: ${systemTag}`);
 
@@ -497,7 +667,7 @@ private static async getPortfolioReturns(qcode: string, scheme: string): Promise
     return { currentDD: ddCurve[ddCurve.length - 1]?.drawdown || 0, mdd, ddCurve };
   }
 
-private static async calculateTrailingReturns(
+  private static async calculateTrailingReturns(
     qcode: string,
     scheme: string,
     drawdownMetrics?: DrawdownMetrics,
@@ -591,7 +761,7 @@ private static async calculateTrailingReturns(
       // First, try to find exact match or closest date on or before target
       for (const dataPoint of normalizedNavData) {
         const dataTime = new Date(dataPoint.date).getTime();
-        
+
         if (dataTime <= targetTime) {
           if (!candidate || dataTime > new Date(candidate.date).getTime()) {
             candidate = { nav: dataPoint.nav, date: new Date(dataPoint.date) };
@@ -605,7 +775,7 @@ private static async calculateTrailingReturns(
         for (const dataPoint of normalizedNavData) {
           const dataTime = new Date(dataPoint.date).getTime();
           const diff = dataTime - targetTime;
-          
+
           if (diff > 0 && diff < minDiff) {
             minDiff = diff;
             candidate = { nav: dataPoint.nav, date: new Date(dataPoint.date) };
@@ -655,128 +825,140 @@ private static async calculateTrailingReturns(
     return monthNames[month];
   }
 
-private static calculateMonthlyPnL(navData: { date: string; nav: number; pnl: number; capitalInOut: number }[]): MonthlyPnL {
-  if (!navData || navData.length === 0) return {};
+  private static calculateMonthlyPnL(navData: { date: string; nav: number; pnl: number; capitalInOut: number }[]): MonthlyPnL {
+    if (!navData || navData.length === 0) return {};
 
-  // Sort all data by date first
-  const sortedNavData = navData
-    .map(entry => ({ ...entry, date: PortfolioApi.normalizeDate(entry.date) }))
-    .filter(entry => entry.date)
-    .sort((a, b) => a.date!.localeCompare(b.date!));
+    // Sort all data by date first
+    const sortedNavData = navData
+      .map(entry => ({ ...entry, date: PortfolioApi.normalizeDate(entry.date) }))
+      .filter(entry => entry.date)
+      .sort((a, b) => a.date!.localeCompare(b.date!));
 
-  const monthlyData: { [yearMonth: string]: { entries: { date: string; nav: number; pnl: number; capitalInOut: number }[] } } = {};
-  
-  sortedNavData.forEach(entry => {
-    const [year, month] = entry.date!.split('-').map(Number);
-    const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
-    if (!monthlyData[yearMonth]) {
-      monthlyData[yearMonth] = { entries: [] };
-    }
-    monthlyData[yearMonth].entries.push(entry);
-  });
+    const monthlyData: { [yearMonth: string]: { entries: { date: string; nav: number; pnl: number; capitalInOut: number }[] } } = {};
 
-  const formattedMonthlyPnl: MonthlyPnL = {};
-  const sortedYearMonths = Object.keys(monthlyData).sort((a, b) => a.localeCompare(b));
-
-  sortedYearMonths.forEach((yearMonth, index) => {
-    const [year, month] = yearMonth.split('-').map(Number);
-    const monthName = PortfolioApi.getMonthName(month - 1);
-    const entries = monthlyData[yearMonth].entries;
-
-    if (entries.length === 0) return;
-
-    const totalCapitalInOut = entries.reduce((sum, entry) => sum + entry.capitalInOut, 0);
-    const totalCashPnL = entries.reduce((sum, entry) => sum + entry.pnl, 0);
-    
-    // Get start NAV from previous month's last entry
-    let startNav = entries[0].nav;
-    if (index > 0) {
-      const prevYearMonth = sortedYearMonths[index - 1];
-      const prevEntries = monthlyData[prevYearMonth].entries;
-      if (prevEntries.length > 0) {
-        startNav = prevEntries[prevEntries.length - 1].nav;
+    sortedNavData.forEach(entry => {
+      const [year, month] = entry.date!.split('-').map(Number);
+      const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
+      if (!monthlyData[yearMonth]) {
+        monthlyData[yearMonth] = { entries: [] };
       }
-    }
-    
-    const endNav = entries[entries.length - 1].nav;
-
-    if (!formattedMonthlyPnl[year]) {
-      formattedMonthlyPnl[year] = {
-        months: {},
-        totalPercent: 0,
-        totalCash: 0,
-        totalCapitalInOut: 0,
-      };
-    }
-
-    const percent = startNav > 0 ? (((endNav - startNav) / startNav) * 100).toFixed(2) : "-";
-
-    formattedMonthlyPnl[year].months[monthName] = {
-      percent,
-      cash: totalCashPnL.toFixed(2),
-      capitalInOut: totalCapitalInOut.toFixed(2),
-    };
-
-    formattedMonthlyPnl[year].totalCash += totalCashPnL;
-    formattedMonthlyPnl[year].totalCapitalInOut += totalCapitalInOut;
-
-    console.log(
-      `DEBUG Monthly PnL ${yearMonth}: ` +
-      `startDate=${index > 0 ? sortedNavData.find(e => e.date === monthlyData[sortedYearMonths[index - 1]].entries[monthlyData[sortedYearMonths[index - 1]].entries.length - 1].date)?.date : entries[0].date}, startNav=${startNav.toFixed(4)}; ` +
-      `endDate=${entries[entries.length - 1].date}, endNav=${endNav.toFixed(4)}, ` +
-      `percent=${percent}, cash=${totalCashPnL.toFixed(2)}, capitalInOut=${totalCapitalInOut.toFixed(2)}`
-    );
-  });
-
-  // Calculate yearly totals (rest of the function remains the same)
-  Object.keys(formattedMonthlyPnl).forEach(year => {
-    const monthOrder = ['January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'];
-    const monthNames = Object.keys(formattedMonthlyPnl[year].months);
-    const sortedMonths = monthNames.sort((a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b));
-
-    let compoundedReturn = 1;
-    let hasValidData = false;
-
-    sortedMonths.forEach(month => {
-      const monthPercentStr = formattedMonthlyPnl[year].months[month].percent;
-      if (monthPercentStr !== "-") {
-        const monthReturn = Number(monthPercentStr) / 100;
-        compoundedReturn *= (1 + monthReturn);
-        hasValidData = true;
-      }
+      monthlyData[yearMonth].entries.push(entry);
     });
 
-    if (hasValidData && compoundedReturn !== 1) {
-      formattedMonthlyPnl[year].totalPercent = Number(((compoundedReturn - 1) * 100).toFixed(2));
-    } else if (hasValidData && compoundedReturn === 1) {
-      formattedMonthlyPnl[year].totalPercent = 0;
-    } else {
-      formattedMonthlyPnl[year].totalPercent = "-" as any;
-    }
+    const formattedMonthlyPnl: MonthlyPnL = {};
+    const sortedYearMonths = Object.keys(monthlyData).sort((a, b) => a.localeCompare(b));
 
-    formattedMonthlyPnl[year].totalCash = Number(formattedMonthlyPnl[year].totalCash.toFixed(2));
-    formattedMonthlyPnl[year].totalCapitalInOut = Number(formattedMonthlyPnl[year].totalCapitalInOut.toFixed(2));
+    sortedYearMonths.forEach((yearMonth, index) => {
+      const [year, month] = yearMonth.split('-').map(Number);
+      const monthName = PortfolioApi.getMonthName(month - 1);
+      const entries = monthlyData[yearMonth].entries;
 
-    console.log(
-      `DEBUG Yearly PnL - ${year}: totalPercent=${formattedMonthlyPnl[year].totalPercent}%, ` +
-      `totalCash=${formattedMonthlyPnl[year].totalCash}, ` 
-      // `totalCapitalInOut=${formattedMonthlyPnL[year].totalCapitalInOut}`
-    );
-  });
+      if (entries.length === 0) return;
 
-  return formattedMonthlyPnl;
-}
+      const totalCapitalInOut = entries.reduce((sum, entry) => sum + entry.capitalInOut, 0);
+      const totalCashPnL = entries.reduce((sum, entry) => sum + entry.pnl, 0);
 
-private static async calculateQuarterlyPnLWithDailyPL(
+      // Get start NAV from previous month's last entry
+      let startNav = entries[0].nav;
+      if (index > 0) {
+        const prevYearMonth = sortedYearMonths[index - 1];
+        const prevEntries = monthlyData[prevYearMonth].entries;
+        if (prevEntries.length > 0) {
+          startNav = prevEntries[prevEntries.length - 1].nav;
+        }
+      }
+
+      const endNav = entries[entries.length - 1].nav;
+
+      if (!formattedMonthlyPnl[year]) {
+        formattedMonthlyPnl[year] = {
+          months: {},
+          totalPercent: 0,
+          totalCash: 0,
+          totalCapitalInOut: 0,
+        };
+      }
+
+      const percent = startNav > 0 ? (((endNav - startNav) / startNav) * 100).toFixed(2) : "-";
+
+      formattedMonthlyPnl[year].months[monthName] = {
+        percent,
+        cash: totalCashPnL.toFixed(2),
+        capitalInOut: totalCapitalInOut.toFixed(2),
+      };
+
+      formattedMonthlyPnl[year].totalCash += totalCashPnL;
+      formattedMonthlyPnl[year].totalCapitalInOut += totalCapitalInOut;
+
+      console.log(
+        `DEBUG Monthly PnL ${yearMonth}: ` +
+        `startDate=${index > 0 ? sortedNavData.find(e => e.date === monthlyData[sortedYearMonths[index - 1]].entries[monthlyData[sortedYearMonths[index - 1]].entries.length - 1].date)?.date : entries[0].date}, startNav=${startNav.toFixed(4)}; ` +
+        `endDate=${entries[entries.length - 1].date}, endNav=${endNav.toFixed(4)}, ` +
+        `percent=${percent}, cash=${totalCashPnL.toFixed(2)}, capitalInOut=${totalCapitalInOut.toFixed(2)}`
+      );
+    });
+
+    // Calculate yearly totals
+    Object.keys(formattedMonthlyPnl).forEach(year => {
+      const monthOrder = ['January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'];
+      const monthNames = Object.keys(formattedMonthlyPnl[year].months);
+      const sortedMonths = monthNames.sort((a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b));
+
+      let compoundedReturn = 1;
+      let hasValidData = false;
+
+      sortedMonths.forEach(month => {
+        const monthPercentStr = formattedMonthlyPnl[year].months[month].percent;
+        if (monthPercentStr !== "-") {
+          const monthReturn = Number(monthPercentStr) / 100;
+          compoundedReturn *= (1 + monthReturn);
+          hasValidData = true;
+        }
+      });
+
+      if (hasValidData && compoundedReturn !== 1) {
+        formattedMonthlyPnl[year].totalPercent = Number(((compoundedReturn - 1) * 100).toFixed(2));
+      } else if (hasValidData && compoundedReturn === 1) {
+        formattedMonthlyPnl[year].totalPercent = 0;
+      } else {
+        formattedMonthlyPnl[year].totalPercent = "-" as any;
+      }
+
+      formattedMonthlyPnl[year].totalCash = Number(formattedMonthlyPnl[year].totalCash.toFixed(2));
+      formattedMonthlyPnl[year].totalCapitalInOut = Number(formattedMonthlyPnl[year].totalCapitalInOut.toFixed(2));
+
+      console.log(
+        `DEBUG Yearly PnL - ${year}: totalPercent=${formattedMonthlyPnl[year].totalPercent}%, ` +
+        `totalCash=${formattedMonthlyPnl[year].totalCash}`
+      );
+    });
+
+    return formattedMonthlyPnl;
+  }
+
+  private static async calculateQuarterlyPnLWithDailyPL(
   qcode: string,
   scheme: string,
   navData: { date: string; nav: number; pnl: number }[]
 ): Promise<QuarterlyPnL> {
   if (scheme === "Total Portfolio") {
-    const quarterlyPnL: QuarterlyPnL = {};
+    // Get PMS QAW quarterly data
+    const pmsData = await this.getPMSData();
+    const pmsQuarterlyPnl = this.calculateQuarterlyPnLFromNavData(
+      pmsData.historicalData.map(d => ({
+        date: d.date,
+        nav: d.nav,
+        pnl: d.pnl
+      }))
+    );
+
+    // Combine AC5 hardcoded values with PMS quarterly data
+    const combinedQuarterlyPnL: QuarterlyPnL = {};
+    
+    // Start with AC5 hardcoded values
     Object.entries(AC5_QUARTERLY_PNL).forEach(([year, quarters]) => {
-      quarterlyPnL[year] = {
+      combinedQuarterlyPnL[year] = {
         percent: { q1: "-", q2: "-", q3: "-", q4: "-", total: "-" },
         cash: {
           q1: quarters.Q1 ? quarters.Q1.toFixed(2) : "0.00",
@@ -788,7 +970,49 @@ private static async calculateQuarterlyPnLWithDailyPL(
         yearCash: quarters.total ? quarters.total.toFixed(2) : "0.00",
       };
     });
-    return quarterlyPnL;
+
+    // Add PMS quarterly data to the combined totals
+    Object.entries(pmsQuarterlyPnl).forEach(([year, pmsYear]) => {
+      if (!combinedQuarterlyPnL[year]) {
+        // If AC5 doesn't have data for this year, initialize with zeros
+        combinedQuarterlyPnL[year] = {
+          percent: { q1: "-", q2: "-", q3: "-", q4: "-", total: "-" },
+          cash: { q1: "0.00", q2: "0.00", q3: "0.00", q4: "0.00", total: "0.00" },
+          yearCash: "0.00",
+        };
+      }
+
+      // Add PMS cash values to AC5 cash values
+      const quarters = ['q1', 'q2', 'q3', 'q4'] as const;
+      let yearTotal = parseFloat(combinedQuarterlyPnL[year].cash.total);
+
+      quarters.forEach(quarter => {
+        const ac5Value = parseFloat(combinedQuarterlyPnL[year].cash[quarter]);
+        const pmsValue = parseFloat(pmsYear.cash[quarter]);
+        const combinedValue = ac5Value + pmsValue;
+        combinedQuarterlyPnL[year].cash[quarter] = combinedValue.toFixed(2);
+      });
+
+      // Recalculate total
+      const newTotal = quarters.reduce((sum, quarter) => 
+        sum + parseFloat(combinedQuarterlyPnL[year].cash[quarter]), 0);
+      
+      combinedQuarterlyPnL[year].cash.total = newTotal.toFixed(2);
+      combinedQuarterlyPnL[year].yearCash = newTotal.toFixed(2);
+
+      console.log(`Combined quarterly P&L for ${year}:`, {
+        ac5Total: yearTotal,
+        pmsTotal: parseFloat(pmsYear.yearCash),
+        combinedTotal: newTotal
+      });
+    });
+
+    return combinedQuarterlyPnL;
+  }
+
+  if (scheme === "Scheme PMS_QAW") {
+    // For PMS data, we'll calculate quarterly P&L from the navData
+    return this.calculateQuarterlyPnLFromNavData(navData);
   }
 
   const systemTag = PortfolioApi.getSystemTag(scheme);
@@ -808,166 +1032,133 @@ private static async calculateQuarterlyPnLWithDailyPL(
     .filter(entry => entry.date)
     .sort((a, b) => a.date!.localeCompare(b.date!));
 
-  const getQuarter = (month: number): string => {
-    if (month < 3) return 'q1';
-    if (month < 6) return 'q2';
-    if (month < 9) return 'q3';
-    return 'q4';
-  };
+  return this.calculateQuarterlyPnLFromNavData(sortedNavData);
+}
 
-  const getQuarterNumber = (quarter: string): number => {
-    const quarterMap = { 'q1': 1, 'q2': 2, 'q3': 3, 'q4': 4 };
-    return quarterMap[quarter];
-  };
-
-  // Group data by year and quarter
-  const quarterlyData: { [yearQuarter: string]: { cash: number; entries: { date: string; nav: number; pnl: number }[] } } = {};
-  sortedNavData.forEach(entry => {
-    const date = new Date(entry.date!);
-    const year = date.getUTCFullYear();
-    const quarter = getQuarter(date.getUTCMonth());
-    const yearQuarter = `${year}-${quarter}`;
-    
-    if (!quarterlyData[yearQuarter]) {
-      quarterlyData[yearQuarter] = { cash: 0, entries: [] };
-    }
-    quarterlyData[yearQuarter].entries.push(entry);
-    quarterlyData[yearQuarter].cash += entry.pnl;
-  });
-
-  const formattedQuarterlyPnl: QuarterlyPnL = {};
-  
-  // Sort year-quarters chronologically
-  const sortedYearQuarters = Object.keys(quarterlyData).sort((a, b) => {
-    const [yearA, quarterA] = a.split('-');
-    const [yearB, quarterB] = b.split('-');
-    const yearCompare = parseInt(yearA) - parseInt(yearB);
-    if (yearCompare !== 0) return yearCompare;
-    return getQuarterNumber(quarterA) - getQuarterNumber(quarterB);
-  });
-
-  // Group by year for processing
-  const yearlyQuarters: { [year: string]: string[] } = {};
-  sortedYearQuarters.forEach(yearQuarter => {
-    const [year] = yearQuarter.split('-');
-    if (!yearlyQuarters[year]) yearlyQuarters[year] = [];
-    yearlyQuarters[year].push(yearQuarter);
-  });
-
-  Object.keys(yearlyQuarters).forEach(year => {
-    formattedQuarterlyPnl[year] = {
-      percent: { q1: "-", q2: "-", q3: "-", q4: "-", total: "-" },
-      cash: { q1: "0.00", q2: "0.00", q3: "0.00", q4: "0.00", total: "0.00" },
-      yearCash: "0.00",
+  private static calculateQuarterlyPnLFromNavData(navData: { date: string; nav: number; pnl: number }[]): QuarterlyPnL {
+    const getQuarter = (month: number): string => {
+      if (month < 3) return 'q1';
+      if (month < 6) return 'q2';
+      if (month < 9) return 'q3';
+      return 'q4';
     };
 
-    let yearCompoundedReturn = 1;
-    let yearTotalCash = 0;
-    let hasValidYearData = false;
+    const getQuarterNumber = (quarter: string): number => {
+      const quarterMap = { 'q1': 1, 'q2': 2, 'q3': 3, 'q4': 4 };
+      return quarterMap[quarter];
+    };
 
-    yearlyQuarters[year].forEach((yearQuarter, quarterIndex) => {
-      const [, quarter] = yearQuarter.split('-');
-      const entries = quarterlyData[yearQuarter].entries;
-      
-      if (entries.length > 0) {
-        // Get start NAV from previous quarter's last entry
-        let startNav = entries[0].nav;
-        
-        if (quarterIndex > 0) {
-          // Get previous quarter
-          const prevYearQuarter = yearlyQuarters[year][quarterIndex - 1];
-          const prevEntries = quarterlyData[prevYearQuarter].entries;
-          if (prevEntries.length > 0) {
-            startNav = prevEntries[prevEntries.length - 1].nav;
-          }
-        } else if (year !== sortedYearQuarters[0].split('-')[0]) {
-          // First quarter of the year, but not the first year overall
-          // Get last entry from previous year's Q4
-          const prevYear = (parseInt(year) - 1).toString();
-          const prevQ4 = `${prevYear}-q4`;
-          if (quarterlyData[prevQ4] && quarterlyData[prevQ4].entries.length > 0) {
-            const prevQ4Entries = quarterlyData[prevQ4].entries;
-            startNav = prevQ4Entries[prevQ4Entries.length - 1].nav;
-          }
-        }
-        
-        const endEntry = entries[entries.length - 1];
-        const endNav = endEntry.nav;
-        const totalCash = entries.reduce((sum, entry) => sum + entry.pnl, 0);
+    // Group data by year and quarter
+    const quarterlyData: { [yearQuarter: string]: { cash: number; entries: { date: string; nav: number; pnl: number }[] } } = {};
+    navData.forEach(entry => {
+      const date = new Date(entry.date);
+      const year = date.getUTCFullYear();
+      const quarter = getQuarter(date.getUTCMonth());
+      const yearQuarter = `${year}-${quarter}`;
 
-        // Add scheme-specific adjustments
-        let adjustedCash = totalCash;
-        if (scheme === "Scheme A" && AC5_SCHEME_A_QUARTERLY_PNL[year]?.[quarter.toUpperCase()]) {
-          adjustedCash += Number(AC5_SCHEME_A_QUARTERLY_PNL[year][quarter.toUpperCase()]);
-        }
-
-        const quarterReturn = startNav > 0
-          ? ((endNav - startNav) / startNav) * 100
-          : 0;
-
-        if (quarterReturn !== 0) {
-          formattedQuarterlyPnl[year].percent[quarter] = quarterReturn.toFixed(2);
-          yearCompoundedReturn *= (1 + quarterReturn / 100);
-          hasValidYearData = true;
-        } else {
-          formattedQuarterlyPnl[year].percent[quarter] = "0.00";
-        }
-
-        formattedQuarterlyPnl[year].cash[quarter] = adjustedCash.toFixed(2);
-        yearTotalCash += adjustedCash;
-
-        // Get the actual start date (previous period's last date or current period's first date)
-        let startDateStr = entries[0].date;
-        if (quarterIndex > 0) {
-          const prevYearQuarter = yearlyQuarters[year][quarterIndex - 1];
-          const prevEntries = quarterlyData[prevYearQuarter].entries;
-          if (prevEntries.length > 0) {
-            startDateStr = prevEntries[prevEntries.length - 1].date;
-          }
-        } else if (year !== sortedYearQuarters[0].split('-')[0]) {
-          const prevYear = (parseInt(year) - 1).toString();
-          const prevQ4 = `${prevYear}-q4`;
-          if (quarterlyData[prevQ4] && quarterlyData[prevQ4].entries.length > 0) {
-            const prevQ4Entries = quarterlyData[prevQ4].entries;
-            startDateStr = prevQ4Entries[prevQ4Entries.length - 1].date;
-          }
-        }
-
-        console.log(
-          `DEBUG QPnL ${year} ${quarter.toUpperCase()}: ` +
-          `Start Date = ${startDateStr}, Start NAV = ${startNav.toFixed(4)}; ` +
-          `End Date = ${endEntry.date}, End NAV = ${endNav.toFixed(4)}; ` +
-          `Return = ${quarterReturn.toFixed(2)}%, ` +
-          `Cash PnL = ${adjustedCash.toFixed(2)}`
-        );
+      if (!quarterlyData[yearQuarter]) {
+        quarterlyData[yearQuarter] = { cash: 0, entries: [] };
       }
+      quarterlyData[yearQuarter].entries.push(entry);
+      quarterlyData[yearQuarter].cash += entry.pnl;
     });
 
-    if (hasValidYearData && yearCompoundedReturn !== 1) {
-      formattedQuarterlyPnl[year].percent.total = ((yearCompoundedReturn - 1) * 100).toFixed(2);
-    } else if (hasValidYearData && yearCompoundedReturn === 1) {
-      formattedQuarterlyPnl[year].percent.total = "0.00";
-    }
+    const formattedQuarterlyPnl: QuarterlyPnL = {};
 
-    formattedQuarterlyPnl[year].cash.total = yearTotalCash.toFixed(2);
-    formattedQuarterlyPnl[year].yearCash = yearTotalCash.toFixed(2);
+    // Sort year-quarters chronologically
+    const sortedYearQuarters = Object.keys(quarterlyData).sort((a, b) => {
+      const [yearA, quarterA] = a.split('-');
+      const [yearB, quarterB] = b.split('-');
+      const yearCompare = parseInt(yearA) - parseInt(yearB);
+      if (yearCompare !== 0) return yearCompare;
+      return getQuarterNumber(quarterA) - getQuarterNumber(quarterB);
+    });
 
-    console.log(
-      `DEBUG Quarterly PnL - ${year}: ` +
-      `percent=${JSON.stringify(formattedQuarterlyPnl[year].percent)}, ` +
-      `cash=${JSON.stringify(formattedQuarterlyPnl[year].cash)}, ` +
-      `yearCash=${formattedQuarterlyPnl[year].yearCash}`
-    );
-  });
+    // Group by year for processing
+    const yearlyQuarters: { [year: string]: string[] } = {};
+    sortedYearQuarters.forEach(yearQuarter => {
+      const [year] = yearQuarter.split('-');
+      if (!yearlyQuarters[year]) yearlyQuarters[year] = [];
+      yearlyQuarters[year].push(yearQuarter);
+    });
 
-  // Convert back to the expected format (by year, not year-quarter)
-  const result: QuarterlyPnL = {};
-  Object.keys(formattedQuarterlyPnl).forEach(year => {
-    result[year] = formattedQuarterlyPnl[year];
-  });
+    Object.keys(yearlyQuarters).forEach(year => {
+      formattedQuarterlyPnl[year] = {
+        percent: { q1: "-", q2: "-", q3: "-", q4: "-", total: "-" },
+        cash: { q1: "0.00", q2: "0.00", q3: "0.00", q4: "0.00", total: "0.00" },
+        yearCash: "0.00",
+      };
 
-  return result;
-}
+      let yearCompoundedReturn = 1;
+      let yearTotalCash = 0;
+      let hasValidYearData = false;
+
+      yearlyQuarters[year].forEach((yearQuarter, quarterIndex) => {
+        const [, quarter] = yearQuarter.split('-');
+        const entries = quarterlyData[yearQuarter].entries;
+
+        if (entries.length > 0) {
+          // Get start NAV from previous quarter's last entry
+          let startNav = entries[0].nav;
+
+          if (quarterIndex > 0) {
+            // Get previous quarter
+            const prevYearQuarter = yearlyQuarters[year][quarterIndex - 1];
+            const prevEntries = quarterlyData[prevYearQuarter].entries;
+            if (prevEntries.length > 0) {
+              startNav = prevEntries[prevEntries.length - 1].nav;
+            }
+          } else if (year !== sortedYearQuarters[0].split('-')[0]) {
+            // First quarter of the year, but not the first year overall
+            // Get last entry from previous year's Q4
+            const prevYear = (parseInt(year) - 1).toString();
+            const prevQ4 = `${prevYear}-q4`;
+            if (quarterlyData[prevQ4] && quarterlyData[prevQ4].entries.length > 0) {
+              const prevQ4Entries = quarterlyData[prevQ4].entries;
+              startNav = prevQ4Entries[prevQ4Entries.length - 1].nav;
+            }
+          }
+
+          const endEntry = entries[entries.length - 1];
+          const endNav = endEntry.nav;
+          const totalCash = entries.reduce((sum, entry) => sum + entry.pnl, 0);
+
+          const quarterReturn = startNav > 0
+            ? ((endNav - startNav) / startNav) * 100
+            : 0;
+
+          if (quarterReturn !== 0) {
+            formattedQuarterlyPnl[year].percent[quarter] = quarterReturn.toFixed(2);
+            yearCompoundedReturn *= (1 + quarterReturn / 100);
+            hasValidYearData = true;
+          } else {
+            formattedQuarterlyPnl[year].percent[quarter] = "0.00";
+          }
+
+          formattedQuarterlyPnl[year].cash[quarter] = totalCash.toFixed(2);
+          yearTotalCash += totalCash;
+
+          console.log(
+            `DEBUG QPnL ${year} ${quarter.toUpperCase()}: ` +
+            `Start NAV = ${startNav.toFixed(4)}, End NAV = ${endNav.toFixed(4)}, ` +
+            `Return = ${quarterReturn.toFixed(2)}%, Cash PnL = ${totalCash.toFixed(2)}`
+          );
+        }
+      });
+
+      if (hasValidYearData && yearCompoundedReturn !== 1) {
+        formattedQuarterlyPnl[year].percent.total = ((yearCompoundedReturn - 1) * 100).toFixed(2);
+      } else if (hasValidYearData && yearCompoundedReturn === 1) {
+        formattedQuarterlyPnl[year].percent.total = "0.00";
+      }
+
+      formattedQuarterlyPnl[year].cash.total = yearTotalCash.toFixed(2);
+      formattedQuarterlyPnl[year].yearCash = yearTotalCash.toFixed(2);
+    });
+
+    return formattedQuarterlyPnl;
+  }
+
   private static getPortfolioNames(accountCode: string, scheme: string): any {
     if (!PORTFOLIO_MAPPING[accountCode]?.[scheme]) {
       throw new Error(`Invalid account code (${accountCode}) or scheme (${scheme})`);
@@ -982,7 +1173,6 @@ private static async calculateQuarterlyPnLWithDailyPL(
       const allSchemes = Object.keys(PORTFOLIO_MAPPING[accountCode]).filter(s => s !== "Scheme PMS-QAW");
       const schemes = ["Total Portfolio", ...allSchemes.filter(s => s !== "Total Portfolio")];
 
-
       console.log(`Processing schemes: ${schemes.join(', ')}`);
 
       for (const scheme of schemes) {
@@ -992,18 +1182,26 @@ private static async calculateQuarterlyPnLWithDailyPL(
 
         console.log(`Processing ${scheme} with qcode: ${qcode}, systemTag: ${systemTag}`);
 
-        const [cashInOutData, masterSheetData] = await Promise.all([
-          prisma.master_sheet.findMany({
-            where: { qcode, system_tag: systemTag, capital_in_out: { not: null } },
-            select: { date: true, capital_in_out: true },
-            orderBy: { date: "asc" },
-          }),
-          prisma.master_sheet.findMany({
-            where: { qcode, system_tag: systemTag },
-            select: { date: true, nav: true, drawdown: true, portfolio_value: true, daily_p_l: true, pnl: true, capital_in_out: true },
-            orderBy: { date: "asc" },
-          }),
-        ]);
+        let cashInOutData, masterSheetData;
+
+        if (scheme === "Scheme PMS_QAW") {
+          // For PMS scheme, we don't need to fetch from master_sheet
+          cashInOutData = [];
+          masterSheetData = [];
+        } else {
+          [cashInOutData, masterSheetData] = await Promise.all([
+            prisma.master_sheet.findMany({
+              where: { qcode, system_tag: systemTag, capital_in_out: { not: null } },
+              select: { date: true, capital_in_out: true },
+              orderBy: { date: "asc" },
+            }),
+            prisma.master_sheet.findMany({
+              where: { qcode, system_tag: systemTag },
+              select: { date: true, nav: true, drawdown: true, portfolio_value: true, daily_p_l: true, pnl: true, capital_in_out: true },
+              orderBy: { date: "asc" },
+            }),
+          ]);
+        }
 
         console.log(`Found ${cashInOutData.length} cash in/out records and ${masterSheetData.length} master sheet records for ${scheme}`);
 
@@ -1032,7 +1230,7 @@ private static async calculateQuarterlyPnLWithDailyPL(
         const historicalData = await PortfolioApi.getHistoricalData(qcode, scheme);
         const cashFlows = await PortfolioApi.getCashFlows(qcode, scheme);
         const drawdownMetrics = PortfolioApi.calculateDrawdownMetrics(historicalData.map(d => ({ date: PortfolioApi.normalizeDate(d.date)!, nav: d.nav })));
-        const trailingReturns = await PortfolioApi.calculateTrailingReturns(qcode, scheme,drawdownMetrics);
+        const trailingReturns = await PortfolioApi.calculateTrailingReturns(qcode, scheme, drawdownMetrics);
         const monthlyPnl = PortfolioApi.calculateMonthlyPnL(historicalData.map(d => ({
           date: PortfolioApi.normalizeDate(d.date)!,
           nav: d.nav,
@@ -1083,7 +1281,7 @@ private static async calculateQuarterlyPnLWithDailyPL(
             startDate: null,
             endDate: null,
           },
-          inceptionDate: "2024-03-18",
+          inceptionDate: scheme === "Scheme PMS_QAW" ? "2024-01-01" : "2024-03-18",
           dataAsOfDate: latestExposure?.date.toISOString().split('T')[0] || "2025-07-18",
           strategyName: scheme,
         };
