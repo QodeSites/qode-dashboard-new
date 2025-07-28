@@ -37,7 +37,7 @@ interface RevenueChartProps {
 }
 
 export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, drawdown }: RevenueChartProps) {
-  console.log("Rendering RevenueChart with equityCurve length:", equityCurve);
+  console.log("Rendering RevenueChart with drawdownCurve:", drawdownCurve);
   const chartRef = useRef<HTMLDivElement>(null);
   const chart = useRef<any>(null);
   const { bse500Data, error } = useBse500Data(equityCurve);
@@ -66,7 +66,9 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
   }, []);
 
   const calculateDrawdownScaling = useCallback((portfolioDD: number[], benchmarkDD: number[]) => {
-    const allDrawdowns = [...portfolioDD, ...benchmarkDD].filter(val => !isNaN(val));
+    const allDrawdowns = [...portfolioDD, ...benchmarkDD]
+      .filter(val => typeof val === 'number' && !isNaN(val) && isFinite(val));
+    
     if (!allDrawdowns.length) return { min: -10, max: 0 };
 
     const minDrawdown = Math.min(...allDrawdowns, 0);
@@ -120,10 +122,34 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         chart.current.destroy();
       }
 
-      const portfolioData = equityCurve.map((p) => [
-        new Date(p.date).getTime(),
-        p.value || p.nav,
-      ]);
+      // Process portfolio equity curve data with better validation
+      const portfolioData = equityCurve
+        .map((p) => {
+          // Handle different property names (value, nav, etc.)
+          let navValue;
+          
+          if (p.value !== undefined && p.value !== null) {
+            navValue = p.value;
+          } else if (p.nav !== undefined && p.nav !== null) {
+            navValue = p.nav;
+          } else {
+            console.warn(`No NAV value found for date ${p.date}:`, p);
+            return null;
+          }
+          
+          // Convert to number if it's a string
+          const value = typeof navValue === "string" ? parseFloat(navValue) : Number(navValue);
+          
+          // Check if it's a valid number
+          if (isNaN(value) || !isFinite(value)) {
+            console.warn(`Invalid NAV value for date ${p.date}:`, navValue);
+            return null;
+          }
+          
+          return [new Date(p.date).getTime(), value];
+        })
+        .filter(point => point !== null); // Remove null entries
+
       const processedPortfolioData = processDataSeries(portfolioData, false, portfolioData[0][1]);
 
       const portfolioFirstValue = portfolioData[0][1];
@@ -143,10 +169,43 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         ? Math.min(firstPortfolioDate, firstBenchmarkDate)
         : firstPortfolioDate || firstBenchmarkDate;
 
-      const portfolioDrawdownData = drawdownCurve.map((point) => {
-        const dd = typeof point.value || point.drawdown === "string" ? parseFloat(point.value || point.drawdown) : point.value || point.drawdown;
-        return [new Date(point.date).getTime(), -Math.abs(dd)];
-      });
+      // Process drawdown data with improved validation
+      console.log("Raw drawdown data:", drawdownCurve.slice(-3)); // Debug log
+      
+      const portfolioDrawdownData = drawdownCurve
+        .map((point) => {
+          // Handle the property access more robustly
+          let drawdownValue;
+          
+          // Check for 'value' property first, then 'drawdown'
+          if (point.value !== undefined && point.value !== null) {
+            drawdownValue = point.value;
+          } else if (point.drawdown !== undefined && point.drawdown !== null) {
+            drawdownValue = point.drawdown;
+          } else {
+            console.warn(`No valid drawdown data for ${point.date}:`, point);
+            return null;
+          }
+          
+          // Convert string to number if needed
+          const dd = typeof drawdownValue === "string" ? parseFloat(drawdownValue) : Number(drawdownValue);
+          
+          // Validate the number (including 0)
+          if (isNaN(dd) || !isFinite(dd)) {
+            console.warn(`Invalid drawdown value for ${point.date}: ${drawdownValue} -> ${dd}`);
+            return null;
+          }
+          
+          // For drawdown display: 0 should stay 0, negative values should be negative
+          // positive values should be converted to negative (since drawdown is typically negative)
+          const finalValue = dd === 0 ? 0 : -Math.abs(dd);
+          
+          return [new Date(point.date).getTime(), finalValue];
+        })
+        .filter(item => item !== null); // Remove any null entries
+
+      console.log("Processed drawdown data:", portfolioDrawdownData.slice(-3)); // Debug log
+
       if (portfolioDrawdownData.length && earliestDate && portfolioDrawdownData[0][0] > earliestDate) {
         portfolioDrawdownData.unshift([earliestDate, 0]);
       }
@@ -322,15 +381,23 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
             const chart = this.points[0].series.chart;
 
             function getNearestPoint(series: any, x: number) {
+              if (!series || !series.data || series.data.length === 0) {
+                return null;
+              }
+              
               let nearestPoint = null;
               let minDiff = Infinity;
+              
               series.data.forEach((point: any) => {
-                const diff = Math.abs(point.x - x);
-                if (diff < minDiff) {
-                  minDiff = diff;
-                  nearestPoint = point;
+                if (point && typeof point.x === 'number' && typeof point.y === 'number' && !isNaN(point.y)) {
+                  const diff = Math.abs(point.x - x);
+                  if (diff < minDiff) {
+                    minDiff = diff;
+                    nearestPoint = point;
+                  }
                 }
               });
+              
               return nearestPoint;
             }
 
@@ -350,15 +417,23 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
 
             let tooltipText = `<b>${Highcharts.dateFormat("%d-%m-%Y", hoveredX)}</b><br/><br/>`;
             tooltipText += "<span style='font-weight: bold; font-size: 12px'>Performance:</span><br/>";
-            tooltipText += `<span style="color:#2E8B57">\u25CF</span> Portfolio: ${portfolioPoint ? portfolioPoint.y.toFixed(2) : "N/A"
-              }<br/>`;
-            tooltipText += `<span style="color:#4169E1">\u25CF</span> Benchmark: ${benchmarkPoint ? benchmarkPoint.y.toFixed(2) : "N/A"
-              }<br/>`;
+            tooltipText += `<span style="color:#2E8B57">\u25CF</span> Portfolio: ${
+              portfolioPoint && !isNaN(portfolioPoint.y) ? portfolioPoint.y.toFixed(2) : "N/A"
+            }<br/>`;
+            tooltipText += `<span style="color:#4169E1">\u25CF</span> Benchmark: ${
+              benchmarkPoint && !isNaN(benchmarkPoint.y) ? benchmarkPoint.y.toFixed(2) : "N/A"
+            }<br/>`;
             tooltipText += "<br/><span style='font-weight: bold; font-size: 12px'>Drawdown:</span><br/>";
-            tooltipText += `<span style="color:#FF4560">\u25CF</span> Portfolio: ${portfolioDrawdownPoint ? portfolioDrawdownPoint.y.toFixed(2) + "%" : "N/A"
-              }<br/>`;
-            tooltipText += `<span style="color:#FF8F00">\u25CF</span> Benchmark: ${benchmarkDrawdownPoint ? benchmarkDrawdownPoint.y.toFixed(2) + "%" : "N/A"
-              }<br/>`;
+            tooltipText += `<span style="color:#FF4560">\u25CF</span> Portfolio: ${
+              portfolioDrawdownPoint && !isNaN(portfolioDrawdownPoint.y) 
+                ? portfolioDrawdownPoint.y.toFixed(2) + "%" 
+                : "N/A"
+            }<br/>`;
+            tooltipText += `<span style="color:#FF8F00">\u25CF</span> Benchmark: ${
+              benchmarkDrawdownPoint && !isNaN(benchmarkDrawdownPoint.y) 
+                ? benchmarkDrawdownPoint.y.toFixed(2) + "%" 
+                : "N/A"
+            }<br/>`;
 
             return tooltipText;
           },
