@@ -37,7 +37,7 @@ export default function Header({ setSidebarOpen }: HeaderProps) {
     <div className="">
       <button
         type="button"
-        className="-m-2.5 p-2.5 text-card-text-secondary lg:hidden"
+        className="-m-2.5 p-4 text-card-text-secondary lg:hidden"
         onClick={() => setSidebarOpen(true)}
       >
         <Bars3Icon className="h-6 w-6" />

@@ -13,7 +13,6 @@ import {
 import { cn } from "@/lib/utils"
 import { signOut, useSession } from "next-auth/react"
 import { Button } from "./ui/button"
-import { BellIcon } from "lucide-react"
 import { useRouter } from "next/navigation"
 const navigation = [
   { name: "Home", href: "/", icon: HomeIcon },
@@ -57,7 +56,7 @@ export function Sidebar({ open, setOpen }: SidebarProps) {
             >
               <Dialog.Panel className="relative mr-16 flex w-full max-w-xs flex-1">
                 <div className="absolute left-full top-0 flex w-16 justify-center pt-5">
-                  <button type="button" className="-m-2.5 p-2.5" onClick={() => setOpen(false)}>
+                  <button type="button" className="p-4" onClick={() => setOpen(false)}>
                     <XMarkIcon className="h-6 w-6 text-card-text" />
                   </button>
                 </div>

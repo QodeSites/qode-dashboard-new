@@ -466,20 +466,39 @@ export default function Portfolio() {
 
     return (
       <div className="mb-6">
-        <div className="flex flex-wrap gap-2">
-          {availableStrategies.map((strategy) => (
-            <Button
-              key={strategy}
-              variant={selectedStrategy === strategy ? "default" : "outline"}
-              onClick={() => setSelectedStrategy(strategy)}
-              className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${selectedStrategy === strategy
+        {/* Mobile dropdown */}
+        <div className="block sm:hidden">
+          <Select value={selectedStrategy || ""} onValueChange={setSelectedStrategy}>
+            <SelectTrigger className="w-full border-0 card-shadow">
+              <SelectValue placeholder="Select Strategy" />
+            </SelectTrigger>
+            <SelectContent>
+              {availableStrategies.map((strategy) => (
+                <SelectItem key={strategy} value={strategy}>
+                  {strategy}
+                </SelectItem> 
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        
+        {/* Desktop tabs */}
+        <div className="hidden sm:block">
+          <div className="flex flex-wrap gap-2">
+            {availableStrategies.map((strategy) => (
+              <Button
+                key={strategy}
+                variant={selectedStrategy === strategy ? "default" : "outline"}
+                onClick={() => setSelectedStrategy(strategy)}
+                className={`px-4 py-2 text-sm font-medium font-heading rounded-full transition-colors ${selectedStrategy === strategy
                   ? "bg-logo-green text-button-text"
                   : "bg-white/70 text-card-text hover:bg-logo-green/20"
-                }`}
-            >
-              {strategy}
-            </Button>
-          ))}
+                  }`}
+              >
+                {strategy}
+              </Button>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -506,6 +525,7 @@ export default function Portfolio() {
           stats={convertedStats}
           accountType="sarla"
           broker="Sarla"
+          isTotalPortfolio={isTotalPortfolio}
         />
         {!isTotalPortfolio && (
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
@@ -585,14 +605,13 @@ export default function Portfolio() {
             </div>
           )}
         </div>
-        {(currentMetadata?.strategyName || (isSarla && sarlaData && selectedStrategy ? sarlaData[selectedStrategy]?.data?.strategyName || selectedStrategy : null)) && (
+        {/* Only show strategy name button for non-Sarla users */}
+        {!isSarla && (currentMetadata?.strategyName) && (
           <Button
             variant="outline"
             className="bg-logo-green mt-4 font-heading text-button-text text-sm sm:text-lg px-3 py-1 rounded-full"
           >
-            {isSarla && sarlaData && selectedStrategy
-              ? sarlaData[selectedStrategy]?.data?.strategyName || selectedStrategy
-              : currentMetadata?.strategyName || "Unknown Strategy"}
+            {currentMetadata?.strategyName || "Unknown Strategy"}
           </Button>
         )}
       </div>

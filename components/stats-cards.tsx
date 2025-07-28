@@ -29,10 +29,12 @@ interface StatsCardsProps {
   stats: Stats;
   accountType: string;
   broker?: string;
+  isTotalPortfolio?: boolean; // Add this prop to identify total portfolio view
 }
 
-export function StatsCards({ stats, accountType, broker }: StatsCardsProps) {
-  const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percent");
+export function StatsCards({ stats, accountType, broker, isTotalPortfolio = false }: StatsCardsProps) {
+  // For total portfolio, default to cash view and don't allow percentage view
+  const [returnViewType, setReturnViewType] = useState<"percent" | "cash">(isTotalPortfolio ? "cash" : "percent");
 
   // Function to get card labels based on account type and broker
   const getCardLabels = (accountType: string, broker?: string) => {
@@ -98,7 +100,7 @@ export function StatsCards({ stats, accountType, broker }: StatsCardsProps) {
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <div className="text-sm font-normal text-card-text truncate ">{stat.name}</div>
-                {stat.showNote && (
+                {stat.showNote && !isTotalPortfolio && (
                   <Tooltip
                     side="top"
                     sideOffset={8}
@@ -119,7 +121,8 @@ export function StatsCards({ stats, accountType, broker }: StatsCardsProps) {
                   </Tooltip>
                 )}
               </div>
-              {stat.showNote && (
+              {/* Only show toggle buttons if not total portfolio */}
+              {stat.showNote && !isTotalPortfolio && (
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={() => setReturnViewType("cash")}
