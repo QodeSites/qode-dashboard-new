@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { StatsCards } from "@/components/stats-cards";
 import { RevenueChart } from "@/components/revenue-chart";
 import { TrailingReturnsTable } from "@/components/trailing-returns-table";
@@ -21,18 +21,18 @@ interface Stats {
   return: string;
   totalProfit: string;
   trailingReturns: {
-    fiveDays?: string;
-    tenDays: string;
-    fifteenDays: string;
-    oneMonth: string;
-    threeMonths: string;
-    sixMonths: string;
-    oneYear: string;
-    twoYears: string;
-    fiveYears: string;
+    fiveDays?: string | null;
+    tenDays?: string | null;
+    fifteenDays?: string | null;
+    oneMonth?: string | null;
+    threeMonths?: string | null;
+    sixMonths?: string | null;
+    oneYear?: string | null;
+    twoYears?: string | null;
+    fiveYears?: string | null;
     sinceInception: string;
-    MDD?: string; // Add MDD
-    currentDD?: string; // Add currentDD
+    MDD?: string;
+    currentDD?: string;
   };
   drawdown: string;
   equityCurve: { date: string; value: number }[];
@@ -47,7 +47,7 @@ interface Stats {
   monthlyPnl: {
     [year: string]: {
       months: { [month: string]: { percent: string; cash: string; capitalInOut: string } };
-      totalPercent: number;
+      totalPercent: number | string;
       totalCash: number;
       totalCapitalInOut: number;
     };
@@ -79,17 +79,17 @@ interface PmsStats {
     };
   };
   trailingReturns: {
-    fiveDays: string;
-    tenDays: string;
-    oneMonth: string;
-    threeMonths: string;
-    sixMonths: string;
-    oneYear: string;
-    twoYears: string;
-    fiveYears: string;
+    fiveDays: string | null;
+    tenDays: string | null;
+    oneMonth: string | null;
+    threeMonths: string | null;
+    sixMonths: string | null;
+    oneYear: string | null;
+    twoYears: string | null;
+    fiveYears: string | null;
     sinceInception: string;
-    MDD: string; // Already includes MDD
-    currentDD: string; // Already includes currentDD
+    MDD: string;
+    currentDD: string;
   };
   cashFlows: { date: string; amount: number }[];
   strategyName?: string;
@@ -115,10 +115,11 @@ interface Metadata {
     startDate: string | null;
     endDate: string | null;
   };
+  isActive: boolean; // Added isActive
 }
 
 interface ApiResponse {
-  data: Stats | PmsStats | { stats: Stats | PmsStats; metadata: Account & { strategyName: string } }[];
+  data: Stats | PmsStats | { stats: Stats | PmsStats; metadata: Account & { strategyName: string; isActive: boolean } }[];
   metadata?: Metadata;
 }
 
@@ -130,7 +131,7 @@ interface SarlaApiResponse {
 }
 
 function isPmsStats(stats: Stats | PmsStats): stats is PmsStats {
-  return 'totalPortfolioValue' in stats;
+  return "totalPortfolioValue" in stats;
 }
 
 function convertPmsStatsToStats(pmsStats: PmsStats): Stats {
@@ -150,8 +151,8 @@ function convertPmsStatsToStats(pmsStats: PmsStats): Stats {
       twoYears: pmsStats.trailingReturns.twoYears,
       fiveYears: pmsStats.trailingReturns.fiveYears,
       sinceInception: pmsStats.trailingReturns.sinceInception,
-      MDD: pmsStats.trailingReturns.MDD, // Add MDD
-      currentDD: pmsStats.trailingReturns.currentDD, // Add currentDD
+      MDD: pmsStats.trailingReturns.MDD,
+      currentDD: pmsStats.trailingReturns.currentDD,
     },
     drawdown: pmsStats.maxDrawdown,
     equityCurve: pmsStats.equityCurve,
@@ -162,7 +163,7 @@ function convertPmsStatsToStats(pmsStats: PmsStats): Stats {
         yearCash: pmsStats.quarterlyPnl[year].yearCash || pmsStats.quarterlyPnl[year].cash.total,
       };
       return acc;
-    }, {} as Stats['quarterlyPnl']),
+    }, {} as Stats["quarterlyPnl"]),
     monthlyPnl: Object.keys(pmsStats.monthlyPnl).reduce((acc, year) => {
       const yearData = pmsStats.monthlyPnl[year];
       acc[year] = {
@@ -177,7 +178,7 @@ function convertPmsStatsToStats(pmsStats: PmsStats): Stats {
         totalCapitalInOut: yearData.totalCapitalInOut || 0,
       };
       return acc;
-    }, {} as Stats['monthlyPnl']),
+    }, {} as Stats["monthlyPnl"]),
     cashFlows: pmsStats.cashFlows,
   };
 }
@@ -214,10 +215,12 @@ export default function Portfolio() {
   const { data: session, status } = useSession();
   const isSarla = session?.user?.icode === "QUS0007";
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const accountCode = searchParams.get("accountCode") || "AC5"; // Default to AC5
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"consolidated" | "individual">("consolidated");
-  const [stats, setStats] = useState<(Stats | PmsStats) | { stats: Stats | PmsStats; metadata: Account & { strategyName: string } }[] | null>(null);
+  const [stats, setStats] = useState<(Stats | PmsStats) | { stats: Stats | PmsStats; metadata: Account & { strategyName: string; isActive: boolean } }[] | null>(null);
   const [metadata, setMetadata] = useState<Metadata | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -236,10 +239,11 @@ export default function Portfolio() {
       if (isSarla) {
         const fetchSarlaData = async () => {
           try {
-            const res = await fetch("/api/sarla-api?qcode=QAC00041", { credentials: "include" });
+            console.log(`Fetching Sarla data with accountCode: ${accountCode}`);
+            const res = await fetch(`/api/sarla-api?qcode=QAC00041&accountCode=${accountCode}`, { credentials: "include" });
             if (!res.ok) {
               const errorData = await res.json();
-              throw new Error(errorData.error || "Failed to load Sarla data");
+              throw new Error(errorData.error || `Failed to load Sarla data for accountCode ${accountCode}`);
             }
             const data: SarlaApiResponse = await res.json();
             setSarlaData(data);
@@ -253,7 +257,7 @@ export default function Portfolio() {
 
             setIsLoading(false);
           } catch (err) {
-            setError(err instanceof Error ? err.message : "An unexpected error occurred");
+            setError(err instanceof Error ? err.message : `An unexpected error occurred for accountCode ${accountCode}`);
             setIsLoading(false);
           }
         };
@@ -282,7 +286,7 @@ export default function Portfolio() {
         fetchAccounts();
       }
     }
-  }, [status, router, isSarla]);
+  }, [status, router, isSarla, accountCode]);
 
   useEffect(() => {
     if (selectedAccount && status === "authenticated" && !isSarla) {
@@ -297,12 +301,12 @@ export default function Portfolio() {
 
           const endpoint =
             selectedAccountData.account_type === "pms"
-              ? `/api/pms-data?qcode=${selectedAccount}&viewMode=${viewMode}`
-              : `/api/portfolio?viewMode=${viewMode}${selectedAccount !== "all" ? `&qcode=${selectedAccount}` : ""}`;
+              ? `/api/pms-data?qcode=${selectedAccount}&viewMode=${viewMode}&accountCode=${accountCode}`
+              : `/api/portfolio?viewMode=${viewMode}${selectedAccount !== "all" ? `&qcode=${selectedAccount}` : ""}&accountCode=${accountCode}`;
           const res = await fetch(endpoint, { credentials: "include" });
           if (!res.ok) {
             const errorData = await res.json();
-            throw new Error(errorData.error || `Failed to load data for account ${selectedAccount}`);
+            throw new Error(errorData.error || `Failed to load data for account ${selectedAccount} with accountCode ${accountCode}`);
           }
           const response: ApiResponse = await res.json();
 
@@ -315,14 +319,14 @@ export default function Portfolio() {
           }
           setIsLoading(false);
         } catch (err) {
-          setError(err instanceof Error ? err.message : "An unexpected error occurred");
+          setError(err instanceof Error ? err.message : `An unexpected error occurred for accountCode ${accountCode}`);
           setIsLoading(false);
         }
       };
 
       fetchAccountData();
     }
-  }, [selectedAccount, accounts, status, viewMode, isSarla]);
+  }, [selectedAccount, accounts, status, viewMode, isSarla, accountCode]);
 
   const renderCashFlowsTable = () => {
     let transactions: { date: string; amount: number }[] = [];
@@ -473,32 +477,45 @@ export default function Portfolio() {
               <SelectValue placeholder="Select Strategy" />
             </SelectTrigger>
             <SelectContent>
-              {availableStrategies.map((strategy) => (
-                <SelectItem key={strategy} value={strategy}>
-                  {strategy}
-                </SelectItem> 
-              ))}
+              {availableStrategies.map((strategy) => {
+                const isActive = sarlaData[strategy].metadata.isActive;
+                console.log(`Strategy ${strategy} isActive: ${isActive}`);
+                return (
+                  <SelectItem key={strategy} value={strategy}>
+                    {strategy} {isActive ? "" : "(Inactive)"}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         </div>
-        
+
         {/* Desktop tabs */}
         <div className="hidden sm:block">
           <div className="flex flex-wrap gap-2">
-            {availableStrategies.map((strategy) => (
-              <Button
-                key={strategy}
-                variant={selectedStrategy === strategy ? "default" : "outline"}
-                onClick={() => setSelectedStrategy(strategy)}
-                className={`px-4 py-2 text-sm font-medium font-heading rounded-full transition-colors ${selectedStrategy === strategy
-                  ? "bg-logo-green text-button-text"
-                  : "bg-white/70 text-card-text hover:bg-logo-green/20"
+            {availableStrategies.map((strategy) => {
+              const isActive = sarlaData[strategy].metadata.isActive;
+              return (
+                <Button
+                  key={strategy}
+                  variant={selectedStrategy === strategy ? "default" : "outline"}
+                  onClick={() => setSelectedStrategy(strategy)}
+                  className={`px-4 py-2 text-sm font-medium font-heading rounded-full transition-colors ${
+                    selectedStrategy === strategy
+                      ? "bg-logo-green text-button-text"
+                      : isActive
+                      ? "bg-white/70 text-card-text hover:bg-logo-green/20"
+                      : "bg-gray-200 text-gray-500 hover:bg-gray-300"
                   }`}
-              >
-                {strategy}
-              </Button>
-            ))}
+                >
+                  {strategy} {isActive ? "" : "(Inactive)"}
+                </Button>
+              );
+            })}
           </div>
+        </div>
+        <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+          <p><strong>Note:</strong> Inactive strategies may have limited data updates.</p>
         </div>
       </div>
     );
@@ -518,6 +535,7 @@ export default function Portfolio() {
     );
     const lastDate = getLastDate(filteredEquityCurve, strategyData.metadata?.lastUpdated);
     const isTotalPortfolio = selectedStrategy === "Total Portfolio";
+    const isActive = strategyData.metadata.isActive;
 
     return (
       <div className="space-y-6">
@@ -526,6 +544,7 @@ export default function Portfolio() {
           accountType="sarla"
           broker="Sarla"
           isTotalPortfolio={isTotalPortfolio}
+          isActive={isActive} // Pass isActive to StatsCards
         />
         {!isTotalPortfolio && (
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
@@ -549,6 +568,11 @@ export default function Portfolio() {
           showOnlyQuarterlyCash={isTotalPortfolio}
         />
         {renderCashFlowsTable()}
+        {!isActive && (
+          <div className="text-sm text-yellow-600 dark:text-yellow-400">
+            <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
+          </div>
+        )}
       </div>
     );
   };
@@ -606,12 +630,14 @@ export default function Portfolio() {
           )}
         </div>
         {/* Only show strategy name button for non-Sarla users */}
-        {!isSarla && (currentMetadata?.strategyName) && (
+        {!isSarla && currentMetadata?.strategyName && (
           <Button
             variant="outline"
-            className="bg-logo-green mt-4 font-heading text-button-text text-sm sm:text-lg px-3 py-1 rounded-full"
+            className={`bg-logo-green mt-4 font-heading text-button-text text-sm sm:text-lg px-3 py-1 rounded-full ${
+              !currentMetadata.isActive ? "opacity-70" : ""
+            }`}
           >
-            {currentMetadata?.strategyName || "Unknown Strategy"}
+            {currentMetadata.strategyName} {currentMetadata.isActive ? "" : "(Inactive)"}
           </Button>
         )}
       </div>
@@ -638,6 +664,7 @@ export default function Portfolio() {
                       <CardHeader>
                         <CardTitle className="text-card-text text-sm sm:text-lg">
                           {item.metadata.account_name} ({item.metadata.account_type.toUpperCase()} - {item.metadata.broker})
+                          {item.metadata.isActive ? "" : " (Inactive)"}
                         </CardTitle>
                         <div className="text-sm text-card-text-secondary">
                           Strategy: <strong>{item.metadata.strategyName || "Unknown Strategy"}</strong>
@@ -648,6 +675,7 @@ export default function Portfolio() {
                           stats={convertedStats}
                           accountType={item.metadata.account_type}
                           broker={item.metadata.broker}
+                          isActive={item.metadata.isActive} // Pass isActive to StatsCards
                         />
                         <RevenueChart
                           equityCurve={filteredEquityCurve}
@@ -660,6 +688,11 @@ export default function Portfolio() {
                           quarterlyPnl={convertedStats.quarterlyPnl}
                           monthlyPnl={convertedStats.monthlyPnl}
                         />
+                        {!item.metadata.isActive && (
+                          <div className="text-sm text-yellow-600 dark:text-yellow-400">
+                            <strong>Note:</strong> This account is inactive. Data may not be updated regularly.
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   </div>
@@ -681,6 +714,7 @@ export default function Portfolio() {
                         stats={convertedStats}
                         accountType={accounts.find((acc) => acc.qcode === selectedAccount)?.account_type || "unknown"}
                         broker={accounts.find((acc) => acc.qcode === selectedAccount)?.broker || "Unknown"}
+                        isActive={metadata?.isActive ?? true} // Pass isActive to StatsCards
                       />
                       <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
                         <div className="flex-1 min-w-0 sm:w-5/6">
@@ -701,6 +735,11 @@ export default function Portfolio() {
                         monthlyPnl={convertedStats.monthlyPnl}
                       />
                       {renderCashFlowsTable()}
+                      {metadata && !metadata.isActive && (
+                        <div className="text-sm text-yellow-600 dark:text-yellow-400">
+                          <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
+                        </div>
+                      )}
                     </>
                   );
                 })()}

@@ -86,7 +86,6 @@ export function TrailingReturnsTable({
       case "10d":
         return isValidReturn(normalizedTrailingReturns.tenDays) ? normalizedTrailingReturns.tenDays : "-";
       case "15d":
-        // Fixed bug: was returning fiveDays instead of fifteenDays
         return isValidReturn(normalizedTrailingReturns.fifteenDays) ? normalizedTrailingReturns.fifteenDays : "-";
       case "1m":
         return isValidReturn(normalizedTrailingReturns.oneMonth) ? normalizedTrailingReturns.oneMonth : "-";
@@ -176,13 +175,31 @@ export function TrailingReturnsTable({
       return selectedPoint ? selectedPoint.nav : 0;
     };
 
-    const calculateReturn = (start: Date, end: Date) => {
+    const calculateReturn = (start: Date, end: Date, periodKey: string) => {
       const startNav = findNav(start);
       const endNav = findNav(end);
 
       if (startNav && endNav && startNav !== 0) {
-        const returnValue = (((endNav - startNav) / startNav) * 100).toFixed(2);
-        return returnValue;
+        // Calculate the duration in years
+        const durationYears = (end.getTime() - start.getTime()) / (365 * 24 * 60 * 60 * 1000);
+        
+        console.log(`📊 Period ${periodKey}: Start=${start.toISOString().split('T')[0]}, End=${end.toISOString().split('T')[0]}, Duration=${durationYears.toFixed(2)} years`);
+        console.log(`📊 NAV values: Start=${startNav}, End=${endNav}`);
+        
+        let returnValue: number;
+        
+        // Use CAGR for periods >= 1 year, absolute return for shorter periods
+        if (durationYears >= 1) {
+          // CAGR formula: (End Value / Start Value)^(1/years) - 1
+          returnValue = (Math.pow(endNav / startNav, 1 / durationYears) - 1) * 100;
+          console.log(`📊 Using CAGR: ${returnValue.toFixed(2)}%`);
+        } else {
+          // Absolute return formula: (End Value - Start Value) / Start Value
+          returnValue = ((endNav - startNav) / startNav) * 100;
+          console.log(`📊 Using Absolute Return: ${returnValue.toFixed(2)}%`);
+        }
+        
+        return returnValue.toFixed(2);
       }
 
       return "-";
@@ -201,11 +218,11 @@ export function TrailingReturnsTable({
           start.setFullYear(endDate.getFullYear() - period.duration!);
         }
 
-        const returnValue = calculateReturn(start, endDate);
+        const returnValue = calculateReturn(start, endDate, period.key);
         benchmarkReturns[period.key] = returnValue;
 
       } else if (period.type === "inception") {
-        const returnValue = calculateReturn(startDate, endDate);
+        const returnValue = calculateReturn(startDate, endDate, period.key);
         benchmarkReturns[period.key] = returnValue;
       }
     });
@@ -387,7 +404,7 @@ export function TrailingReturnsTable({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-gray-600">
           <div>
             <p><strong>Legend:</strong> 5d = 5 days, 1m = 1 month, 1y = 1 year, DD = Drawdown</p>
-            <p><strong>Returns:</strong> Periods under 1 year are presented as absolute, while those over 1 year are annualized</p>
+            <p><strong>Returns:</strong> Periods under 1 year are presented as absolute, while those over 1 year are annualized (CAGR)</p>
           </div>
         </div>
       </div>
