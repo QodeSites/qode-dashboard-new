@@ -479,10 +479,9 @@ export default function Portfolio() {
             <SelectContent>
               {availableStrategies.map((strategy) => {
                 const isActive = sarlaData[strategy].metadata.isActive;
-                console.log(`Strategy ${strategy} isActive: ${isActive}`);
                 return (
                   <SelectItem key={strategy} value={strategy}>
-                    {strategy} {isActive ? "" : "(Inactive)"}
+                    {strategy} {!isActive ? "(Inactive)" : ""}
                   </SelectItem>
                 );
               })}
@@ -508,15 +507,17 @@ export default function Portfolio() {
                       : "bg-gray-200 text-gray-500 hover:bg-gray-300"
                   }`}
                 >
-                  {strategy} {isActive ? "" : "(Inactive)"}
+                  {strategy} {!isActive ? "(Inactive)" : ""}
                 </Button>
               );
             })}
           </div>
         </div>
-        <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
-          <p><strong>Note:</strong> Inactive strategies may have limited data updates.</p>
-        </div>
+        {isSarla && (
+          <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+            <p><strong>Note:</strong> Inactive strategies may have limited data updates.</p>
+          </div>
+        )}
       </div>
     );
   };
@@ -568,7 +569,7 @@ export default function Portfolio() {
           showOnlyQuarterlyCash={isTotalPortfolio}
         />
         {renderCashFlowsTable()}
-        {!isActive && (
+        {isSarla && !isActive && (
           <div className="text-sm text-yellow-600 dark:text-yellow-400">
             <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
           </div>
@@ -634,10 +635,10 @@ export default function Portfolio() {
           <Button
             variant="outline"
             className={`bg-logo-green mt-4 font-heading text-button-text text-sm sm:text-lg px-3 py-1 rounded-full ${
-              !currentMetadata.isActive ? "opacity-70" : ""
+              isSarla && !currentMetadata.isActive ? "opacity-70" : ""
             }`}
           >
-            {currentMetadata.strategyName} {currentMetadata.isActive ? "" : "(Inactive)"}
+            {currentMetadata.strategyName} {isSarla && !currentMetadata.isActive ? "(Inactive)" : ""}
           </Button>
         )}
       </div>
@@ -664,7 +665,7 @@ export default function Portfolio() {
                       <CardHeader>
                         <CardTitle className="text-card-text text-sm sm:text-lg">
                           {item.metadata.account_name} ({item.metadata.account_type.toUpperCase()} - {item.metadata.broker})
-                          {item.metadata.isActive ? "" : " (Inactive)"}
+                          {isSarla && !item.metadata.isActive ? " (Inactive)" : ""}
                         </CardTitle>
                         <div className="text-sm text-card-text-secondary">
                           Strategy: <strong>{item.metadata.strategyName || "Unknown Strategy"}</strong>
@@ -688,7 +689,7 @@ export default function Portfolio() {
                           quarterlyPnl={convertedStats.quarterlyPnl}
                           monthlyPnl={convertedStats.monthlyPnl}
                         />
-                        {!item.metadata.isActive && (
+                        {isSarla && !item.metadata.isActive && (
                           <div className="text-sm text-yellow-600 dark:text-yellow-400">
                             <strong>Note:</strong> This account is inactive. Data may not be updated regularly.
                           </div>
@@ -735,7 +736,7 @@ export default function Portfolio() {
                         monthlyPnl={convertedStats.monthlyPnl}
                       />
                       {renderCashFlowsTable()}
-                      {metadata && !metadata.isActive && (
+                      {isSarla && metadata && !metadata.isActive && (
                         <div className="text-sm text-yellow-600 dark:text-yellow-400">
                           <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
                         </div>
