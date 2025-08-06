@@ -136,8 +136,6 @@ const FROZEN_RETURN_VALUES = {
   "Scheme F": 4.38,
 };
 
-// Additional value to add to Scheme A portfolio returns
-const SCHEME_A_ADDITIONAL_VALUE = 10370149.13;
 
 // Hardcoded since-inception returns
 const HARDCODED_SINCE_INCEPTION_RETURNS = {
@@ -203,100 +201,6 @@ const AC5_QUARTERLY_PNL = {
 // Hardcoded Q2 2025 value for Scheme PMS QAW
 const PMS_QAW_Q2_2025_VALUE = 10338478.61;
 
-// Hardcoded AC5 Scheme A quarterly P&L values with percentages
-const AC5_SCHEME_A_QUARTERLY_PNL = {
-  "2022": {
-    Q3: { cash: -1609424.1, percent: -15.2 },
-    Q4: { cash: 176694.7, percent: 2.1 },
-    total: { cash: -1432729.4, percent: -13.5 },
-  },
-  "2023": {
-    Q1: { cash: -395793.6, percent: -4.7 },
-    Q2: { cash: 2672374.2, percent: 34.2 },
-    Q3: { cash: 6690923.8, percent: 52.1 },
-    Q4: { cash: 13138234.8, percent: 46.3 },
-    total: { cash: 22105739.2, percent: 262.9 },
-  },
-  "2024": {
-    Q1: { cash: 3266707.5, percent: 18.7 },
-    Q2: { cash: 16847614.5, percent: 78.2 },
-    Q3: { cash: 14142910.4, percent: 42.8 },
-    Q4: { cash: 12837438.5, percent: 28.9 },
-    total: { cash: 47094671.0, percent: 560.2 },
-  },
-  "2025": {
-    Q1: { cash: -8038030.0, percent: -12.4 },
-    Q2: { cash: 20053523.7, percent: 35.6 },
-    total: { cash: 12015493.7, percent: 18.5 },
-  },
-};
-
-// Hardcoded quarterly P&L for inactive schemes (C, D, E, F)
-const HARDCODED_QUARTERLY_PNL = {
-  "Scheme C": {
-    "2022": {
-      Q3: { cash: -245000.0, percent: -2.8 },
-      Q4: { cash: 89000.0, percent: 1.0 },
-      total: { cash: -156000.0, percent: -1.8 },
-    },
-    "2023": {
-      Q1: { cash: 125000.0, percent: 1.4 },
-      Q2: { cash: 567000.0, percent: 6.5 },
-      Q3: { cash: 890000.0, percent: 9.8 },
-      Q4: { cash: 1230000.0, percent: 12.4 },
-      total: { cash: 2812000.0, percent: 32.1 },
-    },
-    "2024": {
-      Q1: { cash: 456000.0, percent: 4.2 },
-      Q2: { cash: 789000.0, percent: 7.1 },
-      Q3: { cash: 345000.0, percent: 2.9 },
-      Q4: { cash: 234000.0, percent: 1.9 },
-      total: { cash: 1824000.0, percent: 16.8 },
-    },
-  },
-  "Scheme D": {
-    "2022": {
-      Q3: { cash: -89000.0, percent: -1.2 },
-      Q4: { cash: 45000.0, percent: 0.6 },
-      total: { cash: -44000.0, percent: -0.6 },
-    },
-    "2023": {
-      Q1: { cash: 67000.0, percent: 0.9 },
-      Q2: { cash: 123000.0, percent: 1.6 },
-      Q3: { cash: 178000.0, percent: 2.3 },
-      Q4: { cash: 234000.0, percent: 2.9 },
-      total: { cash: 602000.0, percent: 7.9 },
-    },
-  },
-  "Scheme E": {
-    "2022": {
-      Q4: { cash: 123000.0, percent: 1.8 },
-      total: { cash: 123000.0, percent: 1.8 },
-    },
-    "2023": {
-      Q1: { cash: 89000.0, percent: 1.3 },
-      Q2: { cash: 156000.0, percent: 2.2 },
-      Q3: { cash: 234000.0, percent: 3.2 },
-      Q4: { cash: 345000.0, percent: 4.6 },
-      total: { cash: 824000.0, percent: 11.8 },
-    },
-  },
-  "Scheme F": {
-    "2023": {
-      Q1: { cash: 45000.0, percent: 0.7 },
-      Q2: { cash: 78000.0, percent: 1.2 },
-      Q3: { cash: 123000.0, percent: 1.8 },
-      Q4: { cash: 167000.0, percent: 2.4 },
-      total: { cash: 413000.0, percent: 6.2 },
-    },
-    "2024": {
-      Q1: { cash: 89000.0, percent: 1.2 },
-      Q2: { cash: 145000.0, percent: 1.9 },
-      total: { cash: 234000.0, percent: 3.1 },
-    },
-  },
-};
-
 export class PortfolioApi {
   private static normalizeDate(date: string | Date): string | null {
     if (!date) return null;
@@ -326,20 +230,6 @@ export class PortfolioApi {
     return systemTagMap[scheme] || `Zerodha Total Portfolio ${scheme}`;
   }
 
-  private static getCurrentSystemTag(scheme: string): string {
-    const systemTagMap: Record<string, string> = {
-      "Total Portfolio": "Sarla Performance fibers Scheme Total Portfolio",
-      "Scheme B": "Zerodha Total Portfolio",
-      "Scheme QAW": "Zerodha Total Portfolio QAW",
-      "Scheme A": "Zerodha Total Portfolio A",
-      "Scheme C": "Zerodha Total Portfolio C",
-      "Scheme D": "Zerodha Total Portfolio D",
-      "Scheme E": "Zerodha Total Portfolio E",
-      "Scheme F": "Zerodha Total Portfolio F",
-      "Scheme PMS QAW": "PMS QAW Portfolio",
-    };
-    return systemTagMap[scheme] || `Zerodha Total Portfolio ${scheme}`;
-  }
 
   private static async getPMSData(accountCode: string = "QAW00023"): Promise<{
     amountDeposited: number;
@@ -349,7 +239,6 @@ export class PortfolioApi {
     cashFlows: CashFlow[];
     latestData: { portfolioValue: number; drawdown: number; nav: number; date: Date } | null;
   }> {
-    console.log(`Getting PMS data for account code: ${accountCode}`);
 
     const pmsData = await prisma.pms_master_sheet.findMany({
       where: { account_code: accountCode },
@@ -364,7 +253,6 @@ export class PortfolioApi {
       orderBy: { report_date: "asc" },
     });
 
-    console.log(`Found ${pmsData.length} PMS records`);
 
     if (!pmsData.length) {
       return {
@@ -415,7 +303,551 @@ export class PortfolioApi {
     };
   }
 
+private static SARLA_HARDCODED_DATA: Record<string, PortfolioData & { metadata: Metadata }> = {
+  "Scheme A": {
+    data: {
+      amountDeposited: "0.00",
+      currentExposure: "0.00",
+      return: "24.10",
+      totalProfit: "79783174.52",
+      trailingReturns: {
+        "5d": 0.02,
+        "10d": -0.94,
+        "15d": -2.16,
+        "1m": 2.39,
+        "3m": 6.30,
+        "6m": 4.66,
+        "1y": 14.23,
+        "2y": 30.31,
+        "5y": null,
+        sinceInception: 24.10,
+        MDD: -12.12,
+        currentDD: -2.16,
+      },
+      drawdown: "-2.16",
+      maxDrawdown: "-12.12",
+      equityCurve: [],
+      drawdownCurve: [],
+      quarterlyPnl: {
+        "2022": {
+          percent: { q1: "-", q2: "-", q3: "-15.2", q4: "2.1", total: "-13.5" },
+          cash: { q1: "-", q2: "-", q3: "-1609424.10", q4: "176694.70", total: "-1432729.40" },
+          yearCash: "-1432729.40",
+        },
+        "2023": {
+          percent: { q1: "-4.7", q2: "34.2", q3: "52.1", q4: "46.3", total: "262.9" },
+          cash: { q1: "-395793.60", q2: "2672374.20", q3: "6690923.80", q4: "13138234.80", total: "22105739.20" },
+          yearCash: "22105739.20",
+        },
+        "2024": {
+          percent: { q1: "18.7", q2: "78.-2", q3: "42.8", q4: "28.9", total: "560.2" },
+          cash: { q1: "3266707.50", q2: "16847614.50", q3: "14142910.40", q4: "12837438.50", total: "47094670.90" },
+          yearCash: "47094670.90",
+        },
+        "2025": {
+          percent: { q1: "-12.4", q2: "35.6", q3: "-", q4: "-", total: "18.5" },
+          cash: { q1: "-8038030.00", q2: "20053523.70", q3: "-", q4: "-", total: "12015493.70" },
+          yearCash: "12015493.70",
+        },
+      },
+      monthlyPnl: {
+        "2022": {
+          months: {
+            September: { percent: "-3.22", cash: "-1609424.10", capitalInOut: "50000000.00" },
+            October: { percent: "-3.13", cash: "0.00", capitalInOut: "0.00" },
+            November: { percent: "0.23", cash: "0.00", capitalInOut: "0.00" },
+            December: { percent: "3.37", cash: "176694.70", capitalInOut: "0.00" },
+          },
+          totalPercent: -2.87,
+          totalCash: -1432729.4,
+          totalCapitalInOut: 50000000.00,
+        },
+        "2023": {
+          months: {
+            January: { percent: "0.28", cash: "0.00", capitalInOut: "0.00" },
+            February: { percent: "-1.70", cash: "-395793.60", capitalInOut: "0.00" },
+            March: { percent: "0.62", cash: "0.00", capitalInOut: "0.00" },
+            April: { percent: "2.24", cash: "0.00", capitalInOut: "0.00" },
+            May: { percent: "-0.03", cash: "0.00", capitalInOut: "0.00" },
+            June: { percent: "3.66", cash: "2672374.20", capitalInOut: "0.00" },
+            July: { percent: "2.81", cash: "0.00", capitalInOut: "0.00" },
+            August: { percent: "3.69", cash: "0.00", capitalInOut: "0.00" },
+            September: { percent: "3.59", cash: "6690923.80", capitalInOut: "0.00" },
+            October: { percent: "7.22", cash: "0.00", capitalInOut: "18000000.00" },
+            November: { percent: "0.39", cash: "0.00", capitalInOut: "17533740.85" },
+            December: { percent: "9.39", cash: "13138234.80", capitalInOut: "0.00" },
+          },
+          totalPercent: 36.64,
+          totalCash: 22105739.2,
+          totalCapitalInOut: 35533740.85,
+        },
+        "2024": {
+          months: {
+            January: { percent: "6.30", cash: "0.00", capitalInOut: "52816909.26" },
+            February: { percent: "0.46", cash: "0.00", capitalInOut: "-12894139.92" },
+            March: { percent: "-2.53", cash: "3266707.50", capitalInOut: "0.00" },
+            April: { percent: "7.58", cash: "0.00", capitalInOut: "49798928.27" },
+            May: { percent: "-0.01", cash: "0.00", capitalInOut: "0.00" },
+            June: { percent: "2.00", cash: "16847614.50", capitalInOut: "30000000.00" },
+            July: { percent: "2.30", cash: "0.00", capitalInOut: "45079267.40" },
+            August: { percent: "0.47", cash: "0.00", capitalInOut: "-50000000.00" },
+            September: { percent: "1.97", cash: "14142910.40", capitalInOut: "0.00" },
+            October: { percent: "0.63", cash: "0.00", capitalInOut: "-0.73" },
+            November: { percent: "6.28", cash: "0.00", capitalInOut: "0.00" },
+            December: { percent: "-2.02", cash: "12837438.50", capitalInOut: "-31883821.00" },
+          },
+          totalPercent: 25.43,
+          totalCash: 47094670.9,
+          totalCapitalInOut: 84930964.98,
+        },
+        "2025": {
+          months: {
+            January: { percent: "-3.21", cash: "0.00", capitalInOut: "0.00" },
+            February: { percent: "-1.87", cash: "0.00", capitalInOut: "0.00" },
+            March: { percent: "1.64", cash: "-8038030.00", capitalInOut: "0.00" },
+            April: { percent: "6.08", cash: "0.00", capitalInOut: "-10000000.00" },
+            May: { percent: "-0.11", cash: "20053523.70", capitalInOut: "-1450229217.73" },
+          },
+          totalPercent: 2.3,
+          totalCash: 12015493.7,
+          totalCapitalInOut: -1460229217.73,
+        },
+      },
+      cashFlows: [
+        { date: "2022-09-14", amount: 50000000.00, dividend: 286392.65 },
+        { date: "2023-11-08", amount: 18000000.00, dividend: 0.00 },
+        { date: "2023-11-21", amount: 18428022.85, dividend: 0.00 },
+        { date: "2023-11-29", amount: -894282.00, dividend: 0.00 },
+        { date: "2024-01-11", amount: 32816909.26, dividend: 0.00 },
+        { date: "2024-01-24", amount: -18894139.92, dividend: 0.00 },
+        { date: "2024-01-30", amount: 19000000.00, dividend: 0.00 },
+        { date: "2024-02-09", amount: 6000000.00, dividend: 0.00 },
+        { date: "2024-04-15", amount: 30000000.00, dividend: 0.00 },
+        { date: "2024-04-15", amount: 19798928.27, dividend: 0.00 },
+        { date: "2024-06-28", amount: 30000000.00, dividend: 0.00 },
+        { date: "2024-07-26", amount: 25079267.40, dividend: 0.00 },
+        { date: "2024-07-31", amount: 20000000.00, dividend: 0.00 },
+        { date: "2024-08-21", amount: -50000000.00, dividend: 0.00 },
+        { date: "2024-10-24", amount: 27690160.00, dividend: 0.00 },
+        { date: "2024-10-24", amount: -10469772.73, dividend: 0.00 },
+        { date: "2024-10-25", amount: -24360000.00, dividend: 0.00 },
+        { date: "2024-10-25", amount: 7139612.73, dividend: 0.00 },
+        { date: "2024-12-06", amount: -7383821.00, dividend: 0.00 },
+        { date: "2024-12-09", amount: -24500000.00, dividend: 0.00 },
+        { date: "2025-04-25", amount: -50000000.00, dividend: 0.00 },
+        { date: "2025-05-02", amount: -50000000.00, dividend: 0.00 },
+        { date: "2025-05-05", amount: -50000000.00, dividend: 0.00 },
+        { date: "2025-05-07", amount: -5222716.88, dividend: 0.00 },
+        { date: "2025-05-08", amount: -4955516.54, dividend: 0.00 },
+        { date: "2025-05-08", amount: -84924701.31, dividend: 0.00 },
+      ],
+      strategyName: "Scheme A",
+    },
+    metadata: {
+      icode: "Scheme A",
+      accountCount: 1,
+      lastUpdated: "2025-08-05",
+      filtersApplied: { accountType: null, broker: null, startDate: null, endDate: null },
+      inceptionDate: "2022-09-14",
+      dataAsOfDate: "2025-07-18",
+      strategyName: "Scheme A",
+      isActive: false,
+    },
+  },
+  "Scheme C": {
+    data: {
+      amountDeposited: "0.00",
+      currentExposure: "0.00",
+      return: "30.78",
+      totalProfit: "4052160.65",
+      trailingReturns: {
+        "5d": 1.10,
+        "10d": 2.09,
+        "15d": 4.62,
+        "1m": 5.87,
+        "3m": 8.23,
+        "6m": null,
+        "1y": null,
+        "2y": null,
+        "5y": null,
+        sinceInception: 30.78,
+        MDD: -4.37,
+        currentDD: 0.00,
+      },
+      drawdown: "0.00",
+      maxDrawdown: "-4.37",
+      equityCurve: [],
+      drawdownCurve: [],
+      quarterlyPnl: {
+        "2024": {
+          percent: { q1: "-", q2: "-", q3: "3.79", q4: "4.29", total: "8.07" },
+          cash: { q1: "0.00", q2: "0.00", q3: "1820621.13", q4: "2214539.53", total: "4035160.65" },
+          yearCash: "4035160.65",
+        },
+      },
+      monthlyPnl: {
+        "2024": {
+          months: {
+            August: { percent: "-0.15", cash: "0.00", capitalInOut: "50000000.00" },
+            September: { percent: "3.79", cash: "1820621.13", capitalInOut: "0.00" },
+            October: { percent: "-1.48", cash: "0.00", capitalInOut: "0.00" },
+            November: { percent: "4.69", cash: "0.00", capitalInOut: "0.00" },
+            December: { percent: "1.10", cash: "2214539.53", capitalInOut: "-54052160.00" },
+          },
+          totalPercent: 8.07,
+          totalCash: 4035160.65,
+          totalCapitalInOut: -4052160.00,
+        },
+      },
+      cashFlows: [
+        { date: "2024-08-21", amount: 50000000.00, dividend: 0.00 },
+        { date: "2024-12-04", amount: -54052160.00, dividend: 0.00 },
+      ],
+      strategyName: "Scheme C",
+    },
+    metadata: {
+      icode: "Scheme C",
+      accountCount: 1,
+      lastUpdated: "2025-08-05",
+      filtersApplied: { accountType: null, broker: null, startDate: null, endDate: null },
+      inceptionDate: "2024-08-21",
+      dataAsOfDate: "2024-12-04",
+      strategyName: "Scheme C",
+      isActive: false,
+    },
+  },
+  "Scheme D": {
+    data: {
+      amountDeposited: "0.00",
+      currentExposure: "0.00",
+      return: "2.33",
+      totalProfit: "232539.98",
+      trailingReturns: {
+        "5d": 1.72,
+        "10d": 2.05,
+        "15d": 1.17,
+        "1m": 0.56,
+        "3m": 2.24,
+        "6m": null,
+        "1y": null,
+        "2y": null,
+        "5y": null,
+        sinceInception: 2.33,
+        MDD: -3.38,
+        currentDD: -0.98,
+      },
+      drawdown: "-0.98",
+      maxDrawdown: "-3.38",
+      equityCurve: [],
+      drawdownCurve: [],
+      quarterlyPnl: {
+        "2024": {
+          percent: { q1: "-", q2: "-", q3: "-", q4: "-0.16", total: "-0.16" },
+          cash: { q1: "0.00", q2: "0.00", q3: "0.00", q4: "-12287.12", total: "-12287.12" },
+          yearCash: "-12287.12",
+        },
+        "2025": {
+          percent: { q1: "2.41", q2: "-", q3: "-", q4: "-", total: "2.41" },
+          cash: { q1: "244827.10", q2: "0.00", q3: "0.00", q4: "0.00", total: "244827.10" },
+          yearCash: "244827.10",
+        },
+      },
+      monthlyPnl: {
+        "2024": {
+          months: {
+            November: { percent: "-0.81", cash: "0.00", capitalInOut: "1500000.00" },
+            December: { percent: "0.66", cash: "-12287.12", capitalInOut: "0.00" },
+          },
+          totalPercent: -0.16,
+          totalCash: -12287.12,
+          totalCapitalInOut: 1500000.00,
+        },
+        "2025": {
+          months: {
+            January: { percent: "0.67", cash: "0.00", capitalInOut: "0.00" },
+            February: { percent: "1.73", cash: "244827.10", capitalInOut: "-1732540.00" },
+          },
+          totalPercent: 2.41,
+          totalCash: 244827.10,
+          totalCapitalInOut: -1732540.00,
+        },
+      },
+      cashFlows: [
+        { date: "2024-11-13", amount: 1500000.00, dividend: 0.00 },
+        { date: "2025-02-14", amount: -1732540.00, dividend: 0.00 },
+      ],
+      strategyName: "Scheme D",
+    },
+    metadata: {
+      icode: "Scheme D",
+      accountCount: 1,
+      lastUpdated: "2025-08-05",
+      filtersApplied: { accountType: null, broker: null, startDate: null, endDate: null },
+      inceptionDate: "2024-11-13",
+      dataAsOfDate: "2025-02-14",
+      strategyName: "Scheme D",
+      isActive: false,
+    },
+  },
+  "Scheme E": {
+    data: {
+      amountDeposited: "0.00",
+      currentExposure: "0.00",
+      return: "5.21",
+      totalProfit: "13020843.30",
+      trailingReturns: {
+        "5d": 2.83,
+        "10d": 3.31,
+        "15d": 1.30,
+        "1m": 0.64,
+        "3m": null,
+        "6m": null,
+        "1y": null,
+        "2y": null,
+        "5y": null,
+        sinceInception: 5.21,
+        MDD: -5.04,
+        currentDD: -1.89,
+      },
+      drawdown: "-1.89",
+      maxDrawdown: "-5.04",
+      equityCurve: [],
+      drawdownCurve: [],
+      quarterlyPnl: {
+        "2024": {
+          percent: { q1: "-", q2: "-", q3: "-", q4: "2.36", total: "2.36" },
+          cash: { q1: "0.00", q2: "0.00", q3: "0.00", q4: "5914281.13", total: "5914281.13" },
+          yearCash: "5914281.13",
+        },
+        "2025": {
+          percent: { q1: "2.72", q2: "-", q3: "-", q4: "-", total: "2.72" },
+          cash: { q1: "7106562.17", q2: "0.00", q3: "0.00", q4: "0.00", total: "7106562.17" },
+          yearCash: "7106562.17",
+        },
+      },
+      monthlyPnl: {
+        "2024": {
+          months: {
+            January: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            February: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            March: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            April: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            May: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            June: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            July: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            August: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            September: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            October: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            November: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            December: { percent: "2.36", cash: "5914281.13", capitalInOut: "0.00" },
+          },
+          totalPercent: 2.36,
+          totalCash: 5914281.13,
+          totalCapitalInOut: 0.00,
+        },
+        "2025": {
+          months: {
+            January: { percent: "0.22", cash: "0.00", capitalInOut: "0.00" },
+            February: { percent: "2.50", cash: "7106562.17", capitalInOut: "0.00" },
+            March: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            April: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            May: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            June: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            July: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            August: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            September: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            October: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            November: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            December: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+          },
+          totalPercent: 2.72,
+          totalCash: 7106562.17,
+          totalCapitalInOut: 0.00,
+        },
+      },
+      cashFlows: [
+        { date: "2024-12-05", amount: 240000000.00, dividend: 0.00 },
+        { date: "2024-12-16", amount: 115000000.00, dividend: 0.00 },
+        { date: "2025-02-14", amount: -48520843.00, dividend: 0.00 },
+      ],
+      strategyName: "Scheme E",
+    },
+    metadata: {
+      icode: "Scheme E",
+      accountCount: 1,
+      lastUpdated: "2025-08-05",
+      filtersApplied: { accountType: null, broker: null, startDate: null, endDate: null },
+      inceptionDate: "2024-12-05",
+      dataAsOfDate: "2025-02-14",
+      strategyName: "Scheme E",
+      isActive: false,
+    },
+  },
+  "Scheme F": {
+    data: {
+      amountDeposited: "0.00",
+      currentExposure: "0.00",
+      return: "4.38",
+      totalProfit: "10954459.70",
+      trailingReturns: {
+        "5d": 2.31,
+        "10d": 2.56,
+        "15d": 1.64,
+        "1m": 1.28,
+        "3m": null,
+        "6m": null,
+        "1y": null,
+        "2y": null,
+        "5y": null,
+        sinceInception: 4.38,
+        MDD: -3.91,
+        currentDD: -1.45,
+      },
+      drawdown: "-1.45",
+      maxDrawdown: "-3.91",
+      equityCurve: [],
+      drawdownCurve: [],
+      quarterlyPnl: {
+        "2024": {
+          percent: { q1: "-", q2: "-", q3: "-", q4: "2.13", total: "2.13" },
+          cash: { q1: "0.00", q2: "0.00", q3: "0.00", q4: "5399550.24", total: "5399550.24" },
+          yearCash: "5399550.24",
+        },
+        "2025": {
+          percent: { q1: "2.10", q2: "-", q3: "-", q4: "-", total: "2.10" },
+          cash: { q1: "5554909.46", q2: "0.00", q3: "0.00", q4: "0.00", total: "5554909.46" },
+          yearCash: "5554909.46",
+        },
+      },
+      monthlyPnl: {
+        "2024": {
+          months: {
+            January: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            February: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            March: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            April: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            May: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            June: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            July: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            August: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            September: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            October: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            November: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            December: { percent: "2.13", cash: "5399550.24", capitalInOut: "0.00" },
+          },
+          totalPercent: 2.13,
+          totalCash: 5399550.24,
+          totalCapitalInOut: 0.00,
+        },
+        "2025": {
+          months: {
+            January: { percent: "-0.16", cash: "0.00", capitalInOut: "0.00" },
+            February: { percent: "2.26", cash: "5554909.46", capitalInOut: "0.00" },
+            March: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            April: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            May: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            June: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            July: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            August: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            September: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            October: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            November: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            December: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+          },
+          totalPercent: 2.10,
+          totalCash: 5554909.46,
+          totalCapitalInOut: 0.00,
+        },
+      },
+      cashFlows: [
+        { date: "2024-12-18", amount: 16403458.75, dividend: 0.00 },
+        { date: "2025-02-14", amount: -27357918.70, dividend: 0.00 },
+      ],
+      strategyName: "Scheme F",
+    },
+    metadata: {
+      icode: "Scheme F",
+      accountCount: 1,
+      lastUpdated: "2025-08-05",
+      filtersApplied: { accountType: null, broker: null, startDate: null, endDate: null },
+      inceptionDate: "2024-12-18",
+      dataAsOfDate: "2025-02-14",
+      strategyName: "Scheme F",
+      isActive: false,
+    },
+  },
+  "Scheme QAW": {
+    data: {
+      amountDeposited: "0.00",
+      currentExposure: "0.00",
+      return: "8.00",
+      totalProfit: "7169015.29",
+      trailingReturns: {
+        "5d": 0.31,
+        "10d": -0.30,
+        "15d": 1.34,
+        "1m": 3.36,
+        "3m": null,
+        "6m": null,
+        "1y": null,
+        "2y": null,
+        "5y": null,
+        sinceInception: 7.96,
+        MDD: -3.86,
+        currentDD: -1.60,
+      },
+      drawdown: "-1.60",
+      maxDrawdown: "-3.86",
+      equityCurve: [],
+      drawdownCurve: [],
+      quarterlyPnl: {
+        "2025": {
+          percent: { q1: "7.96", q2: "-", q3: "-", q4: "-", total: "7.96" },
+          cash: { q1: "1504573.98", q2: "5664441.35", q3: "0.00", q4: "0.00", total: "7169015.32" },
+          yearCash: "7169015.32",
+        },
+      },
+      monthlyPnl: {
+        "2025": {
+          months: {
+            January: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            February: { percent: "-2.17", cash: "0.00", capitalInOut: "0.00" },
+            March: { percent: "3.88", cash: "1504573.98", capitalInOut: "0.00" },
+            April: { percent: "7.01", cash: "5664441.35", capitalInOut: "0.00" },
+            May: { percent: "-0.72", cash: "0.00", capitalInOut: "0.00" },
+            June: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            July: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            August: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            September: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            October: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            November: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            December: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+          },
+          totalPercent: 7.96,
+          totalCash: 7169015.32,
+          totalCapitalInOut: 0.00,
+        },
+      },
+      cashFlows: [],
+      strategyName: "Scheme QAW",
+    },
+    metadata: {
+      icode: "Scheme QAW",
+      accountCount: 1,
+      lastUpdated: "2025-08-05",
+      filtersApplied: { accountType: null, broker: null, startDate: null, endDate: null },
+      inceptionDate: "2025-02-01",
+      dataAsOfDate: "2025-05-31",
+      strategyName: "Scheme QAW",
+      isActive: false,
+    },
+  },
+};
+
   private static async getAmountDeposited(qcode: string, scheme: string): Promise<number> {
+    if (qcode === "QAC00041" && this.SARLA_HARDCODED_DATA[scheme]) {
+      return parseFloat(this.SARLA_HARDCODED_DATA[scheme].data.amountDeposited);
+    }
     if (scheme === "Total Portfolio") {
       const schemes = ["Scheme B", "Scheme PMS QAW"];
       let totalDeposited = 0;
@@ -438,19 +870,16 @@ export class PortfolioApi {
       const pmsData = await this.getPMSData();
       totalDeposited += pmsData.amountDeposited;
 
-      console.log(`Total Portfolio amount deposited: ${totalDeposited}`);
       return totalDeposited;
     }
 
     if (scheme === "Scheme PMS QAW") {
       const pmsData = await this.getPMSData();
-      console.log(`Scheme PMS QAW amount deposited: ${pmsData.amountDeposited}`);
       return pmsData.amountDeposited;
     }
 
     if (scheme === "Scheme B") {
       const systemTag = "Zerodha Total Portfolio";
-      console.log(`Getting amount deposited for qcode: ${qcode}, systemTag: ${systemTag}`);
 
       const depositSum = await prisma.master_sheet.aggregate({
         where: {
@@ -461,31 +890,14 @@ export class PortfolioApi {
         _sum: { capital_in_out: true },
       });
       const amount = Number(depositSum._sum.capital_in_out) || 0;
-      console.log(`Scheme B amount deposited: ${amount}`);
       return amount;
-    }
-
-    // For Scheme A, add the additional value
-    if (scheme === "Scheme A") {
-      const systemTag = this.getSystemTag(scheme);
-      const depositSum = await prisma.master_sheet.aggregate({
-        where: {
-          qcode,
-          system_tag: systemTag,
-          capital_in_out: { not: null },
-        },
-        _sum: { capital_in_out: true },
-      });
-      const baseAmount = Number(depositSum._sum.capital_in_out) || 0;
-      const totalAmount = baseAmount + SCHEME_A_ADDITIONAL_VALUE;
-      console.log(`Scheme A amount deposited: ${baseAmount} + ${SCHEME_A_ADDITIONAL_VALUE} = ${totalAmount}`);
-      return totalAmount;
     }
 
     return 0;
   }
 
   private static async getLatestExposure(qcode: string, scheme: string): Promise<{ portfolioValue: number; drawdown: number; nav: number; date: Date } | null> {
+
     if (scheme === "Total Portfolio") {
       const schemes = ["Scheme B", "Scheme PMS QAW"];
       let totalPortfolioValue = 0;
@@ -522,19 +934,16 @@ export class PortfolioApi {
         }
       }
 
-      console.log(`Total Portfolio latest exposure: ${totalPortfolioValue}, drawdown: ${latestDrawdown}, nav: ${latestNav}, date: ${latestDate}`);
       return latestDate ? { portfolioValue: totalPortfolioValue, drawdown: latestDrawdown, nav: latestNav, date: latestDate } : null;
     }
 
     if (scheme === "Scheme PMS QAW") {
       const pmsData = await this.getPMSData();
-      console.log(`Scheme PMS QAW latest exposure: ${pmsData.latestData?.portfolioValue}`);
       return pmsData.latestData;
     }
 
     if (scheme === "Scheme B") {
       const systemTag = "Zerodha Total Portfolio";
-      console.log(`Getting latest exposure for qcode: ${qcode}, systemTag: ${systemTag}`);
 
       const record = await prisma.master_sheet.findFirst({
         where: { qcode, system_tag: systemTag },
@@ -542,7 +951,6 @@ export class PortfolioApi {
         select: { portfolio_value: true, drawdown: true, nav: true, date: true },
       });
       if (!record) {
-        console.log(`No exposure data found for Scheme B, systemTag: ${systemTag}`);
         return null;
       }
       const result = {
@@ -551,37 +959,11 @@ export class PortfolioApi {
         nav: Number(record.nav) || 0,
         date: record.date,
       };
-      console.log(`Scheme B latest exposure: ${result.portfolioValue}, drawdown: ${result.drawdown}, nav: ${result.nav}, date: ${result.date}`);
       return result;
     }
 
-    // For Scheme A, add the additional value to portfolio value
-    if (scheme === "Scheme A") {
-      const systemTag = PortfolioApi.getSystemTag(scheme);
-      console.log(`Getting latest exposure for qcode: ${qcode}, systemTag: ${systemTag}`);
-
-      const record = await prisma.master_sheet.findFirst({
-        where: { qcode, system_tag: systemTag },
-        orderBy: { date: "desc" },
-        select: { portfolio_value: true, drawdown: true, nav: true, date: true },
-      });
-      if (!record) return null;
-
-      const basePortfolioValue = Number(record.portfolio_value) || 0;
-      const totalPortfolioValue = basePortfolioValue + SCHEME_A_ADDITIONAL_VALUE;
-
-      const result = {
-        portfolioValue: totalPortfolioValue,
-        drawdown: Math.abs(Number(record.drawdown) || 0),
-        nav: Number(record.nav) || 0,
-        date: record.date,
-      };
-      console.log(`Scheme A latest exposure: ${basePortfolioValue} + ${SCHEME_A_ADDITIONAL_VALUE} = ${totalPortfolioValue}`);
-      return result;
-    }
 
     const systemTag = PortfolioApi.getSystemTag(scheme);
-    console.log(`Getting latest exposure for qcode: ${qcode}, systemTag: ${systemTag}`);
 
     const record = await prisma.master_sheet.findFirst({
       where: { qcode, system_tag: systemTag },
@@ -599,9 +981,8 @@ export class PortfolioApi {
 
   private static async getPortfolioReturns(qcode: string, scheme: string): Promise<number> {
     // Check for hardcoded since-inception returns
-    if (HARDCODED_SINCE_INCEPTION_RETURNS.AC5[scheme]) {
-      console.log(`Using hardcoded since-inception return for ${scheme}: ${HARDCODED_SINCE_INCEPTION_RETURNS.AC5[scheme]}%`);
-      return HARDCODED_SINCE_INCEPTION_RETURNS.AC5[scheme];
+    if (qcode === "QAC00041" && this.SARLA_HARDCODED_DATA[scheme]) {
+      return parseFloat(this.SARLA_HARDCODED_DATA[scheme].data.return);
     }
 
     if (scheme === "Total Portfolio" || scheme === "Scheme B") {
@@ -609,14 +990,12 @@ export class PortfolioApi {
       const latestExposure = await PortfolioApi.getLatestExposure(qcode, scheme);
 
       if (!latestExposure || amountDeposited === 0) {
-        console.log(`Insufficient data for ${scheme} return calculation. Amount Deposited: ${amountDeposited}, Latest Exposure: ${latestExposure?.portfolioValue}`);
         return 0;
       }
 
       const currentPortfolioValue = latestExposure.portfolioValue;
       const returnPercentage = ((currentPortfolioValue - amountDeposited) / amountDeposited) * 100;
 
-      console.log(`${scheme} return calculation - Amount Deposited: ${amountDeposited}, Current Portfolio Value: ${currentPortfolioValue}, Return: ${returnPercentage.toFixed(2)}%`);
 
       return Number(returnPercentage.toFixed(2));
     }
@@ -633,7 +1012,6 @@ export class PortfolioApi {
 
       const durationYears = (new Date(lastRecord.date).getTime() - new Date(firstRecord.date).getTime()) / (365 * 24 * 60 * 60 * 1000);
 
-      console.log(`PMS NAV calculation - Initial: ${initialNav}, Final: ${finalNav}, Duration (years): ${durationYears}`);
 
       if (initialNav === 0) return 0;
 
@@ -662,7 +1040,6 @@ export class PortfolioApi {
       });
 
       if (!firstNavRecord || !latestNavRecord) {
-        console.log(`No NAV records found for qcode: ${qcode}, systemTag: ${systemTag}`);
         return 0;
       }
 
@@ -671,7 +1048,6 @@ export class PortfolioApi {
 
       const durationYears = (new Date(latestNavRecord.date).getTime() - new Date(firstNavRecord.date).getTime()) / (365 * 24 * 60 * 60 * 1000);
 
-      console.log(`NAV calculation - Initial: ${initialNav}, Final: ${finalNav}, Duration (years): ${durationYears}`);
 
       if (initialNav === 0) return 0;
 
@@ -685,6 +1061,11 @@ export class PortfolioApi {
   }
 
   private static async getTotalProfit(qcode: string, scheme: string): Promise<number> {
+    // Check for hardcoded total profit
+    if (qcode === "QAC00041" && this.SARLA_HARDCODED_DATA[scheme]) {
+      return parseFloat(this.SARLA_HARDCODED_DATA[scheme].data.totalProfit);
+    }
+
     if (scheme === "Scheme PMS QAW") {
       const pmsData = await this.getPMSData();
       return pmsData.totalProfit;
@@ -708,27 +1089,16 @@ export class PortfolioApi {
       const pmsData = await this.getPMSData();
       totalProfit += pmsData.totalProfit;
 
-      console.log(`Total Portfolio total profit: ${totalProfit}`);
       return totalProfit;
     }
 
     const systemTag = PortfolioApi.getSystemTag(scheme);
-    console.log(`Getting total profit for qcode: ${qcode}, systemTag: ${systemTag}`);
 
     const profitSum = await prisma.master_sheet.aggregate({
       where: { qcode, system_tag: systemTag },
       _sum: { pnl: true },
     });
     let profit = Number(profitSum._sum.pnl) || 0;
-
-    // For Scheme A, add the additional value as profit
-    if (scheme === "Scheme A") {
-      profit += SCHEME_A_ADDITIONAL_VALUE;
-      console.log(`Scheme A total profit: ${Number(profitSum._sum.pnl) || 0} + ${SCHEME_A_ADDITIONAL_VALUE} = ${profit}`);
-    } else {
-      console.log(`Scheme ${scheme} total profit: ${profit}`);
-    }
-
     return profit;
   }
 
@@ -745,7 +1115,6 @@ export class PortfolioApi {
     }
 
     const systemTag = PortfolioApi.getSystemTag(scheme);
-    console.log(`Getting historical data for qcode: ${qcode}, systemTag: ${systemTag}`);
 
     const data = await prisma.master_sheet.findMany({
       where: {
@@ -758,7 +1127,6 @@ export class PortfolioApi {
       orderBy: { date: "asc" },
     });
 
-    console.log(`Found ${data.length} historical records for ${scheme}`);
 
     return data.map(entry => ({
       date: entry.date,
@@ -770,8 +1138,14 @@ export class PortfolioApi {
   }
 
   private static async getCashFlows(qcode: string, scheme: string, accountCode: string = "AC5"): Promise<CashFlow[]> {
+    if (qcode === "QAC00041" && this.SARLA_HARDCODED_DATA[scheme]) {
+      return this.SARLA_HARDCODED_DATA[scheme].data.cashFlows.map(flow => ({
+        date: flow.date,
+        amount: flow.amount,
+        dividend: flow.dividend,
+      }));
+    }
     if (accountCode === "AC8" && HARDCODED_CASH_FLOWS_AC8[scheme]) {
-      console.log(`Using hardcoded cash flows for AC8 scheme: ${scheme}`);
       return HARDCODED_CASH_FLOWS_AC8[scheme].map(flow => ({
         date: flow.date,
         amount: flow.amount,
@@ -817,7 +1191,6 @@ export class PortfolioApi {
     }
 
     const systemTag = scheme === "Scheme B" ? "Zerodha Total Portfolio" : PortfolioApi.getSystemTag(scheme);
-    console.log(`Getting cash flows for qcode: ${qcode}, systemTag: ${systemTag}`);
 
     const cashFlows = await prisma.master_sheet.findMany({
       where: {
@@ -835,16 +1208,7 @@ export class PortfolioApi {
       dividend: 0,
     }));
 
-    // For Scheme A, add the additional value as a cash flow
-    if (scheme === "Scheme A" && flows.length > 0) {
-      flows.push({
-        date: flows[flows.length - 1].date, // Use the same date as the last cash flow
-        amount: SCHEME_A_ADDITIONAL_VALUE,
-        dividend: 0,
-      });
-    }
-
-    return flows;
+   return flows;
   }
 
   private static calculateDrawdownMetrics(navData: { date: string; nav: number }[]): DrawdownMetrics {
@@ -861,158 +1225,144 @@ export class PortfolioApi {
     return { currentDD: ddCurve[ddCurve.length - 1]?.drawdown || 0, mdd, ddCurve };
   }
 
-  private static async calculateTrailingReturns(
-  qcode: string,
-  scheme: string,
-  drawdownMetrics?: DrawdownMetrics,
-  periods: Record<string, number | null> = {
-    "5d": 5,
-    "10d": 10,
-    "15d": 15,
-    "1m": 30,
-    "3m": 90,
-    "6m": 180,
-    "1y": 366,
-    "2y": 731,
-    "sinceInception": null,
-  }
-): Promise<Record<string, number | null | string>> {
-  const navData = await PortfolioApi.getHistoricalData(qcode, scheme);
-
-  if (!navData || navData.length === 0) {
-    console.warn(`No NAV data found for ${scheme} in trailing returns calculation`);
-    return {
-      MDD: drawdownMetrics?.mdd.toFixed(2) || "0.00",
-      currentDD: drawdownMetrics?.currentDD.toFixed(2) || "0.00",
-    };
-  }
-
-  const normalizedNavData = navData
-    .filter(item => PortfolioApi.normalizeDate(item.date))
-    .map(item => ({
-      date: PortfolioApi.normalizeDate(item.date)!,
-      nav: item.nav,
-    }))
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-  const lastNav = normalizedNavData[normalizedNavData.length - 1]?.nav;
-  const currentDate = normalizedNavData[normalizedNavData.length - 1]?.date;
-  const oldestDate = normalizedNavData[0]?.date;
-
-  if (!currentDate || lastNav === undefined) {
-    console.warn(`Invalid current date or last NAV for ${scheme}`);
-    return {
-      MDD: drawdownMetrics?.mdd.toFixed(2) || "0.00",
-      currentDD: drawdownMetrics?.currentDD.toFixed(2) || "0.00",
-    };
-  }
-
-  const dataRangeDays = (new Date(currentDate).getTime() - new Date(oldestDate).getTime()) / (1000 * 60 * 60 * 24);
-  const returns: Record<string, number | null | string> = {};
-
-  for (const [period, targetCount] of Object.entries(periods)) {
-    if (period === "sinceInception") {
-      if (HARDCODED_SINCE_INCEPTION_RETURNS.AC5[scheme]) {
-        returns[period] = HARDCODED_SINCE_INCEPTION_RETURNS.AC5[scheme].toFixed(2);
-        console.log(`Using hardcoded since-inception return for ${scheme}: ${returns[period]}%`);
-      } else {
-        const oldestEntry = normalizedNavData[0];
-        if (oldestEntry) {
-          const years = (new Date(currentDate).getTime() - new Date(oldestEntry.date).getTime()) / (365 * 24 * 60 * 60 * 1000);
-          returns[period] = years < 1
-            ? ((lastNav - oldestEntry.nav) / oldestEntry.nav) * 100
-            : (Math.pow(lastNav / oldestEntry.nav, 1 / years) - 1) * 100;
-        } else {
-          returns[period] = null;
-        }
-      }
-      continue;
+ private static async calculateTrailingReturns(
+    qcode: string,
+    scheme: string,
+    drawdownMetrics?: DrawdownMetrics,
+    periods: Record<string, number | null> = {
+      "5d": 5,
+      "10d": 10,
+      "15d": 15,
+      "1m": 30,
+      "3m": 90,
+      "6m": 180,
+      "1y": 366,
+      "2y": 731,
+      "sinceInception": null,
     }
+  ): Promise<Record<string, number | null | string>> {
 
-    const requiredDays = targetCount as number;
-    if (requiredDays > dataRangeDays) {
-      returns[period] = null;
-      continue;
-    }
+    if (qcode === "QAC00041" && this.SARLA_HARDCODED_DATA[scheme]) {
+    return this.SARLA_HARDCODED_DATA[scheme].data.trailingReturns;
+  }
+    const navData = await PortfolioApi.getHistoricalData(qcode, scheme);
 
-    let targetDate = new Date(currentDate);
-    if (["1m", "3m", "6m", "1y", "2y"].includes(period)) {
-      const periodMap: Record<string, () => void> = {
-        "1m": () => targetDate.setMonth(targetDate.getMonth() - 1),
-        "3m": () => targetDate.setMonth(targetDate.getMonth() - 3),
-        "6m": () => targetDate.setMonth(targetDate.getMonth() - 6),
-        "1y": () => targetDate.setFullYear(targetDate.getFullYear() - 1),
-        "2y": () => targetDate.setFullYear(targetDate.getFullYear() - 2),
+    if (!navData || navData.length === 0) {
+      console.warn(`No NAV data found for ${scheme} in trailing returns calculation`);
+      return {
+        MDD: drawdownMetrics?.mdd.toFixed(2) || "0.00",
+        currentDD: drawdownMetrics?.currentDD.toFixed(2) || "0.00",
       };
-      periodMap[period]();
-    } else {
-      targetDate.setDate(targetDate.getDate() - requiredDays);
     }
 
-    if (targetDate < new Date(oldestDate)) {
-      returns[period] = null;
-      continue;
+    const normalizedNavData = navData
+      .filter(item => PortfolioApi.normalizeDate(item.date))
+      .map(item => ({
+        date: PortfolioApi.normalizeDate(item.date)!,
+        nav: item.nav,
+      }))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    const lastNav = normalizedNavData[normalizedNavData.length - 1]?.nav;
+    const currentDate = normalizedNavData[normalizedNavData.length - 1]?.date;
+    const oldestDate = normalizedNavData[0]?.date;
+
+    if (!currentDate || lastNav === undefined) {
+      console.warn(`Invalid current date or last NAV for ${scheme}`);
+      return {
+        MDD: drawdownMetrics?.mdd.toFixed(2) || "0.00",
+        currentDD: drawdownMetrics?.currentDD.toFixed(2) || "0.00",
+      };
     }
 
-    const targetTime = targetDate.getTime();
-    let candidate = null;
+    const dataRangeDays = (new Date(currentDate).getTime() - new Date(oldestDate).getTime()) / (1000 * 60 * 60 * 24);
+    const returns: Record<string, number | null | string> = {};
 
-    for (const dataPoint of normalizedNavData) {
-      const dataTime = new Date(dataPoint.date).getTime();
-      if (dataTime <= targetTime) {
-        if (!candidate || dataTime > new Date(candidate.date).getTime()) {
-          candidate = { nav: dataPoint.nav, date: new Date(dataPoint.date) };
+    for (const [period, targetCount] of Object.entries(periods)) {
+      if (period === "sinceInception") {
+        if (HARDCODED_SINCE_INCEPTION_RETURNS.AC5[scheme]) {
+          returns[period] = HARDCODED_SINCE_INCEPTION_RETURNS.AC5[scheme].toFixed(2);
+        } else {
+          const oldestEntry = normalizedNavData[0];
+          if (oldestEntry) {
+            const years = (new Date(currentDate).getTime() - new Date(oldestEntry.date).getTime()) / (365 * 24 * 60 * 60 * 1000);
+            returns[period] = years < 1
+              ? ((lastNav - oldestEntry.nav) / oldestEntry.nav) * 100
+              : (Math.pow(lastNav / oldestEntry.nav, 1 / years) - 1) * 100;
+          } else {
+            returns[period] = null;
+          }
         }
+        continue;
       }
-    }
 
-    if (!candidate) {
-      let minDiff = Infinity;
-      for (const dataPoint of normalizedNavData) {
-        const dataTime = new Date(dataPoint.date).getTime();
-        const diff = dataTime - targetTime;
-        if (diff > 0 && diff < minDiff) {
-          minDiff = diff;
-          candidate = { nav: dataPoint.nav, date: new Date(dataPoint.date) };
-        }
-      }
-    }
-
-    if (candidate) {
-      const candidateTime = new Date(candidate.date).getTime();
-      const daysDiff = Math.abs(candidateTime - targetTime) / (1000 * 60 * 60 * 24);
-      const maxAllowedDiff = requiredDays <= 30 ? 7 : 30;
-
-      if (daysDiff > maxAllowedDiff) {
+      const requiredDays = targetCount as number;
+      if (requiredDays > dataRangeDays) {
         returns[period] = null;
         continue;
       }
 
-      const durationYears = (new Date(currentDate).getTime() - candidate.date.getTime()) / (365 * 24 * 60 * 60 * 1000);
-      let returnValue: number;
-      if (durationYears >= 1) {
-        returnValue = (Math.pow(lastNav / candidate.nav, 1 / durationYears) - 1) * 100;
-      } else {
-        returnValue = ((lastNav - candidate.nav) / candidate.nav) * 100;
+      // Fix: Use consistent day-based calculation for all periods
+      let targetDate = new Date(currentDate);
+      targetDate.setDate(targetDate.getDate() - requiredDays);
+
+      if (targetDate < new Date(oldestDate)) {
+        returns[period] = null;
+        continue;
       }
 
-      console.log(
-        `[${scheme}] Trailing Return for ${period}: Start NAV (${candidate.date.toISOString().split("T")[0]}) = ${candidate.nav.toFixed(2)}, ` +
-        `End NAV (${currentDate}) = ${lastNav.toFixed(2)}, Return = ${returnValue.toFixed(2)}%`
-      );
+      const targetTime = targetDate.getTime();
+      let candidate = null;
 
-      returns[period] = returnValue;
-    } else {
-      returns[period] = null;
+      for (const dataPoint of normalizedNavData) {
+        const dataTime = new Date(dataPoint.date).getTime();
+        if (dataTime <= targetTime) {
+          if (!candidate || dataTime > new Date(candidate.date).getTime()) {
+            candidate = { nav: dataPoint.nav, date: new Date(dataPoint.date) };
+          }
+        }
+      }
+
+      if (!candidate) {
+        let minDiff = Infinity;
+        for (const dataPoint of normalizedNavData) {
+          const dataTime = new Date(dataPoint.date).getTime();
+          const diff = dataTime - targetTime;
+          if (diff > 0 && diff < minDiff) {
+            minDiff = diff;
+            candidate = { nav: dataPoint.nav, date: new Date(dataPoint.date) };
+          }
+        }
+      }
+
+      if (candidate) {
+        const candidateTime = new Date(candidate.date).getTime();
+        const daysDiff = Math.abs(candidateTime - targetTime) / (1000 * 60 * 60 * 24);
+        const maxAllowedDiff = requiredDays <= 30 ? 7 : 30;
+
+        if (daysDiff > maxAllowedDiff) {
+          returns[period] = null;
+          continue;
+        }
+
+        const durationYears = (new Date(currentDate).getTime() - candidate.date.getTime()) / (365 * 24 * 60 * 60 * 1000);
+        let returnValue: number;
+        if (durationYears >= 1) {
+          returnValue = (Math.pow(lastNav / candidate.nav, 1 / durationYears) - 1) * 100;
+        } else {
+          returnValue = ((lastNav - candidate.nav) / candidate.nav) * 100;
+        }
+        returns[period] = returnValue;
+      } else {
+        returns[period] = null;
+      }
     }
+
+    returns["MDD"] = drawdownMetrics?.mdd.toFixed(2) || "0.00";
+    returns["currentDD"] = drawdownMetrics?.currentDD.toFixed(2) || "0.00";
+
+    return returns;
   }
-
-  returns["MDD"] = drawdownMetrics?.mdd.toFixed(2) || "0.00";
-  returns["currentDD"] = drawdownMetrics?.currentDD.toFixed(2) || "0.00";
-  console.log(`Trailing returns for ${scheme} with MDD and currentDD:`, returns);
-
-  return returns;
-}
 
   private static getMonthName(month: number): string {
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -1020,6 +1370,9 @@ export class PortfolioApi {
   }
 
   private static async calculateMonthlyPnL(qcode: string, scheme: string): Promise<MonthlyPnL> {
+    if (qcode === "QAC00041" && this.SARLA_HARDCODED_DATA[scheme]) {
+      return this.SARLA_HARDCODED_DATA[scheme].data.monthlyPnl;
+    }
     if (scheme === "Total Portfolio") {
       const schemes = ["Scheme B", "Scheme PMS QAW"];
       const allData: { date: string; nav: number; pnl: number; capitalInOut: number }[] = [];
@@ -1043,7 +1396,6 @@ export class PortfolioApi {
       })));
 
       if (!allData.length) {
-        console.log(`No historical data found for Total Portfolio`);
         return {};
       }
 
@@ -1109,12 +1461,6 @@ export class PortfolioApi {
         formattedMonthlyPnl[year].totalCash += totalCashPnL;
         formattedMonthlyPnl[year].totalCapitalInOut += totalCapitalInOut;
 
-        console.log(
-          `DEBUG Monthly PnL ${yearMonth} for Total Portfolio: ` +
-          `startDate=${index > 0 ? sortedNavData.find(e => e.date === monthlyData[sortedYearMonths[index - 1]].entries[monthlyData[sortedYearMonths[index - 1]].entries.length - 1].date)?.date : entries[0].date}, startNav=${startNav.toFixed(4)}; ` +
-          `endDate=${entries[entries.length - 1].date}, endNav=${endNav.toFixed(4)}, ` +
-          `percent=${percent}, cash=${totalCashPnL.toFixed(2)}, capitalInOut=${totalCapitalInOut.toFixed(2)}`
-        );
       });
 
       Object.keys(formattedMonthlyPnl).forEach(year => {
@@ -1145,7 +1491,6 @@ export class PortfolioApi {
         formattedMonthlyPnl[year].totalCash = Number(formattedMonthlyPnl[year].totalCash.toFixed(2));
         formattedMonthlyPnl[year].totalCapitalInOut = Number(formattedMonthlyPnl[year].totalCapitalInOut.toFixed(2));
 
-        console.log(`DEBUG Yearly PnL - ${year} for Total Portfolio: totalPercent=${formattedMonthlyPnl[year].totalPercent}%, totalCash=${formattedMonthlyPnl[year].totalCash}`);
       });
 
       return formattedMonthlyPnl;
@@ -1154,7 +1499,6 @@ export class PortfolioApi {
     // For other schemes
     const navData = await PortfolioApi.getHistoricalData(qcode, scheme);
     if (!navData || navData.length === 0) {
-      console.log(`No historical data found for ${scheme}`);
       return {};
     }
 
@@ -1218,12 +1562,7 @@ export class PortfolioApi {
       formattedMonthlyPnl[year].totalCash += totalCashPnL;
       formattedMonthlyPnl[year].totalCapitalInOut += totalCapitalInOut;
 
-      console.log(
-        `DEBUG Monthly PnL ${yearMonth} for ${scheme}: ` +
-        `startDate=${index > 0 ? sortedNavData.find(e => e.date === monthlyData[sortedYearMonths[index - 1]].entries[monthlyData[sortedYearMonths[index - 1]].entries.length - 1].date)?.date : entries[0].date}, startNav=${startNav.toFixed(4)}; ` +
-        `endDate=${entries[entries.length - 1].date}, endNav=${endNav.toFixed(4)}, ` +
-        `percent=${percent}, cash=${totalCashPnL.toFixed(2)}, capitalInOut=${totalCapitalInOut.toFixed(2)}`
-      );
+
     });
 
     Object.keys(formattedMonthlyPnl).forEach(year => {
@@ -1254,7 +1593,6 @@ export class PortfolioApi {
       formattedMonthlyPnl[year].totalCash = Number(formattedMonthlyPnl[year].totalCash.toFixed(2));
       formattedMonthlyPnl[year].totalCapitalInOut = Number(formattedMonthlyPnl[year].totalCapitalInOut.toFixed(2));
 
-      console.log(`DEBUG Yearly PnL - ${year} for ${scheme}: totalPercent=${formattedMonthlyPnl[year].totalPercent}%, totalCash=${formattedMonthlyPnl[year].totalCash}`);
     });
 
     return formattedMonthlyPnl;
@@ -1265,6 +1603,9 @@ export class PortfolioApi {
     scheme: string,
     navData: { date: string; nav: number; pnl: number }[]
   ): Promise<QuarterlyPnL> {
+    if (qcode === "QAC00041" && this.SARLA_HARDCODED_DATA[scheme]) {
+      return this.SARLA_HARDCODED_DATA[scheme].data.quarterlyPnl;
+    }
     if (scheme === "Total Portfolio") {
       // Get PMS data
       const pmsData = await this.getPMSData();
@@ -1286,8 +1627,7 @@ export class PortfolioApi {
         }))
       );
 
-      console.log(`PMS quarterly P&L:`, pmsQuarterlyPnl);
-      console.log(`Scheme B quarterly P&L:`, schemeBQuarterlyPnl);
+
 
       const combinedQuarterlyPnL: QuarterlyPnL = {};
 
@@ -1307,13 +1647,13 @@ export class PortfolioApi {
         combinedQuarterlyPnL[year] = {
           percent: { q1: "-", q2: "-", q3: "-", q4: "-", total: "-" },
           cash: {
-            q1: quarters.Q1 ? quarters.Q1.toFixed(2) : "0.00",
-            q2: quarters.Q2 ? quarters.Q2.toFixed(2) : "0.00",
-            q3: quarters.Q3 ? quarters.Q3.toFixed(2) : "0.00",
-            q4: quarters.Q4 ? quarters.Q4.toFixed(2) : "0.00",
-            total: quarters.total ? quarters.total.toFixed(2) : "0.00",
+            q1: quarters.Q1 ? quarters.Q1.toFixed(2) : "-",
+            q2: quarters.Q2 ? quarters.Q2.toFixed(2) : "-",
+            q3: quarters.Q3 ? quarters.Q3.toFixed(2) : "-",
+            q4: quarters.Q4 ? quarters.Q4.toFixed(2) : "-",
+            total: quarters.total ? quarters.total.toFixed(2) : "-",
           },
-          yearCash: quarters.total ? quarters.total.toFixed(2) : "0.00",
+          yearCash: quarters.total ? quarters.total.toFixed(2) : "-",
         };
       });
 
@@ -1329,8 +1669,8 @@ export class PortfolioApi {
         if (!combinedQuarterlyPnL[year]) {
           combinedQuarterlyPnL[year] = {
             percent: { q1: "-", q2: "-", q3: "-", q4: "-", total: "-" },
-            cash: { q1: "0.00", q2: "0.00", q3: "0.00", q4: "0.00", total: "0.00" },
-            yearCash: "0.00",
+            cash: { q1: "-", q2: "-", q3: "-", q4: "-", total: "-" },
+            yearCash: "-",
           };
         }
 
@@ -1352,7 +1692,6 @@ export class PortfolioApi {
             const combinedValue = pmsValue + schemeBValue;
             combinedQuarterlyPnL[year].cash[quarter] = combinedValue.toFixed(2);
 
-            console.log(`Dynamic calculation for ${year} ${quarter}: PMS=${pmsValue}, SchemeB=${schemeBValue}, Combined=${combinedValue}`);
           } else {
             // Use existing hardcoded values or add PMS to existing AC5 values
             let existingValue = parseFloat(combinedQuarterlyPnL[year].cash[quarter]);
@@ -1369,7 +1708,6 @@ export class PortfolioApi {
               const combinedValue = existingValue + pmsValue;
               combinedQuarterlyPnL[year].cash[quarter] = combinedValue.toFixed(2);
 
-              console.log(`Hardcoded + PMS for ${year} ${quarter}: Existing=${existingValue}, PMS=${pmsValue}, Combined=${combinedValue}`);
             }
           }
 
@@ -1380,7 +1718,6 @@ export class PortfolioApi {
         combinedQuarterlyPnL[year].cash.total = yearTotal.toFixed(2);
         combinedQuarterlyPnL[year].yearCash = yearTotal.toFixed(2);
 
-        console.log(`Total for ${year}: ${yearTotal.toFixed(2)}`);
       });
 
       return combinedQuarterlyPnL;
@@ -1390,7 +1727,6 @@ export class PortfolioApi {
     if (scheme === "Scheme PMS QAW") {
       const pmsQuarterlyPnl = this.calculateQuarterlyPnLFromNavData(navData);
 
-      console.log(`cash pnl for Scheme PMS QAW:`, pmsQuarterlyPnl);
 
       if (pmsQuarterlyPnl["2025"]) {
         pmsQuarterlyPnl["2025"].cash.q2 = PMS_QAW_Q2_2025_VALUE.toFixed(2);
@@ -1399,48 +1735,38 @@ export class PortfolioApi {
         pmsQuarterlyPnl["2025"].cash.total = newTotal.toFixed(2);
         pmsQuarterlyPnl["2025"].yearCash = newTotal.toFixed(2);
 
-        console.log(`Processing quarterly P&L for year: 2025`, pmsQuarterlyPnl);
-        console.log(`Quarterly P&L for 2025:`, {
-          schemeTotal: newTotal
-        });
       }
 
       return pmsQuarterlyPnl;
     }
 
-    if (scheme === "Scheme A") {
-      const quarterlyPnl: QuarterlyPnL = {};
-      Object.entries(AC5_SCHEME_A_QUARTERLY_PNL).forEach(([year, quarters]) => {
-        quarterlyPnl[year] = {
-          percent: {
-            q1: quarters.Q1?.percent?.toFixed(2) || "-",
-            q2: quarters.Q2?.percent?.toFixed(2) || "-",
-            q3: quarters.Q3?.percent?.toFixed(2) || "-",
-            q4: quarters.Q4?.percent?.toFixed(2) || "-",
-            total: quarters.total?.percent?.toFixed(2) || "-",
-          },
-          cash: {
-            q1: quarters.Q1?.cash ? quarters.Q1.cash.toFixed(2) : "0.00",
-            q2: quarters.Q2?.cash ? quarters.Q2.cash.toFixed(2) : "0.00",
-            q3: quarters.Q3?.cash ? quarters.Q3.cash.toFixed(2) : "0.00",
-            q4: quarters.Q4?.cash ? quarters.Q4.cash.toFixed(2) : "0.00",
-            total: quarters.total?.cash ? quarters.total.cash.toFixed(2) : "0.00",
-          },
-          yearCash: quarters.total?.cash ? quarters.total.cash.toFixed(2) : "0.00",
-        };
+    // if (scheme === "Scheme A") {
+    //   const quarterlyPnl: QuarterlyPnL = {};
+    //   Object.entries(AC5_SCHEME_A_QUARTERLY_PNL).forEach(([year, quarters]) => {
+    //     quarterlyPnl[year] = {
+    //       percent: {
+    //         q1: quarters.Q1?.percent?.toFixed(2) || "-",
+    //         q2: quarters.Q2?.percent?.toFixed(2) || "-",
+    //         q3: quarters.Q3?.percent?.toFixed(2) || "-",
+    //         q4: quarters.Q4?.percent?.toFixed(2) || "-",
+    //         total: quarters.total?.percent?.toFixed(2) || "-",
+    //       },
+    //       cash: {
+    //         q1: quarters.Q1?.cash ? quarters.Q1.cash.toFixed(2) : "0.00",
+    //         q2: quarters.Q2?.cash ? quarters.Q2.cash.toFixed(2) : "0.00",
+    //         q3: quarters.Q3?.cash ? quarters.Q3.cash.toFixed(2) : "0.00",
+    //         q4: quarters.Q4?.cash ? quarters.Q4.cash.toFixed(2) : "0.00",
+    //         total: quarters.total?.cash ? quarters.total.cash.toFixed(2) : "0.00",
+    //       },
+    //       yearCash: quarters.total?.cash ? quarters.total.cash.toFixed(2) : "0.00",
+    //     };
 
-        console.log(`cash pnl for Scheme A:`, { [year]: quarterlyPnl[year] });
-        console.log(`Processing quarterly P&L for year: ${year}`, quarterlyPnl);
-        console.log(`Quarterly P&L for ${year}:`, {
-          schemeTotal: parseFloat(quarterlyPnl[year].yearCash),
-        });
-      });
+    //   });
 
-      return quarterlyPnl;
-    }
+    //   return quarterlyPnl;
+    // }
 
     const systemTag = PortfolioApi.getSystemTag(scheme);
-    console.log(`Getting quarterly P&L for qcode: ${qcode}, systemTag: ${systemTag}`);
 
     const portfolioValues = await prisma.master_sheet.findMany({
       where: { qcode, system_tag: systemTag, portfolio_value: { not: null } },
@@ -1456,15 +1782,6 @@ export class PortfolioApi {
       .sort((a, b) => a.date!.localeCompare(b.date!));
 
     const quarterlyPnl = this.calculateQuarterlyPnLFromNavData(sortedNavData);
-
-    Object.entries(quarterlyPnl).forEach(([year, yearData]) => {
-      console.log(`cash pnl for scheme ${scheme}:`, { [year]: yearData });
-      console.log(`Processing quarterly P&L for year: ${year}`, quarterlyPnl);
-      console.log(`Quarterly P&L for ${year}:`, {
-        schemeTotal: parseFloat(yearData.yearCash)
-      });
-    });
-
     return quarterlyPnl;
   }
 
@@ -1515,8 +1832,8 @@ export class PortfolioApi {
     Object.keys(yearlyQuarters).forEach(year => {
       formattedQuarterlyPnl[year] = {
         percent: { q1: "-", q2: "-", q3: "-", q4: "-", total: "-" },
-        cash: { q1: "0.00", q2: "0.00", q3: "0.00", q4: "0.00", total: "0.00" },
-        yearCash: "0.00",
+        cash: { q1: "-", q2: "-", q3: "-", q4: "-", total: "-" },
+        yearCash: "-",
       };
 
       let yearCompoundedReturn = 1;
@@ -1556,24 +1873,20 @@ export class PortfolioApi {
             yearCompoundedReturn *= 1 + quarterReturn / 100;
             hasValidYearData = true;
           } else {
-            formattedQuarterlyPnl[year].percent[quarter] = "0.00";
+            formattedQuarterlyPnl[year].percent[quarter] = "-";
           }
 
           formattedQuarterlyPnl[year].cash[quarter] = totalCash.toFixed(2);
           yearTotalCash += totalCash;
 
-          console.log(
-            `DEBUG QPnL ${year} ${quarter.toUpperCase()}: ` +
-            `Start NAV = ${startNav.toFixed(4)}, End NAV = ${endNav.toFixed(4)}, ` +
-            `Return = ${quarterReturn.toFixed(2)}%, Cash PnL = ${totalCash.toFixed(2)}`
-          );
+
         }
       });
 
       if (hasValidYearData && yearCompoundedReturn !== 1) {
         formattedQuarterlyPnl[year].percent.total = ((yearCompoundedReturn - 1) * 100).toFixed(2);
       } else if (hasValidYearData && yearCompoundedReturn === 1) {
-        formattedQuarterlyPnl[year].percent.total = "0.00";
+        formattedQuarterlyPnl[year].percent.total = "-";
       }
 
       formattedQuarterlyPnl[year].cash.total = yearTotalCash.toFixed(2);
@@ -1603,14 +1916,12 @@ export class PortfolioApi {
       const remainingSchemes = allSchemes.filter(s => !prioritySchemes.includes(s));
       const schemes = [...prioritySchemes, ...remainingSchemes];
 
-      console.log(`Processing schemes in order: ${schemes.join(", ")}`);
 
       for (const scheme of schemes) {
         const qcode = `QAC00041`;
         const portfolioNames = PortfolioApi.getPortfolioNames(accountCode, scheme);
         const systemTag = PortfolioApi.getSystemTag(scheme);
 
-        console.log(`Processing ${scheme} with qcode: ${qcode}, systemTag: ${systemTag}`);
 
         let cashInOutData, masterSheetData;
 
@@ -1631,27 +1942,6 @@ export class PortfolioApi {
             }),
           ]);
         }
-
-        console.log(`Found ${cashInOutData.length} cash in/out records and ${masterSheetData.length} master sheet records for ${scheme}`);
-
-        const normalizedData = {
-          cashInOut: cashInOutData.map(item => ({
-            ...item,
-            date: PortfolioApi.normalizeDate(item.date)!,
-            capital_in_out: Number(item.capital_in_out) || 0,
-          })),
-          masterSheet: masterSheetData.map(item => ({
-            ...item,
-            date: PortfolioApi.normalizeDate(item.date)!,
-            nav: Number(item.nav) || 0,
-            drawdown: Number(item.drawdown) || 0,
-            portfolio_value: Number(item.portfolio_value) || 0,
-            daily_pl: Number(item.daily_p_l) || 0,
-            pnl: Number(item.pnl) || 0,
-            capital_in_out: Number(item.capital_in_out) || 0,
-          })),
-        };
-
         const investedAmount = await PortfolioApi.getAmountDeposited(qcode, scheme);
         const latestExposure = await PortfolioApi.getLatestExposure(qcode, scheme);
         const totalProfit = await PortfolioApi.getTotalProfit(qcode, scheme);
@@ -1671,13 +1961,6 @@ export class PortfolioApi {
           }))
         );
 
-        console.log(`Processed data for ${scheme}:`, {
-          investedAmount,
-          currentExposure: latestExposure?.portfolioValue || 0,
-          returns,
-          historicalDataPoints: historicalData.length,
-          cashFlowsCount: cashFlows.length,
-        });
 
         const portfolioData: PortfolioData = {
           amountDeposited: investedAmount.toFixed(2),
@@ -1716,8 +1999,6 @@ export class PortfolioApi {
           [scheme]: { data: portfolioData, metadata },
         };
       }
-
-      console.log(`Successfully processed ${Object.keys(results).length} schemes`);
       return NextResponse.json(results, { status: 200 });
     } catch (error) {
       console.error("Sarla Portfolio API Error:", error);

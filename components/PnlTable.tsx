@@ -182,7 +182,6 @@ export function PnlTable({ quarterlyPnl, monthlyPnl, showOnlyQuarterlyCash = fal
             </div>
             <div className="flex gap-4">
               <p className="text-green-600">Green: Positive values</p>
-              <p className="text-red-600">Red: Negative values</p>
             </div>
           </div>
         </div>
@@ -311,7 +310,6 @@ export function PnlTable({ quarterlyPnl, monthlyPnl, showOnlyQuarterlyCash = fal
             </div>
             <div className="flex gap-4">
               <p className="text-green-600">Green: Positive values</p>
-              <p className="text-red-600">Red: Negative values</p>
             </div>
           </div>
         </div>

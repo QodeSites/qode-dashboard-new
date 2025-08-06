@@ -106,7 +106,7 @@ export function TrailingReturnsTable({
     }
   };
 
-  const calculateBenchmarkReturns = useCallback(() => {
+const calculateBenchmarkReturns = useCallback(() => {
     console.log("🔍 Starting benchmark returns calculation...");
     console.log("BSE500 data length:", bse500Data.length);
     console.log("Equity curve length:", equityCurve.length);
@@ -205,18 +205,28 @@ export function TrailingReturnsTable({
       return "-";
     };
 
+    // Helper function to convert period type to days
+    const getDaysForPeriod = (period: any) => {
+      if (period.type === "days") {
+        return period.duration;
+      } else if (period.type === "months") {
+        // Convert months to approximate days
+        return period.duration * 30;
+      } else if (period.type === "years") {
+        // Convert years to days (accounting for leap years)
+        return period.duration * 366; // Using 366 to match your original logic
+      }
+      return 0;
+    };
+
     // Calculate returns for all periods
     allPeriods.forEach(period => {
       if (period.type === "days" || period.type === "months" || period.type === "years") {
         const start = new Date(endDate);
 
-        if (period.type === "days") {
-          start.setDate(endDate.getDate() - period.duration!);
-        } else if (period.type === "months") {
-          start.setMonth(endDate.getMonth() - period.duration!);
-        } else if (period.type === "years") {
-          start.setFullYear(endDate.getFullYear() - period.duration!);
-        }
+        // Fix: Use consistent day-based calculation
+        const daysToSubtract = getDaysForPeriod(period);
+        start.setDate(endDate.getDate() - daysToSubtract);
 
         const returnValue = calculateReturn(start, endDate, period.key);
         benchmarkReturns[period.key] = returnValue;
