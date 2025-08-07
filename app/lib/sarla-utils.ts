@@ -199,7 +199,7 @@ const AC5_QUARTERLY_PNL = {
 };
 
 // Hardcoded Q2 2025 value for Scheme PMS QAW
-const PMS_QAW_Q2_2025_VALUE = 0;
+const PMS_QAW_Q2_2025_VALUE = 10338478.61;
 
 export class PortfolioApi {
   private static normalizeDate(date: string | Date): string | null {
@@ -1705,7 +1705,7 @@ private static SARLA_HARDCODED_DATA: Record<string, PortfolioData & { metadata: 
                 pmsValue = PMS_QAW_Q2_2025_VALUE;
               }
 
-              const combinedValue = existingValue + pmsValue;
+              const combinedValue = existingValue;
               combinedQuarterlyPnL[year].cash[quarter] = combinedValue.toFixed(2);
 
             }
@@ -1725,21 +1725,31 @@ private static SARLA_HARDCODED_DATA: Record<string, PortfolioData & { metadata: 
 
     // Rest of the method remains the same for other schemes...
     if (scheme === "Scheme PMS QAW") {
+      // build initial quarterly P&L from NAV
       const pmsQuarterlyPnl = this.calculateQuarterlyPnLFromNavData(navData);
 
-
+      // overwrite Q2 2025 if needed
       if (pmsQuarterlyPnl["2025"]) {
         pmsQuarterlyPnl["2025"].cash.q2 = PMS_QAW_Q2_2025_VALUE.toFixed(2);
-        const quarters = ["q1", "q2", "q3", "q4"] as const;
-        const newTotal = quarters.reduce((sum, quarter) => sum + parseFloat(pmsQuarterlyPnl["2025"].cash[quarter] || "0.00"), 0);
-        pmsQuarterlyPnl["2025"].cash.total = newTotal.toFixed(2);
-        pmsQuarterlyPnl["2025"].yearCash = newTotal.toFixed(2);
-
       }
+
+      // now recompute total cash for every year present
+      Object.keys(pmsQuarterlyPnl).forEach((year) => {
+        const quarters: Array<keyof QuarterlyPnL[string]["cash"]> = ["q1", "q2", "q3", "q4"];
+        let yearSum = 0;
+        quarters.forEach((q) => {
+          // parseFloat("-") is NaN, so guard it to zero
+          const raw = pmsQuarterlyPnl[year].cash[q];
+          const num = parseFloat(raw);
+          yearSum += isNaN(num) ? 0 : num;
+        });
+        const totalStr = yearSum.toFixed(2);
+        pmsQuarterlyPnl[year].cash.total = totalStr;
+        pmsQuarterlyPnl[year].yearCash = totalStr;
+      });
 
       return pmsQuarterlyPnl;
     }
-
     // if (scheme === "Scheme A") {
     //   const quarterlyPnl: QuarterlyPnL = {};
     //   Object.entries(AC5_SCHEME_A_QUARTERLY_PNL).forEach(([year, quarters]) => {
