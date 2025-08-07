@@ -522,61 +522,69 @@ export default function Portfolio() {
     );
   };
 
-  const renderSarlaContent = () => {
-    if (!isSarla || !sarlaData || !selectedStrategy || !sarlaData[selectedStrategy]) {
-      return null;
-    }
+const CASH_PERCENT_STRATS = ["Scheme A", "Scheme C", "Scheme D", "Scheme E", "Scheme F", "QAW"];
+const CASH_STRATS = "Total Portfolio";
 
-    const strategyData = sarlaData[selectedStrategy];
-    const convertedStats = isPmsStats(strategyData.data) ? convertPmsStatsToStats(strategyData.data) : strategyData.data;
-    const filteredEquityCurve = filterEquityCurve(
-      strategyData.data.equityCurve,
-      strategyData.metadata?.filtersApplied?.startDate,
-      strategyData.metadata?.lastUpdated
-    );
-    const lastDate = getLastDate(filteredEquityCurve, strategyData.metadata?.lastUpdated);
-    const isTotalPortfolio = selectedStrategy === "Total Portfolio";
-    const isActive = strategyData.metadata.isActive;
+const renderSarlaContent = () => {
+  if (!isSarla || !sarlaData || !selectedStrategy || !sarlaData[selectedStrategy]) {
+    return null;
+  }
 
-    return (
-      <div className="space-y-6">
-        <StatsCards
-          stats={convertedStats}
-          accountType="sarla"
-          broker="Sarla"
-          isTotalPortfolio={isTotalPortfolio}
-          isActive={isActive} // Pass isActive to StatsCards
-        />
-        {!isTotalPortfolio && (
-          <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
-            <div className="flex-1 min-w-0 sm:w-5/6">
-              <RevenueChart
-                equityCurve={filteredEquityCurve}
-                drawdownCurve={strategyData.data.drawdownCurve}
-                trailingReturns={convertedStats.trailingReturns}
-                drawdown={convertedStats.drawdown}
-                lastDate={lastDate}
-              />
-            </div>
-            <div className="flex-1 min-w-0 sm:w-1/6 sm:max-w-[25%]">
-              <StockTable />
-            </div>
+  const isCashOnlyView = selectedStrategy === CASH_STRATS;
+  console.log(`Rendering Sarla content for strategy: ${selectedStrategy}, isCashOnlyView: ${isCashOnlyView}`);
+  const isCashPercentView = CASH_PERCENT_STRATS.includes(selectedStrategy);
+
+  const strategyData = sarlaData[selectedStrategy];
+  const convertedStats = isPmsStats(strategyData.data) ? convertPmsStatsToStats(strategyData.data) : strategyData.data;
+  const filteredEquityCurve = filterEquityCurve(
+    strategyData.data.equityCurve,
+    strategyData.metadata?.filtersApplied?.startDate,
+    strategyData.metadata?.lastUpdated
+  );
+  const lastDate = getLastDate(filteredEquityCurve, strategyData.metadata?.lastUpdated);
+  const isTotalPortfolio = selectedStrategy === "Total Portfolio";
+  const isActive = strategyData.metadata.isActive;
+
+  return (
+    <div className="space-y-6">
+      <StatsCards
+        stats={convertedStats}
+        accountType="sarla"
+        broker="Sarla"
+        isTotalPortfolio={isTotalPortfolio}
+        isActive={isActive}
+      />
+      {!isTotalPortfolio && (
+        <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
+          <div className="flex-1 min-w-0 sm:w-5/6">
+            <RevenueChart
+              equityCurve={filteredEquityCurve}
+              drawdownCurve={strategyData.data.drawdownCurve}
+              trailingReturns={convertedStats.trailingReturns}
+              drawdown={convertedStats.drawdown}
+              lastDate={lastDate}
+            />
           </div>
-        )}
-        <PnlTable
-          quarterlyPnl={convertedStats.quarterlyPnl}
-          monthlyPnl={convertedStats.monthlyPnl}
-          showOnlyQuarterlyCash={isTotalPortfolio}
-        />
-        {renderCashFlowsTable()}
-        {isSarla && !isActive && (
-          <div className="text-sm text-yellow-600 dark:text-yellow-400">
-            <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
+          <div className="flex-1 min-w-0 sm:w-1/6 sm:max-w-[25%]">
+            <StockTable />
           </div>
-        )}
-      </div>
-    );
-  };
+        </div>
+      )}
+      <PnlTable
+        quarterlyPnl={convertedStats.quarterlyPnl}
+        monthlyPnl={convertedStats.monthlyPnl}
+        showOnlyQuarterlyCash={isCashOnlyView}
+        showPmsQawView={isCashPercentView}
+      />
+      {renderCashFlowsTable()}
+      {isSarla && !isActive && (
+        <div className="text-sm text-yellow-600 dark:text-yellow-400">
+          <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
+        </div>
+      )}
+    </div>
+  );
+};
 
   if (status === "loading" || isLoading) {
     return (

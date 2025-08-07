@@ -199,7 +199,7 @@ const AC5_QUARTERLY_PNL = {
 };
 
 // Hardcoded Q2 2025 value for Scheme PMS QAW
-const PMS_QAW_Q2_2025_VALUE = 10338478.61;
+const PMS_QAW_Q2_2025_VALUE = 0;
 
 export class PortfolioApi {
   private static normalizeDate(date: string | Date): string | null {
