@@ -203,6 +203,26 @@ const AC5_QUARTERLY_PNL = {
 const PMS_QAW_Q2_2025_VALUE = 10336722.03;
 
 export class PortfolioApi {
+  // 1) Add a helper that NEVER sums "Total Portfolio"
+private static async getSingleSchemeProfit(qcode: string, scheme: string): Promise<number> {
+  // Hardcoded?
+  const HC = this.getHardcoded(qcode);
+  if (HC?.[scheme]) return parseFloat(HC[scheme].data.totalProfit);
+
+  if (scheme === "Scheme PMS QAW") {
+    const pms = await this.getPMSData(qcode);
+    return pms.totalProfit;
+  }
+
+  // Everything else from master_sheet by (qcode + system_tag)
+  const systemTag = PortfolioApi.getSystemTag(scheme, qcode);
+  const profitSum = await prisma.master_sheet.aggregate({
+    where: { qcode, system_tag: systemTag },
+    _sum: { pnl: true },
+  });
+  return Number(profitSum._sum.pnl) || 0;
+}
+
   private static getHardcoded(qcode: string) {
     if (qcode === "QAC00041") return this.SARLA_HARDCODED_DATA;
     if (qcode === "QAC00046") return this.SATIDHAM_HARDCODED_DATA;
@@ -515,7 +535,7 @@ export class PortfolioApi {
         quarterlyPnl: {
           "2024": {
             percent: { q1: "-", q2: "-", q3: "3.79", q4: "4.29", total: "8.07" },
-            cash: { q1: "0.00", q2: "0.00", q3: "1820621.13", q4: "2214539.53", total: "4035160.65" },
+            cash: { q1: "0.00", q2: "0.00", q3: "1820621.13", q4: "2214539.53", total: "4052160.65" },
             yearCash: "4035160.65",
           },
         },
@@ -1372,48 +1392,50 @@ export class PortfolioApi {
       return 0;
     }
   }
-  private static async getTotalProfit(qcode: string, scheme: string): Promise<number> {
-    // Check for hardcoded total profit
+  // 2) Replace the "Total Portfolio" branch inside getTotalProfit()
+private static async getTotalProfit(qcode: string, scheme: string): Promise<number> {
+  // If not Total Portfolio, defer to single-scheme logic (and keep your earlier hardcoded path)
+  if (scheme !== "Total Portfolio") {
     const HC = this.getHardcoded(qcode);
-    if (HC?.[scheme]) {
-      return parseFloat(HC[scheme].data.totalProfit);
-    }
-
+    if (HC?.[scheme]) return parseFloat(HC[scheme].data.totalProfit);
     if (scheme === "Scheme PMS QAW") {
-      const pmsData = await this.getPMSData(qcode);
-      return pmsData.totalProfit;
+      const pms = await this.getPMSData(qcode);
+      return pms.totalProfit;
     }
-
-    if (scheme === "Total Portfolio") {
-      const schemes = ["Scheme B", "Scheme PMS QAW"];
-      let totalProfit = 0;
-
-      for (const s of schemes) {
-        if (s === "Scheme B") {
-          const systemTag = PortfolioApi.getSystemTag(s);
-          const profitSum = await prisma.master_sheet.aggregate({
-            where: { qcode, system_tag: systemTag },
-            _sum: { pnl: true },
-          });
-          totalProfit += Number(profitSum._sum.pnl) || 0;
-        }
-      }
-
-      const pmsData = await this.getPMSData(qcode);
-      totalProfit += pmsData.totalProfit;
-
-      return totalProfit;
-    }
-
     const systemTag = PortfolioApi.getSystemTag(scheme, qcode);
-
     const profitSum = await prisma.master_sheet.aggregate({
       where: { qcode, system_tag: systemTag },
       _sum: { pnl: true },
     });
-    let profit = Number(profitSum._sum.pnl) || 0;
-    return profit;
+    return Number(profitSum._sum.pnl) || 0;
   }
+
+  // --- Total Portfolio: restrict to SARLA schemes when qcode === QAC00041 ---
+  let total = 0;
+  if (qcode === "QAC00041") {
+    // Only SARLA schemes
+    const sarlaSchemes = ["Scheme B", "Scheme PMS QAW", "Scheme A", "Scheme C", "Scheme QAW", "Scheme D"];
+    for (const s of sarlaSchemes) {
+      const part = await this.getSingleSchemeProfit(qcode, s);
+      console.log(`[TotalProfit] ${qcode} | ${s} = ${part}`);
+      total += part;
+    }
+    console.log(`[TotalProfit] ${qcode} | TOTAL = ${total}`);
+    return total;
+  }
+
+  // For other accounts (e.g., Satidham QAC00046) keep their own set
+  const satidhamSchemes = ["Scheme B", "Scheme PMS QAW", "Scheme A", "Scheme A (Old)"];
+  for (const s of satidhamSchemes) {
+    const part = await this.getSingleSchemeProfit(qcode, s);
+    console.log(`[TotalProfit] ${qcode} | ${s} = ${part}`);
+    total += part;
+  }
+  console.log(`[TotalProfit] ${qcode} | TOTAL = ${total}`);
+  return total;
+}
+
+
   private static async getHistoricalData(qcode: string, scheme: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]> {
 
 
