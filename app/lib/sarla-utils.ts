@@ -248,7 +248,7 @@ private static async getSingleSchemeProfit(qcode: string, scheme: string): Promi
   }
   private static readonly SARLA_SYSTEM_TAGS: Record<string, string> = {
     "Total Portfolio": "Sarla Performance fibers Scheme Total Portfolio",
-    "Scheme B": "Zerodha Total Portfolio",
+    "Scheme B": "Total Portfolio Value",
     "Scheme QAW": "Zerodha Total Portfolio QAW",
     "Scheme A": "Zerodha Total Portfolio A",
     "Scheme C": "Zerodha Total Portfolio C",
