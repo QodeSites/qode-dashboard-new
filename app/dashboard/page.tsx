@@ -115,7 +115,7 @@ interface Metadata {
     startDate: string | null;
     endDate: string | null;
   };
-  isActive: boolean; // Added isActive
+  isActive: boolean;
 }
 
 interface ApiResponse {
@@ -214,9 +214,10 @@ const dateFormatter = (dateStr: string) => {
 export default function Portfolio() {
   const { data: session, status } = useSession();
   const isSarla = session?.user?.icode === "QUS0007";
+  const isSatidham = session?.user?.icode === "QUS0010";
   const router = useRouter();
   const searchParams = useSearchParams();
-  const accountCode = searchParams.get("accountCode") || "AC5"; // Default to AC5
+  const accountCode = searchParams.get("accountCode") || "AC5";
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"consolidated" | "individual">("consolidated");
@@ -263,6 +264,32 @@ export default function Portfolio() {
         };
 
         fetchSarlaData();
+      } else if (isSatidham) {
+        const fetchSatidhamData = async () => {
+          try {
+            const res = await fetch(`/api/sarla-api?qcode=QAC00046&accountCode=${accountCode}`, { credentials: "include" });
+            if (!res.ok) {
+              const errorData = await res.json();
+              throw new Error(errorData.error || `Failed to load Satidham data for accountCode ${accountCode}`);
+            }
+            const data: SarlaApiResponse = await res.json();
+            setSarlaData(data);
+
+            const strategies = Object.keys(data);
+            setAvailableStrategies(strategies);
+
+            if (strategies.length > 0) {
+              setSelectedStrategy(strategies[0]);
+            }
+
+            setIsLoading(false);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : `An unexpected error occurred for accountCode ${accountCode}`);
+            setIsLoading(false);
+          }
+        };
+
+        fetchSatidhamData();
       } else {
         const fetchAccounts = async () => {
           try {
@@ -286,10 +313,10 @@ export default function Portfolio() {
         fetchAccounts();
       }
     }
-  }, [status, router, isSarla, accountCode]);
+  }, [status, router, isSarla, isSatidham, accountCode]);
 
   useEffect(() => {
-    if (selectedAccount && status === "authenticated" && !isSarla) {
+    if (selectedAccount && status === "authenticated" && !isSarla && !isSatidham) {
       const fetchAccountData = async () => {
         setIsLoading(true);
         setError(null);
@@ -326,12 +353,12 @@ export default function Portfolio() {
 
       fetchAccountData();
     }
-  }, [selectedAccount, accounts, status, viewMode, isSarla, accountCode]);
+  }, [selectedAccount, accounts, status, viewMode, isSarla, isSatidham, accountCode]);
 
   const renderCashFlowsTable = () => {
     let transactions: { date: string; amount: number }[] = [];
 
-    if (isSarla && sarlaData && selectedStrategy) {
+    if ((isSarla || isSatidham) && sarlaData && selectedStrategy) {
       transactions = sarlaData[selectedStrategy]?.data?.cashFlows || [];
     } else if (Array.isArray(stats)) {
       transactions = stats.flatMap((item) => item.stats.cashFlows || []);
@@ -466,7 +493,7 @@ export default function Portfolio() {
   };
 
   const renderSarlaStrategyTabs = () => {
-    if (!isSarla || !sarlaData || availableStrategies.length === 0) return null;
+    if (!(isSarla || isSatidham) || !sarlaData || availableStrategies.length === 0) return null;
 
     return (
       <div className="mb-6">
@@ -513,7 +540,7 @@ export default function Portfolio() {
             })}
           </div>
         </div>
-        {isSarla && (
+        {(isSarla || isSatidham) && (
           <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
             <p><strong>Note:</strong> Inactive strategies may have limited data updates.</p>
           </div>
@@ -522,69 +549,69 @@ export default function Portfolio() {
     );
   };
 
-const CASH_PERCENT_STRATS = ["Scheme A", "Scheme C", "Scheme D", "Scheme E", "Scheme F", "QAW"];
-const CASH_STRATS = "Total Portfolio";
+  const CASH_PERCENT_STRATS = ["Scheme A", "Scheme C", "Scheme D", "Scheme E", "Scheme F", "QAW"];
+  const CASH_STRATS = "Total Portfolio";
 
-const renderSarlaContent = () => {
-  if (!isSarla || !sarlaData || !selectedStrategy || !sarlaData[selectedStrategy]) {
-    return null;
-  }
+  const renderSarlaContent = () => {
+    if (!(isSarla || isSatidham) || !sarlaData || !selectedStrategy || !sarlaData[selectedStrategy]) {
+      return null;
+    }
 
-  const isCashOnlyView = selectedStrategy === CASH_STRATS;
-  console.log(`Rendering Sarla content for strategy: ${selectedStrategy}, isCashOnlyView: ${isCashOnlyView}`);
-  const isCashPercentView = CASH_PERCENT_STRATS.includes(selectedStrategy);
+    const isCashOnlyView = selectedStrategy === CASH_STRATS;
+    console.log(`Rendering ${(isSarla ? "Sarla" : "Satidham")} content for strategy: ${selectedStrategy}, isCashOnlyView: ${isCashOnlyView}`);
+    const isCashPercentView = CASH_PERCENT_STRATS.includes(selectedStrategy);
 
-  const strategyData = sarlaData[selectedStrategy];
-  const convertedStats = isPmsStats(strategyData.data) ? convertPmsStatsToStats(strategyData.data) : strategyData.data;
-  const filteredEquityCurve = filterEquityCurve(
-    strategyData.data.equityCurve,
-    strategyData.metadata?.filtersApplied?.startDate,
-    strategyData.metadata?.lastUpdated
-  );
-  const lastDate = getLastDate(filteredEquityCurve, strategyData.metadata?.lastUpdated);
-  const isTotalPortfolio = selectedStrategy === "Total Portfolio";
-  const isActive = strategyData.metadata.isActive;
+    const strategyData = sarlaData[selectedStrategy];
+    const convertedStats = isPmsStats(strategyData.data) ? convertPmsStatsToStats(strategyData.data) : strategyData.data;
+    const filteredEquityCurve = filterEquityCurve(
+      strategyData.data.equityCurve,
+      strategyData.metadata?.filtersApplied?.startDate,
+      strategyData.metadata?.lastUpdated
+    );
+    const lastDate = getLastDate(filteredEquityCurve, strategyData.metadata?.lastUpdated);
+    const isTotalPortfolio = selectedStrategy === "Total Portfolio";
+    const isActive = strategyData.metadata.isActive;
 
-  return (
-    <div className="space-y-6">
-      <StatsCards
-        stats={convertedStats}
-        accountType="sarla"
-        broker="Sarla"
-        isTotalPortfolio={isTotalPortfolio}
-        isActive={isActive}
-      />
-      {!isTotalPortfolio && (
-        <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
-          <div className="flex-1 min-w-0 sm:w-5/6">
-            <RevenueChart
-              equityCurve={filteredEquityCurve}
-              drawdownCurve={strategyData.data.drawdownCurve}
-              trailingReturns={convertedStats.trailingReturns}
-              drawdown={convertedStats.drawdown}
-              lastDate={lastDate}
-            />
+    return (
+      <div className="space-y-6">
+        <StatsCards
+          stats={convertedStats}
+          accountType={isSarla ? "sarla" : "satidham"}
+          broker={isSarla ? "Sarla" : "Satidham"}
+          isTotalPortfolio={isTotalPortfolio}
+          isActive={isActive}
+        />
+        {!isTotalPortfolio && (
+          <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
+            <div className="flex-1 min-w-0 sm:w-5/6">
+              <RevenueChart
+                equityCurve={filteredEquityCurve}
+                drawdownCurve={strategyData.data.drawdownCurve}
+                trailingReturns={convertedStats.trailingReturns}
+                drawdown={convertedStats.drawdown}
+                lastDate={lastDate}
+              />
+            </div>
+            <div className="flex-1 min-w-0 sm:w-1/6 sm:max-w-[25%]">
+              <StockTable />
+            </div>
           </div>
-          <div className="flex-1 min-w-0 sm:w-1/6 sm:max-w-[25%]">
-            <StockTable />
+        )}
+        <PnlTable
+          quarterlyPnl={convertedStats.quarterlyPnl}
+          monthlyPnl={convertedStats.monthlyPnl}
+          showOnlyQuarterlyCash={isCashOnlyView}
+          showPmsQawView={isCashPercentView}
+        />
+        {renderCashFlowsTable()}
+        {(isSarla || isSatidham) && !isActive && (
+          <div className="text-sm text-yellow-600 dark:text-yellow-400">
+            <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
           </div>
-        </div>
-      )}
-      <PnlTable
-        quarterlyPnl={convertedStats.quarterlyPnl}
-        monthlyPnl={convertedStats.monthlyPnl}
-        showOnlyQuarterlyCash={isCashOnlyView}
-        showPmsQawView={isCashPercentView}
-      />
-      {renderCashFlowsTable()}
-      {isSarla && !isActive && (
-        <div className="text-sm text-yellow-600 dark:text-yellow-400">
-          <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
-        </div>
-      )}
-    </div>
-  );
-};
+        )}
+      </div>
+    );
+  };
 
   if (status === "loading" || isLoading) {
     return (
@@ -600,7 +627,7 @@ const renderSarlaContent = () => {
     );
   }
 
-  if (!isSarla && accounts.length === 0) {
+  if (!isSarla && !isSatidham && accounts.length === 0) {
     return (
       <div className="p-6 text-center bg-gray-100 rounded-lg text-gray-900 dark:bg-gray-900/10 dark:text-gray-100">
         No accounts found for this user.
@@ -608,15 +635,15 @@ const renderSarlaContent = () => {
     );
   }
 
-  if (isSarla && (!sarlaData || availableStrategies.length === 0)) {
+  if ((isSarla || isSatidham) && (!sarlaData || availableStrategies.length === 0)) {
     return (
       <div className="p-6 text-center bg-gray-100 rounded-lg text-gray-900 dark:bg-gray-900/10 dark:text-gray-100">
-        No strategy data found for Sarla user.
+        No strategy data found for {isSarla ? "Sarla" : "Satidham"} user.
       </div>
     );
   }
 
-  const currentMetadata = isSarla && sarlaData && selectedStrategy
+  const currentMetadata = (isSarla || isSatidham) && sarlaData && selectedStrategy
     ? sarlaData[selectedStrategy].metadata
     : metadata;
 
@@ -638,22 +665,21 @@ const renderSarlaContent = () => {
             </div>
           )}
         </div>
-        {/* Only show strategy name button for non-Sarla users */}
-        {!isSarla && currentMetadata?.strategyName && (
+        {!isSarla && !isSatidham && currentMetadata?.strategyName && (
           <Button
             variant="outline"
             className={`bg-logo-green mt-4 font-heading text-button-text text-sm sm:text-lg px-3 py-1 rounded-full ${
-              isSarla && !currentMetadata.isActive ? "opacity-70" : ""
+              (isSarla || isSatidham) && !currentMetadata.isActive ? "opacity-70" : ""
             }`}
           >
-            {currentMetadata.strategyName} {isSarla && !currentMetadata.isActive ? "(Inactive)" : ""}
+            {currentMetadata.strategyName} {(isSarla || isSatidham) && !currentMetadata.isActive ? "(Inactive)" : ""}
           </Button>
         )}
       </div>
 
       {renderSarlaStrategyTabs()}
 
-      {isSarla ? (
+      {(isSarla || isSatidham) ? (
         renderSarlaContent()
       ) : (
         stats && (
@@ -663,7 +689,7 @@ const renderSarlaContent = () => {
                 const convertedStats = isPmsStats(item.stats) ? convertPmsStatsToStats(item.stats) : item.stats;
                 const filteredEquityCurve = filterEquityCurve(
                   item.stats.equityCurve,
-                  item.metadata.startDate,
+                  item.metadata.filtersApplied?.startDate,
                   item.metadata.lastUpdated
                 );
                 const lastDate = getLastDate(filteredEquityCurve, item.metadata.lastUpdated);
@@ -673,7 +699,7 @@ const renderSarlaContent = () => {
                       <CardHeader>
                         <CardTitle className="text-card-text text-sm sm:text-lg">
                           {item.metadata.account_name} ({item.metadata.account_type.toUpperCase()} - {item.metadata.broker})
-                          {isSarla && !item.metadata.isActive ? " (Inactive)" : ""}
+                          {(isSarla || isSatidham) && !item.metadata.isActive ? " (Inactive)" : ""}
                         </CardTitle>
                         <div className="text-sm text-card-text-secondary">
                           Strategy: <strong>{item.metadata.strategyName || "Unknown Strategy"}</strong>
@@ -684,7 +710,7 @@ const renderSarlaContent = () => {
                           stats={convertedStats}
                           accountType={item.metadata.account_type}
                           broker={item.metadata.broker}
-                          isActive={item.metadata.isActive} // Pass isActive to StatsCards
+                          isActive={item.metadata.isActive}
                         />
                         <RevenueChart
                           equityCurve={filteredEquityCurve}
@@ -697,7 +723,7 @@ const renderSarlaContent = () => {
                           quarterlyPnl={convertedStats.quarterlyPnl}
                           monthlyPnl={convertedStats.monthlyPnl}
                         />
-                        {isSarla && !item.metadata.isActive && (
+                        {(isSarla || isSatidham) && !item.metadata.isActive && (
                           <div className="text-sm text-yellow-600 dark:text-yellow-400">
                             <strong>Note:</strong> This account is inactive. Data may not be updated regularly.
                           </div>
@@ -723,7 +749,7 @@ const renderSarlaContent = () => {
                         stats={convertedStats}
                         accountType={accounts.find((acc) => acc.qcode === selectedAccount)?.account_type || "unknown"}
                         broker={accounts.find((acc) => acc.qcode === selectedAccount)?.broker || "Unknown"}
-                        isActive={metadata?.isActive ?? true} // Pass isActive to StatsCards
+                        isActive={metadata?.isActive ?? true}
                       />
                       <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
                         <div className="flex-1 min-w-0 sm:w-5/6">
@@ -744,7 +770,7 @@ const renderSarlaContent = () => {
                         monthlyPnl={convertedStats.monthlyPnl}
                       />
                       {renderCashFlowsTable()}
-                      {isSarla && metadata && !metadata.isActive && (
+                      {(isSarla || isSatidham) && metadata && !metadata.isActive && (
                         <div className="text-sm text-yellow-600 dark:text-yellow-400">
                           <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
                         </div>

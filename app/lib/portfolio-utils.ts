@@ -177,7 +177,7 @@ class JainamManagedStrategy implements DataFetchingStrategy {
   }
 
   getStrategyName(): string {
-    return "Jainam Managed Strategy";
+    return "Qode Yield Enhancer (Jainam)";
   }
 }
 
