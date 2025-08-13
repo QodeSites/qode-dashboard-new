@@ -83,8 +83,8 @@ export function PnlTable({
     }
   };
 
-  const quarterlyYears = Object.keys(quarterlyPnl).sort((a, b) => parseInt(b) - parseInt(a));
-  const monthlyYears = Object.keys(monthlyPnl).sort((a, b) => parseInt(b) - parseInt(a));
+  const quarterlyYears = Object.keys(quarterlyPnl).sort((a, b) => parseInt(a) - parseInt(b));
+  const monthlyYears = Object.keys(monthlyPnl).sort((a, b) => parseInt(a) - parseInt(b));
 
   const monthOrder = [
     "January", "February", "March", "April", "May", "June",
