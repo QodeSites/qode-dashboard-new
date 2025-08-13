@@ -116,11 +116,6 @@ interface Metadata {
   isActive: boolean;
 }
 
-interface ApiResponse {
-  data: Stats | PmsStats | { stats: Stats | PmsStats; metadata: Account & { strategyName: string; isActive: boolean } }[];
-  metadata?: Metadata;
-}
-
 interface SarlaApiResponse {
   [strategyName: string]: {
     data: Stats | PmsStats;
@@ -133,14 +128,13 @@ function isPmsStats(stats: Stats | PmsStats): stats is PmsStats {
 }
 
 function convertPmsStatsToStats(pmsStats: PmsStats): Stats {
-  // Calculate amount deposited from cash flows (sum of positive flows)
   const amountDeposited = pmsStats.cashFlows
     .filter(flow => flow.amount > 0)
     .reduce((sum, flow) => sum + flow.amount, 0);
 
   return {
-    amountDeposited: amountDeposited.toFixed(2), // Actual invested amount
-    currentExposure: pmsStats.totalPortfolioValue, // Current portfolio value
+    amountDeposited: amountDeposited.toFixed(2),
+    currentExposure: pmsStats.totalPortfolioValue,
     return: pmsStats.cumulativeReturn,
     totalProfit: pmsStats.totalPnl,
     trailingReturns: {
@@ -182,7 +176,7 @@ function convertPmsStatsToStats(pmsStats: PmsStats): Stats {
       };
       return acc;
     }, {} as Stats["monthlyPnl"]),
-    cashFlows: pmsStats.cashFlows, // Now correctly mapped
+    cashFlows: pmsStats.cashFlows,
   };
 }
 
@@ -212,6 +206,21 @@ const dateFormatter = (dateStr: string) => {
     month: "2-digit",
     year: "numeric",
   });
+};
+
+const getGreeting = () => {
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istTime = new Date(now.getTime() + istOffset);
+  const hours = istTime.getUTCHours();
+
+  if (hours >= 0 && hours < 12) {
+    return "Good Morning";
+  } else if (hours >= 12 && hours < 17) {
+    return "Good Afternoon";
+  } else {
+    return "Good Evening";
+  }
 };
 
 export default function Portfolio() {
@@ -333,26 +342,23 @@ export default function Portfolio() {
             selectedAccountData.account_type === "pms"
               ? `/api/pms-data?qcode=${selectedAccount}&viewMode=${viewMode}&accountCode=${accountCode}`
               : `/api/portfolio?viewMode=${viewMode}${selectedAccount !== "all" ? `&qcode=${selectedAccount}` : ""}&accountCode=${accountCode}`;
-          
+
           const res = await fetch(endpoint, { credentials: "include" });
           if (!res.ok) {
             const errorData = await res.json();
             throw new Error(errorData.error || `Failed to load data for account ${selectedAccount} with accountCode ${accountCode}`);
           }
-          
+
           const response = await res.json();
           console.log("Raw API response:", response);
           console.log("Response type:", selectedAccountData.account_type);
           console.log("Has 'data' property?", 'data' in response);
           console.log("Response keys:", Object.keys(response));
 
-          // Flexible handling for both response structures
           let statsData: Stats | PmsStats | Array<any>;
           let metadataData: Metadata | null = null;
 
-          // Check if response has the wrapped ApiResponse structure
           if ('data' in response && response.data !== undefined) {
-            // Standard ApiResponse structure (wrapped)
             console.log("Processing wrapped response structure");
             if (viewMode === "individual" && Array.isArray(response.data)) {
               statsData = response.data;
@@ -362,35 +368,28 @@ export default function Portfolio() {
               metadataData = response.metadata || null;
             }
           } else {
-            // Flat response structure (PMS or other APIs)
             console.log("Processing flat response structure");
-            
+
             if (selectedAccountData.account_type === "pms") {
-              // Handle flat PMS response - make sure it has the right field names
               const pmsData = response as any;
-              
-              // Map cashInOut to cashFlows if needed
+
               if (pmsData.cashInOut && !pmsData.cashFlows) {
                 if (pmsData.cashInOut.transactions) {
-                  // If cashInOut has transactions array
                   pmsData.cashFlows = pmsData.cashInOut.transactions.map((tx: any) => ({
                     date: tx.date,
                     amount: parseFloat(tx.amount)
                   }));
                 } else {
-                  // If cashInOut is just a total, create empty cashFlows
                   pmsData.cashFlows = [];
                 }
               }
-              
-              // Ensure cashFlows exists
+
               if (!pmsData.cashFlows) {
                 pmsData.cashFlows = [];
               }
 
               statsData = pmsData as PmsStats;
-              
-              // Create metadata for PMS since it's not provided
+
               metadataData = {
                 icode: selectedAccount,
                 accountCount: 1,
@@ -407,7 +406,6 @@ export default function Portfolio() {
                 isActive: true
               };
 
-              // Try to extract dates from equity curve if available
               if (pmsData.equityCurve && pmsData.equityCurve.length > 0) {
                 const sortedCurve = [...pmsData.equityCurve].sort(
                   (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
@@ -416,13 +414,11 @@ export default function Portfolio() {
                 metadataData.dataAsOfDate = sortedCurve[sortedCurve.length - 1].date;
               }
             } else {
-              // Handle flat regular portfolio response
               if (viewMode === "individual" && Array.isArray(response)) {
                 statsData = response;
                 metadataData = null;
               } else {
                 statsData = response as Stats;
-                // Create minimal metadata
                 metadataData = {
                   icode: selectedAccount,
                   accountCount: 1,
@@ -445,14 +441,13 @@ export default function Portfolio() {
           console.log("Final processed stats data:", statsData);
           console.log("Final processed metadata:", metadataData);
 
-          // Validate that we have data before setting state
           if (statsData) {
             setStats(statsData);
             setMetadata(metadataData);
           } else {
             throw new Error("No valid data received from API");
           }
-          
+
           setIsLoading(false);
         } catch (err) {
           console.error("Error in fetchAccountData:", err);
@@ -492,9 +487,9 @@ export default function Portfolio() {
 
     if (!transactions.length) {
       return (
-        <Card className="bg-white/70 backdrop-blur-sm card-shadow border-0">
+        <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
           <CardHeader>
-            <CardTitle className="text-card-text text-sm sm:text-lg">Cash In / Out</CardTitle>
+            <CardTitle className="text-card-text text-sm sm:text-sm">Cash In / Out</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-center py-3 px-4 text-gray-900 dark:text-gray-100">
@@ -506,9 +501,9 @@ export default function Portfolio() {
     }
 
     return (
-      <Card className="bg-white/70 backdrop-blur-sm card-shadow border-0">
+      <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
         <CardHeader>
-          <CardTitle className="text-card-text text-sm sm:text-lg">Cash In / Out</CardTitle>
+          <CardTitle className="text-card-text text-sm sm:text-sm">Cash In / Out</CardTitle>
         </CardHeader>
         <CardContent className="px-4 py-2">
           <div className="overflow-x-auto">
@@ -534,7 +529,7 @@ export default function Portfolio() {
                     ? stats.find((item) => item.stats.cashFlows?.includes(transaction))?.metadata.account_name
                     : undefined;
                   return (
-                    <TableRow key={`${transaction.date}-${index}`} className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50">
+                    <TableRow key={`${transaction.date}-${index}`} className="border-b border-gray-200 dark:border-gray-700 ">
                       <TableCell className="px-4 py-2 text-xs text-gray-700 dark:text-gray-100">
                         {dateFormatter(transaction.date)}
                       </TableCell>
@@ -606,60 +601,30 @@ export default function Portfolio() {
     if (!(isSarla || isSatidham) || !sarlaData || availableStrategies.length === 0) return null;
 
     return (
-      <div className="mb-6">
-        {/* Mobile dropdown */}
-        <div className="block sm:hidden">
-          <Select value={selectedStrategy || ""} onValueChange={setSelectedStrategy}>
-            <SelectTrigger className="w-full border-0 card-shadow">
-              <SelectValue placeholder="Select Strategy" />
-            </SelectTrigger>
-            <SelectContent>
-              {availableStrategies.map((strategy) => {
-                const isActive = sarlaData[strategy].metadata.isActive;
-                return (
-                  <SelectItem key={strategy} value={strategy}>
-                    {strategy} {!isActive ? "(Inactive)" : ""}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Desktop tabs */}
-        <div className="hidden sm:block">
-          <div className="flex flex-wrap gap-2">
+      <div className="mb-6 block sm:hidden">
+        <Select value={selectedStrategy || ""} onValueChange={setSelectedStrategy}>
+          <SelectTrigger className="w-full border-0 card-shadow">
+            <SelectValue placeholder="Select Strategy" />
+          </SelectTrigger>
+          <SelectContent>
             {availableStrategies.map((strategy) => {
               const isActive = sarlaData[strategy].metadata.isActive;
               return (
-                <Button
-                  key={strategy}
-                  variant={selectedStrategy === strategy ? "default" : "outline"}
-                  onClick={() => setSelectedStrategy(strategy)}
-                  className={`px-4 py-2 text-sm font-medium font-heading rounded-full transition-colors ${
-                    selectedStrategy === strategy
-                      ? "bg-logo-green text-button-text"
-                      : isActive
-                      ? "bg-white/70 text-card-text hover:bg-logo-green/20"
-                      : "bg-gray-200 text-gray-500 hover:bg-gray-300"
-                  }`}
-                >
+                <SelectItem key={strategy} value={strategy}>
                   {strategy} {!isActive ? "(Inactive)" : ""}
-                </Button>
+                </SelectItem>
               );
             })}
-          </div>
+          </SelectContent>
+        </Select>
+        <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+          <p><strong>Note:</strong> Inactive strategies may have limited data updates.</p>
         </div>
-        {(isSarla || isSatidham) && (
-          <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
-            <p><strong>Note:</strong> Inactive strategies may have limited data updates.</p>
-          </div>
-        )}
       </div>
     );
   };
 
-  const CASH_PERCENT_STRATS = ["Scheme A", "Scheme C", "Scheme D", "Scheme E", "Scheme F", "QAW"];
+  const CASH_PERCENT_STRATS = ["Scheme A", "Scheme C", "Scheme D", "Scheme E", "Scheme F", "Scheme QAW"];
   const CASH_STRATS = "Total Portfolio";
 
   const renderSarlaContent = () => {
@@ -668,7 +633,6 @@ export default function Portfolio() {
     }
 
     const isCashOnlyView = selectedStrategy === CASH_STRATS;
-    console.log(`Rendering ${(isSarla ? "Sarla" : "Satidham")} content for strategy: ${selectedStrategy}, isCashOnlyView: ${isCashOnlyView}`);
     const isCashPercentView = CASH_PERCENT_STRATS.includes(selectedStrategy);
 
     const strategyData = sarlaData[selectedStrategy];
@@ -701,9 +665,6 @@ export default function Portfolio() {
                 drawdown={convertedStats.drawdown}
                 lastDate={lastDate}
               />
-            </div>
-            <div className="flex-1 min-w-0 sm:w-1/6 sm:max-w-[25%]">
-              <StockTable />
             </div>
           </div>
         )}
@@ -760,30 +721,54 @@ export default function Portfolio() {
   return (
     <div className="sm:p-2 space-y-6">
       <div>
-        <div className="flex items-center gap-2">
-          <h1 className="text-3xl font-semibold text-card-text-secondary font-heading">
-            Welcome, {session?.user?.name || "User"}
-          </h1>
-        </div>
-        <div>
-          {currentMetadata && (
-            <div className="flex items-center gap-2 text-sm mt-4 text-card-text-secondary font-heading-bold">
-              <span>Inception Date: <strong>{currentMetadata.inceptionDate ? dateFormatter(currentMetadata.inceptionDate) : "N/A"}</strong></span>
-              <span>|</span>
-              <span>Data as of: <strong>{currentMetadata.dataAsOfDate ? dateFormatter(currentMetadata.dataAsOfDate) : "N/A"}</strong></span>
-              <span>|</span>
-            </div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          {/* Greeting and Metadata */}
+          <div>
+            <h1 className="text-xl font-semibold text-card-text-secondary font-heading">
+              {getGreeting()}, {session?.user?.name || "User"}
+            </h1>
+            {currentMetadata && (
+              <div className="flex flex-wrap items-center gap-2 text-sm mt-2 text-card-text-secondary font-heading-bold">
+                <span>Inception Date: <strong>{currentMetadata.inceptionDate ? dateFormatter(currentMetadata.inceptionDate) : "N/A"}</strong></span>
+                <span>|</span>
+                <span>Data as of: <strong>{currentMetadata.dataAsOfDate ? dateFormatter(currentMetadata.dataAsOfDate) : "N/A"}</strong></span>
+              </div>
+            )}
+          </div>
+
+          {/* Dropdown */}
+          {(isSarla || isSatidham) && sarlaData && availableStrategies.length > 0 && (
+            <Select value={selectedStrategy || ""} onValueChange={setSelectedStrategy}>
+              <SelectTrigger className="w-[400px] border-0 card-shadow text-button-text">
+                <SelectValue placeholder="Select Strategy" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableStrategies.map((strategy) => {
+                  const isActive = sarlaData[strategy].metadata.isActive;
+                  return (
+                    <SelectItem key={strategy} value={strategy}>
+                      {strategy} {!isActive ? "(Inactive)" : ""}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
           )}
         </div>
+
         {!isSarla && !isSatidham && currentMetadata?.strategyName && (
           <Button
             variant="outline"
-            className={`bg-logo-green mt-4 font-heading text-button-text text-sm sm:text-lg px-3 py-1 rounded-full ${
-              (isSarla || isSatidham) && !currentMetadata.isActive ? "opacity-70" : ""
-            }`}
+            className={`bg-logo-green mt-4 font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${(isSarla || isSatidham) && !currentMetadata.isActive ? "opacity-70" : ""
+              }`}
           >
             {currentMetadata.strategyName} {(isSarla || isSatidham) && !currentMetadata.isActive ? "(Inactive)" : ""}
           </Button>
+        )}
+        {(isSarla || isSatidham) && sarlaData && availableStrategies.length > 0 && (
+          <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+            <p><strong>Note:</strong> Inactive strategies may have limited data updates.</p>
+          </div>
         )}
       </div>
 
@@ -805,9 +790,9 @@ export default function Portfolio() {
                 const lastDate = getLastDate(filteredEquityCurve, item.metadata.lastUpdated);
                 return (
                   <div key={index} className="space-y-6">
-                    <Card className="bg-white/70 backdrop-blur-sm card-shadow border-0">
+                    <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
                       <CardHeader>
-                        <CardTitle className="text-card-text text-sm sm:text-lg">
+                        <CardTitle className="text-card-text text-sm sm:text-sm">
                           {item.metadata.account_name} ({item.metadata.account_type.toUpperCase()} - {item.metadata.broker})
                           {(isSarla || isSatidham) && !item.metadata.isActive ? " (Inactive)" : ""}
                         </CardTitle>
@@ -870,9 +855,6 @@ export default function Portfolio() {
                             drawdown={convertedStats.drawdown}
                             lastDate={lastDate}
                           />
-                        </div>
-                        <div className="flex-1 min-w-0 sm:w-1/6 sm:max-w-[25%]">
-                          <StockTable />
                         </div>
                       </div>
                       <PnlTable

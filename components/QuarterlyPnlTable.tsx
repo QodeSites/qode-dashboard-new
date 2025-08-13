@@ -27,7 +27,7 @@ export function QuarterlyPnlTable({ quarterlyPnl }: QuarterlyPnlTableProps) {
   const years = Object.keys(quarterlyPnl).sort((a, b) => Number(b) - Number(a));
 
   return (
-    <Card className="bg-white/70 backdrop-blur-sm card-shadow border-0">
+    <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
       <CardHeader>
         <CardTitle className="text-card-text font-heading">Quarterly Profit and Loss</CardTitle>
       </CardHeader>
@@ -50,7 +50,7 @@ export function QuarterlyPnlTable({ quarterlyPnl }: QuarterlyPnlTableProps) {
                 </thead>
                 <tbody>
                   {years.map((year) => (
-                    <tr key={`${year}-percent`} className="border-b border-gray-100 hover:bg-gray-50/50">
+                    <tr key={`${year}-percent`} className="border-b border-gray-100 /50">
                       <td className="py-3 px-4 font-medium text-card-text border-r border-gray-200">{year}</td>
                       <td className="text-center py-3 px-2 border-r border-gray-200">
                         <span className={`font-medium ${getReturnColor(quarterlyPnl[year].percent.q1)}`}>
@@ -109,7 +109,7 @@ export function QuarterlyPnlTable({ quarterlyPnl }: QuarterlyPnlTableProps) {
                 </thead>
                 <tbody>
                   {years.map((year) => (
-                    <tr key={`${year}-cash`} className="border-b border-gray-100 hover:bg-gray-50/50">
+                    <tr key={`${year}-cash`} className="border-b border-gray-100 /50">
                       <td className="py-3 px-4 font-medium text-card-text border-r border-gray-200">{year}</td>
                       <td className="text-center py-3 px-2 border-r border-gray-200">
                         <span className={`font-medium ${getReturnColor(quarterlyPnl[year].cash.q1)}`}>

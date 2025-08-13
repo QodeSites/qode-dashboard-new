@@ -216,7 +216,7 @@ const calculateBenchmarkReturns = useCallback(() => {
         return period.duration * 30;
       } else if (period.type === "years") {
         // Convert years to days (accounting for leap years)
-        return period.duration * 366; // Using 366 to match your original logic
+        return period.duration * 365; // Using 366 to match your original logic
       }
       return 0;
     };
@@ -347,17 +347,17 @@ const calculateBenchmarkReturns = useCallback(() => {
         <div className="w-full overflow-x-auto">
           <table className="min-w-full border-collapse divide-y">
             <thead className="bg-lightBeige">
-              <tr className="bg-gray-100 border-gray-300 border-b text-xs">
-                <th className="text-start px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
+              <tr className="bg-black/5 border-black border-b text-sm">
+                <th className="text-start px-4 py-2 text-sm font-medium text-black uppercase tracking-wider min-w-[100px]">
                   Name
                 </th>
                 {allPeriods.map((period) => (
                   <th
                     key={period.key}
-                    className={`text-center px-4 py-2 font-medium text-gray-500 uppercase tracking-wider min-w-[80px]
-                      ${period.key === "currentDD" ? "border-l-2 border-gray-300" : ""}`}
+                    className={`text-center px-4 py-2 font-medium text-black uppercase tracking-wider min-w-[80px]
+                      ${period.key === "currentDD" ? "border-l border-black" : ""}`}
                   >
-                    <div className="truncate text-[10px]" title={period.label}>
+                    <div className="truncate text-sm" title={period.label}>
                       {period.label}
                     </div>
                   </th>
@@ -365,8 +365,8 @@ const calculateBenchmarkReturns = useCallback(() => {
               </tr>
             </thead>
             <tbody className="divide-y">
-              <tr className="hover:bg-gray-50 border-gray-300 text-xs">
-                <td className="px-4 py-3 text-start whitespace-nowrap min-w-[100px] font-medium text-gray-900">
+              <tr className=" border-black text-xs">
+                <td className="px-4 py-3 text-start whitespace-nowrap min-w-[100px]  font-medium text-gray-900">
                   Scheme (%)
                 </td>
                 {allPeriods.map((period) => {
@@ -377,7 +377,7 @@ const calculateBenchmarkReturns = useCallback(() => {
                   return (
                     <td
                       key={period.key}
-                      className={`${cellClass} ${period.key === "currentDD" ? "border-l-2 border-gray-300" : ""}`}
+                      className={`${cellClass} ${period.key === "currentDD" ? "border-l  border-black" : ""}`}
                     >
                       <span className={getReturnColor(rawValue)}>
                         {displayValue}
@@ -386,7 +386,7 @@ const calculateBenchmarkReturns = useCallback(() => {
                   );
                 })}
               </tr>
-              <tr className="hover:bg-gray-50 border-gray-300 text-xs">
+              <tr className=" border-black text-xs">
                 <td className="px-4 py-3 text-start whitespace-nowrap min-w-[100px] font-medium text-gray-900">
                   Benchmark (%)
                 </td>
@@ -398,7 +398,7 @@ const calculateBenchmarkReturns = useCallback(() => {
                   return (
                     <td
                       key={period.key}
-                      className={`${cellClass} ${period.key === "currentDD" ? "border-l-2 border-gray-300" : ""}`}
+                      className={`${cellClass} ${period.key === "currentDD" ? "border-l border-black" : ""}`}
                     >
                       <span className={getReturnColor(rawValue)}>
                         {displayValue}
@@ -412,10 +412,9 @@ const calculateBenchmarkReturns = useCallback(() => {
         </div>
       )}
 
-      <div className="mt-6 pt-4 border-t border-gray-200">
+      <div className="mt-3 pt-4  border-gray-200">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-gray-600">
           <div>
-            <p><strong>Legend:</strong> 5d = 5 days, 1m = 1 month, 1y = 1 year, DD = Drawdown</p>
             <p><strong>Returns:</strong> Periods under 1 year are presented as absolute, while those over 1 year are annualized (CAGR)</p>
           </div>
         </div>

@@ -113,7 +113,7 @@ function SidebarContent({ pathname }: { pathname: string }) {
                     href={item.href}
                     className={cn(
                       pathname === item.href
-                        ? "bg-white/70 text-logo-green card-shadow"
+                        ? "bg-white/50 text-logo-green card-shadow"
                         : "text-card-text-secondary hover:bg-white/50 hover:text-logo-green",
                       "group flex gap-x-3 rounded-lg p-3 text-sm leading-6 font-medium transition-all duration-200",
                     )}

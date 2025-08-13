@@ -30,7 +30,7 @@ const projects = [
 
 export function ProjectsOverview() {
   return (
-    <Card className="bg-white/70 backdrop-blur-sm card-shadow border-0">
+    <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
       <CardHeader>
         <CardTitle className="text-card-text font-heading">Recent Projects</CardTitle>
       </CardHeader>

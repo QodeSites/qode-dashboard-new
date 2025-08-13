@@ -30,14 +30,13 @@ interface RevenueChartProps {
     twoYears: string;
     fiveYears: string;
     sinceInception: string;
-    MDD?: string; // Add MDD
-    currentDD?: string; // Add currentDD
+    MDD?: string;
+    currentDD?: string;
   };
   drawdown: string;
 }
 
 export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, drawdown }: RevenueChartProps) {
-  // console.log("Rendering RevenueChart with drawdownCurve:", drawdownCurve);
   const chartRef = useRef<HTMLDivElement>(null);
   const chart = useRef<any>(null);
   const { bse500Data, error } = useBse500Data(equityCurve);
@@ -122,10 +121,8 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         chart.current.destroy();
       }
 
-      // Process portfolio equity curve data with better validation
       const portfolioData = equityCurve
         .map((p) => {
-          // Handle different property names (value, nav, etc.)
           let navValue;
           
           if (p.value !== undefined && p.value !== null) {
@@ -137,10 +134,8 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
             return null;
           }
           
-          // Convert to number if it's a string
           const value = typeof navValue === "string" ? parseFloat(navValue) : Number(navValue);
           
-          // Check if it's a valid number
           if (isNaN(value) || !isFinite(value)) {
             console.warn(`Invalid NAV value for date ${p.date}:`, navValue);
             return null;
@@ -148,7 +143,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
           
           return [new Date(p.date).getTime(), value];
         })
-        .filter(point => point !== null); // Remove null entries
+        .filter(point => point !== null);
 
       const processedPortfolioData = processDataSeries(portfolioData, false, portfolioData[0][1]);
 
@@ -169,15 +164,12 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         ? Math.min(firstPortfolioDate, firstBenchmarkDate)
         : firstPortfolioDate || firstBenchmarkDate;
 
-      // Process drawdown data with improved validation
-      console.log("Raw drawdown data:", drawdownCurve.slice(-3)); // Debug log
+      console.log("Raw drawdown data:", drawdownCurve.slice(-3));
       
       const portfolioDrawdownData = drawdownCurve
         .map((point) => {
-          // Handle the property access more robustly
           let drawdownValue;
           
-          // Check for 'value' property first, then 'drawdown'
           if (point.value !== undefined && point.value !== null) {
             drawdownValue = point.value;
           } else if (point.drawdown !== undefined && point.drawdown !== null) {
@@ -187,24 +179,20 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
             return null;
           }
           
-          // Convert string to number if needed
           const dd = typeof drawdownValue === "string" ? parseFloat(drawdownValue) : Number(drawdownValue);
           
-          // Validate the number (including 0)
           if (isNaN(dd) || !isFinite(dd)) {
             console.warn(`Invalid drawdown value for ${point.date}: ${drawdownValue} -> ${dd}`);
             return null;
           }
           
-          // For drawdown display: 0 should stay 0, negative values should be negative
-          // positive values should be converted to negative (since drawdown is typically negative)
           const finalValue = dd === 0 ? 0 : -Math.abs(dd);
           
           return [new Date(point.date).getTime(), finalValue];
         })
-        .filter(item => item !== null); // Remove any null entries
+        .filter(item => item !== null);
 
-      console.log("Processed drawdown data:", portfolioDrawdownData.slice(-3)); // Debug log
+      console.log("Processed drawdown data:", portfolioDrawdownData.slice(-3));
 
       if (portfolioDrawdownData.length && earliestDate && portfolioDrawdownData[0][0] > earliestDate) {
         portfolioDrawdownData.unshift([earliestDate, 0]);
@@ -239,6 +227,14 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
 
       const drawdownRange = Math.abs(drawdownScaling.max - drawdownScaling.min);
       const drawdownTickAmount = Math.max(3, Math.min(4, Math.ceil(drawdownRange / 2)));
+
+      // Calculate dynamic tick interval based on data range
+      const dateRange = equityCurve.length > 1
+        ? new Date(equityCurve[equityCurve.length - 1].date).getTime() - new Date(equityCurve[0].date).getTime()
+        : 0;
+      const tickInterval = dateRange > 0
+        ? Math.max(7 * 24 * 60 * 60 * 1000, Math.ceil(dateRange / 20)) // At least 1 month, max 10 ticks
+        : undefined;
 
       const mergedSeries = [];
       if (processedPortfolioData.length > 0) {
@@ -298,38 +294,58 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
           height: 600,
           backgroundColor: "transparent",
           plotBackgroundColor: "transparent",
+          style: {
+            fontFamily: "Plus Jakarta Sans", // Set global font
+          },
         },
         title: {
           text: "",
-          style: { fontSize: "16px" },
         },
         xAxis: {
           type: "datetime",
-          title: { text: "Date" },
-          labels: {
-            formatter: function () {
-              return Highcharts.dateFormat("%Y", this.value);
-            },
+          title: { 
+            text: "Date",
             style: {
               color: "#2E8B57",
-              fontSize: "10px",
+              fontSize: "12px",
+              fontFamily: "Plus Jakarta Sans",
             },
           },
+          labels: {
+            format: "{value:%d-%m-%Y}", // Use DD-MM-YYYY format
+            // rotation: -45, // Rotate labels for better readability
+            // autoRotation: [-45, -90], // Allow dynamic rotation if needed
+            style: {
+              color: "#2E8B57",
+              fontSize: "12px",
+              fontFamily: "Plus Jakarta Sans",
+            },
+          },
+          tickInterval: tickInterval, // Dynamic tick interval
           gridLineColor: "#e6e6e6",
           tickWidth: 1,
+          lineColor: "#2E8B57",
         },
         yAxis: [
           {
-            title: { text: "NAV Curve" },
+            title: { 
+              text: "Performance",
+              style: {
+                color: "#2E8B57",
+                fontSize: "12px",
+                fontFamily: "Plus Jakarta Sans",
+              },
+            },
             height: "50%",
             top: "0%",
             labels: {
               formatter: function () {
-                return Math.round(this.value * 100) / 100;
+                return Math.round(this.value * 100) / 100 + "%";
               },
               style: {
                 color: "#2E8B57",
-                fontSize: "8px",
+                fontSize: "12px",
+                fontFamily: "Plus Jakarta Sans",
               },
             },
             min: navScaling.min,
@@ -350,7 +366,14 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
             ],
           },
           {
-            title: { text: "Drawdown" },
+            title: { 
+              text: "Drawdown",
+              style: {
+                color: "#FF4560",
+                fontSize: "12px",
+                fontFamily: "Plus Jakarta Sans",
+              },
+            },
             height: "30%",
             top: "65%",
             offset: 0,
@@ -363,7 +386,8 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
               },
               style: {
                 color: "#FF4560",
-                fontSize: "10px",
+                fontSize: "12px",
+                fontFamily: "Plus Jakarta Sans",
               },
             },
             lineColor: "#FF4560",
@@ -374,8 +398,11 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         ],
         tooltip: {
           shared: true,
-          xDateFormat: "%Y-%m-%d",
+          xDateFormat: "%d-%m-%Y",
           valueDecimals: 2,
+          style: {
+            fontFamily: "Plus Jakarta Sans",
+          },
           formatter: function () {
             const hoveredX = this.x;
             const chart = this.points[0].series.chart;
@@ -415,21 +442,21 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
               ? getNearestPoint(benchmarkDrawdownSeries, hoveredX)
               : null;
 
-            let tooltipText = `<b>${Highcharts.dateFormat("%d-%m-%Y", hoveredX)}</b><br/><br/>`;
-            tooltipText += "<span style='font-weight: bold; font-size: 12px'>Performance:</span><br/>";
-            tooltipText += `<span style="color:#2E8B57">\u25CF</span> Portfolio: ${
-              portfolioPoint && !isNaN(portfolioPoint.y) ? portfolioPoint.y.toFixed(2) : "N/A"
+            let tooltipText = `<b style="font-family: 'Plus Jakarta Sans';">${Highcharts.dateFormat("%d-%m-%Y", hoveredX)}</b><br/><br/>`;
+            tooltipText += `<span style="font-weight: bold; font-size: 12px; font-family: 'Plus Jakarta Sans';">Performance:</span><br/>`;
+            tooltipText += `<span style="color:#2E8B57; font-family: 'Plus Jakarta Sans';">\u25CF</span> Portfolio: ${
+              portfolioPoint && !isNaN(portfolioPoint.y) ? portfolioPoint.y.toFixed(2) + "%" : "N/A"
             }<br/>`;
-            tooltipText += `<span style="color:#4169E1">\u25CF</span> Benchmark: ${
-              benchmarkPoint && !isNaN(benchmarkPoint.y) ? benchmarkPoint.y.toFixed(2) : "N/A"
+            tooltipText += `<span style="color:#4169E1; font-family: 'Plus Jakarta Sans';">\u25CF</span> Benchmark: ${
+              benchmarkPoint && !isNaN(benchmarkPoint.y) ? benchmarkPoint.y.toFixed(2) + "%" : "N/A"
             }<br/>`;
-            tooltipText += "<br/><span style='font-weight: bold; font-size: 12px'>Drawdown:</span><br/>";
-            tooltipText += `<span style="color:#FF4560">\u25CF</span> Portfolio: ${
+            tooltipText += `<br/><span style="font-weight: bold; font-size: 12px; font-family: 'Plus Jakarta Sans';">Drawdown:</span><br/>`;
+            tooltipText += `<span style="color:#FF4560; font-family: 'Plus Jakarta Sans';">\u25CF</span> Portfolio: ${
               portfolioDrawdownPoint && !isNaN(portfolioDrawdownPoint.y) 
                 ? portfolioDrawdownPoint.y.toFixed(2) + "%" 
                 : "N/A"
             }<br/>`;
-            tooltipText += `<span style="color:#FF8F00">\u25CF</span> Benchmark: ${
+            tooltipText += `<span style="color:#FF8F00; font-family: 'Plus Jakarta Sans';">\u25CF</span> Benchmark: ${
               benchmarkDrawdownPoint && !isNaN(benchmarkDrawdownPoint.y) 
                 ? benchmarkDrawdownPoint.y.toFixed(2) + "%" 
                 : "N/A"
@@ -440,7 +467,11 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         },
         legend: {
           enabled: true,
-          itemStyle: { fontSize: "12px" },
+          itemStyle: { 
+            fontSize: "12px",
+            color: "#2E8B57",
+            fontFamily: "Plus Jakarta Sans",
+          },
         },
         plotOptions: {
           line: { marker: { enabled: false } },
@@ -465,7 +496,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
 
   if (!equityCurve?.length || error) {
     return (
-      <Card className="bg-white/70 backdrop-blur-sm card-shadow border-0">
+      <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
         <CardContent>
           <div className="w-full h-[700px] flex items-center justify-center">
             <p>{error || "No data available."}</p>
@@ -476,20 +507,24 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
   }
 
   return (
-    <Card className="bg-white/70 backdrop-blur-sm p-0 card-shadow border-0">
-      <CardContent className="p-0 px-4 py-5">
-        <TrailingReturnsTable
-          trailingReturns={trailingReturns}
-          drawdown={drawdown}
-          equityCurve={equityCurve}
-        />
-        <div className="flex items-center justify-between text-center">
-          <CardTitle className="text-card-text text-lg py-5">Portfolio Performance & Drawdown</CardTitle>
-        </div>
-        <div className="w-full py-4">
-          <div ref={chartRef} className="w-full h-[600px]" />
-        </div>
-      </CardContent>
-    </Card>
+    <div className="space-y-6">
+      <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
+        <CardContent className="p-4">
+          <TrailingReturnsTable
+            trailingReturns={trailingReturns}
+            drawdown={drawdown}
+            equityCurve={equityCurve}
+          />
+        </CardContent>
+      </Card>
+      <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
+        <CardContent className="p-4">
+          <CardTitle className="text-card-text text-lg mb-6">Portfolio Performance & Drawdown</CardTitle>
+          <div className="w-full">
+            <div ref={chartRef} className="w-full h-[600px]" />
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

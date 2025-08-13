@@ -92,3 +92,64 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+.ripple-background {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  z-index: 0; /* stays behind the login form */
+  background-color: var(--primary-bg, #0b0b0b); /* adjust as needed */
+}
+
+.circle {
+  position: relative;
+}
+
+.circle span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  animation: ani 5s linear infinite;
+  border: 1px solid rgba(255,255,255,0.5);
+}
+
+@keyframes ani {
+  0% {
+    width: 0;
+    height: 0;
+    box-shadow: 0 2px 2px rgba(0,0,0,.2);
+  }
+  90% {
+    width: 300px;
+    height: 300px;
+    opacity: 1;
+    box-shadow: 0 4px 4px rgba(0,0,0,.5);
+  }
+  100% {
+    width: 350px;
+    height: 350px;
+    opacity: 0;
+  }
+}
+
+.circle span:nth-child(1) { animation-delay: 0s }
+.circle span:nth-child(2) { animation-delay: 0.5s }
+.circle span:nth-child(3) { animation-delay: 1s }
+.circle span:nth-child(4) { animation-delay: 1.5s }
+.circle span:nth-child(5) { animation-delay: 2s }
+.circle span:nth-child(6) { animation-delay: 2.5s }
+.circle span:nth-child(7) { animation-delay: 3s }
+.circle span:nth-child(8) { animation-delay: 3.5s }
+.circle span:nth-child(9) { animation-delay: 4s }
+.circle span:nth-child(10) { animation-delay: 4.5s }
+

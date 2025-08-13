@@ -49,9 +49,9 @@ const HomePage = () => {
               href="https://qodeinvest.com"
               target="_blank"
               rel="noreferrer noopener"
-              className="bg-white/70  card-shadow border-0 rounded-lg cursor-pointer"
+              className="bg-white/50  card-shadow border-0 rounded-lg cursor-pointer"
             >
-              <Card className="bg-white/70 card-shadow border-none">
+              <Card className="bg-white/50 card-shadow border-none">
                 <CardHeader>
                   <CardTitle className="text-card-text text-sm sm:text-lg flex items-center justify-between">
                     Visit website
@@ -97,7 +97,7 @@ const HomePage = () => {
                 return (
                   <Card
                     key={post.id}
-                    className="bg-white/70 backdrop-blur-sm card-shadow border-0 cursor-pointer"
+                    className="bg-white/50 backdrop-blur-sm card-shadow border-0 cursor-pointer"
                     onClick={() => (window.location.href = `https://www.qodeinvest.com/blogs/${post.slug}`)}
                   >
                     <CardContent className="p-4">

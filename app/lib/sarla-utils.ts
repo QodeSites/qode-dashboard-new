@@ -204,24 +204,24 @@ const PMS_QAW_Q2_2025_VALUE = 10336722.03;
 
 export class PortfolioApi {
   // 1) Add a helper that NEVER sums "Total Portfolio"
-private static async getSingleSchemeProfit(qcode: string, scheme: string): Promise<number> {
-  // Hardcoded?
-  const HC = this.getHardcoded(qcode);
-  if (HC?.[scheme]) return parseFloat(HC[scheme].data.totalProfit);
+  private static async getSingleSchemeProfit(qcode: string, scheme: string): Promise<number> {
+    // Hardcoded?
+    const HC = this.getHardcoded(qcode);
+    if (HC?.[scheme]) return parseFloat(HC[scheme].data.totalProfit);
 
-  if (scheme === "Scheme PMS QAW") {
-    const pms = await this.getPMSData(qcode);
-    return pms.totalProfit;
+    if (scheme === "Scheme PMS QAW") {
+      const pms = await this.getPMSData(qcode);
+      return pms.totalProfit;
+    }
+
+    // Everything else from master_sheet by (qcode + system_tag)
+    const systemTag = PortfolioApi.getSystemTag(scheme, qcode);
+    const profitSum = await prisma.master_sheet.aggregate({
+      where: { qcode, system_tag: systemTag },
+      _sum: { pnl: true },
+    });
+    return Number(profitSum._sum.pnl) || 0;
   }
-
-  // Everything else from master_sheet by (qcode + system_tag)
-  const systemTag = PortfolioApi.getSystemTag(scheme, qcode);
-  const profitSum = await prisma.master_sheet.aggregate({
-    where: { qcode, system_tag: systemTag },
-    _sum: { pnl: true },
-  });
-  return Number(profitSum._sum.pnl) || 0;
-}
 
   private static getHardcoded(qcode: string) {
     if (qcode === "QAC00041") return this.SARLA_HARDCODED_DATA;
@@ -882,7 +882,12 @@ private static async getSingleSchemeProfit(qcode: string, scheme: string): Promi
             totalCapitalInOut: 0.00,
           },
         },
-        cashFlows: [],
+         cashFlows: [
+      { date: "2025-02-19", amount: 53299301.70, dividend: 0.00 },
+      { date: "2025-02-21", amount: 24308966.42, dividend: 0.00 },
+      { date: "2025-05-06", amount: -50000000.00, dividend: 0.00 },
+      { date: "2025-05-07", amount: -34777283.42, dividend: 0.00 },
+    ],
         strategyName: "Scheme QAW",
       },
       metadata: {
@@ -1188,6 +1193,16 @@ private static async getSingleSchemeProfit(qcode: string, scheme: string): Promi
     return 0;
   }
   private static async getLatestExposure(qcode: string, scheme: string): Promise<{ portfolioValue: number; drawdown: number; nav: number; date: Date } | null> {
+
+    const HC = this.getHardcoded(qcode);
+    if (HC?.[scheme]) {
+      return {
+        portfolioValue: parseFloat(HC[scheme].data.currentExposure),
+        drawdown: parseFloat(HC[scheme].data.drawdown),
+        nav: HC[scheme].data.equityCurve.length > 0 ? HC[scheme].data.equityCurve.at(-1)!.nav : 0,
+        date: new Date(HC[scheme].metadata.dataAsOfDate),
+      };
+    }
     if (scheme === "Total Portfolio") {
       const schemes = ["Scheme B", "Scheme PMS QAW"];
       let totalPortfolioValue = 0;
@@ -1393,29 +1408,40 @@ private static async getSingleSchemeProfit(qcode: string, scheme: string): Promi
     }
   }
   // 2) Replace the "Total Portfolio" branch inside getTotalProfit()
-private static async getTotalProfit(qcode: string, scheme: string): Promise<number> {
-  // If not Total Portfolio, defer to single-scheme logic (and keep your earlier hardcoded path)
-  if (scheme !== "Total Portfolio") {
-    const HC = this.getHardcoded(qcode);
-    if (HC?.[scheme]) return parseFloat(HC[scheme].data.totalProfit);
-    if (scheme === "Scheme PMS QAW") {
-      const pms = await this.getPMSData(qcode);
-      return pms.totalProfit;
+  private static async getTotalProfit(qcode: string, scheme: string): Promise<number> {
+    // If not Total Portfolio, defer to single-scheme logic (and keep your earlier hardcoded path)
+    if (scheme !== "Total Portfolio") {
+      const HC = this.getHardcoded(qcode);
+      if (HC?.[scheme]) return parseFloat(HC[scheme].data.totalProfit);
+      if (scheme === "Scheme PMS QAW") {
+        const pms = await this.getPMSData(qcode);
+        return pms.totalProfit;
+      }
+      const systemTag = PortfolioApi.getSystemTag(scheme, qcode);
+      const profitSum = await prisma.master_sheet.aggregate({
+        where: { qcode, system_tag: systemTag },
+        _sum: { pnl: true },
+      });
+      return Number(profitSum._sum.pnl) || 0;
     }
-    const systemTag = PortfolioApi.getSystemTag(scheme, qcode);
-    const profitSum = await prisma.master_sheet.aggregate({
-      where: { qcode, system_tag: systemTag },
-      _sum: { pnl: true },
-    });
-    return Number(profitSum._sum.pnl) || 0;
-  }
 
-  // --- Total Portfolio: restrict to SARLA schemes when qcode === QAC00041 ---
-  let total = 0;
-  if (qcode === "QAC00041") {
-    // Only SARLA schemes
-    const sarlaSchemes = ["Scheme B", "Scheme PMS QAW", "Scheme A", "Scheme C", "Scheme QAW", "Scheme D"];
-    for (const s of sarlaSchemes) {
+    // --- Total Portfolio: restrict to SARLA schemes when qcode === QAC00041 ---
+    let total = 0;
+    if (qcode === "QAC00041") {
+      // Only SARLA schemes
+      const sarlaSchemes = ["Scheme B", "Scheme PMS QAW", "Scheme A", "Scheme C", "Scheme QAW"];
+      for (const s of sarlaSchemes) {
+        const part = await this.getSingleSchemeProfit(qcode, s);
+        console.log(`[TotalProfit] ${qcode} | ${s} = ${part}`);
+        total += part;
+      }
+      console.log(`[TotalProfit] ${qcode} | TOTAL = ${total}`);
+      return total;
+    }
+
+    // For other accounts (e.g., Satidham QAC00046) keep their own set
+    const satidhamSchemes = ["Scheme B", "Scheme PMS QAW", "Scheme A", "Scheme A (Old)"];
+    for (const s of satidhamSchemes) {
       const part = await this.getSingleSchemeProfit(qcode, s);
       console.log(`[TotalProfit] ${qcode} | ${s} = ${part}`);
       total += part;
@@ -1423,17 +1449,6 @@ private static async getTotalProfit(qcode: string, scheme: string): Promise<numb
     console.log(`[TotalProfit] ${qcode} | TOTAL = ${total}`);
     return total;
   }
-
-  // For other accounts (e.g., Satidham QAC00046) keep their own set
-  const satidhamSchemes = ["Scheme B", "Scheme PMS QAW", "Scheme A", "Scheme A (Old)"];
-  for (const s of satidhamSchemes) {
-    const part = await this.getSingleSchemeProfit(qcode, s);
-    console.log(`[TotalProfit] ${qcode} | ${s} = ${part}`);
-    total += part;
-  }
-  console.log(`[TotalProfit] ${qcode} | TOTAL = ${total}`);
-  return total;
-}
 
 
   private static async getHistoricalData(qcode: string, scheme: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]> {
@@ -1565,7 +1580,7 @@ private static async getTotalProfit(qcode: string, scheme: string): Promise<numb
       "1m": 30,
       "3m": 90,
       "6m": 180,
-      "1y": 366,
+      "1y": 365,
       "2y": 731,
       "sinceInception": null,
     }
@@ -1635,6 +1650,32 @@ private static async getTotalProfit(qcode: string, scheme: string): Promise<numb
       // Fix: Use consistent day-based calculation for all periods
       let targetDate = new Date(currentDate);
       targetDate.setDate(targetDate.getDate() - requiredDays);
+
+      if (period === "1y") {
+        const exactOneYearAgo = new Date(currentDate);
+        exactOneYearAgo.setFullYear(exactOneYearAgo.getFullYear() - 1);
+
+        // Find the closest date *before or equal* to exactOneYearAgo
+        let prevCandidate = null;
+        for (const dataPoint of normalizedNavData) {
+          const dataTime = new Date(dataPoint.date).getTime();
+          if (dataTime <= exactOneYearAgo.getTime()) {
+            if (!prevCandidate || dataTime > new Date(prevCandidate.date).getTime()) {
+              prevCandidate = { nav: dataPoint.nav, date: new Date(dataPoint.date) };
+            }
+          }
+        }
+
+        if (prevCandidate) {
+          const years = 1; // exactly 1y
+          returns[period] = (Math.pow(lastNav / prevCandidate.nav, 1 / years) - 1) * 100;
+        } else {
+          returns[period] = null;
+        }
+
+        continue; // skip rest of generic period logic
+      }
+
 
       if (targetDate < new Date(oldestDate)) {
         returns[period] = null;
