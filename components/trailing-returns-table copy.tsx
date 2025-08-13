@@ -388,8 +388,8 @@ export function TrailingReturnsTable({
   };
 
   return (
-    <div className="mb-6">
-      <div className="flex justify-between items-center mb-6">
+    <div className="mb-4">
+      <div className="flex justify-between items-center mb-4">
         <CardTitle className="text-card-text text-sm sm:text-lg">
           Trailing Returns & Drawdown
         </CardTitle>

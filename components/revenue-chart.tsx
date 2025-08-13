@@ -519,7 +519,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
       </Card>
       <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
         <CardContent className="p-4">
-          <CardTitle className="text-card-text text-lg mb-6">Portfolio Performance & Drawdown</CardTitle>
+          <CardTitle className="text-card-text text-lg mb-4">Portfolio Performance & Drawdown</CardTitle>
           <div className="w-full">
             <div ref={chartRef} className="w-full h-[600px]" />
           </div>

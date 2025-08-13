@@ -489,7 +489,7 @@ export default function Portfolio() {
       return (
         <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
           <CardHeader>
-            <CardTitle className="text-card-text text-sm sm:text-sm">Cash In / Out</CardTitle>
+            <CardTitle className="text-sm sm:text-lg text-black">Cash In / Out</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-center py-3 px-4 text-gray-900 dark:text-gray-100">
@@ -503,21 +503,21 @@ export default function Portfolio() {
     return (
       <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
         <CardHeader>
-          <CardTitle className="text-card-text text-sm sm:text-sm">Cash In / Out</CardTitle>
+          <CardTitle className="text-sm sm:text-lg text-black">Cash In / Out</CardTitle>
         </CardHeader>
-        <CardContent className="px-4 py-2">
+        <CardContent className="px-4 ">
           <div className="overflow-x-auto">
             <Table className="min-w-full">
               <TableHeader>
-                <TableRow className="bg-gray-200 hover:bg-gray-200 border-b border-gray-200 dark:border-gray-700">
-                  <TableHead className="px-4 py-2 text-left text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                <TableRow className="bg-black/5 hover:bg-gray-200 border-b border-gray-200 dark:border-gray-700">
+                  <TableHead className="px-4 py-1 text-left text-xs font-medium text-black uppercase tracking-wider">
                     Date
                   </TableHead>
-                  <TableHead className="px-4 py-2 text-right text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                  <TableHead className="px-4 py-1 text-right text-xs font-medium text-black uppercase tracking-wider">
                     Amount (₹)
                   </TableHead>
                   {viewMode === "individual" && (
-                    <TableHead className="px-4 py-2 text-left text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                    <TableHead className="px-4 py-1 text-left text-xs font-medium text-black uppercase tracking-wider">
                       Account
                     </TableHead>
                   )}
@@ -601,7 +601,7 @@ export default function Portfolio() {
     if (!(isSarla || isSatidham) || !sarlaData || availableStrategies.length === 0) return null;
 
     return (
-      <div className="mb-6 block sm:hidden">
+      <div className="mb-4 block sm:hidden">
         <Select value={selectedStrategy || ""} onValueChange={setSelectedStrategy}>
           <SelectTrigger className="w-full border-0 card-shadow">
             <SelectValue placeholder="Select Strategy" />
@@ -648,6 +648,12 @@ export default function Portfolio() {
 
     return (
       <div className="space-y-6">
+        <Button
+          variant="outline"
+          className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
+        >
+          {selectedStrategy} {!isActive ? "(Inactive)" : ""}
+        </Button>
         <StatsCards
           stats={convertedStats}
           accountType={isSarla ? "sarla" : "satidham"}
@@ -738,21 +744,23 @@ export default function Portfolio() {
 
           {/* Dropdown */}
           {(isSarla || isSatidham) && sarlaData && availableStrategies.length > 0 && (
-            <Select value={selectedStrategy || ""} onValueChange={setSelectedStrategy}>
-              <SelectTrigger className="w-[400px] border-0 card-shadow text-button-text">
-                <SelectValue placeholder="Select Strategy" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableStrategies.map((strategy) => {
-                  const isActive = sarlaData[strategy].metadata.isActive;
-                  return (
-                    <SelectItem key={strategy} value={strategy}>
-                      {strategy} {!isActive ? "(Inactive)" : ""}
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
+            <div className="hidden sm:block">
+              <Select value={selectedStrategy || ""} onValueChange={setSelectedStrategy}>
+                <SelectTrigger className="w-[400px] border-0 card-shadow text-button-text">
+                  <SelectValue placeholder="Select Strategy" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableStrategies.map((strategy) => {
+                    const isActive = sarlaData[strategy].metadata.isActive;
+                    return (
+                      <SelectItem key={strategy} value={strategy}>
+                        {strategy} {!isActive ? "(Inactive)" : ""}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
           )}
         </div>
 
