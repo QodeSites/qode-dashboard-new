@@ -5,10 +5,8 @@ import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { StatsCards } from "@/components/stats-cards";
 import { RevenueChart } from "@/components/revenue-chart";
-import { TrailingReturnsTable } from "@/components/trailing-returns-table";
 import { PnlTable } from "@/components/PnlTable";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import DashboardLayout from "./layout";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -135,9 +133,14 @@ function isPmsStats(stats: Stats | PmsStats): stats is PmsStats {
 }
 
 function convertPmsStatsToStats(pmsStats: PmsStats): Stats {
+  // Calculate amount deposited from cash flows (sum of positive flows)
+  const amountDeposited = pmsStats.cashFlows
+    .filter(flow => flow.amount > 0)
+    .reduce((sum, flow) => sum + flow.amount, 0);
+
   return {
-    amountDeposited: pmsStats.totalPortfolioValue,
-    currentExposure: pmsStats.totalPortfolioValue,
+    amountDeposited: amountDeposited.toFixed(2), // Actual invested amount
+    currentExposure: pmsStats.totalPortfolioValue, // Current portfolio value
     return: pmsStats.cumulativeReturn,
     totalProfit: pmsStats.totalPnl,
     trailingReturns: {
@@ -179,7 +182,7 @@ function convertPmsStatsToStats(pmsStats: PmsStats): Stats {
       };
       return acc;
     }, {} as Stats["monthlyPnl"]),
-    cashFlows: pmsStats.cashFlows,
+    cashFlows: pmsStats.cashFlows, // Now correctly mapped
   };
 }
 
@@ -330,22 +333,129 @@ export default function Portfolio() {
             selectedAccountData.account_type === "pms"
               ? `/api/pms-data?qcode=${selectedAccount}&viewMode=${viewMode}&accountCode=${accountCode}`
               : `/api/portfolio?viewMode=${viewMode}${selectedAccount !== "all" ? `&qcode=${selectedAccount}` : ""}&accountCode=${accountCode}`;
+          
           const res = await fetch(endpoint, { credentials: "include" });
           if (!res.ok) {
             const errorData = await res.json();
             throw new Error(errorData.error || `Failed to load data for account ${selectedAccount} with accountCode ${accountCode}`);
           }
-          const response: ApiResponse = await res.json();
+          
+          const response = await res.json();
+          console.log("Raw API response:", response);
+          console.log("Response type:", selectedAccountData.account_type);
+          console.log("Has 'data' property?", 'data' in response);
+          console.log("Response keys:", Object.keys(response));
 
-          if (viewMode === "individual" && Array.isArray(response.data)) {
-            setStats(response.data);
-            setMetadata(null);
+          // Flexible handling for both response structures
+          let statsData: Stats | PmsStats | Array<any>;
+          let metadataData: Metadata | null = null;
+
+          // Check if response has the wrapped ApiResponse structure
+          if ('data' in response && response.data !== undefined) {
+            // Standard ApiResponse structure (wrapped)
+            console.log("Processing wrapped response structure");
+            if (viewMode === "individual" && Array.isArray(response.data)) {
+              statsData = response.data;
+              metadataData = null;
+            } else {
+              statsData = response.data as Stats | PmsStats;
+              metadataData = response.metadata || null;
+            }
           } else {
-            setStats(response.data as Stats | PmsStats);
-            setMetadata(response.metadata || null);
+            // Flat response structure (PMS or other APIs)
+            console.log("Processing flat response structure");
+            
+            if (selectedAccountData.account_type === "pms") {
+              // Handle flat PMS response - make sure it has the right field names
+              const pmsData = response as any;
+              
+              // Map cashInOut to cashFlows if needed
+              if (pmsData.cashInOut && !pmsData.cashFlows) {
+                if (pmsData.cashInOut.transactions) {
+                  // If cashInOut has transactions array
+                  pmsData.cashFlows = pmsData.cashInOut.transactions.map((tx: any) => ({
+                    date: tx.date,
+                    amount: parseFloat(tx.amount)
+                  }));
+                } else {
+                  // If cashInOut is just a total, create empty cashFlows
+                  pmsData.cashFlows = [];
+                }
+              }
+              
+              // Ensure cashFlows exists
+              if (!pmsData.cashFlows) {
+                pmsData.cashFlows = [];
+              }
+
+              statsData = pmsData as PmsStats;
+              
+              // Create metadata for PMS since it's not provided
+              metadataData = {
+                icode: selectedAccount,
+                accountCount: 1,
+                inceptionDate: null,
+                dataAsOfDate: null,
+                lastUpdated: new Date().toISOString(),
+                strategyName: selectedAccountData.account_name || "PMS Portfolio",
+                filtersApplied: {
+                  accountType: selectedAccountData.account_type,
+                  broker: selectedAccountData.broker,
+                  startDate: null,
+                  endDate: null
+                },
+                isActive: true
+              };
+
+              // Try to extract dates from equity curve if available
+              if (pmsData.equityCurve && pmsData.equityCurve.length > 0) {
+                const sortedCurve = [...pmsData.equityCurve].sort(
+                  (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+                );
+                metadataData.inceptionDate = sortedCurve[0].date;
+                metadataData.dataAsOfDate = sortedCurve[sortedCurve.length - 1].date;
+              }
+            } else {
+              // Handle flat regular portfolio response
+              if (viewMode === "individual" && Array.isArray(response)) {
+                statsData = response;
+                metadataData = null;
+              } else {
+                statsData = response as Stats;
+                // Create minimal metadata
+                metadataData = {
+                  icode: selectedAccount,
+                  accountCount: 1,
+                  inceptionDate: null,
+                  dataAsOfDate: null,
+                  lastUpdated: new Date().toISOString(),
+                  strategyName: selectedAccountData.account_name || "Portfolio",
+                  filtersApplied: {
+                    accountType: selectedAccountData.account_type,
+                    broker: selectedAccountData.broker,
+                    startDate: null,
+                    endDate: null
+                  },
+                  isActive: true
+                };
+              }
+            }
           }
+
+          console.log("Final processed stats data:", statsData);
+          console.log("Final processed metadata:", metadataData);
+
+          // Validate that we have data before setting state
+          if (statsData) {
+            setStats(statsData);
+            setMetadata(metadataData);
+          } else {
+            throw new Error("No valid data received from API");
+          }
+          
           setIsLoading(false);
         } catch (err) {
+          console.error("Error in fetchAccountData:", err);
           setError(err instanceof Error ? err.message : `An unexpected error occurred for accountCode ${accountCode}`);
           setIsLoading(false);
         }

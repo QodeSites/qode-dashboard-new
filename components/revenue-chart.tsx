@@ -37,7 +37,7 @@ interface RevenueChartProps {
 }
 
 export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, drawdown }: RevenueChartProps) {
-  console.log("Rendering RevenueChart with drawdownCurve:", drawdownCurve);
+  // console.log("Rendering RevenueChart with drawdownCurve:", drawdownCurve);
   const chartRef = useRef<HTMLDivElement>(null);
   const chart = useRef<any>(null);
   const { bse500Data, error } = useBse500Data(equityCurve);

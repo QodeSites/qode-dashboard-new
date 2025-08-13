@@ -21,7 +21,6 @@ export async function GET(request: Request) {
     const startDate = searchParams.get("start_date");
     const endDate = searchParams.get("end_date");
 
-    console.log(`GET /api/pms-data: icode=${icode}, qcode=${qcode || 'none'}, viewType=${viewType}, period=${period || 'none'}, dataAsOf=${dataAsOf || 'none'}, startDate=${startDate || 'none'}, endDate=${endDate || 'none'}`);
 
     // Fetch PMS data
     const pmsData = await getPmsData(

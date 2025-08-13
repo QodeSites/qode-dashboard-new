@@ -12,7 +12,7 @@ interface PmsData {
   id: string;
   clientName: string;
   accountCode: string;
-  qcode: string | null; // May not be present in pms_master_sheet
+  qcode: string | null;
   reportDate: string;
   portfolioValue: string | null;
   cashInOut: string | null;
@@ -55,7 +55,9 @@ interface PmsStats {
     };
   };
   trailingReturns: {
+    fiveDays: string;
     tenDays: string;
+    fifteenDays: string;
     oneMonth: string;
     threeMonths: string;
     sixMonths: string;
@@ -63,8 +65,8 @@ interface PmsStats {
     twoYears: string;
     fiveYears: string;
     sinceInception: string;
-    MDD: string;
-    currentDD: string;
+    MDD: string; // FIXED: Changed from maxDrawdown to MDD
+    currentDD: string; // FIXED: Changed from currentDrawdown to currentDD
   };
   cashInOut: { transactions: { date: string; amount: string }[]; total: number };
 }
@@ -115,13 +117,22 @@ function calculateDateRange(period: string | null): { start_date: string; end_da
   };
 }
 
-// Calculate monthly PNL based on NAV
-function calculateMonthlyPnL(dailyData: PmsData[]): { year: number; month: string; firstNAV: number; lastNAV: number; pnl: number }[] {
+// Calculate monthly PNL based on both NAV and actual PnL data
+function calculateMonthlyPnL(dailyData: PmsData[]): { 
+  year: number; 
+  month: string; 
+  pnlPercent: number; 
+  pnlCash: number;
+  capitalInOut: number;
+}[] {
   if (!dailyData || !Array.isArray(dailyData) || dailyData.length === 0) {
     return [];
   }
 
-  const dataByMonth = dailyData.reduce((acc, data) => {
+  // Sort data by date
+  const sortedData = [...dailyData].sort((a, b) => new Date(a.reportDate).getTime() - new Date(b.reportDate).getTime());
+  
+  const dataByMonth = sortedData.reduce((acc, data) => {
     const date = new Date(data.reportDate);
     const month = date.getMonth();
     const year = date.getFullYear();
@@ -137,18 +148,30 @@ function calculateMonthlyPnL(dailyData: PmsData[]): { year: number; month: strin
   const monthlyPnL = Object.keys(dataByMonth).map(key => {
     const [year, monthIndex] = key.split("-").map(Number);
     const records = dataByMonth[key].sort((a, b) => new Date(a.reportDate).getTime() - new Date(b.reportDate).getTime());
+    
+    // Calculate monthly PnL percentage using NAV
     const firstRecord = records[0];
     const lastRecord = records[records.length - 1];
     const firstNAV = parseFloat(firstRecord.nav || "0") || 0;
     const lastNAV = parseFloat(lastRecord.nav || "0") || 0;
-    const pnl = firstNAV !== 0 ? ((lastNAV - firstNAV) / firstNAV) * 100 : 0;
+    const pnlPercent = firstNAV !== 0 ? ((lastNAV - firstNAV) / firstNAV) * 100 : 0;
+    
+    // Calculate monthly PnL in cash terms (sum of daily PnL)
+    const pnlCash = records.reduce((sum, record) => {
+      return sum + (parseFloat(record.pnl || "0") || 0);
+    }, 0);
+    
+    // Calculate capital in/out for the month
+    const capitalInOut = records.reduce((sum, record) => {
+      return sum + (parseFloat(record.cashInOut || "0") || 0);
+    }, 0);
 
     return {
       year,
       month: monthsFull[monthIndex],
-      firstNAV,
-      lastNAV,
-      pnl: truncateTo2(pnl),
+      pnlPercent: truncateTo2(pnlPercent),
+      pnlCash: truncateTo2(pnlCash),
+      capitalInOut: truncateTo2(capitalInOut),
     };
   });
 
@@ -163,87 +186,111 @@ function calculateMonthlyPnL(dailyData: PmsData[]): { year: number; month: strin
 }
 
 // Calculate trailing returns and drawdowns based on NAV
-function calculateTrailingReturns(dailyData: PmsData[]): { [key: string]: number | null } {
+function calculateTrailingReturns(dailyData: PmsData[]): { [key: string]: string } {
   if (!dailyData || !Array.isArray(dailyData) || dailyData.length === 0) {
     return {
-      "10D": null,
-      "1M": null,
-      "3M": null,
-      "6M": null,
-      "1Y": null,
-      "2Y": null,
-      "5Y": null,
-      "Since Inception": null,
-      "MDD": null,
-      "currentDD": null
+      fiveDays: "-",
+      tenDays: "-",
+      fifteenDays: "-",
+      oneMonth: "-",
+      threeMonths: "-",
+      sixMonths: "-",
+      oneYear: "-",
+      twoYears: "-",
+      fiveYears: "-",
+      sinceInception: "-",
+      MDD: "-", // FIXED: Changed from maxDrawdown to MDD
+      currentDD: "-" // FIXED: Changed from currentDrawdown to currentDD
     };
   }
 
-  dailyData.sort((a, b) => new Date(a.reportDate).getTime() - new Date(b.reportDate).getTime());
+  // Sort data by date
+  const sortedData = [...dailyData].sort((a, b) => new Date(a.reportDate).getTime() - new Date(b.reportDate).getTime());
 
-  const currentRecord = dailyData[dailyData.length - 1];
+  const currentRecord = sortedData[sortedData.length - 1];
   const currentDate = new Date(currentRecord.reportDate);
   const currentNAV = parseFloat(currentRecord.nav || "0") || 0;
 
   if (currentNAV <= 0) {
     console.warn("Invalid current NAV:", currentNAV);
     return {
-      "10D": null,
-      "1M": null,
-      "3M": null,
-      "6M": null,
-      "1Y": null,
-      "2Y": null,
-      "5Y": null,
-      "Since Inception": null,
-      "MDD": null,
-      "currentDD": null
+      fiveDays: "-",
+      tenDays: "-",
+      fifteenDays: "-",
+      oneMonth: "-",
+      threeMonths: "-",
+      sixMonths: "-",
+      oneYear: "-",
+      twoYears: "-",
+      fiveYears: "-",
+      sinceInception: "-",
+      MDD: "-", // FIXED: Changed from maxDrawdown to MDD
+      currentDD: "-" // FIXED: Changed from currentDrawdown to currentDD
     };
   }
 
-  const periods = ["10D", "1M", "3M", "6M", "1Y", "2Y", "5Y", "Since Inception"];
-  const results: { [key: string]: number | null } = {};
+  const periods = [
+    { key: "fiveDays", days: 5 },
+    { key: "tenDays", days: 10 },
+    { key: "fifteenDays", days: 15 },
+    { key: "oneMonth", days: 30 },
+    { key: "threeMonths", days: 90 },
+    { key: "sixMonths", days: 180 },
+    { key: "oneYear", days: 365 },
+    { key: "twoYears", days: 730 },
+    { key: "fiveYears", days: 1825 }
+  ];
 
-  periods.forEach(period => {
-    let baseNAV = null;
-    let baseRecord = null;
+  const results: { [key: string]: string } = {};
 
-    if (period === "Since Inception") {
-      baseRecord = dailyData.find(record => {
-        const nav = parseFloat(record.nav || "0") || 0;
-        return nav > 0 && nav !== currentNAV;
-      });
-      baseNAV = baseRecord ? parseFloat(baseRecord.nav || "0") || 0 : null;
-    } else {
-      const days = periodToDays(period);
-      const targetDate = new Date(currentDate);
-      targetDate.setDate(targetDate.getDate() - days);
+  // Calculate trailing returns for each period
+  periods.forEach(({ key, days }) => {
+    const targetDate = new Date(currentDate);
+    targetDate.setDate(targetDate.getDate() - days);
 
-      baseRecord = findNAVRecordOnOrBefore(dailyData, targetDate);
-      baseNAV = baseRecord ? parseFloat(baseRecord.nav || "0") || 0 : null;
-    }
+    const baseRecord = findNAVRecordOnOrBefore(sortedData, targetDate);
+    const baseNAV = baseRecord ? parseFloat(baseRecord.nav || "0") || 0 : null;
 
     if (baseNAV && baseNAV > 0 && baseNAV !== currentNAV) {
       const trailingReturn = ((currentNAV - baseNAV) / baseNAV) * 100;
       if (Math.abs(trailingReturn) > 10000) {
-        console.warn(`Unrealistic return calculated for ${period}:`, {
-          period, currentNAV, baseNAV, trailingReturn,
+        console.warn(`Unrealistic return calculated for ${key}:`, {
+          period: key, currentNAV, baseNAV, trailingReturn,
           baseDate: baseRecord ? baseRecord.reportDate : 'N/A',
           currentDate: currentRecord.reportDate
         });
-        results[period] = null;
+        results[key] = "-";
       } else {
-        results[period] = truncateTo2(trailingReturn);
+        results[key] = truncateTo2(trailingReturn).toFixed(2);
       }
     } else {
-      results[period] = null;
+      results[key] = "-";
     }
   });
 
+  // Calculate since inception return
+  const firstValidRecord = sortedData.find(record => {
+    const nav = parseFloat(record.nav || "0") || 0;
+    return nav > 0;
+  });
+  
+  if (firstValidRecord && firstValidRecord !== currentRecord) {
+    const firstNAV = parseFloat(firstValidRecord.nav || "0") || 0;
+    if (firstNAV > 0) {
+      const sinceInceptionReturn = ((currentNAV - firstNAV) / firstNAV) * 100;
+      results["sinceInception"] = truncateTo2(sinceInceptionReturn).toFixed(2);
+    } else {
+      results["sinceInception"] = "-";
+    }
+  } else {
+    results["sinceInception"] = "-";
+  }
+
+  // Calculate Maximum Drawdown (MDD)
   let peak = -Infinity;
   let maxDrawdown = 0;
 
-  dailyData.forEach(record => {
+  sortedData.forEach(record => {
     const nav = parseFloat(record.nav || "0") || 0;
     if (nav > 0) {
       if (nav > peak) {
@@ -256,18 +303,21 @@ function calculateTrailingReturns(dailyData: PmsData[]): { [key: string]: number
     }
   });
 
-  results.MDD = truncateTo2(maxDrawdown * 100);
+  // FIXED: Use negative value for drawdown display
+  results.MDD = truncateTo2(-Math.abs(maxDrawdown * 100)).toFixed(2);
 
-  const validNAVs = dailyData
+  // Calculate current drawdown
+  const validNAVs = sortedData
     .map(record => parseFloat(record.nav || "0") || 0)
     .filter(nav => nav > 0);
 
   if (validNAVs.length > 0) {
     const historicalPeak = Math.max(...validNAVs);
     const currentDrawdown = (currentNAV - historicalPeak) / historicalPeak;
-    results["currentDD"] = truncateTo2(currentDrawdown * 100);
+    // FIXED: Use negative value for drawdown display
+    results["currentDD"] = truncateTo2(-Math.abs(currentDrawdown * 100)).toFixed(2);
   } else {
-    results["currentDD"] = 0;
+    results["currentDD"] = "0.00";
   }
 
   return results;
@@ -286,30 +336,6 @@ function findNAVRecordOnOrBefore(dailyData: PmsData[], targetDate: Date): PmsDat
   }
 
   return null;
-}
-
-// Convert period to days
-function periodToDays(periodStr: string): number {
-  const match = periodStr.match(/^(\d+)([DMY])$/);
-  if (!match) {
-    console.warn("Invalid period format:", periodStr);
-    return 0;
-  }
-
-  const num = parseInt(match[1], 10);
-  const unit = match[2];
-
-  if (isNaN(num) || num <= 0) {
-    console.warn("Invalid period number:", periodStr);
-    return 0;
-  }
-
-  switch (unit) {
-    case "D": return num;
-    case "M": return num * 30;
-    case "Y": return num * 365;
-    default: return 0;
-  }
 }
 
 // Format daily data
@@ -399,16 +425,18 @@ export async function getPmsData(
         quarterlyPnl: {},
         monthlyPnl: {},
         trailingReturns: {
-          tenDays: "0.00",
-          oneMonth: "0.00",
-          threeMonths: "0.00",
-          sixMonths: "0.00",
-          oneYear: "0.00",
-          twoYears: "0.00",
-          fiveYears: "0.00",
-          sinceInception: "0.00",
-          MDD: "0.00",
-          currentDD: "0.00"
+          fiveDays: "-",
+          tenDays: "-",
+          fifteenDays: "-",
+          oneMonth: "-",
+          threeMonths: "-",
+          sixMonths: "-",
+          oneYear: "-",
+          twoYears: "-",
+          fiveYears: "-",
+          sinceInception: "-",
+          MDD: "-", // FIXED: Changed from maxDrawdown to MDD
+          currentDD: "-" // FIXED: Changed from currentDrawdown to currentDD
         },
         cashInOut: { transactions: [], total: 0 }
       };
@@ -464,17 +492,20 @@ export async function getPmsData(
         drawdownCurve: [],
         quarterlyPnl: {},
         monthlyPnl: {},
+        // FIXED: Return proper structure that matches the interface
         trailingReturns: {
-          tenDays: "0.00",
-          oneMonth: "0.00",
-          threeMonths: "0.00",
-          sixMonths: "0.00",
-          oneYear: "0.00",
-          twoYears: "0.00",
-          fiveYears: "0.00",
-          sinceInception: "0.00",
-          MDD: "0.00",
-          currentDD: "0.00"
+          fiveDays: "-",
+          tenDays: "-",
+          fifteenDays: "-",
+          oneMonth: "-",
+          threeMonths: "-",
+          sixMonths: "-",
+          oneYear: "-",
+          twoYears: "-",
+          fiveYears: "-",
+          sinceInception: "-",
+          MDD: "-", // FIXED: Changed from maxDrawdown to MDD
+          currentDD: "-" // FIXED: Changed from currentDrawdown to currentDD
         },
         cashInOut: { transactions: [], total: 0 }
       };
@@ -526,64 +557,106 @@ export async function getPmsData(
       drawdownCurve.push({ date: dateStr, value: truncateTo2(avgDrawdown) });
     });
 
-    // Calculate monthly and quarterly PNL
+    // Calculate monthly and quarterly PNL with proper cash and percentage calculations
     const monthlyPnLData = calculateMonthlyPnL(formattedData);
     const monthlyPnl: PmsStats["monthlyPnl"] = {};
-    monthlyPnLData.forEach(({ year, month, pnl }) => {
-      if (!monthlyPnl[year]) {
-        monthlyPnl[year] = { months: {}, totalPercent: 0, totalCash: 0, totalCapitalInOut: 0 };
-      }
-      monthlyPnl[year].months[month] = {
-        percent: pnl.toFixed(2),
-        cash: "0.00",
-        capitalInOut: "0.00"
+    
+    // FIXED: Only initialize years that have data
+    const yearsWithData = new Set(monthlyPnLData.map(d => d.year));
+    yearsWithData.forEach(year => {
+      monthlyPnl[year] = { 
+        months: {}, 
+        totalPercent: 0, 
+        totalCash: 0, 
+        totalCapitalInOut: 0 
       };
-      monthlyPnl[year].totalPercent += pnl || 0;
-      monthlyPnl[year].totalCash = 0;
-      monthlyPnl[year].totalCapitalInOut = 0;
+      
+      // Initialize all months with "-" for missing data
+      monthsFull.forEach(month => {
+        monthlyPnl[year].months[month] = {
+          percent: "-",
+          cash: "-", // FIXED: Changed from "0.00" to "-"
+          capitalInOut: "-" // FIXED: Changed from "0.00" to "-"
+        };
+      });
     });
 
+    // Populate actual data
+    monthlyPnLData.forEach(({ year, month, pnlPercent, pnlCash, capitalInOut }) => {
+      monthlyPnl[year].months[month] = {
+        percent: pnlPercent !== 0 ? pnlPercent.toFixed(2) : "-",
+        cash: pnlCash !== 0 ? pnlCash.toFixed(2) : "-", // FIXED: Return "-" for zero values
+        capitalInOut: capitalInOut !== 0 ? capitalInOut.toFixed(2) : "-" // FIXED: Return "-" for zero values
+      };
+      monthlyPnl[year].totalPercent += pnlPercent || 0;
+      monthlyPnl[year].totalCash += pnlCash || 0;
+      monthlyPnl[year].totalCapitalInOut += capitalInOut || 0;
+    });
+
+    // Calculate quarterly PNL
     const quarterlyPnl: PmsStats["quarterlyPnl"] = {};
-    monthlyPnLData.forEach(({ year, month, pnl }) => {
+    
+    // FIXED: Initialize quarterly structure for years with data
+    yearsWithData.forEach(year => {
+      quarterlyPnl[year] = {
+        percent: { q1: "-", q2: "-", q3: "-", q4: "-", total: "0.00" },
+        cash: { q1: "-", q2: "-", q3: "-", q4: "-", total: "0.00" }, // FIXED: Initialize with "-"
+        yearCash: "0.00"
+      };
+    });
+
+    // FIXED: Track quarters that have data
+    const quartersWithData: { [year: string]: { [quarter: string]: boolean } } = {};
+    
+    monthlyPnLData.forEach(({ year, month, pnlPercent, pnlCash }) => {
       const monthIndex = monthsFull.indexOf(month);
       const quarter = monthIndex < 3 ? "q1" : monthIndex < 6 ? "q2" : monthIndex < 9 ? "q3" : "q4";
-      if (!quarterlyPnl[year]) {
-        quarterlyPnl[year] = {
-          percent: { q1: "0.00", q2: "0.00", q3: "0.00", q4: "0.00", total: "0.00" },
-          cash: { q1: "0.00", q2: "0.00", q3:"0.00", q4: "0.00", total: "0.00" },
-          yearCash: "0.00"
-        };
+      
+      if (!quartersWithData[year]) {
+        quartersWithData[year] = { q1: false, q2: false, q3: false, q4: false };
       }
-      quarterlyPnl[year].percent[quarter] = (parseFloat(quarterlyPnl[year].percent[quarter]) + (pnl || 0)).toFixed(2);
-      quarterlyPnl[year].percent.total = (parseFloat(quarterlyPnl[year].percent.total) + (pnl || 0)).toFixed(2);
-      quarterlyPnl[year].cash[quarter] = "0.00";
-      quarterlyPnl[year].cash.total = "0.00";
-      quarterlyPnl[year].yearCash = "0.00";
+      quartersWithData[year][quarter] = true;
+      
+      const currentQuarterPercent = quarterlyPnl[year].percent[quarter];
+      const currentQuarterCash = quarterlyPnl[year].cash[quarter] === "-" ? 0 : parseFloat(quarterlyPnl[year].cash[quarter]);
+      
+      // Update quarter percentage (compound if multiple months)
+      if (currentQuarterPercent === "-") {
+        quarterlyPnl[year].percent[quarter] = pnlPercent !== 0 ? pnlPercent.toFixed(2) : "-";
+      } else {
+        const prevPercent = parseFloat(currentQuarterPercent);
+        // Compound the returns: (1 + r1) * (1 + r2) - 1
+        const compoundedReturn = ((1 + prevPercent/100) * (1 + pnlPercent/100) - 1) * 100;
+        quarterlyPnl[year].percent[quarter] = compoundedReturn.toFixed(2);
+      }
+      
+      // Update quarter cash
+      const newQuarterCash = currentQuarterCash + pnlCash;
+      quarterlyPnl[year].cash[quarter] = newQuarterCash !== 0 ? newQuarterCash.toFixed(2) : "-"; // FIXED: Return "-" for zero
+      
+      // Update totals
+      const currentTotal = parseFloat(quarterlyPnl[year].percent.total);
+      quarterlyPnl[year].percent.total = (currentTotal + pnlPercent).toFixed(2);
+      
+      const currentTotalCash = parseFloat(quarterlyPnl[year].cash.total);
+      const newTotalCash = currentTotalCash + pnlCash;
+      quarterlyPnl[year].cash.total = newTotalCash.toFixed(2);
+      quarterlyPnl[year].yearCash = quarterlyPnl[year].cash.total;
     });
 
+    // Calculate trailing returns
     const trailingReturns = calculateTrailingReturns(formattedData);
 
     return {
       totalPortfolioValue: totalPortfolioValue.toFixed(2),
       totalPnl: totalPnl.toFixed(2),
-      maxDrawdown: trailingReturns.MDD?.toFixed(2) || "0.00",
+      maxDrawdown: trailingReturns.MDD, // FIXED: Use MDD instead of maxDrawdown
       cumulativeReturn: cumulativeReturn.toFixed(2),
       equityCurve,
       drawdownCurve,
       quarterlyPnl,
       monthlyPnl,
-      trailingReturns: {
-        tenDays: trailingReturns["10D"]?.toFixed(2) || "0.00",
-        oneMonth: trailingReturns["1M"]?.toFixed(2) || "0.00",
-        threeMonths: trailingReturns["3M"]?.toFixed(2) || "0.00",
-        sixMonths: trailingReturns["6M"]?.toFixed(2) || "0.00",
-        oneYear: trailingReturns["1Y"]?.toFixed(2) || "0.00",
-        twoYears: trailingReturns["2Y"]?.toFixed(2) || "0.00",
-        fiveYears: trailingReturns["5Y"]?.toFixed(2) || "0.00",
-        sinceInception: trailingReturns["Since Inception"]?.toFixed(2) || "0.00",
-        MDD: trailingReturns["MDD"]?.toFixed(2) || "0.00",
-        currentDD: trailingReturns["currentDD"]?.toFixed(2) || "0.00"
-      },
+      trailingReturns,
       cashInOut
     };
   } catch (error) {

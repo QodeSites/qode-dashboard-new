@@ -37,6 +37,8 @@ export function TrailingReturnsTable({
   drawdown,
   equityCurve,
 }: TrailingReturnsTableProps) {
+
+  console.log(trailingReturns)
   const { bse500Data, error } = useBse500Data(equityCurve);
 
   // Normalize trailingReturns for internal use
@@ -107,9 +109,9 @@ export function TrailingReturnsTable({
   };
 
 const calculateBenchmarkReturns = useCallback(() => {
-    console.log("🔍 Starting benchmark returns calculation...");
-    console.log("BSE500 data length:", bse500Data.length);
-    console.log("Equity curve length:", equityCurve.length);
+    // console.log("🔍 Starting benchmark returns calculation...");
+    // console.log("BSE500 data length:", bse500Data.length);
+    // console.log("Equity curve length:", equityCurve.length);
 
     const benchmarkReturns: { [key: string]: string } = {};
 
@@ -119,16 +121,16 @@ const calculateBenchmarkReturns = useCallback(() => {
     });
 
     if (!bse500Data.length || !equityCurve.length) {
-      console.log("❌ Missing data - BSE500:", bse500Data.length, "EquityCurve:", equityCurve.length);
+      // console.log("❌ Missing data - BSE500:", bse500Data.length, "EquityCurve:", equityCurve.length);
       return benchmarkReturns;
     }
 
     const endDate = new Date(equityCurve[equityCurve.length - 1].date);
     const startDate = new Date(equityCurve[0].date);
 
-    console.log("📅 Date range:");
-    console.log("Start date:", startDate.toISOString());
-    console.log("End date:", endDate.toISOString());
+    // console.log("📅 Date range:");
+    // console.log("Start date:", startDate.toISOString());
+    // console.log("End date:", endDate.toISOString());
 
     const findNav = (targetDate: Date) => {
       const exactMatch = bse500Data.find(point => {
@@ -183,8 +185,8 @@ const calculateBenchmarkReturns = useCallback(() => {
         // Calculate the duration in years
         const durationYears = (end.getTime() - start.getTime()) / (365 * 24 * 60 * 60 * 1000);
         
-        console.log(`📊 Period ${periodKey}: Start=${start.toISOString().split('T')[0]}, End=${end.toISOString().split('T')[0]}, Duration=${durationYears.toFixed(2)} years`);
-        console.log(`📊 NAV values: Start=${startNav}, End=${endNav}`);
+        // console.log(`📊 Period ${periodKey}: Start=${start.toISOString().split('T')[0]}, End=${end.toISOString().split('T')[0]}, Duration=${durationYears.toFixed(2)} years`);
+        // console.log(`📊 NAV values: Start=${startNav}, End=${endNav}`);
         
         let returnValue: number;
         
@@ -192,11 +194,11 @@ const calculateBenchmarkReturns = useCallback(() => {
         if (durationYears >= 1) {
           // CAGR formula: (End Value / Start Value)^(1/years) - 1
           returnValue = (Math.pow(endNav / startNav, 1 / durationYears) - 1) * 100;
-          console.log(`📊 Using CAGR: ${returnValue.toFixed(2)}%`);
+          // console.log(`📊 Using CAGR: ${returnValue.toFixed(2)}%`);
         } else {
           // Absolute return formula: (End Value - Start Value) / Start Value
           returnValue = ((endNav - startNav) / startNav) * 100;
-          console.log(`📊 Using Absolute Return: ${returnValue.toFixed(2)}%`);
+          // console.log(`📊 Using Absolute Return: ${returnValue.toFixed(2)}%`);
         }
         
         return returnValue.toFixed(2);
@@ -271,7 +273,7 @@ const calculateBenchmarkReturns = useCallback(() => {
       benchmarkReturns.currentDD = (-Math.abs(currentDrawdown)).toFixed(2);
     }
 
-    console.log("🎯 Final benchmark returns:", benchmarkReturns);
+    // console.log("🎯 Final benchmark returns:", benchmarkReturns);
     return benchmarkReturns;
   }, [bse500Data, equityCurve, allPeriods]);
 
