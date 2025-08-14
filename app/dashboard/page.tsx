@@ -492,7 +492,7 @@ export default function Portfolio() {
             <CardTitle className="text-sm sm:text-lg text-black">Cash In / Out</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-center py-3 px-4 text-gray-900 dark:text-gray-100">
+            <div className="text-center py-3 text-gray-900 dark:text-gray-100">
               No cash flow data available
             </div>
           </CardContent>
@@ -501,23 +501,21 @@ export default function Portfolio() {
     }
 
     return (
-      <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-        <CardHeader>
+      <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0 p-4">
           <CardTitle className="text-sm sm:text-lg text-black">Cash In / Out</CardTitle>
-        </CardHeader>
-        <CardContent className="px-4 ">
+        <CardContent className="p-0 mt-4">
           <div className="overflow-x-auto">
             <Table className="min-w-full">
               <TableHeader>
                 <TableRow className="bg-black/5 hover:bg-gray-200 border-b border-gray-200 dark:border-gray-700">
-                  <TableHead className="px-4 py-1 text-left text-xs font-medium text-black uppercase tracking-wider">
+                  <TableHead className="py-1 text-left text-xs font-medium text-black uppercase tracking-wider">
                     Date
                   </TableHead>
-                  <TableHead className="px-4 py-1 text-right text-xs font-medium text-black uppercase tracking-wider">
+                  <TableHead className=" py-1 text-right text-xs font-medium text-black uppercase tracking-wider">
                     Amount (₹)
                   </TableHead>
                   {viewMode === "individual" && (
-                    <TableHead className="px-4 py-1 text-left text-xs font-medium text-black uppercase tracking-wider">
+                    <TableHead className="py-1 text-left text-xs font-medium text-black uppercase tracking-wider">
                       Account
                     </TableHead>
                   )}
@@ -530,16 +528,16 @@ export default function Portfolio() {
                     : undefined;
                   return (
                     <TableRow key={`${transaction.date}-${index}`} className="border-b border-gray-200 dark:border-gray-700 ">
-                      <TableCell className="px-4 py-2 text-xs text-gray-700 dark:text-gray-100">
+                      <TableCell className=" py-2 text-xs text-gray-700 dark:text-gray-100">
                         {dateFormatter(transaction.date)}
                       </TableCell>
                       <TableCell
-                        className={`px-4 py-2 text-xs font-medium text-right ${Number(transaction.amount) > 0 ? "text-green-600" : "text-red-600"}`}
+                        className={` py-2 text-xs font-medium text-right ${Number(transaction.amount) > 0 ? "text-green-600" : "text-red-600"}`}
                       >
                         {formatter.format(Number(transaction.amount))}
                       </TableCell>
                       {viewMode === "individual" && (
-                        <TableCell className="px-4 py-2 text-xs text-gray-700 dark:text-gray-100">
+                        <TableCell className="py-2 text-xs text-gray-700 dark:text-gray-100">
                           {accountName || "Unknown"}
                         </TableCell>
                       )}
@@ -547,23 +545,23 @@ export default function Portfolio() {
                   );
                 })}
                 <TableRow className="border-t border-gray-200 dark:border-gray-700 font-semibold">
-                  <TableCell className="px-4 py-2 text-xs text-gray-800 dark:text-gray-100">Total In</TableCell>
-                  <TableCell className="px-4 py-2 text-xs text-right text-green-800 dark:text-green-600">
+                  <TableCell className="py-2 text-xs text-gray-800 dark:text-gray-100">Total In</TableCell>
+                  <TableCell className="py-2 text-xs text-right text-green-800 dark:text-green-600">
                     {formatter.format(cashFlowTotals.totalIn)}
                   </TableCell>
                   {viewMode === "individual" && <TableCell />}
                 </TableRow>
                 <TableRow className="font-semibold">
-                  <TableCell className="px-4 py-2 text-xs text-gray-800 dark:text-gray-100">Total Out</TableCell>
-                  <TableCell className="px-4 py-2 text-xs text-right text-red-800 dark:text-red-600">
+                  <TableCell className="py-2 text-xs text-gray-800 dark:text-gray-100">Total Out</TableCell>
+                  <TableCell className="py-2 text-xs text-right text-red-800 dark:text-red-600">
                     {formatter.format(cashFlowTotals.totalOut)}
                   </TableCell>
                   {viewMode === "individual" && <TableCell />}
                 </TableRow>
                 <TableRow className="font-semibold">
-                  <TableCell className="px-4 py-2 text-xs text-gray-800 dark:text-gray-100">Net Flow</TableCell>
+                  <TableCell className="py-2 text-xs text-gray-800 dark:text-gray-100">Net Flow</TableCell>
                   <TableCell
-                    className={`px-4 py-2 text-xs text-right font-semibold ${cashFlowTotals.netFlow >= 0 ? "text-green-800" : "text-red-800"} dark:${cashFlowTotals.netFlow >= 0 ? "text-green-600" : "text-red-600"}`}
+                    className={`py-2 text-xs text-right font-semibold ${cashFlowTotals.netFlow >= 0 ? "text-green-800" : "text-red-800"} dark:${cashFlowTotals.netFlow >= 0 ? "text-green-600" : "text-red-600"}`}
                   >
                     {formatter.format(cashFlowTotals.netFlow)}
                   </TableCell>

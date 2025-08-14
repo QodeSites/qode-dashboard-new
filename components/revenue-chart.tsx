@@ -67,7 +67,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
   const calculateDrawdownScaling = useCallback((portfolioDD: number[], benchmarkDD: number[]) => {
     const allDrawdowns = [...portfolioDD, ...benchmarkDD]
       .filter(val => typeof val === 'number' && !isNaN(val) && isFinite(val));
-    
+
     if (!allDrawdowns.length) return { min: -10, max: 0 };
 
     const minDrawdown = Math.min(...allDrawdowns, 0);
@@ -124,7 +124,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
       const portfolioData = equityCurve
         .map((p) => {
           let navValue;
-          
+
           if (p.value !== undefined && p.value !== null) {
             navValue = p.value;
           } else if (p.nav !== undefined && p.nav !== null) {
@@ -133,14 +133,14 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
             console.warn(`No NAV value found for date ${p.date}:`, p);
             return null;
           }
-          
+
           const value = typeof navValue === "string" ? parseFloat(navValue) : Number(navValue);
-          
+
           if (isNaN(value) || !isFinite(value)) {
             console.warn(`Invalid NAV value for date ${p.date}:`, navValue);
             return null;
           }
-          
+
           return [new Date(p.date).getTime(), value];
         })
         .filter(point => point !== null);
@@ -165,11 +165,11 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         : firstPortfolioDate || firstBenchmarkDate;
 
       console.log("Raw drawdown data:", drawdownCurve.slice(-3));
-      
+
       const portfolioDrawdownData = drawdownCurve
         .map((point) => {
           let drawdownValue;
-          
+
           if (point.value !== undefined && point.value !== null) {
             drawdownValue = point.value;
           } else if (point.drawdown !== undefined && point.drawdown !== null) {
@@ -178,16 +178,16 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
             console.warn(`No valid drawdown data for ${point.date}:`, point);
             return null;
           }
-          
+
           const dd = typeof drawdownValue === "string" ? parseFloat(drawdownValue) : Number(drawdownValue);
-          
+
           if (isNaN(dd) || !isFinite(dd)) {
             console.warn(`Invalid drawdown value for ${point.date}: ${drawdownValue} -> ${dd}`);
             return null;
           }
-          
+
           const finalValue = dd === 0 ? 0 : -Math.abs(dd);
-          
+
           return [new Date(point.date).getTime(), finalValue];
         })
         .filter(item => item !== null);
@@ -303,7 +303,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         },
         xAxis: {
           type: "datetime",
-          title: { 
+          title: {
             text: "Date",
             style: {
               color: "#2E8B57",
@@ -328,7 +328,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         },
         yAxis: [
           {
-            title: { 
+            title: {
               text: "Performance",
               style: {
                 color: "#2E8B57",
@@ -366,7 +366,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
             ],
           },
           {
-            title: { 
+            title: {
               text: "Drawdown",
               style: {
                 color: "#FF4560",
@@ -411,10 +411,10 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
               if (!series || !series.data || series.data.length === 0) {
                 return null;
               }
-              
+
               let nearestPoint = null;
               let minDiff = Infinity;
-              
+
               series.data.forEach((point: any) => {
                 if (point && typeof point.x === 'number' && typeof point.y === 'number' && !isNaN(point.y)) {
                   const diff = Math.abs(point.x - x);
@@ -424,7 +424,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
                   }
                 }
               });
-              
+
               return nearestPoint;
             }
 
@@ -444,34 +444,52 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
 
             let tooltipText = `<b style="font-family: 'Plus Jakarta Sans';">${Highcharts.dateFormat("%d-%m-%Y", hoveredX)}</b><br/><br/>`;
             tooltipText += `<span style="font-weight: bold; font-size: 12px; font-family: 'Plus Jakarta Sans';">Performance:</span><br/>`;
-            tooltipText += `<span style="color:#2E8B57; font-family: 'Plus Jakarta Sans';">\u25CF</span> Portfolio: ${
-              portfolioPoint && !isNaN(portfolioPoint.y) ? portfolioPoint.y.toFixed(2) + "%" : "N/A"
-            }<br/>`;
-            tooltipText += `<span style="color:#4169E1; font-family: 'Plus Jakarta Sans';">\u25CF</span> Benchmark: ${
-              benchmarkPoint && !isNaN(benchmarkPoint.y) ? benchmarkPoint.y.toFixed(2) + "%" : "N/A"
-            }<br/>`;
+            tooltipText += `<span style="color:#2E8B57; font-family: 'Plus Jakarta Sans';">\u25CF</span> Portfolio: ${portfolioPoint && !isNaN(portfolioPoint.y) ? portfolioPoint.y.toFixed(2) + "%" : "N/A"
+              }<br/>`;
+            tooltipText += `<span style="color:#4169E1; font-family: 'Plus Jakarta Sans';">\u25CF</span> Benchmark: ${benchmarkPoint && !isNaN(benchmarkPoint.y) ? benchmarkPoint.y.toFixed(2) + "%" : "N/A"
+              }<br/>`;
             tooltipText += `<br/><span style="font-weight: bold; font-size: 12px; font-family: 'Plus Jakarta Sans';">Drawdown:</span><br/>`;
-            tooltipText += `<span style="color:#FF4560; font-family: 'Plus Jakarta Sans';">\u25CF</span> Portfolio: ${
-              portfolioDrawdownPoint && !isNaN(portfolioDrawdownPoint.y) 
-                ? portfolioDrawdownPoint.y.toFixed(2) + "%" 
+            tooltipText += `<span style="color:#FF4560; font-family: 'Plus Jakarta Sans';">\u25CF</span> Portfolio: ${portfolioDrawdownPoint && !isNaN(portfolioDrawdownPoint.y)
+                ? portfolioDrawdownPoint.y.toFixed(2) + "%"
                 : "N/A"
-            }<br/>`;
-            tooltipText += `<span style="color:#FF8F00; font-family: 'Plus Jakarta Sans';">\u25CF</span> Benchmark: ${
-              benchmarkDrawdownPoint && !isNaN(benchmarkDrawdownPoint.y) 
-                ? benchmarkDrawdownPoint.y.toFixed(2) + "%" 
+              }<br/>`;
+            tooltipText += `<span style="color:#FF8F00; font-family: 'Plus Jakarta Sans';">\u25CF</span> Benchmark: ${benchmarkDrawdownPoint && !isNaN(benchmarkDrawdownPoint.y)
+                ? benchmarkDrawdownPoint.y.toFixed(2) + "%"
                 : "N/A"
-            }<br/>`;
+              }<br/>`;
 
             return tooltipText;
           },
         },
         legend: {
           enabled: true,
-          itemStyle: { 
+          layout: "horizontal", // force horizontal row
+          align: "center",
+          verticalAlign: "bottom",
+          itemStyle: {
             fontSize: "12px",
             color: "#2E8B57",
             fontFamily: "Plus Jakarta Sans",
           },
+        },
+        responsive: {
+          rules: [
+            {
+              condition: {
+                maxWidth: 768, // apply on mobile screens
+              },
+              chartOptions: {
+                legend: {
+                  layout: "horizontal",
+                  align: "center",
+                  verticalAlign: "bottom",
+                  itemMarginTop: 2,
+                  itemMarginBottom: 2,
+                  itemWidth: 100, // adjust width for better fit
+                },
+              },
+            },
+          ],
         },
         plotOptions: {
           line: { marker: { enabled: false } },
