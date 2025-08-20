@@ -200,6 +200,22 @@ const AC5_QUARTERLY_PNL = {
     total: 9538524.5 + (76149895.76 + 6215140.1),
   },
 };
+const AC8_QUARTERLY_PNL = {
+  "2024": {
+    Q1: 0,
+    Q2: -266592.46,
+    Q3: 785096.50,
+    Q4: 444459.79,
+    total: 962963.83,
+  },
+  "2025": {
+    Q1: -6141212.18,
+    Q2: 7131527.27,
+    Q3: -2290478.24,
+    Q4: 0,
+    total: -1300163.15,
+  },
+};
 const PMS_QAW_Q2_2025_VALUE = 10336722.03;
 
 export class PortfolioApi {
@@ -222,7 +238,6 @@ export class PortfolioApi {
     });
     return Number(profitSum._sum.pnl) || 0;
   }
-
   private static getHardcoded(qcode: string) {
     if (qcode === "QAC00041") return this.SARLA_HARDCODED_DATA;
     if (qcode === "QAC00046") return this.SATIDHAM_HARDCODED_DATA;
@@ -882,12 +897,12 @@ export class PortfolioApi {
             totalCapitalInOut: 0.00,
           },
         },
-         cashFlows: [
-      { date: "2025-02-19", amount: 53299301.70, dividend: 0.00 },
-      { date: "2025-02-21", amount: 24308966.42, dividend: 0.00 },
-      { date: "2025-05-06", amount: -50000000.00, dividend: 0.00 },
-      { date: "2025-05-07", amount: -34777283.42, dividend: 0.00 },
-    ],
+        cashFlows: [
+          { date: "2025-02-19", amount: 53299301.70, dividend: 0.00 },
+          { date: "2025-02-21", amount: 24308966.42, dividend: 0.00 },
+          { date: "2025-05-06", amount: -50000000.00, dividend: 0.00 },
+          { date: "2025-05-07", amount: -34777283.42, dividend: 0.00 },
+        ],
         strategyName: "Scheme QAW",
       },
       metadata: {
@@ -987,7 +1002,7 @@ export class PortfolioApi {
           { date: "2025-02-14", amount: -10000000.00, dividend: 0.00 },
           { date: "2025-05-29", amount: -50000000.00, dividend: 0.00 },
           { date: "2025-05-30", amount: -44080573.00, dividend: 0.00 },
-          { date: "2025-05-30", amount: 30157181.60, dividend: 0.00 },
+          { date: "2025-05-30", amount: -30157181.60, dividend: 0.00 },
         ],
         strategyName: "Scheme A",
       },
@@ -1407,7 +1422,6 @@ export class PortfolioApi {
       return 0;
     }
   }
-  // 2) Replace the "Total Portfolio" branch inside getTotalProfit()
   private static async getTotalProfit(qcode: string, scheme: string): Promise<number> {
     // If not Total Portfolio, defer to single-scheme logic (and keep your earlier hardcoded path)
     if (scheme !== "Total Portfolio") {
@@ -1449,8 +1463,6 @@ export class PortfolioApi {
     console.log(`[TotalProfit] ${qcode} | TOTAL = ${total}`);
     return total;
   }
-
-
   private static async getHistoricalData(qcode: string, scheme: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]> {
 
 
@@ -1491,7 +1503,7 @@ export class PortfolioApi {
   private static async getCashFlows(qcode: string, scheme: string): Promise<CashFlow[]> {
     // Check for hardcoded cash flows
     const HC = this.getHardcoded(qcode);
-    if (HC?.[scheme]) {
+    if (HC?.[scheme] && scheme !== "Total Portfolio") {
       return HC[scheme].data.cashFlows.map(entry => ({
         date: PortfolioApi.normalizeDate(entry.date)!,
         amount: entry.amount,
@@ -1505,35 +1517,58 @@ export class PortfolioApi {
     }
 
     if (scheme === "Total Portfolio") {
-      const schemes = ["Scheme B", "Scheme PMS QAW"];
-      let cashFlows: CashFlow[] = [];
+      if (qcode === "QAC00046") {
+        // Satidham Total Portfolio: aggregate cash flows from Scheme A, Scheme B, Scheme A (Old), and Scheme PMS QAW
+        const satidhamSchemes = ["Scheme A", "Scheme B", "Scheme A (Old)", "Scheme PMS QAW"];
+        let cashFlows: CashFlow[] = [];
 
-      for (const s of schemes) {
-        const systemTag = s === "Scheme B" ? "Zerodha Total Portfolio" : PortfolioApi.getSystemTag(s);
-        if (s === "Scheme B") {
-          const schemeCashFlows = await prisma.master_sheet.findMany({
-            where: {
-              qcode,
-              system_tag: systemTag,
-              capital_in_out: { not: null, not: new Decimal(0) },
-            },
-            select: { date: true, capital_in_out: true },
-            orderBy: { date: "asc" },
-          });
-          cashFlows = cashFlows.concat(
-            schemeCashFlows.map(entry => ({
-              date: PortfolioApi.normalizeDate(entry.date)!,
-              amount: entry.capital_in_out!.toNumber(),
-              dividend: 0,
-            }))
-          );
+        // Use hardcoded data for Satidham schemes
+        for (const s of satidhamSchemes) {
+          if (HC?.[s]) {
+            cashFlows = cashFlows.concat(
+              HC[s].data.cashFlows.map(entry => ({
+                date: PortfolioApi.normalizeDate(entry.date)!,
+                amount: entry.amount,
+                dividend: entry.dividend || 0,
+              }))
+            );
+          }
         }
+
+        // Ensure cash flows are sorted by date
+        return cashFlows.sort((a, b) => a.date.localeCompare(b.date));
+      } else {
+        // Existing logic for other accounts (e.g., Sarla)
+        const schemes = ["Scheme B", "Scheme PMS QAW"];
+        let cashFlows: CashFlow[] = [];
+
+        for (const s of schemes) {
+          const systemTag = s === "Scheme B" ? "Zerodha Total Portfolio" : PortfolioApi.getSystemTag(s);
+          if (s === "Scheme B") {
+            const schemeCashFlows = await prisma.master_sheet.findMany({
+              where: {
+                qcode,
+                system_tag: systemTag,
+                capital_in_out: { not: null, not: new Decimal(0) },
+              },
+              select: { date: true, capital_in_out: true },
+              orderBy: { date: "asc" },
+            });
+            cashFlows = cashFlows.concat(
+              schemeCashFlows.map(entry => ({
+                date: PortfolioApi.normalizeDate(entry.date)!,
+                amount: entry.capital_in_out!.toNumber(),
+                dividend: 0,
+              }))
+            );
+          }
+        }
+
+        const pmsData = await this.getPMSData(qcode);
+        cashFlows = cashFlows.concat(pmsData.cashFlows);
+
+        return cashFlows.sort((a, b) => a.date.localeCompare(b.date));
       }
-
-      const pmsData = await this.getPMSData(qcode);
-      cashFlows = cashFlows.concat(pmsData.cashFlows);
-
-      return cashFlows.sort((a, b) => a.date.localeCompare(b.date));
     }
 
     const systemTag = scheme === "Scheme B" ? "Zerodha Total Portfolio" : PortfolioApi.getSystemTag(scheme);
@@ -2122,19 +2157,37 @@ export class PortfolioApi {
       };
 
       // 1) Seed AC5 hardcoded values up to Q2 2025
-      Object.entries(AC5_QUARTERLY_PNL).forEach(([year, quarters]) => {
-        combinedQuarterlyPnL[year] = {
-          percent: { q1: "-", q2: "-", q3: "-", q4: "-", total: "-" },
-          cash: {
-            q1: quarters.Q1 != null ? quarters.Q1.toFixed(2) : "-",
-            q2: quarters.Q2 != null ? quarters.Q2.toFixed(2) : "-",
-            q3: quarters.Q3 != null ? quarters.Q3.toFixed(2) : "-",
-            q4: quarters.Q4 != null ? quarters.Q4.toFixed(2) : "-",
-            total: quarters.total != null ? quarters.total.toFixed(2) : "-",
-          },
-          yearCash: quarters.total != null ? quarters.total.toFixed(2) : "-",
-        };
-      });
+      if (qcode === "QAC00046") {
+        // Seed Satidham hardcoded values up to Q3 2025
+        Object.entries(AC8_QUARTERLY_PNL).forEach(([year, quarters]) => {
+          combinedQuarterlyPnL[year] = {
+            percent: { q1: "-", q2: "-", q3: "-", q4: "-", total: "-" },
+            cash: {
+              q1: quarters.Q1 != null ? quarters.Q1.toFixed(2) : "-",
+              q2: quarters.Q2 != null ? quarters.Q2.toFixed(2) : "-",
+              q3: quarters.Q3 != null ? quarters.Q3.toFixed(2) : "-",
+              q4: quarters.Q4 != null ? quarters.Q4.toFixed(2) : "-",
+              total: quarters.total != null ? quarters.total.toFixed(2) : "-",
+            },
+            yearCash: quarters.total != null ? quarters.total.toFixed(2) : "-",
+          };
+        });
+      } else {
+        // Existing AC5 logic for other qcodes
+        Object.entries(AC5_QUARTERLY_PNL).forEach(([year, quarters]) => {
+          combinedQuarterlyPnL[year] = {
+            percent: { q1: "-", q2: "-", q3: "-", q4: "-", total: "-" },
+            cash: {
+              q1: quarters.Q1 != null ? quarters.Q1.toFixed(2) : "-",
+              q2: quarters.Q2 != null ? quarters.Q2.toFixed(2) : "-",
+              q3: quarters.Q3 != null ? quarters.Q3.toFixed(2) : "-",
+              q4: quarters.Q4 != null ? quarters.Q4.toFixed(2) : "-",
+              total: quarters.total != null ? quarters.total.toFixed(2) : "-",
+            },
+            yearCash: quarters.total != null ? quarters.total.toFixed(2) : "-",
+          };
+        });
+      }
 
       // 2) Ensure we cover all years present in PMS/Scheme B
       const allYears = new Set([
@@ -2182,27 +2235,28 @@ export class PortfolioApi {
     }
 
     // PMS-only (Scheme PMS QAW)
-    if (scheme === "Scheme PMS QAW") {
-      const pmsQuarterlyPnl = this.calculateQuarterlyPnLFromNavData(navData);
+    // PMS-only (Scheme PMS QAW)
+if (scheme === "Scheme PMS QAW") {
+  const pmsQuarterlyPnl = this.calculateQuarterlyPnLFromNavData(navData);
 
-      // Force Q2 2025 override if present
-      if (pmsQuarterlyPnl["2025"]) {
-        pmsQuarterlyPnl["2025"].cash.q2 = PMS_QAW_Q2_2025_VALUE.toFixed(2);
-      }
+  // Force Q2 2025 override only for Sarla (QAC00041)
+  if (qcode === "QAC00041" && pmsQuarterlyPnl["2025"]) {
+    pmsQuarterlyPnl["2025"].cash.q2 = PMS_QAW_Q2_2025_VALUE.toFixed(2);
+  }
 
-      // Recompute totals safely
-      Object.keys(pmsQuarterlyPnl).forEach((year) => {
-        let sum = 0;
-        (["q1", "q2", "q3", "q4"] as const).forEach((q) => {
-          sum += PortfolioApi.safeNum(pmsQuarterlyPnl[year].cash[q]);
-        });
-        const totalStr = sum.toFixed(2);
-        pmsQuarterlyPnl[year].cash.total = totalStr;
-        pmsQuarterlyPnl[year].yearCash = totalStr;
-      });
+  // Recompute totals safely
+  Object.keys(pmsQuarterlyPnl).forEach((year) => {
+    let sum = 0;
+    (["q1", "q2", "q3", "q4"] as const).forEach((q) => {
+      sum += PortfolioApi.safeNum(pmsQuarterlyPnl[year].cash[q]);
+    });
+    const totalStr = sum.toFixed(2);
+    pmsQuarterlyPnl[year].cash.total = totalStr;
+    pmsQuarterlyPnl[year].yearCash = totalStr;
+  });
 
-      return pmsQuarterlyPnl;
-    }
+  return pmsQuarterlyPnl;
+}
 
     // Default: compute from master_sheet for the specific scheme
     const systemTag = PortfolioApi.getSystemTag(scheme, qcode);

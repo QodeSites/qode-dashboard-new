@@ -237,11 +237,10 @@ export default function Portfolio() {
   const [metadata, setMetadata] = useState<Metadata | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
   const [sarlaData, setSarlaData] = useState<SarlaApiResponse | null>(null);
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
   const [availableStrategies, setAvailableStrategies] = useState<string[]>([]);
-
+const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percent");
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push("/");
@@ -622,16 +621,18 @@ export default function Portfolio() {
     );
   };
 
-  const CASH_PERCENT_STRATS = ["Scheme A", "Scheme C", "Scheme D", "Scheme E", "Scheme F", "Scheme QAW"];
-  const CASH_STRATS = "Total Portfolio";
+  const CASH_PERCENT_STRATS_SARLA = ["Scheme A", "Scheme C", "Scheme D", "Scheme E", "Scheme F", "Scheme QAW", "Scheme B (inactive)"];
+  const CASH_STRATS_SARLA = "Total Portfolio";
+  const CASH_PERCENT_STRATS_SATIDHAM = ["Scheme B", "Scheme A", "Scheme A (Old)"];
+  const CASH_STRATS_SATIDHAM = "Total Portfolio";
 
   const renderSarlaContent = () => {
-    if (!(isSarla || isSatidham) || !sarlaData || !selectedStrategy || !sarlaData[selectedStrategy]) {
+    if (!isSarla || !sarlaData || !selectedStrategy || !sarlaData[selectedStrategy]) {
       return null;
     }
 
-    const isCashOnlyView = selectedStrategy === CASH_STRATS;
-    const isCashPercentView = CASH_PERCENT_STRATS.includes(selectedStrategy);
+    const isCashOnlyView = selectedStrategy === CASH_STRATS_SARLA;
+    const isCashPercentView = CASH_PERCENT_STRATS_SARLA.includes(selectedStrategy);
 
     const strategyData = sarlaData[selectedStrategy];
     const convertedStats = isPmsStats(strategyData.data) ? convertPmsStatsToStats(strategyData.data) : strategyData.data;
@@ -653,12 +654,14 @@ export default function Portfolio() {
           {selectedStrategy} {!isActive ? "(Inactive)" : ""}
         </Button>
         <StatsCards
-          stats={convertedStats}
-          accountType={isSarla ? "sarla" : "satidham"}
-          broker={isSarla ? "Sarla" : "Satidham"}
-          isTotalPortfolio={isTotalPortfolio}
-          isActive={isActive}
-        />
+  stats={convertedStats}
+  accountType="sarla"
+  broker="Sarla"
+  isTotalPortfolio={isTotalPortfolio}
+  isActive={isActive}
+  returnViewType={returnViewType}
+  setReturnViewType={setReturnViewType}
+/>
         {!isTotalPortfolio && (
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
             <div className="flex-1 min-w-0 sm:w-5/6">
@@ -679,7 +682,72 @@ export default function Portfolio() {
           showPmsQawView={isCashPercentView}
         />
         {renderCashFlowsTable()}
-        {(isSarla || isSatidham) && !isActive && (
+        {isSarla && !isActive && (
+          <div className="text-sm text-yellow-600 dark:text-yellow-400">
+            <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderSatidhamContent = () => {
+    if (!isSatidham || !sarlaData || !selectedStrategy || !sarlaData[selectedStrategy]) {
+      return null;
+    }
+
+    const isCashOnlyView = selectedStrategy === CASH_STRATS_SATIDHAM;
+    const isCashPercentView = CASH_PERCENT_STRATS_SATIDHAM.includes(selectedStrategy);
+
+    const strategyData = sarlaData[selectedStrategy];
+    const convertedStats = isPmsStats(strategyData.data) ? convertPmsStatsToStats(strategyData.data) : strategyData.data;
+    const filteredEquityCurve = filterEquityCurve(
+      strategyData.data.equityCurve,
+      strategyData.metadata?.filtersApplied?.startDate,
+      strategyData.metadata?.lastUpdated
+    );
+    const lastDate = getLastDate(filteredEquityCurve, strategyData.metadata?.lastUpdated);
+    const isTotalPortfolio = selectedStrategy === "Total Portfolio";
+    const isActive = strategyData.metadata.isActive;
+
+    return (
+      <div className="space-y-6">
+        <Button
+          variant="outline"
+          className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
+        >
+          {selectedStrategy} {!isActive ? "(Inactive)" : ""}
+        </Button>
+        <StatsCards
+  stats={convertedStats}
+  accountType="sarla"
+  broker="Sarla"
+  isTotalPortfolio={isTotalPortfolio}
+  isActive={isActive}
+  returnViewType={returnViewType}
+  setReturnViewType={setReturnViewType}
+/>
+        {!isTotalPortfolio && (
+          <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
+            <div className="flex-1 min-w-0 sm:w-5/6">
+              <RevenueChart
+                equityCurve={filteredEquityCurve}
+                drawdownCurve={strategyData.data.drawdownCurve}
+                trailingReturns={convertedStats.trailingReturns}
+                drawdown={convertedStats.drawdown}
+                lastDate={lastDate}
+              />
+            </div>
+          </div>
+        )}
+        <PnlTable
+          quarterlyPnl={convertedStats.quarterlyPnl}
+          monthlyPnl={convertedStats.monthlyPnl}
+          showOnlyQuarterlyCash={isCashOnlyView}
+          showPmsQawView={isCashPercentView}
+        />
+        {renderCashFlowsTable()}
+        {isSatidham && !isActive && (
           <div className="text-sm text-yellow-600 dark:text-yellow-400">
             <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
           </div>
@@ -781,7 +849,7 @@ export default function Portfolio() {
       {renderSarlaStrategyTabs()}
 
       {(isSarla || isSatidham) ? (
-        renderSarlaContent()
+        isSarla ? renderSarlaContent() : renderSatidhamContent()
       ) : (
         stats && (
           <div className="space-y-6">
@@ -808,11 +876,14 @@ export default function Portfolio() {
                       </CardHeader>
                       <CardContent>
                         <StatsCards
-                          stats={convertedStats}
-                          accountType={item.metadata.account_type}
-                          broker={item.metadata.broker}
-                          isActive={item.metadata.isActive}
-                        />
+  stats={convertedStats}
+  accountType="sarla"
+  broker="Sarla"
+  isTotalPortfolio={isTotalPortfolio}
+  isActive={isActive}
+  returnViewType={returnViewType}
+  setReturnViewType={setReturnViewType}
+/>
                         <RevenueChart
                           equityCurve={filteredEquityCurve}
                           drawdownCurve={item.stats.drawdownCurve}
@@ -851,6 +922,8 @@ export default function Portfolio() {
                         accountType={accounts.find((acc) => acc.qcode === selectedAccount)?.account_type || "unknown"}
                         broker={accounts.find((acc) => acc.qcode === selectedAccount)?.broker || "Unknown"}
                         isActive={metadata?.isActive ?? true}
+                        returnViewType={returnViewType}
+                        setReturnViewType={setReturnViewType}
                       />
                       <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
                         <div className="flex-1 min-w-0 sm:w-5/6">
