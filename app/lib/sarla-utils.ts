@@ -550,7 +550,7 @@ export class PortfolioApi {
         quarterlyPnl: {
           "2024": {
             percent: { q1: "-", q2: "-", q3: "3.79", q4: "4.29", total: "8.07" },
-            cash: { q1: "0.00", q2: "0.00", q3: "1820621.13", q4: "2214539.53", total: "4052160.65" },
+            cash: { q1: "0.00", q2: "0.00", q3: "1820621.13", q4: "2231539.52", total: "4052160.65" },
             yearCash: "4035160.65",
           },
         },
@@ -2497,7 +2497,7 @@ if (scheme === "Scheme PMS QAW") {
             startDate: null,
             endDate: null,
           },
-          inceptionDate: historicalData.length > 0 ? PortfolioApi.normalizeDate(historicalData[0].date)! : "2024-01-01",
+          inceptionDate: historicalData.length > 0 ? PortfolioApi.normalizeDate(historicalData[0].date)! : "2022-09-14",
           dataAsOfDate: latestExposure?.date.toISOString().split("T")[0] || "2025-07-18",
           strategyName: scheme,
           isActive: portfolioNames.isActive,
