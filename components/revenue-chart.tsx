@@ -444,9 +444,9 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
 
             let tooltipText = `<b style="font-family: 'Plus Jakarta Sans';">${Highcharts.dateFormat("%d-%m-%Y", hoveredX)}</b><br/><br/>`;
             tooltipText += `<span style="font-weight: bold; font-size: 12px; font-family: 'Plus Jakarta Sans';">Performance:</span><br/>`;
-            tooltipText += `<span style="color:#2E8B57; font-family: 'Plus Jakarta Sans';">\u25CF</span> Portfolio: ${portfolioPoint && !isNaN(portfolioPoint.y) ? portfolioPoint.y.toFixed(2) + "%" : "N/A"
+            tooltipText += `<span style="color:#2E8B57; font-family: 'Plus Jakarta Sans';">\u25CF</span> Portfolio: ${portfolioPoint && !isNaN(portfolioPoint.y) ? portfolioPoint.y.toFixed(2) + "" : "N/A"
               }<br/>`;
-            tooltipText += `<span style="color:#4169E1; font-family: 'Plus Jakarta Sans';">\u25CF</span> Benchmark: ${benchmarkPoint && !isNaN(benchmarkPoint.y) ? benchmarkPoint.y.toFixed(2) + "%" : "N/A"
+            tooltipText += `<span style="color:#4169E1; font-family: 'Plus Jakarta Sans';">\u25CF</span> Benchmark: ${benchmarkPoint && !isNaN(benchmarkPoint.y) ? benchmarkPoint.y.toFixed(2) + "" : "N/A"
               }<br/>`;
             tooltipText += `<br/><span style="font-weight: bold; font-size: 12px; font-family: 'Plus Jakarta Sans';">Drawdown:</span><br/>`;
             tooltipText += `<span style="color:#FF4560; font-family: 'Plus Jakarta Sans';">\u25CF</span> Portfolio: ${portfolioDrawdownPoint && !isNaN(portfolioDrawdownPoint.y)

@@ -83,17 +83,51 @@ class JainamManagedStrategy implements DataFetchingStrategy {
   }
 
   async getPortfolioReturns(qcode: string): Promise<number> {
-    try {
-      const portfolioReturn = await prisma.master_sheet.aggregate({
-        where: { qcode, system_tag: "Jainam Total Portfolio Exposure", daily_p_l: { not: null } },
-        _sum: { daily_p_l: true },
-      });
-      return Number(portfolioReturn._sum.daily_p_l) || 0;
-    } catch (error) {
-      console.error(`Error calculating portfolio returns for qcode ${qcode}:`, error);
+  try {
+    // Fetch the earliest NAV
+    const firstNavRecord = await prisma.master_sheet.findFirst({
+      where: { qcode, system_tag: "Jainam Total Portfolio Exposure", nav: { not: null } },
+      orderBy: { date: "asc" },
+      select: { nav: true, date: true },
+    });
+
+    // Fetch the latest NAV
+    const latestNavRecord = await prisma.master_sheet.findFirst({
+      where: { qcode, system_tag: "Jainam Total Portfolio Exposure", nav: { not: null } },
+      orderBy: { date: "desc" },
+      select: { nav: true, date: true },
+    });
+
+    if (!firstNavRecord || !latestNavRecord) {
       return 0;
     }
+
+    const initialNav = Number(firstNavRecord.nav);
+    const finalNav = Number(latestNavRecord.nav);
+
+    if (initialNav <= 0 || finalNav <= 0) return 0;
+
+    const days = (latestNavRecord.date.getTime() - firstNavRecord.date.getTime()) / (1000 * 60 * 60 * 24);
+
+    let portfolioReturn = 0;
+
+    if (days < 365) {
+      // Absolute return
+      portfolioReturn = ((finalNav / initialNav) - 1) * 100;
+      console.log(`Jainam Return (ABS): final=${finalNav}, initial=${initialNav}, days=${days}, return=${portfolioReturn}`);
+    } else {
+      // CAGR
+      portfolioReturn = (Math.pow(finalNav / initialNav, 365 / days) - 1) * 100;
+      console.log(`Jainam Return (CAGR): final=${finalNav}, initial=${initialNav}, days=${days}, return=${portfolioReturn}`);
+    }
+
+    return portfolioReturn;
+  } catch (error) {
+    console.error(`Error calculating portfolio returns for qcode ${qcode}:`, error);
+    return 0;
   }
+}
+
 
   async getTotalProfit(qcode: string): Promise<number> {
     const profitSum = await prisma.master_sheet.aggregate({
