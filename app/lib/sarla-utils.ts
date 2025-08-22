@@ -2497,7 +2497,7 @@ if (scheme === "Scheme PMS QAW") {
             startDate: null,
             endDate: null,
           },
-          inceptionDate: scheme === "Scheme PMS QAW" ? "2024-01-01" : "2024-03-18",
+          inceptionDate: historicalData.length > 0 ? PortfolioApi.normalizeDate(historicalData[0].date)! : "2024-01-01",
           dataAsOfDate: latestExposure?.date.toISOString().split("T")[0] || "2025-07-18",
           strategyName: scheme,
           isActive: portfolioNames.isActive,
