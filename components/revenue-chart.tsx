@@ -340,7 +340,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
             top: "0%",
             labels: {
               formatter: function () {
-                return Math.round(this.value * 100) / 100 + "%";
+                return Math.round(this.value * 100) / 100 + "";
               },
               style: {
                 color: "#2E8B57",
