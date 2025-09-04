@@ -40,6 +40,7 @@ model accounts {
   pan                                                       String?
   remarks                                                   String?                      @default("NA")
   created_at                                                DateTime                     @default(now())
+  strategy                                                  String?
   account_access_account_access_source_account_idToaccounts account_access[]             @relation("account_access_source_account_idToaccounts")
   account_access_account_access_target_account_idToaccounts account_access[]             @relation("account_access_target_account_idToaccounts")
   account_custodian_codes                                   account_custodian_codes[]
@@ -117,30 +118,23 @@ model clients {
 }
 
 model equity_holding {
-  id              Int       @id @default(autoincrement())
-  qcode           String    @db.VarChar(20)
-  account         String    @db.VarChar(100)
-  mastersheet_tag String    @db.VarChar(50)
-  date            DateTime  @db.Date
-  trade_type      String    @db.Char(1)
-  symbol          String    @db.VarChar(150)
-  exchange        String    @db.VarChar(10)
-  quantity        Int
-  price           Decimal   @db.Decimal(15, 2)
-  broker          String    @db.VarChar(50)
-  debt_equity     String    @db.Char(6)
-  collateral      String    @db.Char(8)
-  sub_category    String    @db.VarChar(50)
-  exposure        Decimal?  @db.Decimal(15, 2)
-  status          String    @db.VarChar(10)
-  custom_fields   Json?     @db.Json
-  created_at      DateTime? @default(now()) @db.Timestamp(6)
-  updated_at      DateTime? @db.Timestamp(6)
-  updated_by      Int?
+  qcode             String?   @db.VarChar(50)
+  date              DateTime? @db.Date
+  symbol            String?   @db.VarChar(20)
+  mastersheet_tag   String?   @db.VarChar(100)
+  exchange          String?   @db.VarChar(50)
+  quantity          Int?
+  avg_price         Decimal?  @db.Decimal(10, 2)
+  broker            String?   @db.VarChar(100)
+  debt_equity       String?   @db.VarChar(20)
+  sub_category      String?   @db.VarChar(100)
+  ltp               Decimal?  @db.Decimal(10, 2)
+  buy_value         Decimal?  @db.Decimal(15, 2)
+  value_as_of_today Decimal?  @db.Decimal(15, 2)
+  pnl_amount        Decimal?  @db.Decimal(15, 2)
+  percent_pnl       Decimal?  @db.Decimal(5, 2)
+  id                BigInt    @id
 
-  @@index([date], map: "idx_equity_holding_date")
-  @@index([qcode], map: "idx_equity_holding_qcode")
-  @@index([symbol], map: "idx_equity_holding_symbol")
   @@schema("public")
 }
 
@@ -357,6 +351,27 @@ model pms_master_sheet {
   period_return_percent     Decimal?  @db.Decimal(10, 4)
   cumulative_return_percent Decimal?  @db.Decimal(10, 4)
   created_at                DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@schema("public")
+}
+
+model master_sheet_test {
+  id                   Int       @id @default(autoincrement())
+  qcode                String    @db.VarChar(20)
+  date                 DateTime  @db.Date
+  portfolio_value      Decimal?  @db.Decimal(20, 4)
+  capital_in_out       Decimal?  @db.Decimal(20, 4)
+  nav                  Decimal?  @db.Decimal(20, 4)
+  prev_nav             Decimal?  @db.Decimal(20, 4)
+  pnl                  Decimal?  @db.Decimal(20, 4)
+  daily_p_l            Decimal?  @db.Decimal(20, 4)
+  exposure_value       Decimal?  @db.Decimal(20, 4)
+  prev_portfolio_value Decimal?  @db.Decimal(20, 4)
+  prev_exposure_value  Decimal?  @db.Decimal(20, 4)
+  prev_pnl             Decimal?  @db.Decimal(20, 4)
+  drawdown             Decimal?  @db.Decimal(20, 4)
+  system_tag           String?   @db.VarChar(50)
+  created_at           DateTime? @default(now()) @db.Date
 
   @@schema("public")
 }

@@ -40,20 +40,20 @@ interface Stats {
     };
   };
   cashFlows: { date: string; amount: number }[];
-  strategyName: string; // Add this line
+  strategyName: string;
 }
 
 // Interface for data fetching strategy
 interface DataFetchingStrategy {
   getAmountDeposited(qcode: string): Promise<number>;
   getLatestExposure(qcode: string): Promise<{ portfolioValue: number; drawdown: number; nav: number; date: Date } | null>;
-  getPortfolioReturns(qcode: string): Promise<number>;
-  getTotalProfit(qcode: string): Promise<number>;
-  getHistoricalData(qcode: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]>;
-  getFirstNav(qcode: string): Promise<{ nav: number; date: Date } | null>;
-  getNavAtDate(qcode: string, targetDate: Date, direction: 'before' | 'after' | 'closest'): Promise<{ nav: number; date: Date } | null>;
+  getPortfolioReturns(qcode: string, strategy?: string): Promise<number>;
+  getTotalProfit(qcode: string, strategy?: string): Promise<number>;
+  getHistoricalData(qcode: string, strategy?: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]>;
+  getFirstNav(qcode: string, strategy?: string): Promise<{ nav: number; date: Date } | null>;
+  getNavAtDate(qcode: string, targetDate: Date, direction: 'before' | 'after' | 'closest', strategy?: string): Promise<{ nav: number; date: Date } | null>;
   getCashFlows?(qcode: string): Promise<{ date: Date; amount: number }[]>;
-  getStrategyName(): string; // Added method to return strategy name
+  getStrategyName(): string;
 }
 
 // Strategy for Managed Accounts (Jainam)
@@ -83,51 +83,46 @@ class JainamManagedStrategy implements DataFetchingStrategy {
   }
 
   async getPortfolioReturns(qcode: string): Promise<number> {
-  try {
-    // Fetch the earliest NAV
-    const firstNavRecord = await prisma.master_sheet.findFirst({
-      where: { qcode, system_tag: "Jainam Total Portfolio Exposure", nav: { not: null } },
-      orderBy: { date: "asc" },
-      select: { nav: true, date: true },
-    });
+    try {
+      const firstNavRecord = await prisma.master_sheet.findFirst({
+        where: { qcode, system_tag: "Jainam Total Portfolio Exposure", nav: { not: null } },
+        orderBy: { date: "asc" },
+        select: { nav: true, date: true },
+      });
 
-    // Fetch the latest NAV
-    const latestNavRecord = await prisma.master_sheet.findFirst({
-      where: { qcode, system_tag: "Jainam Total Portfolio Exposure", nav: { not: null } },
-      orderBy: { date: "desc" },
-      select: { nav: true, date: true },
-    });
+      const latestNavRecord = await prisma.master_sheet.findFirst({
+        where: { qcode, system_tag: "Jainam Total Portfolio Exposure", nav: { not: null } },
+        orderBy: { date: "desc" },
+        select: { nav: true, date: true },
+      });
 
-    if (!firstNavRecord || !latestNavRecord) {
+      if (!firstNavRecord || !latestNavRecord) {
+        return 0;
+      }
+
+      const initialNav = Number(firstNavRecord.nav);
+      const finalNav = Number(latestNavRecord.nav);
+
+      if (initialNav <= 0 || finalNav <= 0) return 0;
+
+      const days = (latestNavRecord.date.getTime() - firstNavRecord.date.getTime()) / (1000 * 60 * 60 * 24);
+
+      let portfolioReturn = 0;
+
+      if (days < 365) {
+        portfolioReturn = ((finalNav / initialNav) - 1) * 100;
+        console.log(`Jainam Return (ABS): final=${finalNav}, initial=${initialNav}, days=${days}, return=${portfolioReturn}`);
+      } else {
+        portfolioReturn = (Math.pow(finalNav / initialNav, 365 / days) - 1) * 100;
+        console.log(`Jainam Return (CAGR): final=${finalNav}, initial=${initialNav}, days=${days}, return=${portfolioReturn}`);
+      }
+
+      return portfolioReturn;
+    } catch (error) {
+      console.error(`Error calculating portfolio returns for qcode ${qcode}:`, error);
       return 0;
     }
-
-    const initialNav = Number(firstNavRecord.nav);
-    const finalNav = Number(latestNavRecord.nav);
-
-    if (initialNav <= 0 || finalNav <= 0) return 0;
-
-    const days = (latestNavRecord.date.getTime() - firstNavRecord.date.getTime()) / (1000 * 60 * 60 * 24);
-
-    let portfolioReturn = 0;
-
-    if (days < 365) {
-      // Absolute return
-      portfolioReturn = ((finalNav / initialNav) - 1) * 100;
-      console.log(`Jainam Return (ABS): final=${finalNav}, initial=${initialNav}, days=${days}, return=${portfolioReturn}`);
-    } else {
-      // CAGR
-      portfolioReturn = (Math.pow(finalNav / initialNav, 365 / days) - 1) * 100;
-      console.log(`Jainam Return (CAGR): final=${finalNav}, initial=${initialNav}, days=${days}, return=${portfolioReturn}`);
-    }
-
-    return portfolioReturn;
-  } catch (error) {
-    console.error(`Error calculating portfolio returns for qcode ${qcode}:`, error);
-    return 0;
   }
-}
-
 
   async getTotalProfit(qcode: string): Promise<number> {
     const profitSum = await prisma.master_sheet.aggregate({
@@ -142,10 +137,7 @@ class JainamManagedStrategy implements DataFetchingStrategy {
       where: {
         qcode,
         system_tag: "Jainam Total Portfolio Deposit",
-        capital_in_out: {
-          not: null,
-          not: new Decimal(0),
-        },
+        capital_in_out: { not: null, not: new Decimal(0) },
       },
       select: { date: true, capital_in_out: true },
       orderBy: { date: "asc" },
@@ -215,7 +207,21 @@ class JainamManagedStrategy implements DataFetchingStrategy {
   }
 }
 
+// Strategy for Managed Accounts (Zerodha)
 class ZerodhaManagedStrategy implements DataFetchingStrategy {
+  // Map strategy to system_tag for Returns and NAV
+  private getSystemTag(strategy?: string): string {
+    const strategyMap: { [key: string]: string } = {
+      'QAW+': 'Total Portfolio Value',
+      'QAW++': 'Total Portfolio Value',
+      'QTF+': 'Zerodha Total Portfolio',
+      'QTF++': 'Zerodha Total Portfolio',
+      'QYE+': 'Total Portfolio Value',
+      'QYE++': 'Total Portfolio Value',
+    };
+    return strategy && strategyMap[strategy] ? strategyMap[strategy] : 'Zerodha Total Portfolio';
+  }
+
   async getAmountDeposited(qcode: string): Promise<number> {
     const depositSum = await prisma.master_sheet.aggregate({
       where: { qcode, system_tag: "Zerodha Total Portfolio", capital_in_out: { not: null } },
@@ -239,37 +245,23 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
     };
   }
 
-  async getPortfolioReturns(qcode: string): Promise<number> {
+  async getPortfolioReturns(qcode: string, strategy?: string): Promise<number> {
     try {
-      // Fetch the earliest NAV
+      const systemTag = this.getSystemTag(strategy);
       const firstNavRecord = await prisma.master_sheet.findFirst({
-        where: {
-          qcode,
-          system_tag: "Total Portfolio Value",
-          nav: { not: null },
-        },
+        where: { qcode, system_tag: systemTag, nav: { not: null } },
         orderBy: { date: "asc" },
         select: { nav: true, date: true },
       });
 
-      // Fetch the latest NAV
       const latestNavRecord = await prisma.master_sheet.findFirst({
-        where: {
-          qcode,
-          system_tag: "Total Portfolio Value",
-          nav: { not: null },
-        },
+        where: { qcode, system_tag: systemTag, nav: { not: null } },
         orderBy: { date: "desc" },
         select: { nav: true, date: true },
       });
 
-      // Fetch total capital inflows/outflows between the earliest and latest dates
       const capitalFlows = await prisma.master_sheet.aggregate({
-        where: {
-          qcode,
-          system_tag: "Total Portfolio Value",
-          capital_in_out: { not: null },
-        },
+        where: { qcode, system_tag: systemTag, capital_in_out: { not: null } },
         _sum: { capital_in_out: true },
       });
 
@@ -281,34 +273,33 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
       const finalNav = Number(latestNavRecord.nav) || 0;
       const totalCapitalInOut = Number(capitalFlows._sum.capital_in_out) || 0;
 
-      // Normalize initial NAV to 100 if it's not already 100
       const initialNav = originalInitialNav !== 100 ? 100 : originalInitialNav;
 
-      console.log('finalNav', finalNav);
-      console.log('initialNav', initialNav);
+      console.log(`Zerodha Return: systemTag=${systemTag}, finalNav=${finalNav}, initialNav=${initialNav}`);
 
-      // Calculate return: (Final NAV / Initial NAV - 1) * 100
       const portfolioReturn = initialNav !== 0 ? ((finalNav / initialNav) - 1) * 100 : 0;
-      console.log('portfolioReturn',portfolioReturn)
+      console.log(`portfolioReturn=${portfolioReturn}`);
 
       return portfolioReturn;
     } catch (error) {
-      console.error(`Error calculating portfolio returns for qcode ${qcode}:`, error);
+      console.error(`Error calculating portfolio returns for qcode ${qcode}, strategy ${strategy}:`, error);
       return 0;
     }
   }
 
-  async getTotalProfit(qcode: string): Promise<number> {
+  async getTotalProfit(qcode: string, strategy?: string): Promise<number> {
+    const systemTag = this.getSystemTag(strategy);
     const profitSum = await prisma.master_sheet.aggregate({
-      where: { qcode, system_tag: "Total Portfolio Value" },
+      where: { qcode, system_tag: systemTag },
       _sum: { pnl: true },
     });
     return Number(profitSum._sum.pnl) || 0;
   }
 
-  async getHistoricalData(qcode: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]> {
+  async getHistoricalData(qcode: string, strategy?: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]> {
+    const systemTag = this.getSystemTag(strategy);
     const data = await prisma.master_sheet.findMany({
-      where: { qcode, system_tag: "Total Portfolio Value", nav: { not: null }, drawdown: { not: null } },
+      where: { qcode, system_tag: systemTag, nav: { not: null }, drawdown: { not: null } },
       select: { date: true, nav: true, drawdown: true, pnl: true, capital_in_out: true },
       orderBy: { date: "asc" },
     });
@@ -326,10 +317,7 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
       where: {
         qcode,
         system_tag: "Zerodha Total Portfolio",
-        capital_in_out: {
-          not: null,
-          not: new Decimal(0),
-        },
+        capital_in_out: { not: null, not: new Decimal(0) },
       },
       select: { date: true, capital_in_out: true },
       orderBy: { date: "asc" },
@@ -341,9 +329,10 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
     }));
   }
 
-  async getFirstNav(qcode: string): Promise<{ nav: number; date: Date } | null> {
+  async getFirstNav(qcode: string, strategy?: string): Promise<{ nav: number; date: Date } | null> {
+    const systemTag = this.getSystemTag(strategy);
     const record = await prisma.master_sheet.findFirst({
-      where: { qcode, system_tag: "Total Portfolio Value", nav: { not: null } },
+      where: { qcode, system_tag: systemTag, nav: { not: null } },
       orderBy: { date: "asc" },
       select: { nav: true, date: true },
     });
@@ -351,8 +340,9 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
     return { nav: Number(record.nav), date: record.date };
   }
 
-  async getNavAtDate(qcode: string, targetDate: Date, direction: 'before' | 'after' | 'closest'): Promise<{ nav: number; date: Date } | null> {
-    let whereClause: any = { qcode, system_tag: "Total Portfolio Value", nav: { not: null } };
+  async getNavAtDate(qcode: string, targetDate: Date, direction: 'before' | 'after' | 'closest', strategy?: string): Promise<{ nav: number; date: Date } | null> {
+    const systemTag = this.getSystemTag(strategy);
+    let whereClause: any = { qcode, system_tag: systemTag, nav: { not: null } };
     let orderBy: any = { date: "desc" };
 
     if (direction === 'before') {
@@ -366,8 +356,8 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
     const result = await prisma.master_sheet.findFirst({ where: whereClause, orderBy, select: { nav: true, date: true } });
     if (!result) {
       if (direction === 'closest') {
-        const beforeResult = await this.getNavAtDate(qcode, targetDate, 'before');
-        const afterResult = await this.getNavAtDate(qcode, targetDate, 'after');
+        const beforeResult = await this.getNavAtDate(qcode, targetDate, 'before', strategy);
+        const afterResult = await this.getNavAtDate(qcode, targetDate, 'after', strategy);
         if (!beforeResult && !afterResult) return null;
         if (!beforeResult) return afterResult;
         if (!afterResult) return beforeResult;
@@ -519,7 +509,7 @@ class PmsStrategy implements DataFetchingStrategy {
   }
 }
 
-function getDataFetchingStrategy(account: { account_type: string; broker: string }): DataFetchingStrategy {
+function getDataFetchingStrategy(account: { account_type: string; broker: string; strategy?: string }): DataFetchingStrategy {
   if (account.account_type === 'pms') {
     return new PmsStrategy();
   } else if (account.account_type === 'managed_account' && account.broker === 'jainam') {
@@ -530,7 +520,7 @@ function getDataFetchingStrategy(account: { account_type: string; broker: string
   throw new Error(`Unsupported account type: ${account.account_type} or broker: ${account.broker}`);
 }
 
-export async function getUserQcodes(icode: string): Promise<{ qcode: string; account_type: string; broker: string }[]> {
+export async function getUserQcodes(icode: string): Promise<{ qcode: string; account_type: string; broker: string; strategy?: string }[]> {
   try {
     const accounts = await prisma.accounts.findMany({
       where: {
@@ -541,7 +531,7 @@ export async function getUserQcodes(icode: string): Promise<{ qcode: string; acc
         account_type: { not: undefined },
         broker: { not: undefined },
       },
-      select: { qcode: true, account_type: true, broker: true },
+      select: { qcode: true, account_type: true, broker: true, strategy: true },
       distinct: ['qcode'],
     });
     console.log(`getUserQcodes: icode=${icode}, result=${JSON.stringify(accounts)}`);
@@ -564,26 +554,22 @@ function getNavEntriesAgo(
 ): { date: string; value: number } | null {
   if (equityCurve.length === 0) return null;
 
-  // 1) Sort ascending
   const sorted = equityCurve
     .map(e => ({ date: new Date(e.date), value: e.value }))
     .sort((a, b) => a.date.getTime() - b.date.getTime());
 
-  // 2) Compute calendar target date
   const latest = sorted[sorted.length - 1].date;
   const target = new Date(latest);
   target.setDate(target.getDate() - daysBack);
 
   console.log(`DEBUG: target calendar date = ${target.toISOString().slice(0,10)}`);
 
-  // 3) Filter all entries <= target
   const candidates = sorted.filter(e => e.date.getTime() <= target.getTime());
   if (candidates.length === 0) {
     console.log(`DEBUG: no data on or before ${target.toISOString().slice(0,10)}`);
     return null;
   }
 
-  // 4) Pick the _last_ one (closest to target)
   const pick = candidates[candidates.length - 1];
   console.log(
     `DEBUG: picked ${pick.value.toFixed(4)} on ${pick.date.toISOString().slice(0,10)}`
@@ -593,14 +579,13 @@ function getNavEntriesAgo(
 }
 
 // Calculate portfolio metrics
-export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: string; account_type: string; broker: string }[]): Promise<Stats | null> {
+export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: string; account_type: string; broker: string; strategy?: string }[]): Promise<Stats | null> {
   try {
     if (!qcodesWithDetails.length) {
       console.log("No qcodes provided for portfolio metrics calculation");
       return null;
     }
 
-    // Initialize metrics
     let amountDeposited = 0;
     let currentExposure = 0;
     let totalReturn = 0;
@@ -610,12 +595,10 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
     let accountMaxDrawdowns: { [qcode: string]: number } = {};
     let accountCurrentDrawdowns: { [qcode: string]: number } = {};
 
-    // For weighted returns calculation (used only for MDD and currentDD)
     const portfolioValues: { [qcode: string]: number } = {};
     const navCurveMap = new Map<string, { totalNav: number; count: number }>();
     const drawdownCurveMap = new Map<string, { total: number; count: number }>();
 
-    // Structure for quarterly/monthly PnL tracking
     const monthlyPnl: {
       [yearMonth: string]: {
         startNav: number;
@@ -632,17 +615,16 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
 
     const periodLabels = ["fiveDays", "tenDays", "fifteenDays", "oneMonth", "threeMonths", "sixMonths", "oneYear", "twoYears", "fiveYears", "sinceInception", "MDD", "currentDD"];
 
-    // Process each qcode
-    for (const { qcode, account_type, broker } of qcodesWithDetails) {
-      console.log(`Processing qcode: ${qcode}, type: ${account_type}, broker: ${broker}, strategy: ${getDataFetchingStrategy({ account_type, broker }).getStrategyName()}`);
-      const strategy = getDataFetchingStrategy({ account_type, broker });
+    for (const { qcode, account_type, broker, strategy } of qcodesWithDetails) {
+      console.log(`Processing qcode: ${qcode}, type: ${account_type}, broker: ${broker}, strategy: ${strategy || 'none'}`);
+      const dataStrategy = getDataFetchingStrategy({ account_type, broker, strategy });
 
       // 1. Amount Deposited
-      const accountDeposited = await strategy.getAmountDeposited(qcode);
+      const accountDeposited = await dataStrategy.getAmountDeposited(qcode);
       amountDeposited += accountDeposited;
 
       // 2. Current Exposure and Drawdown
-      const latestExposure = await strategy.getLatestExposure(qcode);
+      const latestExposure = await dataStrategy.getLatestExposure(qcode);
       if (latestExposure) {
         currentExposure += latestExposure.portfolioValue;
         portfolioValues[qcode] = latestExposure.portfolioValue;
@@ -650,14 +632,14 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
       }
 
       // 3. Portfolio Returns
-      totalReturn = await strategy.getPortfolioReturns(qcode);
+      totalReturn = await dataStrategy.getPortfolioReturns(qcode, strategy);
 
       // 4. Total Profit
-      totalProfit += await strategy.getTotalProfit(qcode);
+      totalProfit += await dataStrategy.getTotalProfit(qcode, strategy);
 
       // 5. Cash Flows
-      if (strategy.getCashFlows) {
-        const flows = await strategy.getCashFlows(qcode);
+      if (dataStrategy.getCashFlows) {
+        const flows = await dataStrategy.getCashFlows(qcode);
         flows.forEach(f =>
           allCashFlows.push({
             date: f.date.toISOString().split("T")[0],
@@ -667,7 +649,7 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
       }
 
       // 6. Historical Data for NAV and Drawdown Curves
-      const historicalData = await strategy.getHistoricalData(qcode);
+      const historicalData = await dataStrategy.getHistoricalData(qcode, strategy);
       historicalData.sort((a, b) => a.date.getTime() - b.date.getTime());
 
       if (historicalData.length === 0) {
@@ -675,7 +657,6 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
         continue;
       }
 
-      // Calculate MDD for the account
       let maxDrawdownForAccount = 0;
       let peakNav = 0;
       for (const entry of historicalData) {
@@ -686,13 +667,11 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
       accountMaxDrawdowns[qcode] = maxDrawdownForAccount;
       maxDrawdown = Math.max(maxDrawdown, maxDrawdownForAccount);
 
-      // Current drawdown calculation
       const latestHistoricalData = historicalData[historicalData.length - 1];
       const currentNav = latestHistoricalData.nav;
       const currentDrawdown = peakNav > 0 ? ((peakNav - currentNav) / peakNav) * 100 : 0;
       accountCurrentDrawdowns[qcode] = currentDrawdown;
 
-      // NAV and Drawdown Curves
       for (const entry of historicalData) {
         const dateKey = entry.date.toISOString().split("T")[0];
         navCurveMap.set(dateKey, {
@@ -712,7 +691,6 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
         }
       }
 
-      // Monthly PnL calculation
       const monthlyData: { [yearMonth: string]: { entries: any[] } } = {};
       for (const entry of historicalData) {
         const year = entry.date.getUTCFullYear();
@@ -760,7 +738,6 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
       });
     }
 
-    // Calculate equityCurve after processing all qcodes
     let equityCurve = Array.from(navCurveMap.entries())
       .map(([date, { totalNav }]) => ({
         date,
@@ -791,7 +768,6 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
-    // Set monthlyPnl startNav and endNav using equityCurve
     Object.keys(monthlyPnl).forEach(yearMonth => {
       const [year, month] = yearMonth.split('-');
       const monthNum = parseInt(month) - 1;
@@ -800,7 +776,6 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
       const startDateStr = startDate.toISOString().split('T')[0];
       const endDateStr = endDate.toISOString().split('T')[0];
 
-      // Sort equity curve by date to ensure proper ordering
       const sortedEquityCurve = equityCurve.sort((a, b) => a.date.localeCompare(b.date));
 
       let startEntry = null;
@@ -842,7 +817,6 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
       );
     });
 
-    // Helper function to format monthly/quarterly returns
     const formatPnLReturn = (startNav: number, endNav: number): string => {
       if (!startNav || !endNav || startNav <= 0) {
         return "-";
@@ -851,7 +825,6 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
       return returnValue.toFixed(2);
     };
 
-    // Format monthly PnL
     const formattedMonthlyPnl = Object.keys(monthlyPnl)
       .sort((a, b) => a.localeCompare(b))
       .reduce((acc, yearMonth, index, yearMonths) => {
@@ -893,7 +866,6 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
         return acc;
       }, {} as Stats["monthlyPnl"]);
 
-    // Calculate yearly percentage totals by compounding monthly returns
     Object.keys(formattedMonthlyPnl).forEach(year => {
       const monthNames = Object.keys(formattedMonthlyPnl[year].months);
       const monthOrder = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -902,7 +874,7 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
 
       let compoundedReturn = 1;
       let hasValidData = false;
-      
+
       sortedMonths.forEach(month => {
         const monthPercentStr = formattedMonthlyPnl[year].months[month].percent;
         if (monthPercentStr !== "-") {
@@ -916,11 +888,11 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
         const yearReturn = ((compoundedReturn - 1) * 100).toFixed(2);
         formattedMonthlyPnl[year].totalPercent = Number(yearReturn);
       } else if (hasValidData && compoundedReturn === 1) {
-        formattedMonthlyPnl[year].totalPercent = 0; // Set to 0 for zero return
+        formattedMonthlyPnl[year].totalPercent = 0;
       } else {
-        formattedMonthlyPnl[year].totalPercent = "-" as any; // Handle case where no valid monthly data exists
+        formattedMonthlyPnl[year].totalPercent = "-" as any;
       }
-      
+
       formattedMonthlyPnl[year].totalCash = Number(formattedMonthlyPnl[year].totalCash.toFixed(2));
       formattedMonthlyPnl[year].totalCapitalInOut = Number(formattedMonthlyPnl[year].totalCapitalInOut.toFixed(2));
 
@@ -931,7 +903,6 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
       );
     });
 
-    // Format quarterly PnL
     const formattedQuarterlyPnl = Object.keys(formattedMonthlyPnl).reduce((acc, year) => {
       acc[year] = {
         percent: { q1: "-", q2: "-", q3: "-", q4: "-", total: "-" },
@@ -981,12 +952,12 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
             yearCompoundedReturn *= quarterCompoundedReturn;
             hasValidYearData = true;
           } else {
-            acc[year].percent[quarter] = "0.00"; // Set to "0.00" for zero return
+            acc[year].percent[quarter] = "0.00";
           }
         } else {
           acc[year].percent[quarter] = "-";
         }
-        
+
         acc[year].cash[quarter] = quarterCash.toFixed(2);
         yearTotalCash += quarterCash;
       });
@@ -994,18 +965,17 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
       if (hasValidYearData && yearCompoundedReturn !== 1) {
         acc[year].percent.total = ((yearCompoundedReturn - 1) * 100).toFixed(2);
       } else if (hasValidYearData && yearCompoundedReturn === 1) {
-        acc[year].percent.total = "0.00"; // Set to "0.00" for zero return
+        acc[year].percent.total = "0.00";
       } else {
         acc[year].percent.total = "-";
       }
-      
+
       acc[year].cash.total = yearTotalCash.toFixed(2);
       acc[year].yearCash = yearTotalCash.toFixed(2);
 
       return acc;
     }, {} as Stats["quarterlyPnl"]);
 
-    // Calculate trailing returns based on equityCurve
     const finalTrailingReturns: { [key: string]: number | null } = {};
     const periodDays = {
       fiveDays: 5,
@@ -1025,7 +995,7 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
         let weightedValue = 0;
         let totalWeight = 0;
         let hasData = false;
-        
+
         if (period === "MDD") {
           Object.keys(accountMaxDrawdowns).forEach(qcode => {
             const weight = portfolioValues[qcode] || 0;
@@ -1047,7 +1017,7 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
             }
           });
         }
-        
+
         if (hasData && totalWeight > 0) {
           finalTrailingReturns[period] = weightedValue / totalWeight;
         } else {
@@ -1059,7 +1029,7 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
           finalTrailingReturns[period] = null;
           return;
         }
-        
+
         const startNav = latestNavEntry.value;
         const startDate = new Date(latestNavEntry.date);
 
@@ -1103,7 +1073,6 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
     const strategy = getDataFetchingStrategy(qcodesWithDetails[0]);
     const strategyName = strategy.getStrategyName();
 
-    // Helper function to format trailing returns - show "-" for null, "0.00" for 0
     const formatTrailingReturn = (value: number | null): string => {
       if (value === null || value === undefined) {
         return "-";
@@ -1111,7 +1080,6 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
       return value.toFixed(2);
     };
 
-    // Format final stats
     const stats: Stats = {
       amountDeposited: amountDeposited.toFixed(2),
       currentExposure: currentExposure.toFixed(2),
@@ -1144,7 +1112,6 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
       ...stats,
       strategyName
     };
-
   } catch (error) {
     console.error("Error calculating portfolio metrics:", error);
     return null;
@@ -1177,6 +1144,6 @@ export function formatPortfolioStats(metrics: any): Stats {
     quarterlyPnl: metrics?.quarterlyPnl || {},
     monthlyPnl: metrics?.monthlyPnl || {},
     cashFlows: metrics?.cashFlows || (metrics?.cashInOut?.transactions || []),
-    strategyName: metrics?.strategyName || "Unknown Strategy", // Add this line
+    strategyName: metrics?.strategyName || "Unknown Strategy",
   };
 }
