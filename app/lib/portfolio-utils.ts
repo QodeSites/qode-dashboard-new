@@ -1,6 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { Decimal } from "@prisma/client/runtime/library";
-
+const strategyNameMap: { [key: string]: string } = {
+  'QAW+': 'Qode All Weather+',
+  'QAW++': 'Qode All Weather++',
+  'QTF+': 'Qode Tactical Fund+',
+  'QTF++': 'Qode Tactical Fund++',
+  'QYE+': 'Qode Yield Enhancer+',
+  'QYE++': 'Qode Yield Enhancer++',
+};
 // Interface for stats
 interface Stats {
   amountDeposited: string;
@@ -53,7 +60,7 @@ interface DataFetchingStrategy {
   getFirstNav(qcode: string, strategy?: string): Promise<{ nav: number; date: Date } | null>;
   getNavAtDate(qcode: string, targetDate: Date, direction: 'before' | 'after' | 'closest', strategy?: string): Promise<{ nav: number; date: Date } | null>;
   getCashFlows?(qcode: string): Promise<{ date: Date; amount: number }[]>;
-  getStrategyName(): string;
+  getStrategyName(strategy?: string): string; // Modified to accept strategy parameter
 }
 
 // Strategy for Managed Accounts (Jainam)
@@ -202,8 +209,9 @@ class JainamManagedStrategy implements DataFetchingStrategy {
     return { nav: Number(result.nav), date: result.date };
   }
 
-  getStrategyName(): string {
-    return "Qode Yield Enhancer (Jainam)";
+  getStrategyName(strategy?: string): string {
+    // Return the dynamic strategy name from database, or default fallback
+    return strategy || "Qode Yield Enhancer (Jainam)";
   }
 }
 
@@ -370,8 +378,8 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
     return { nav: Number(result.nav), date: result.date };
   }
 
-  getStrategyName(): string {
-    return "Qode Yield Enhancer";
+  getStrategyName(strategy?: string): string {
+    return strategy && strategyNameMap[strategy] ? strategyNameMap[strategy] : "Qode Yield Enhancer+";
   }
 }
 
@@ -504,8 +512,9 @@ class PmsStrategy implements DataFetchingStrategy {
     return { nav: Number(result.nav), date: result.report_date };
   }
 
-  getStrategyName(): string {
-    return "PMS Strategy";
+  getStrategyName(strategy?: string): string {
+    // Return the dynamic strategy name from database, or default fallback
+    return strategy || "PMS Strategy";
   }
 }
 
@@ -615,9 +624,18 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
 
     const periodLabels = ["fiveDays", "tenDays", "fifteenDays", "oneMonth", "threeMonths", "sixMonths", "oneYear", "twoYears", "fiveYears", "sinceInception", "MDD", "currentDD"];
 
+    // Collect all unique strategy names to determine the final strategy name
+    const strategyNames: string[] = [];
+
     for (const { qcode, account_type, broker, strategy } of qcodesWithDetails) {
       console.log(`Processing qcode: ${qcode}, type: ${account_type}, broker: ${broker}, strategy: ${strategy || 'none'}`);
       const dataStrategy = getDataFetchingStrategy({ account_type, broker, strategy });
+
+      // Collect strategy names for final determination
+      const strategyName = dataStrategy.getStrategyName(strategy);
+      if (!strategyNames.includes(strategyName)) {
+        strategyNames.push(strategyName);
+      }
 
       // 1. Amount Deposited
       const accountDeposited = await dataStrategy.getAmountDeposited(qcode);
@@ -1070,8 +1088,16 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
       }
     });
 
-    const strategy = getDataFetchingStrategy(qcodesWithDetails[0]);
-    const strategyName = strategy.getStrategyName();
+    // Determine the final strategy name
+    let finalStrategyName: string;
+    if (strategyNames.length === 1) {
+      finalStrategyName = strategyNames[0];
+    } else if (strategyNames.length > 1) {
+      // If multiple strategies, combine them or use a generic name
+      finalStrategyName = strategyNames.join(" + ");
+    } else {
+      finalStrategyName = "Portfolio Strategy";
+    }
 
     const formatTrailingReturn = (value: number | null): string => {
       if (value === null || value === undefined) {
@@ -1103,15 +1129,12 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
       equityCurve,
       drawdownCurve,
       quarterlyPnl: formattedQuarterlyPnl,
-      strategyName,
+      strategyName: finalStrategyName,
       monthlyPnl: formattedMonthlyPnl,
       cashFlows: allCashFlows.sort((a, b) => a.date.localeCompare(b.date)),
     };
 
-    return {
-      ...stats,
-      strategyName
-    };
+    return stats;
   } catch (error) {
     console.error("Error calculating portfolio metrics:", error);
     return null;
