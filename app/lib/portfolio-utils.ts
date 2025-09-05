@@ -220,8 +220,8 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
   // Map strategy to system_tag for Returns and NAV
   private getSystemTag(strategy?: string): string {
     const strategyMap: { [key: string]: string } = {
-      'QAW+': 'Total Portfolio Value',
-      'QAW++': 'Total Portfolio Value',
+      'QAW+': 'Zerodha Total Portfolio',
+      'QAW++': 'Zerodha Total Portfolio',
       'QTF+': 'Zerodha Total Portfolio',
       'QTF++': 'Zerodha Total Portfolio',
       'QYE+': 'Total Portfolio Value',
@@ -1010,38 +1010,24 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
 
     periodLabels.forEach(period => {
       if (period === "MDD" || period === "currentDD") {
-        let weightedValue = 0;
-        let totalWeight = 0;
-        let hasData = false;
-
-        if (period === "MDD") {
-          Object.keys(accountMaxDrawdowns).forEach(qcode => {
-            const weight = portfolioValues[qcode] || 0;
-            const drawdownValue = accountMaxDrawdowns[qcode];
-            if (drawdownValue !== undefined && drawdownValue !== null) {
-              weightedValue += drawdownValue * weight;
-              totalWeight += weight;
-              hasData = true;
-            }
-          });
-        } else if (period === "currentDD") {
-          Object.keys(accountCurrentDrawdowns).forEach(qcode => {
-            const weight = portfolioValues[qcode] || 0;
-            const drawdownValue = accountCurrentDrawdowns[qcode];
-            if (drawdownValue !== undefined && drawdownValue !== null) {
-              weightedValue += drawdownValue * weight;
-              totalWeight += weight;
-              hasData = true;
-            }
-          });
-        }
-
-        if (hasData && totalWeight > 0) {
-          finalTrailingReturns[period] = weightedValue / totalWeight;
-        } else {
-          finalTrailingReturns[period] = null;
-        }
-      } else {
+  if (equityCurve.length === 0) {
+    finalTrailingReturns[period] = null;
+  } else {
+    let peakNav = 0;
+    let maxDrawdown = 0;
+    for (const entry of equityCurve) {
+      peakNav = Math.max(peakNav, entry.value);
+      const drawdown = peakNav > 0 ? ((peakNav - entry.value) / peakNav) * 100 : 0;
+      maxDrawdown = Math.max(maxDrawdown, drawdown);
+    }
+    if (period === "MDD") {
+      finalTrailingReturns[period] = maxDrawdown;
+    } else if (period === "currentDD") {
+      const latestNav = equityCurve[equityCurve.length - 1].value;
+      finalTrailingReturns[period] = peakNav > 0 ? ((peakNav - latestNav) / peakNav) * 100 : 0;
+    }
+  }
+} else {
         const latestNavEntry = equityCurve[equityCurve.length - 1];
         if (!latestNavEntry) {
           finalTrailingReturns[period] = null;
