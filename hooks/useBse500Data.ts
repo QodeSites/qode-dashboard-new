@@ -31,10 +31,15 @@ export function useBse500Data(equityCurve: EquityCurvePoint[]): UseBse500DataRes
       try {
         const startDate = equityCurve[0].date;
         const endDate = equityCurve[equityCurve.length - 1].date;
+        const portfolioStartTime = new Date(startDate).getTime();
+
+        // Extend the start date backwards by 30 days to get potential backfill data
+        const extendedStartDate = new Date(portfolioStartTime - (30 * 24 * 60 * 60 * 1000))
+          .toISOString().split('T')[0];
 
         const queryParams = new URLSearchParams({
           indices: "NIFTY 50",
-          start_date: startDate,
+          start_date: extendedStartDate,
           end_date: endDate,
         });
 
@@ -55,13 +60,48 @@ export function useBse500Data(equityCurve: EquityCurvePoint[]): UseBse500DataRes
           processedData = result;
         }
 
-        const filteredBse500Data = processedData.filter(
+        // Sort data by date to ensure chronological order
+        processedData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+        // Find benchmark data that falls within the portfolio date range
+        const benchmarkInRange = processedData.filter(
           (d) =>
-            new Date(d.date) >= new Date(startDate) &&
-            new Date(d.date) <= new Date(endDate)
+            new Date(d.date).getTime() >= portfolioStartTime &&
+            new Date(d.date).getTime() <= new Date(endDate).getTime()
         );
 
-        setBse500Data(filteredBse500Data);
+        // Check if we have benchmark data for the portfolio start date
+        const hasDataForStartDate = benchmarkInRange.some(
+          (d) => new Date(d.date).getTime() === portfolioStartTime
+        );
+
+        let finalBenchmarkData = [...benchmarkInRange];
+
+        // If no benchmark data exists for portfolio start date, backfill with most recent data
+        if (!hasDataForStartDate && benchmarkInRange.length > 0) {
+          // Find the most recent benchmark data point before portfolio start date
+          const priorData = processedData.filter(
+            (d) => new Date(d.date).getTime() < portfolioStartTime
+          );
+
+          if (priorData.length > 0) {
+            // Get the most recent data point before portfolio start
+            const mostRecentPriorData = priorData[priorData.length - 1];
+            
+            // Create a backfilled data point for portfolio start date
+            const backfilledDataPoint: Bse500DataPoint = {
+              date: startDate,
+              nav: mostRecentPriorData.nav
+            };
+
+            // Add the backfilled point at the beginning
+            finalBenchmarkData = [backfilledDataPoint, ...benchmarkInRange];
+            
+            console.log(`Backfilled benchmark data for ${startDate} with NAV ${mostRecentPriorData.nav} from ${mostRecentPriorData.date}`);
+          }
+        }
+
+        setBse500Data(finalBenchmarkData);
       } catch (err) {
         console.error("Error fetching BSE500 data:", err);
         setError(err instanceof Error ? err.message : "An unexpected error occurred");
