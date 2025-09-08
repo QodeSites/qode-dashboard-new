@@ -675,6 +675,20 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
         continue;
       }
 
+      // Prepend NAV of 100 if the first NAV is not 100
+      if (historicalData[0].nav !== 100) {
+        const firstDate = new Date(historicalData[0].date);
+        const prevDate = new Date(firstDate);
+        prevDate.setUTCDate(firstDate.getUTCDate() - 1);
+        historicalData.unshift({
+          date: prevDate,
+          nav: 100,
+          drawdown: 0,
+          pnl: 0,
+          capitalInOut: 0,
+        });
+      }
+
       let maxDrawdownForAccount = 0;
       let peakNav = 0;
       for (const entry of historicalData) {
@@ -757,17 +771,18 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
     }
 
     let equityCurve = Array.from(navCurveMap.entries())
-      .map(([date, { totalNav }]) => ({
+      .map(([date, { totalNav, count }]) => ({
         date,
-        value: totalNav,
+        value: count > 0 ? totalNav / count : totalNav,
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
+    // Ensure equity curve starts with NAV of 100 if the first NAV is not 100
     if (equityCurve.length > 0 && equityCurve[0].value !== 100) {
       const firstDate = new Date(equityCurve[0].date);
-      const prev = new Date(firstDate);
-      prev.setUTCDate(firstDate.getUTCDate() - 1);
-      const prevDateStr = prev.toISOString().split("T")[0];
+      const prevDate = new Date(firstDate);
+      prevDate.setUTCDate(firstDate.getUTCDate() - 1);
+      const prevDateStr = prevDate.toISOString().split("T")[0];
       equityCurve.unshift({ date: prevDateStr, value: 100 });
     }
 
@@ -1010,24 +1025,24 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
 
     periodLabels.forEach(period => {
       if (period === "MDD" || period === "currentDD") {
-  if (equityCurve.length === 0) {
-    finalTrailingReturns[period] = null;
-  } else {
-    let peakNav = 0;
-    let maxDrawdown = 0;
-    for (const entry of equityCurve) {
-      peakNav = Math.max(peakNav, entry.value);
-      const drawdown = peakNav > 0 ? ((peakNav - entry.value) / peakNav) * 100 : 0;
-      maxDrawdown = Math.max(maxDrawdown, drawdown);
-    }
-    if (period === "MDD") {
-      finalTrailingReturns[period] = maxDrawdown;
-    } else if (period === "currentDD") {
-      const latestNav = equityCurve[equityCurve.length - 1].value;
-      finalTrailingReturns[period] = peakNav > 0 ? ((peakNav - latestNav) / peakNav) * 100 : 0;
-    }
-  }
-} else {
+        if (equityCurve.length === 0) {
+          finalTrailingReturns[period] = null;
+        } else {
+          let peakNav = 0;
+          let maxDrawdown = 0;
+          for (const entry of equityCurve) {
+            peakNav = Math.max(peakNav, entry.value);
+            const drawdown = peakNav > 0 ? ((peakNav - entry.value) / peakNav) * 100 : 0;
+            maxDrawdown = Math.max(maxDrawdown, drawdown);
+          }
+          if (period === "MDD") {
+            finalTrailingReturns[period] = maxDrawdown;
+          } else if (period === "currentDD") {
+            const latestNav = equityCurve[equityCurve.length - 1].value;
+            finalTrailingReturns[period] = peakNav > 0 ? ((peakNav - latestNav) / peakNav) * 100 : 0;
+          }
+        }
+      } else {
         const latestNavEntry = equityCurve[equityCurve.length - 1];
         if (!latestNavEntry) {
           finalTrailingReturns[period] = null;
@@ -1079,7 +1094,6 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
     if (strategyNames.length === 1) {
       finalStrategyName = strategyNames[0];
     } else if (strategyNames.length > 1) {
-      // If multiple strategies, combine them or use a generic name
       finalStrategyName = strategyNames.join(" + ");
     } else {
       finalStrategyName = "Portfolio Strategy";
