@@ -133,7 +133,7 @@ model equity_holding {
   value_as_of_today Decimal?  @db.Decimal(15, 2)
   pnl_amount        Decimal?  @db.Decimal(15, 2)
   percent_pnl       Decimal?  @db.Decimal(5, 2)
-  id                BigInt    @id
+  id                BigInt    @id @default(autoincrement())
 
   @@schema("public")
 }
@@ -373,5 +373,46 @@ model master_sheet_test {
   system_tag           String?   @db.VarChar(50)
   created_at           DateTime? @default(now()) @db.Date
 
+  @@schema("public")
+}
+
+model pms_clients_master {
+  id                  Int       @id @default(autoincrement())
+  clientid            String?   @db.VarChar(50)
+  clientname          String?   @db.VarChar(100)
+  clientcode          String?   @db.VarChar(50)
+  clienttype          String?   @db.VarChar(20)
+  accounttype         String?   @db.VarChar(20)
+  account_open_date   DateTime? @db.Date
+  inceptiondate       DateTime? @db.Date
+  mobile              String?   @db.VarChar(15)
+  email               String?   @db.VarChar(100)
+  address1            String?   @db.VarChar(200)
+  address2            String?   @db.VarChar(200)
+  city                String?   @db.VarChar(50)
+  pincode             String?   @db.VarChar(6)
+  state               String?   @db.VarChar(50)
+  pannumber           String?   @db.VarChar(10)
+  ownerid             String?   @db.VarChar(50)
+  ownername           String?   @db.VarChar(100)
+  groupid             String?   @db.VarChar(50)
+  groupname           String?   @db.VarChar(100)
+  schemeid            String?   @db.VarChar(50)
+  schemename          String?   @db.VarChar(100)
+  advisorname         String?   @db.VarChar(100)
+  username            String?   @db.VarChar(50)
+  salutation          String?   @db.VarChar(10)
+  firstname           String?   @db.VarChar(50)
+  middlename          String?   @db.VarChar(50)
+  lastname            String?   @db.VarChar(50)
+  first_holder_gender String?   @db.VarChar(20)
+  created_at          DateTime? @default(now()) @db.Timestamp(6)
+  updated_at          DateTime? @default(now()) @db.Timestamp(6)
+  password            String?   @default("Qode@123") @db.VarChar(100)
+
+  @@index([clientid], map: "idx_pms_clients_master_clientid")
+  @@index([email], map: "idx_pms_clients_master_email")
+  @@index([mobile], map: "idx_pms_clients_master_mobile")
+  @@index([pannumber], map: "idx_pms_clients_master_pannumber")
   @@schema("public")
 }

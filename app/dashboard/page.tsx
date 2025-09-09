@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { StatsCards } from "@/components/stats-cards";
@@ -11,8 +11,51 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import StockTable from "@/components/StockTable";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 
-// Interfaces for stats
+interface Holding {
+  symbol: string;
+  exchange: string;
+  quantity: number;
+  avgPrice: number;
+  ltp: number;
+  buyValue: number;
+  valueAsOfToday: number;
+  pnlAmount: number;
+  percentPnl: number;
+  broker: string;
+  debtEquity: string;
+  subCategory: string;
+  date: Date;
+}
+
+interface HoldingsSummary {
+  totalBuyValue: number;
+  totalCurrentValue: number;
+  totalPnl: number;
+  totalPnlPercent: number;
+  holdingsCount: number;
+  equityHoldings: Holding[];
+  debtHoldings: Holding[];
+  categoryBreakdown: {
+    [category: string]: {
+      buyValue: number;
+      currentValue: number;
+      pnl: number;
+      count: number;
+    };
+  };
+  brokerBreakdown: {
+    [broker: string]: {
+      buyValue: number;
+      currentValue: number;
+      pnl: number;
+      count: number;
+    };
+  };
+}
+
 interface Stats {
   amountDeposited: string;
   currentExposure: string;
@@ -52,6 +95,7 @@ interface Stats {
   };
   cashFlows: { date: string; amount: number }[];
   strategyName?: string;
+  holdings?: HoldingsSummary;
 }
 
 interface PmsStats {
@@ -240,7 +284,10 @@ export default function Portfolio() {
   const [sarlaData, setSarlaData] = useState<SarlaApiResponse | null>(null);
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
   const [availableStrategies, setAvailableStrategies] = useState<string[]>([]);
-const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percent");
+  const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percent");
+  const portfolioRef = useRef<HTMLDivElement>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push("/");
@@ -349,16 +396,11 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           }
 
           const response = await res.json();
-          console.log("Raw API response:", response);
-          console.log("Response type:", selectedAccountData.account_type);
-          console.log("Has 'data' property?", 'data' in response);
-          console.log("Response keys:", Object.keys(response));
 
           let statsData: Stats | PmsStats | Array<any>;
           let metadataData: Metadata | null = null;
 
           if ('data' in response && response.data !== undefined) {
-            console.log("Processing wrapped response structure");
             if (viewMode === "individual" && Array.isArray(response.data)) {
               statsData = response.data;
               metadataData = null;
@@ -367,8 +409,6 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
               metadataData = response.metadata || null;
             }
           } else {
-            console.log("Processing flat response structure");
-
             if (selectedAccountData.account_type === "pms") {
               const pmsData = response as any;
 
@@ -437,9 +477,6 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
             }
           }
 
-          console.log("Final processed stats data:", statsData);
-          console.log("Final processed metadata:", metadataData);
-
           if (statsData) {
             setStats(statsData);
             setMetadata(metadataData);
@@ -458,6 +495,140 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
       fetchAccountData();
     }
   }, [selectedAccount, accounts, status, viewMode, isSarla, isSatidham, accountCode]);
+
+ const handleDownloadPdf = async () => {
+    if (!portfolioRef.current) return;
+
+    setIsGeneratingPdf(true);
+    portfolioRef.current.setAttribute("data-is-pdf-export", "true");
+
+    // Hide sidebar, adjust padding, and hide Download PDF button
+    const sidebar = document.querySelector(".sidebar") as HTMLElement;
+    const contentDiv = portfolioRef.current.querySelector(".lg\\:pl-64") as HTMLElement;
+    const downloadButton = portfolioRef.current.querySelector("button.bg-logo-green.text-button-text.rounded-full") as HTMLElement;
+    const originalSidebarDisplay = sidebar?.style.display;
+    const originalContentClass = contentDiv?.className;
+    const originalButtonDisplay = downloadButton?.style.display;
+
+    if (sidebar) {
+      sidebar.style.display = "none";
+    }
+    if (contentDiv) {
+      contentDiv.className = contentDiv.className.replace("lg:pl-64", "lg:pl-0");
+    }
+    if (downloadButton) {
+      downloadButton.style.display = "none";
+    }
+
+    try {
+      // Get the portfolio container's dimensions
+      const portfolio = portfolioRef.current;
+      const containerWidth = portfolio.offsetWidth;
+      const containerHeight = portfolio.scrollHeight; // Use scrollHeight to capture full content height
+
+      // Initialize jsPDF in landscape A4 format
+      const pdf = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const pageWidth = pdf.internal.pageSize.getWidth(); // 297mm
+      const pageHeight = pdf.internal.pageSize.getHeight(); // 210mm
+      const margin = 0; // No margins to use entire page
+      const contentWidth = pageWidth; // 297mm
+      const contentHeight = pageHeight; // 210mm
+
+      // Calculate pixels per mm (increased to capture more content height)
+      const pixelsPerMm = 120 / 25.4; // 120 DPI to capture more content
+      const pageHeightPx = contentHeight * pixelsPerMm; // Height of page content in pixels (210mm)
+
+      // Split content into sections based on page height
+      let currentY = 0;
+      let pageIndex = 0;
+
+      while (currentY < containerHeight) {
+        // Capture a section of the portfolio content
+        const canvas = await html2canvas(portfolio, {
+          scale: 1, // Preserve original size
+          useCORS: true,
+          logging: false,
+          windowWidth: containerWidth,
+          windowHeight: pageHeightPx,
+          y: currentY, // Capture from current Y position
+          height: Math.min(pageHeightPx, containerHeight - currentY), // Capture height of one page or remaining content
+          backgroundColor: null, // Transparent background
+        });
+
+        const imgData = canvas.toDataURL("image/png");
+        const imgWidthPx = canvas.width;
+        const imgHeightPx = canvas.height;
+        const imgWidthMm = imgWidthPx / pixelsPerMm;
+        const imgHeightMm = imgHeightPx / pixelsPerMm;
+
+        // Add page if not the first
+        if (pageIndex > 0) {
+          pdf.addPage();
+        }
+
+        // Set page background to #EFECD3
+        pdf.setFillColor("#EFECD3");
+        pdf.rect(0, 0, pageWidth, pageHeight, "F");
+
+        // Add the image to the PDF, using full page size and maintaining aspect ratio
+        const aspectRatio = imgWidthMm / imgHeightMm;
+        let renderWidth = imgWidthMm;
+        let renderHeight = imgHeightMm;
+
+        // Scale to fit page width if content is wider than page
+        if (renderWidth > contentWidth) {
+          renderWidth = contentWidth;
+          renderHeight = contentWidth / aspectRatio;
+        }
+
+        // Stretch height to fill page if content is shorter than page height
+        if (renderHeight < contentHeight && currentY + pageHeightPx >= containerHeight) {
+          renderHeight = contentHeight;
+          renderWidth = contentHeight * aspectRatio;
+          // Ensure width doesn't exceed page width
+          if (renderWidth > contentWidth) {
+            renderWidth = contentWidth;
+            renderHeight = contentWidth / aspectRatio;
+          }
+        }
+
+        pdf.addImage(
+          imgData,
+          "PNG",
+          0, // No left margin
+          0, // No top margin
+          renderWidth,
+          renderHeight
+        );
+
+        currentY += pageHeightPx; // Move to the next section
+        pageIndex++;
+      }
+
+      pdf.save("portfolio.pdf");
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      setError("Failed to generate PDF");
+    } finally {
+      // Restore original styles
+      if (sidebar && originalSidebarDisplay) {
+        sidebar.style.display = originalSidebarDisplay;
+      }
+      if (contentDiv && originalContentClass) {
+        contentDiv.className = originalContentClass;
+      }
+      if (downloadButton && originalButtonDisplay) {
+        downloadButton.style.display = originalButtonDisplay;
+      }
+      portfolioRef.current?.removeAttribute("data-is-pdf-export");
+      setIsGeneratingPdf(false);
+    }
+  };
 
   const renderCashFlowsTable = () => {
     let transactions: { date: string; amount: number }[] = [];
@@ -486,7 +657,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
     if (!transactions.length) {
       return (
-        <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
+        <Card className="bg-white/50   border-0">
           <CardHeader>
             <CardTitle className="text-sm sm:text-lg text-black">Cash In / Out</CardTitle>
           </CardHeader>
@@ -500,8 +671,8 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     }
 
     return (
-      <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0 p-4">
-          <CardTitle className="text-sm sm:text-lg text-black">Cash In / Out</CardTitle>
+      <Card className="bg-white/50   border-0 p-4">
+        <CardTitle className="text-sm sm:text-lg text-black">Cash In / Out</CardTitle>
         <CardContent className="p-0 mt-4">
           <div className="overflow-x-auto">
             <Table className="min-w-full">
@@ -510,7 +681,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                   <TableHead className="py-1 text-left text-xs font-medium text-black uppercase tracking-wider">
                     Date
                   </TableHead>
-                  <TableHead className=" py-1 text-right text-xs font-medium text-black uppercase tracking-wider">
+                  <TableHead className="py-1 text-right text-xs font-medium text-black uppercase tracking-wider">
                     Amount (₹)
                   </TableHead>
                   {viewMode === "individual" && (
@@ -526,12 +697,12 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                     ? stats.find((item) => item.stats.cashFlows?.includes(transaction))?.metadata.account_name
                     : undefined;
                   return (
-                    <TableRow key={`${transaction.date}-${index}`} className="border-b border-gray-200 dark:border-gray-700 ">
-                      <TableCell className=" py-2 text-xs text-gray-700 dark:text-gray-100">
+                    <TableRow key={`${transaction.date}-${index}`} className="border-b border-gray-200 dark:border-gray-700">
+                      <TableCell className="py-2 text-xs text-gray-700 dark:text-gray-100">
                         {dateFormatter(transaction.date)}
                       </TableCell>
                       <TableCell
-                        className={` py-2 text-xs font-medium text-right ${Number(transaction.amount) > 0 ? "text-green-600" : "text-red-600"}`}
+                        className={`py-2 text-xs font-medium text-right ${Number(transaction.amount) > 0 ? "text-green-600" : "text-red-600"}`}
                       >
                         {formatter.format(Number(transaction.amount))}
                       </TableCell>
@@ -600,7 +771,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     return (
       <div className="mb-4 block sm:hidden">
         <Select value={selectedStrategy || ""} onValueChange={setSelectedStrategy}>
-          <SelectTrigger className="w-full border-0 card-shadow">
+          <SelectTrigger className="w-full border-0 ">
             <SelectValue placeholder="Select Strategy" />
           </SelectTrigger>
           <SelectContent>
@@ -654,14 +825,14 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           {selectedStrategy} {!isActive ? "(Inactive)" : ""}
         </Button>
         <StatsCards
-  stats={convertedStats}
-  accountType="sarla"
-  broker="Sarla"
-  isTotalPortfolio={isTotalPortfolio}
-  isActive={isActive}
-  returnViewType={returnViewType}
-  setReturnViewType={setReturnViewType}
-/>
+          stats={convertedStats}
+          accountType="sarla"
+          broker="Sarla"
+          isTotalPortfolio={isTotalPortfolio}
+          isActive={isActive}
+          returnViewType={returnViewType}
+          setReturnViewType={setReturnViewType}
+        />
         {!isTotalPortfolio && (
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
             <div className="flex-1 min-w-0 sm:w-5/6">
@@ -680,6 +851,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           monthlyPnl={convertedStats.monthlyPnl}
           showOnlyQuarterlyCash={isCashOnlyView}
           showPmsQawView={isCashPercentView}
+          isPdfExport={portfolioRef.current?.getAttribute("data-is-pdf-export") === "true"}
         />
         {renderCashFlowsTable()}
         {isSarla && !isActive && (
@@ -719,14 +891,14 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           {selectedStrategy} {!isActive ? "(Inactive)" : ""}
         </Button>
         <StatsCards
-  stats={convertedStats}
-  accountType="sarla"
-  broker="Sarla"
-  isTotalPortfolio={isTotalPortfolio}
-  isActive={isActive}
-  returnViewType={returnViewType}
-  setReturnViewType={setReturnViewType}
-/>
+          stats={convertedStats}
+          accountType="sarla"
+          broker="Sarla"
+          isTotalPortfolio={isTotalPortfolio}
+          isActive={isActive}
+          returnViewType={returnViewType}
+          setReturnViewType={setReturnViewType}
+        />
         {!isTotalPortfolio && (
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
             <div className="flex-1 min-w-0 sm:w-5/6">
@@ -745,6 +917,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           monthlyPnl={convertedStats.monthlyPnl}
           showOnlyQuarterlyCash={isCashOnlyView}
           showPmsQawView={isCashPercentView}
+          isPdfExport={portfolioRef.current?.getAttribute("data-is-pdf-export") === "true"}
         />
         {renderCashFlowsTable()}
         {isSatidham && !isActive && (
@@ -791,10 +964,9 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     : metadata;
 
   return (
-    <div className="sm:p-2 space-y-6">
+    <div className="sm:p-2 space-y-6" ref={portfolioRef}>
       <div>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          {/* Greeting and Metadata */}
           <div>
             <h1 className="text-xl font-semibold text-card-text-secondary font-heading">
               {getGreeting()}, {session?.user?.name || "User"}
@@ -807,34 +979,39 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
               </div>
             )}
           </div>
-
-          {/* Dropdown */}
-          {(isSarla || isSatidham) && sarlaData && availableStrategies.length > 0 && (
-            <div className="hidden sm:block">
-              <Select value={selectedStrategy || ""} onValueChange={setSelectedStrategy}>
-                <SelectTrigger className="w-[400px] border-0 card-shadow text-button-text">
-                  <SelectValue placeholder="Select Strategy" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableStrategies.map((strategy) => {
-                    const isActive = sarlaData[strategy].metadata.isActive;
-                    return (
-                      <SelectItem key={strategy} value={strategy}>
-                        {strategy} {!isActive ? "(Inactive)" : ""}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+          <div className="flex items-center gap-4">
+            {(isSarla || isSatidham) && sarlaData && availableStrategies.length > 0 && (
+              <div className="hidden sm:block">
+                <Select value={selectedStrategy || ""} onValueChange={setSelectedStrategy}>
+                  <SelectTrigger className="w-[400px] border-0  text-button-text">
+                    <SelectValue placeholder="Select Strategy" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableStrategies.map((strategy) => {
+                      const isActive = sarlaData[strategy].metadata.isActive;
+                      return (
+                        <SelectItem key={strategy} value={strategy}>
+                          {strategy} {!isActive ? "(Inactive)" : ""}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <Button
+              onClick={handleDownloadPdf}
+              disabled={isGeneratingPdf}
+              className="bg-logo-green text-button-text px-4 py-2 rounded-full"
+            >
+              {isGeneratingPdf ? "Generating PDF..." : "Download PDF"}
+            </Button>
+          </div>
         </div>
-
         {!isSarla && !isSatidham && currentMetadata?.strategyName && (
           <Button
             variant="outline"
-            className={`bg-logo-green mt-4 font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${(isSarla || isSatidham) && !currentMetadata.isActive ? "opacity-70" : ""
-              }`}
+            className={`bg-logo-green mt-4 font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${(isSarla || isSatidham) && !currentMetadata.isActive ? "opacity-70" : ""}`}
           >
             {currentMetadata.strategyName} {(isSarla || isSatidham) && !currentMetadata.isActive ? "(Inactive)" : ""}
           </Button>
@@ -845,9 +1022,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           </div>
         )}
       </div>
-
       {renderSarlaStrategyTabs()}
-
       {(isSarla || isSatidham) ? (
         isSarla ? renderSarlaContent() : renderSatidhamContent()
       ) : (
@@ -864,7 +1039,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                 const lastDate = getLastDate(filteredEquityCurve, item.metadata.lastUpdated);
                 return (
                   <div key={index} className="space-y-6">
-                    <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
+                    <Card className="bg-white/50   border-0">
                       <CardHeader>
                         <CardTitle className="text-card-text text-sm sm:text-sm">
                           {item.metadata.account_name} ({item.metadata.account_type.toUpperCase()} - {item.metadata.broker})
@@ -876,14 +1051,14 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                       </CardHeader>
                       <CardContent>
                         <StatsCards
-  stats={convertedStats}
-  accountType="sarla"
-  broker="Sarla"
-  isTotalPortfolio={isTotalPortfolio}
-  isActive={isActive}
-  returnViewType={returnViewType}
-  setReturnViewType={setReturnViewType}
-/>
+                          stats={convertedStats}
+                          accountType="sarla"
+                          broker="Sarla"
+                          isTotalPortfolio={false}
+                          isActive={item.metadata.isActive}
+                          returnViewType={returnViewType}
+                          setReturnViewType={setReturnViewType}
+                        />
                         <RevenueChart
                           equityCurve={filteredEquityCurve}
                           drawdownCurve={item.stats.drawdownCurve}
@@ -894,6 +1069,8 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                         <PnlTable
                           quarterlyPnl={convertedStats.quarterlyPnl}
                           monthlyPnl={convertedStats.monthlyPnl}
+                          isPdfExport={portfolioRef.current?.getAttribute("data-is-pdf-export") === "true"}
+                          
                         />
                         {(isSarla || isSatidham) && !item.metadata.isActive && (
                           <div className="text-sm text-yellow-600 dark:text-yellow-400">
@@ -936,9 +1113,11 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                           />
                         </div>
                       </div>
+                      <StockTable holdings={convertedStats.holdings} viewMode="individual" />
                       <PnlTable
                         quarterlyPnl={convertedStats.quarterlyPnl}
                         monthlyPnl={convertedStats.monthlyPnl}
+                        isPdfExport={portfolioRef.current?.getAttribute("data-is-pdf-export") === "true"}
                       />
                       {renderCashFlowsTable()}
                       {(isSarla || isSatidham) && metadata && !metadata.isActive && (

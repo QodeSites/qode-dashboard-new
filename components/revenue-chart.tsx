@@ -514,7 +514,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
 
   if (!equityCurve?.length || error) {
     return (
-      <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
+      <Card className="bg-white/50   border-0">
         <CardContent>
           <div className="w-full h-[700px] flex items-center justify-center">
             <p>{error || "No data available."}</p>
@@ -526,7 +526,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
 
   return (
     <div className="space-y-6">
-      <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
+      <Card className="bg-white/50   border-0">
         <CardContent className="p-4">
           <TrailingReturnsTable
             trailingReturns={trailingReturns}
@@ -535,7 +535,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
           />
         </CardContent>
       </Card>
-      <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
+      <Card className="bg-white/50   border-0">
         <CardContent className="p-4">
           <CardTitle className="text-card-text text-sm sm:text-lg mb-4">Portfolio Performance & Drawdown</CardTitle>
           <div className="w-full">
