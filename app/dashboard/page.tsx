@@ -173,7 +173,7 @@ function isPmsStats(stats: Stats | PmsStats): stats is PmsStats {
 
 function convertPmsStatsToStats(pmsStats: PmsStats): Stats {
   const amountDeposited = pmsStats.cashFlows
-    .filter(flow => flow.amount > 0)
+    .filter((flow) => flow.amount > 0)
     .reduce((sum, flow) => sum + flow.amount, 0);
 
   return {
@@ -226,10 +226,8 @@ function convertPmsStatsToStats(pmsStats: PmsStats): Stats {
 
 function filterEquityCurve(equityCurve: { date: string; value: number }[], startDate: string | null, endDate: string | null) {
   if (!startDate || !endDate) return equityCurve;
-
   const start = new Date(startDate);
   const end = new Date(endDate);
-
   return equityCurve.filter((entry) => {
     const entryDate = new Date(entry.date);
     return entryDate >= start && entryDate <= end;
@@ -400,7 +398,7 @@ export default function Portfolio() {
           let statsData: Stats | PmsStats | Array<any>;
           let metadataData: Metadata | null = null;
 
-          if ('data' in response && response.data !== undefined) {
+          if ("data" in response && response.data !== undefined) {
             if (viewMode === "individual" && Array.isArray(response.data)) {
               statsData = response.data;
               metadataData = null;
@@ -416,7 +414,7 @@ export default function Portfolio() {
                 if (pmsData.cashInOut.transactions) {
                   pmsData.cashFlows = pmsData.cashInOut.transactions.map((tx: any) => ({
                     date: tx.date,
-                    amount: parseFloat(tx.amount)
+                    amount: parseFloat(tx.amount),
                   }));
                 } else {
                   pmsData.cashFlows = [];
@@ -440,9 +438,9 @@ export default function Portfolio() {
                   accountType: selectedAccountData.account_type,
                   broker: selectedAccountData.broker,
                   startDate: null,
-                  endDate: null
+                  endDate: null,
                 },
-                isActive: true
+                isActive: true,
               };
 
               if (pmsData.equityCurve && pmsData.equityCurve.length > 0) {
@@ -469,9 +467,9 @@ export default function Portfolio() {
                     accountType: selectedAccountData.account_type,
                     broker: selectedAccountData.broker,
                     startDate: null,
-                    endDate: null
+                    endDate: null,
                   },
-                  isActive: true
+                  isActive: true,
                 };
               }
             }
@@ -496,135 +494,233 @@ export default function Portfolio() {
     }
   }, [selectedAccount, accounts, status, viewMode, isSarla, isSatidham, accountCode]);
 
- const handleDownloadPdf = async () => {
+  /** -----------------------------------------------------------
+   *  PDF EXPORT (flow layout, hides inputs, avoids chart splits)
+   *  -----------------------------------------------------------
+   */
+  const handleDownloadPdf = async () => {
     if (!portfolioRef.current) return;
 
     setIsGeneratingPdf(true);
-    portfolioRef.current.setAttribute("data-is-pdf-export", "true");
+    const root = portfolioRef.current;
 
-    // Hide sidebar, adjust padding, and hide Download PDF button
-    const sidebar = document.querySelector(".sidebar") as HTMLElement;
-    const contentDiv = portfolioRef.current.querySelector(".lg\\:pl-64") as HTMLElement;
-    const downloadButton = portfolioRef.current.querySelector("button.bg-logo-green.text-button-text.rounded-full") as HTMLElement;
-    const originalSidebarDisplay = sidebar?.style.display;
-    const originalContentClass = contentDiv?.className;
-    const originalButtonDisplay = downloadButton?.style.display;
+    // Mark export mode
+    root.setAttribute("data-is-pdf-export", "true");
 
-    if (sidebar) {
-      sidebar.style.display = "none";
-    }
-    if (contentDiv) {
-      contentDiv.className = contentDiv.className.replace("lg:pl-64", "lg:pl-0");
-    }
-    if (downloadButton) {
-      downloadButton.style.display = "none";
-    }
+    // Hide chrome
+    const sidebar = document.querySelector(".sidebar") as HTMLElement | null;
+    const contentDiv = root.querySelector(".lg\\:pl-64") as HTMLElement | null;
+    const downloadButton = root.querySelector(
+      "button.bg-logo-green.text-button-text.rounded-full"
+    ) as HTMLElement | null;
+
+    const originalSidebarDisplay = sidebar?.style.display ?? "";
+    const originalContentClass = contentDiv?.className ?? "";
+    const originalButtonDisplay = downloadButton?.style.display ?? "";
+
+    if (sidebar) sidebar.style.display = "none";
+    if (contentDiv) contentDiv.className = contentDiv.className.replace("lg:pl-64", "lg:pl-0");
+    if (downloadButton) downloadButton.style.display = "none";
 
     try {
-      // Get the portfolio container's dimensions
-      const portfolio = portfolioRef.current;
-      const containerWidth = portfolio.offsetWidth;
-      const containerHeight = portfolio.scrollHeight; // Use scrollHeight to capture full content height
+      // PDF setup
+      const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      const pageW = pdf.internal.pageSize.getWidth();  // 297
+      const pageH = pdf.internal.pageSize.getHeight(); // 210
+      const margin = 10;
+      const maxW = pageW - margin * 2;                 // printable width
+      const maxH = pageH - margin * 2;                 // printable height
 
-      // Initialize jsPDF in landscape A4 format
-      const pdf = new jsPDF({
-        orientation: "landscape",
-        unit: "mm",
-        format: "a4",
-      });
+      const DPI = 150;
+      const pxPerMm = DPI / 25.4;
 
-      const pageWidth = pdf.internal.pageSize.getWidth(); // 297mm
-      const pageHeight = pdf.internal.pageSize.getHeight(); // 210mm
-      const margin = 0; // No margins to use entire page
-      const contentWidth = pageWidth; // 297mm
-      const contentHeight = pageHeight; // 210mm
+      let cursorYmm = margin;
 
-      // Calculate pixels per mm (increased to capture more content height)
-      const pixelsPerMm = 120 / 25.4; // 120 DPI to capture more content
-      const pageHeightPx = contentHeight * pixelsPerMm; // Height of page content in pixels (210mm)
+      const paintBg = () => {
+        pdf.setFillColor("#EFECD3");
+        pdf.rect(0, 0, pageW, pageH, "F");
+      };
 
-      // Split content into sections based on page height
-      let currentY = 0;
-      let pageIndex = 0;
+      const newPage = () => {
+        pdf.addPage();
+        paintBg();
+        cursorYmm = margin;
+      };
 
-      while (currentY < containerHeight) {
-        // Capture a section of the portfolio content
-        const canvas = await html2canvas(portfolio, {
-          scale: 1, // Preserve original size
+      // First page background
+      paintBg();
+
+      // A “block” is either a keep-whole element (charts/cards) or a generic section slice
+      const blocks: HTMLElement[] = [];
+
+      // Prefer fine-grained blocks if available, else the entire root.
+      const sections = Array
+      .from(root.querySelectorAll<HTMLElement>("[data-pdf-section]"))
+      .filter(sec => !sec.parentElement?.closest("[data-pdf-section]"));
+
+      if (sections.length === 0) {
+        blocks.push(root);
+      } else {
+        // Within sections, identify keep-whole items (charts, marked nodes)
+        sections.forEach((sec) => {
+          const keepers = sec.querySelectorAll<HTMLElement>('[data-pdf-keep-whole], .recharts-wrapper, canvas');
+          if (keepers.length === 0) {
+            blocks.push(sec);
+          } else {
+            // Split section into chunks: nodes before keeper, each keeper, nodes after
+            let lastIndex = 0;
+            const children = Array.from(sec.children) as HTMLElement[];
+
+            const flushRange = (start: number, end: number) => {
+              if (end > start) {
+                const wrapper = document.createElement("div");
+                wrapper.style.position = "relative";
+                wrapper.style.width = "100%";
+                wrapper.style.boxSizing = "border-box";
+                for (let i = start; i < end; i++) wrapper.appendChild(children[i].cloneNode(true));
+                wrapper.setAttribute("data-pdf-chunk", "true");
+                // mount temporarily to measure
+                sec.appendChild(wrapper);
+                blocks.push(wrapper);
+              }
+            };
+
+            const keeperSet = new Set(Array.from(keepers));
+            children.forEach((child, idx) => {
+              const isKeeper = keeperSet.has(child) || child.querySelector(".recharts-wrapper") || child.querySelector("canvas");
+              if (isKeeper) {
+                flushRange(lastIndex, idx);
+                // push the keeper itself
+                const wrapKeeper = document.createElement("div");
+                wrapKeeper.style.position = "relative";
+                wrapKeeper.style.width = "100%";
+                wrapKeeper.appendChild(child.cloneNode(true));
+                wrapKeeper.setAttribute("data-pdf-keep-whole", "true");
+                sec.appendChild(wrapKeeper);
+                blocks.push(wrapKeeper);
+                lastIndex = idx + 1;
+              }
+            });
+            flushRange(lastIndex, children.length);
+          }
+        });
+      }
+
+      // Helper: render an element to image with html2canvas
+      const renderElem = async (elem: HTMLElement) => {
+        const canvas = await html2canvas(elem, {
+          scale: 2,
           useCORS: true,
           logging: false,
-          windowWidth: containerWidth,
-          windowHeight: pageHeightPx,
-          y: currentY, // Capture from current Y position
-          height: Math.min(pageHeightPx, containerHeight - currentY), // Capture height of one page or remaining content
-          backgroundColor: null, // Transparent background
+          backgroundColor: "#EFECD3",
+          windowWidth: Math.ceil(elem.scrollWidth || elem.clientWidth || root.clientWidth),
+          windowHeight: Math.ceil(elem.scrollHeight || elem.clientHeight || 800),
+          scrollX: 0,
+          scrollY: -window.scrollY,
+          removeContainer: true,
         });
+        return canvas;
+      };
 
-        const imgData = canvas.toDataURL("image/png");
-        const imgWidthPx = canvas.width;
-        const imgHeightPx = canvas.height;
-        const imgWidthMm = imgWidthPx / pixelsPerMm;
-        const imgHeightMm = imgHeightPx / pixelsPerMm;
+      const addCanvasFlow = (srcCanvas: HTMLCanvasElement, keepWhole = false) => {
+        const imgPxW = srcCanvas.width;
+        const imgPxH = srcCanvas.height;
 
-        // Add page if not the first
-        if (pageIndex > 0) {
-          pdf.addPage();
+        const imgWmm = imgPxW / pxPerMm;
+        const imgHmm = imgPxH / pxPerMm;
+
+        // Fit to printable width first
+        const scaleW = maxW / imgWmm;
+        let renderW = imgWmm * scaleW;
+        let renderH = imgHmm * scaleW;
+
+        // If still too tall for a single page, shrink further
+        if (renderH > maxH) {
+          const scaleH = maxH / renderH;
+          renderW *= scaleH;
+          renderH *= scaleH;
         }
 
-        // Set page background to #EFECD3
-        pdf.setFillColor("#EFECD3");
-        pdf.rect(0, 0, pageWidth, pageHeight, "F");
-
-        // Add the image to the PDF, using full page size and maintaining aspect ratio
-        const aspectRatio = imgWidthMm / imgHeightMm;
-        let renderWidth = imgWidthMm;
-        let renderHeight = imgHeightMm;
-
-        // Scale to fit page width if content is wider than page
-        if (renderWidth > contentWidth) {
-          renderWidth = contentWidth;
-          renderHeight = contentWidth / aspectRatio;
+        // If must keep whole and not enough room on current page -> new page
+        if (keepWhole && cursorYmm + renderH > pageH - margin) {
+          newPage();
         }
 
-        // Stretch height to fill page if content is shorter than page height
-        if (renderHeight < contentHeight && currentY + pageHeightPx >= containerHeight) {
-          renderHeight = contentHeight;
-          renderWidth = contentHeight * aspectRatio;
-          // Ensure width doesn't exceed page width
-          if (renderWidth > contentWidth) {
-            renderWidth = contentWidth;
-            renderHeight = contentWidth / aspectRatio;
+        // If we can split and height overflows -> slice vertically
+        if (!keepWhole && cursorYmm + renderH > pageH - margin) {
+          // Remaining space on this page (mm)
+          let remainingHmm = (pageH - margin) - cursorYmm;
+
+          // px per mm at the current render scale
+          const pxPerMmAtScale = pxPerMm / scaleW;
+
+          let yOffsetPx = 0;
+
+          while (yOffsetPx < imgPxH) {
+            const availHmm = remainingHmm > 0 ? remainingHmm : maxH;
+            const sliceHeightPx = Math.min(imgPxH - yOffsetPx, Math.floor(availHmm * pxPerMmAtScale));
+
+            // Build a slice from the **original canvas** (no dataURL / no <img>!)
+            const sliceCanvas = document.createElement("canvas");
+            sliceCanvas.width = imgPxW;
+            sliceCanvas.height = sliceHeightPx;
+            const sctx = sliceCanvas.getContext("2d")!;
+            sctx.drawImage(
+              srcCanvas,
+              0, yOffsetPx, imgPxW, sliceHeightPx, // src
+              0, 0, imgPxW, sliceHeightPx          // dst
+            );
+
+            // Compute rendered size (mm) at the same scaleW
+            const sliceWmm = imgPxW / pxPerMm * scaleW;
+            const sliceHmm = sliceHeightPx / pxPerMm * scaleW;
+
+            // Paint slice
+            pdf.addImage(sliceCanvas.toDataURL("image/png"), "PNG", margin, cursorYmm, sliceWmm, sliceHmm, undefined, "FAST");
+            cursorYmm += sliceHmm;
+            yOffsetPx += sliceHeightPx;
+
+            // If more slices remain, start a new page
+            if (yOffsetPx < imgPxH) {
+              newPage();
+              remainingHmm = maxH;
+            } else if (cursorYmm > pageH - margin - 1) {
+              newPage();
+            }
           }
+          return;
         }
 
-        pdf.addImage(
-          imgData,
-          "PNG",
-          0, // No left margin
-          0, // No top margin
-          renderWidth,
-          renderHeight
-        );
+        // Fits current page -> add directly
+        pdf.addImage(srcCanvas.toDataURL("image/png"), "PNG", margin, cursorYmm, renderW, renderH, undefined, "FAST");
+        cursorYmm += renderH;
 
-        currentY += pageHeightPx; // Move to the next section
-        pageIndex++;
+        if (cursorYmm > pageH - margin - 1) newPage();
+      };
+
+      // FLOW: iterate blocks, render, add respecting keep-whole
+      for (const block of blocks) {
+        const keepWhole = block.hasAttribute("data-pdf-keep-whole");
+        const canvas = await renderElem(block);
+        addCanvasFlow(canvas, keepWhole);
+
+
+        // Cleanup temporary chunks we appended for measuring
+        if (block.getAttribute("data-pdf-chunk") === "true") {
+          block.remove();
+        }
       }
 
       pdf.save("portfolio.pdf");
-    } catch (error) {
-      console.error("Error generating PDF:", error);
+    } catch (e) {
+      console.error("Error generating PDF:", e);
       setError("Failed to generate PDF");
     } finally {
-      // Restore original styles
-      if (sidebar && originalSidebarDisplay) {
-        sidebar.style.display = originalSidebarDisplay;
-      }
-      if (contentDiv && originalContentClass) {
-        contentDiv.className = originalContentClass;
-      }
-      if (downloadButton && originalButtonDisplay) {
-        downloadButton.style.display = originalButtonDisplay;
-      }
+      // Restore UI
+      if (sidebar) sidebar.style.display = originalSidebarDisplay;
+      if (contentDiv) contentDiv.className = originalContentClass;
+      if (downloadButton) downloadButton.style.display = originalButtonDisplay;
+
       portfolioRef.current?.removeAttribute("data-is-pdf-export");
       setIsGeneratingPdf(false);
     }
@@ -638,7 +734,7 @@ export default function Portfolio() {
     } else if (Array.isArray(stats)) {
       transactions = stats.flatMap((item) => item.stats.cashFlows || []);
     } else {
-      transactions = stats?.cashFlows || [];
+      transactions = (stats as Stats | undefined)?.cashFlows || [];
     }
 
     const cashFlowTotals = transactions.reduce(
@@ -657,7 +753,7 @@ export default function Portfolio() {
 
     if (!transactions.length) {
       return (
-        <Card className="bg-white/50   border-0">
+        <Card className="bg-white/50 mt-4 border-0" data-pdf-section>
           <CardHeader>
             <CardTitle className="text-sm sm:text-lg text-black">Cash In / Out</CardTitle>
           </CardHeader>
@@ -671,7 +767,7 @@ export default function Portfolio() {
     }
 
     return (
-      <Card className="bg-white/50   border-0 p-4">
+      <Card className="bg-white/50  mt-4 border-0 p-4" data-pdf-section>
         <CardTitle className="text-sm sm:text-lg text-black">Cash In / Out</CardTitle>
         <CardContent className="p-0 mt-4">
           <div className="overflow-x-auto">
@@ -694,7 +790,7 @@ export default function Portfolio() {
               <TableBody>
                 {transactions.map((transaction, index) => {
                   const accountName = Array.isArray(stats)
-                    ? stats.find((item) => item.stats.cashFlows?.includes(transaction))?.metadata.account_name
+                    ? (stats as any[]).find((item) => item.stats.cashFlows?.includes(transaction))?.metadata.account_name
                     : undefined;
                   return (
                     <TableRow key={`${transaction.date}-${index}`} className="border-b border-gray-200 dark:border-gray-700">
@@ -769,7 +865,7 @@ export default function Portfolio() {
     if (!(isSarla || isSatidham) || !sarlaData || availableStrategies.length === 0) return null;
 
     return (
-      <div className="mb-4 block sm:hidden">
+      <div className="mb-4 block sm:hidden" data-hide-in-pdf>
         <Select value={selectedStrategy || ""} onValueChange={setSelectedStrategy}>
           <SelectTrigger className="w-full border-0 ">
             <SelectValue placeholder="Select Strategy" />
@@ -821,44 +917,55 @@ export default function Portfolio() {
         <Button
           variant="outline"
           className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
+          data-hide-in-pdf
         >
           {selectedStrategy} {!isActive ? "(Inactive)" : ""}
         </Button>
-        <StatsCards
-          stats={convertedStats}
-          accountType="sarla"
-          broker="Sarla"
-          isTotalPortfolio={isTotalPortfolio}
-          isActive={isActive}
-          returnViewType={returnViewType}
-          setReturnViewType={setReturnViewType}
-        />
-        {!isTotalPortfolio && (
-          <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
-            <div className="flex-1 min-w-0 sm:w-5/6">
-              <RevenueChart
-                equityCurve={filteredEquityCurve}
-                drawdownCurve={strategyData.data.drawdownCurve}
-                trailingReturns={convertedStats.trailingReturns}
-                drawdown={convertedStats.drawdown}
-                lastDate={lastDate}
-              />
+        <div data-pdf-section>
+          <div data-pdf-keep-whole>
+            <StatsCards
+              stats={convertedStats}
+              accountType="sarla"
+              broker="Sarla"
+              isTotalPortfolio={isTotalPortfolio}
+              isActive={isActive}
+              returnViewType={returnViewType}
+              setReturnViewType={setReturnViewType}
+            />
+          </div>
+
+          {!isTotalPortfolio && (
+            <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
+              <div className="w-full" data-pdf-keep-whole>
+                <RevenueChart
+                  equityCurve={filteredEquityCurve}
+                  drawdownCurve={strategyData.data.drawdownCurve}
+                  trailingReturns={convertedStats.trailingReturns}
+                  drawdown={convertedStats.drawdown}
+                  lastDate={lastDate}
+                />
+              </div>
             </div>
+          )}
+
+          <div className="mt-4">
+            <PnlTable
+              quarterlyPnl={convertedStats.quarterlyPnl}
+              monthlyPnl={convertedStats.monthlyPnl}
+              showOnlyQuarterlyCash={isCashOnlyView}
+              showPmsQawView={isCashPercentView}
+              isPdfExport={portfolioRef.current?.getAttribute("data-is-pdf-export") === "true"}
+            />
           </div>
-        )}
-        <PnlTable
-          quarterlyPnl={convertedStats.quarterlyPnl}
-          monthlyPnl={convertedStats.monthlyPnl}
-          showOnlyQuarterlyCash={isCashOnlyView}
-          showPmsQawView={isCashPercentView}
-          isPdfExport={portfolioRef.current?.getAttribute("data-is-pdf-export") === "true"}
-        />
-        {renderCashFlowsTable()}
-        {isSarla && !isActive && (
-          <div className="text-sm text-yellow-600 dark:text-yellow-400">
-            <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
-          </div>
-        )}
+
+          {renderCashFlowsTable()}
+
+          {isSarla && !isActive && (
+            <div className="text-sm text-yellow-600 dark:text-yellow-400">
+              <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
+            </div>
+          )}
+        </div>
       </div>
     );
   };
@@ -887,52 +994,62 @@ export default function Portfolio() {
         <Button
           variant="outline"
           className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
+          data-hide-in-pdf
         >
           {selectedStrategy} {!isActive ? "(Inactive)" : ""}
         </Button>
-        <StatsCards
-          stats={convertedStats}
-          accountType="sarla"
-          broker="Sarla"
-          isTotalPortfolio={isTotalPortfolio}
-          isActive={isActive}
-          returnViewType={returnViewType}
-          setReturnViewType={setReturnViewType}
-        />
-        {!isTotalPortfolio && (
-          <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
-            <div className="flex-1 min-w-0 sm:w-5/6">
-              <RevenueChart
-                equityCurve={filteredEquityCurve}
-                drawdownCurve={strategyData.data.drawdownCurve}
-                trailingReturns={convertedStats.trailingReturns}
-                drawdown={convertedStats.drawdown}
-                lastDate={lastDate}
-              />
+
+        <div data-pdf-section>
+          <div data-pdf-keep-whole>
+            <StatsCards
+              stats={convertedStats}
+              accountType="sarla"
+              broker="Sarla"
+              isTotalPortfolio={isTotalPortfolio}
+              isActive={isActive}
+              returnViewType={returnViewType}
+              setReturnViewType={setReturnViewType}
+            />
+          </div>
+
+          {!isTotalPortfolio && (
+            <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
+              <div className="w-full mt-4" data-pdf-keep-whole>
+                <RevenueChart
+                  equityCurve={filteredEquityCurve}
+                  drawdownCurve={strategyData.data.drawdownCurve}
+                  trailingReturns={convertedStats.trailingReturns}
+                  drawdown={convertedStats.drawdown}
+                  lastDate={lastDate}
+                />
+              </div>
             </div>
+          )}
+
+          <div className="mt-4">
+            <PnlTable
+              quarterlyPnl={convertedStats.quarterlyPnl}
+              monthlyPnl={convertedStats.monthlyPnl}
+              showOnlyQuarterlyCash={isCashOnlyView}
+              showPmsQawView={isCashPercentView}
+              isPdfExport={portfolioRef.current?.getAttribute("data-is-pdf-export") === "true"}
+            />
           </div>
-        )}
-        <PnlTable
-          quarterlyPnl={convertedStats.quarterlyPnl}
-          monthlyPnl={convertedStats.monthlyPnl}
-          showOnlyQuarterlyCash={isCashOnlyView}
-          showPmsQawView={isCashPercentView}
-          isPdfExport={portfolioRef.current?.getAttribute("data-is-pdf-export") === "true"}
-        />
-        {renderCashFlowsTable()}
-        {isSatidham && !isActive && (
-          <div className="text-sm text-yellow-600 dark:text-yellow-400">
-            <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
-          </div>
-        )}
+
+          {renderCashFlowsTable()}
+
+          {isSatidham && !isActive && (
+            <div className="text-sm text-yellow-600 dark:text-yellow-400">
+              <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
+            </div>
+          )}
+        </div>
       </div>
     );
   };
 
   if (status === "loading" || isLoading) {
-    return (
-      <div className="flex items-center justify-center h-screen">Loading...</div>
-    );
+    return <div className="flex items-center justify-center h-screen">Loading...</div>;
   }
 
   if (error || !session?.user) {
@@ -959,13 +1076,12 @@ export default function Portfolio() {
     );
   }
 
-  const currentMetadata = (isSarla || isSatidham) && sarlaData && selectedStrategy
-    ? sarlaData[selectedStrategy].metadata
-    : metadata;
+  const currentMetadata =
+    (isSarla || isSatidham) && sarlaData && selectedStrategy ? sarlaData[selectedStrategy].metadata : metadata;
 
   return (
-    <div className="sm:p-2 space-y-6" ref={portfolioRef}>
-      <div>
+    <div className="w-full max-w-none sm:p-2 space-y-6" ref={portfolioRef}>
+      <div data-pdf-section>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-xl font-semibold text-card-text-secondary font-heading">
@@ -973,13 +1089,19 @@ export default function Portfolio() {
             </h1>
             {currentMetadata && (
               <div className="flex flex-wrap items-center gap-2 text-sm mt-2 text-card-text-secondary font-heading-bold">
-                <span>Inception Date: <strong>{currentMetadata.inceptionDate ? dateFormatter(currentMetadata.inceptionDate) : "N/A"}</strong></span>
+                <span>
+                  Inception Date:{" "}
+                  <strong>{currentMetadata.inceptionDate ? dateFormatter(currentMetadata.inceptionDate) : "N/A"}</strong>
+                </span>
                 <span>|</span>
-                <span>Data as of: <strong>{currentMetadata.dataAsOfDate ? dateFormatter(currentMetadata.dataAsOfDate) : "N/A"}</strong></span>
+                <span>
+                  Data as of:{" "}
+                  <strong>{currentMetadata.dataAsOfDate ? dateFormatter(currentMetadata.dataAsOfDate) : "N/A"}</strong>
+                </span>
               </div>
             )}
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4" data-hide-in-pdf>
             {(isSarla || isSatidham) && sarlaData && availableStrategies.length > 0 && (
               <div className="hidden sm:block">
                 <Select value={selectedStrategy || ""} onValueChange={setSelectedStrategy}>
@@ -999,37 +1121,45 @@ export default function Portfolio() {
                 </Select>
               </div>
             )}
-            <Button
-              onClick={handleDownloadPdf}
-              disabled={isGeneratingPdf}
-              className="bg-logo-green text-button-text px-4 py-2 rounded-full"
-            >
+            <Button onClick={handleDownloadPdf} disabled={isGeneratingPdf} className="bg-logo-green text-button-text px-4 py-2 rounded-full">
               {isGeneratingPdf ? "Generating PDF..." : "Download PDF"}
             </Button>
           </div>
         </div>
+
         {!isSarla && !isSatidham && currentMetadata?.strategyName && (
           <Button
             variant="outline"
-            className={`bg-logo-green mt-4 font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${(isSarla || isSatidham) && !currentMetadata.isActive ? "opacity-70" : ""}`}
+            className={`bg-logo-green mt-4 font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${(isSarla || isSatidham) && !currentMetadata.isActive ? "opacity-70" : ""
+              }`}
+            data-hide-in-pdf
           >
             {currentMetadata.strategyName} {(isSarla || isSatidham) && !currentMetadata.isActive ? "(Inactive)" : ""}
           </Button>
         )}
+
         {(isSarla || isSatidham) && sarlaData && availableStrategies.length > 0 && (
-          <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
-            <p><strong>Note:</strong> Inactive strategies may have limited data updates.</p>
+          <div className="mt-2 text-xs text-gray-600 dark:text-gray-400" data-hide-in-pdf>
+            <p>
+              <strong>Note:</strong> Inactive strategies may have limited data updates.
+            </p>
           </div>
         )}
       </div>
+
       {renderSarlaStrategyTabs()}
+
       {(isSarla || isSatidham) ? (
-        isSarla ? renderSarlaContent() : renderSatidhamContent()
+        isSarla ? (
+          renderSarlaContent()
+        ) : (
+          renderSatidhamContent()
+        )
       ) : (
         stats && (
-          <div className="space-y-6">
+          <div className="space-y-6" data-pdf-section>
             {Array.isArray(stats) ? (
-              stats.map((item, index) => {
+              (stats as any[]).map((item, index) => {
                 const convertedStats = isPmsStats(item.stats) ? convertPmsStatsToStats(item.stats) : item.stats;
                 const filteredEquityCurve = filterEquityCurve(
                   item.stats.equityCurve,
@@ -1039,7 +1169,7 @@ export default function Portfolio() {
                 const lastDate = getLastDate(filteredEquityCurve, item.metadata.lastUpdated);
                 return (
                   <div key={index} className="space-y-6">
-                    <Card className="bg-white/50   border-0">
+                    <Card className="bg-white/50   border-0" data-pdf-section>
                       <CardHeader>
                         <CardTitle className="text-card-text text-sm sm:text-sm">
                           {item.metadata.account_name} ({item.metadata.account_type.toUpperCase()} - {item.metadata.broker})
@@ -1050,28 +1180,36 @@ export default function Portfolio() {
                         </div>
                       </CardHeader>
                       <CardContent>
-                        <StatsCards
-                          stats={convertedStats}
-                          accountType="sarla"
-                          broker="Sarla"
-                          isTotalPortfolio={false}
-                          isActive={item.metadata.isActive}
-                          returnViewType={returnViewType}
-                          setReturnViewType={setReturnViewType}
-                        />
-                        <RevenueChart
-                          equityCurve={filteredEquityCurve}
-                          drawdownCurve={item.stats.drawdownCurve}
-                          trailingReturns={convertedStats.trailingReturns}
-                          drawdown={convertedStats.drawdown}
-                          lastDate={lastDate}
-                        />
-                        <PnlTable
-                          quarterlyPnl={convertedStats.quarterlyPnl}
-                          monthlyPnl={convertedStats.monthlyPnl}
-                          isPdfExport={portfolioRef.current?.getAttribute("data-is-pdf-export") === "true"}
-                          
-                        />
+                        <div data-pdf-keep-whole>
+                          <StatsCards
+                            stats={convertedStats}
+                            accountType="sarla"
+                            broker="Sarla"
+                            isTotalPortfolio={false}
+                            isActive={item.metadata.isActive}
+                            returnViewType={returnViewType}
+                            setReturnViewType={setReturnViewType}
+                          />
+                        </div>
+
+                        <div className="mt-4" data-pdf-keep-whole>
+                          <RevenueChart
+                            equityCurve={filteredEquityCurve}
+                            drawdownCurve={item.stats.drawdownCurve}
+                            trailingReturns={convertedStats.trailingReturns}
+                            drawdown={convertedStats.drawdown}
+                            lastDate={lastDate}
+                          />
+                        </div>
+
+                        <div>
+                          <PnlTable
+                            quarterlyPnl={convertedStats.quarterlyPnl}
+                            monthlyPnl={convertedStats.monthlyPnl}
+                            isPdfExport={portfolioRef.current?.getAttribute("data-is-pdf-export") === "true"}
+                          />
+                        </div>
+
                         {(isSarla || isSatidham) && !item.metadata.isActive && (
                           <div className="text-sm text-yellow-600 dark:text-yellow-400">
                             <strong>Note:</strong> This account is inactive. Data may not be updated regularly.
@@ -1085,47 +1223,46 @@ export default function Portfolio() {
             ) : (
               <>
                 {(() => {
-                  const convertedStats = isPmsStats(stats) ? convertPmsStatsToStats(stats) : stats;
+                  const convertedStats = isPmsStats(stats as Stats | PmsStats) ? convertPmsStatsToStats(stats as PmsStats) : (stats as Stats);
                   const filteredEquityCurve = filterEquityCurve(
-                    stats.equityCurve,
+                    (stats as Stats).equityCurve,
                     metadata?.filtersApplied.startDate,
                     metadata?.lastUpdated
                   );
                   const lastDate = getLastDate(filteredEquityCurve, metadata?.lastUpdated);
                   return (
-                    <>
-                      <StatsCards
-                        stats={convertedStats}
-                        accountType={accounts.find((acc) => acc.qcode === selectedAccount)?.account_type || "unknown"}
-                        broker={accounts.find((acc) => acc.qcode === selectedAccount)?.broker || "Unknown"}
-                        isActive={metadata?.isActive ?? true}
-                        returnViewType={returnViewType}
-                        setReturnViewType={setReturnViewType}
-                      />
+                    <div className="flex gap-4">
+                      <div data-pdf-keep-whole>
+                        <StatsCards
+                          stats={convertedStats}
+                          accountType={accounts.find((acc) => acc.qcode === selectedAccount)?.account_type || "unknown"}
+                          broker={accounts.find((acc) => acc.qcode === selectedAccount)?.broker || "Unknown"}
+                          isActive={metadata?.isActive ?? true}
+                          returnViewType={returnViewType}
+                          setReturnViewType={setReturnViewType}
+                        />
+                      </div>
+
                       <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
-                        <div className="flex-1 min-w-0 sm:w-5/6">
+                        <div className="w-full mt-4" data-pdf-keep-whole>
                           <RevenueChart
                             equityCurve={filteredEquityCurve}
-                            drawdownCurve={stats.drawdownCurve}
+                            drawdownCurve={(stats as Stats).drawdownCurve}
                             trailingReturns={convertedStats.trailingReturns}
                             drawdown={convertedStats.drawdown}
                             lastDate={lastDate}
                           />
                         </div>
                       </div>
+
                       <StockTable holdings={convertedStats.holdings} viewMode="individual" />
+
                       <PnlTable
                         quarterlyPnl={convertedStats.quarterlyPnl}
                         monthlyPnl={convertedStats.monthlyPnl}
                         isPdfExport={portfolioRef.current?.getAttribute("data-is-pdf-export") === "true"}
                       />
-                      {renderCashFlowsTable()}
-                      {(isSarla || isSatidham) && metadata && !metadata.isActive && (
-                        <div className="text-sm text-yellow-600 dark:text-yellow-400">
-                          <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
-                        </div>
-                      )}
-                    </>
+                    </div>
                   );
                 })()}
               </>
@@ -1133,6 +1270,78 @@ export default function Portfolio() {
           </div>
         )
       )}
+
+      <style jsx global>{`
+  /* Export mode: keep your theme; only spacing and layout helpers */
+  [data-is-pdf-export="true"] {
+    /* keep existing colors; do NOT force light */
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+  }
+
+  /* Hide interactive UI in PDF (but don't alter colors) */
+  [data-is-pdf-export="true"] [data-hide-in-pdf],
+  [data-is-pdf-export="true"] button,
+  [data-is-pdf-export="true"] input,
+  [data-is-pdf-export="true"] select,
+  [data-is-pdf-export="true"] textarea,
+  [data-is-pdf-export="true"] [role="combobox"] {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* Normalize cards/tables frame without changing theme colors */
+  [data-is-pdf-export="true"] .card,
+  [data-is-pdf-export="true"] .bg-white\\/50,
+  [data-is-pdf-export="true"] .bg-white,
+  [data-is-pdf-export="true"] .border,
+  [data-is-pdf-export="true"] .border-0 {
+    /* keep backgrounds as-is; only ensure edges and spacing look neat on paper */
+    border-radius: 8px !important;
+  }
+
+  /* Typography scale (no color changes) */
+  [data-is-pdf-export="true"] h1 { font-size: 18px !important; font-weight: 700 !important; }
+  [data-is-pdf-export="true"] h2 { font-size: 16px !important; font-weight: 700 !important; }
+  [data-is-pdf-export="true"] h3 { font-size: 14px !important; font-weight: 600 !important; }
+
+  [data-is-pdf-export="true"] .card *,
+  [data-is-pdf-export="true"] .bg-white\\/50 * {
+    font-size: 12px !important;
+  }
+
+  [data-is-pdf-export="true"] table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+  }
+  [data-is-pdf-export="true"] table th,
+  [data-is-pdf-export="true"] table td {
+    padding: 8px 10px !important;  /* a bit more breathing room */
+    vertical-align: middle !important;
+  }
+
+  /* Page-friendly flow: add vertical rhythm without forcing colors */
+  [data-is-pdf-export="true"] [data-pdf-section]{
+    width: 100% !important;
+    max-width: 100% !important;
+    display: block !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    margin-bottom: 12mm !important;   /* key spacing between sections */
+  }
+
+  [data-is-pdf-export="true"] [data-pdf-keep-whole] {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    margin-bottom: 6mm !important;    /* small gap under charts/cards */
+  }
+
+  /* Prevent transforms/positioning from confusing html2canvas during export */
+  [data-is-pdf-export="true"] * {
+    transform: none !important;
+  }
+`}</style>
+
     </div>
   );
 }
