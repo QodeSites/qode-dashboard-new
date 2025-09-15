@@ -1113,7 +1113,7 @@ export default function Portfolio() {
                           />
                         </div>
                       </div>
-                      <StockTable holdings={convertedStats.holdings} viewMode="individual" />
+                      {/* <StockTable holdings={convertedStats.holdings} viewMode="individual" /> */}
                       <PnlTable
                         quarterlyPnl={convertedStats.quarterlyPnl}
                         monthlyPnl={convertedStats.monthlyPnl}
