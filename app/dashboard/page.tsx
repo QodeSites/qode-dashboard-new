@@ -999,13 +999,13 @@ export default function Portfolio() {
                 </Select>
               </div>
             )}
-            <Button
+            {/* <Button
               onClick={handleDownloadPdf}
               disabled={isGeneratingPdf}
               className="bg-logo-green text-button-text px-4 py-2 rounded-full"
             >
               {isGeneratingPdf ? "Generating PDF..." : "Download PDF"}
-            </Button>
+            </Button> */}
           </div>
         </div>
         {!isSarla && !isSatidham && currentMetadata?.strategyName && (
