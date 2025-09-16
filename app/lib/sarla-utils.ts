@@ -232,7 +232,7 @@ export class PortfolioApi {
 
     // Everything else from master_sheet by (qcode + system_tag)
     const systemTag = PortfolioApi.getSystemTag(scheme, qcode);
-    const profitSum = await prisma.master_sheet_test.aggregate({
+    const profitSum = await prisma.master_sheet.aggregate({
       where: { qcode, system_tag: systemTag },
       _sum: { pnl: true },
     });
@@ -1169,7 +1169,7 @@ export class PortfolioApi {
       for (const s of schemes) {
         if (s === "Scheme B") {
           const systemTag = "Zerodha Total Portfolio";
-          const depositSum = await prisma.master_sheet_test.aggregate({
+          const depositSum = await prisma.master_sheet.aggregate({
             where: {
               qcode,
               system_tag: systemTag,
@@ -1194,7 +1194,7 @@ export class PortfolioApi {
 
     if (scheme === "Scheme B") {
       const systemTag = "Zerodha Total Portfolio";
-      const depositSum = await prisma.master_sheet_test.aggregate({
+      const depositSum = await prisma.master_sheet.aggregate({
         where: {
           qcode,
           system_tag: systemTag,
@@ -1228,7 +1228,7 @@ export class PortfolioApi {
       for (const s of schemes) {
         const systemTag = s === "Scheme B" ? "Zerodha Total Portfolio" : PortfolioApi.getSystemTag(s);
         if (s === "Scheme B") {
-          const record = await prisma.master_sheet_test.findFirst({
+          const record = await prisma.master_sheet.findFirst({
             where: { qcode, system_tag: systemTag },
             orderBy: { date: "desc" },
             select: { portfolio_value: true, drawdown: true, nav: true, date: true },
@@ -1265,7 +1265,7 @@ export class PortfolioApi {
     if (scheme === "Scheme B") {
       const systemTag = "Zerodha Total Portfolio";
 
-      const record = await prisma.master_sheet_test.findFirst({
+      const record = await prisma.master_sheet.findFirst({
         where: { qcode, system_tag: systemTag },
         orderBy: { date: "desc" },
         select: { portfolio_value: true, drawdown: true, nav: true, date: true },
@@ -1285,7 +1285,7 @@ export class PortfolioApi {
 
     const systemTag = PortfolioApi.getSystemTag(scheme, qcode);
 
-    const record = await prisma.master_sheet_test.findFirst({
+    const record = await prisma.master_sheet.findFirst({
       where: { qcode, system_tag: systemTag },
       orderBy: { date: "desc" },
       select: { portfolio_value: true, drawdown: true, nav: true, date: true },
@@ -1390,13 +1390,13 @@ export class PortfolioApi {
     try {
       const systemTag = PortfolioApi.getSystemTag(scheme, qcode);
 
-      const firstNavRecord = await prisma.master_sheet_test.findFirst({
+      const firstNavRecord = await prisma.master_sheet.findFirst({
         where: { qcode, system_tag: systemTag, nav: { not: null } },
         orderBy: { date: "asc" },
         select: { nav: true, date: true },
       });
 
-      const latestNavRecord = await prisma.master_sheet_test.findFirst({
+      const latestNavRecord = await prisma.master_sheet.findFirst({
         where: { qcode, system_tag: systemTag, nav: { not: null } },
         orderBy: { date: "desc" },
         select: { nav: true, date: true },
@@ -1432,7 +1432,7 @@ export class PortfolioApi {
         return pms.totalProfit;
       }
       const systemTag = PortfolioApi.getSystemTag(scheme, qcode);
-      const profitSum = await prisma.master_sheet_test.aggregate({
+      const profitSum = await prisma.master_sheet.aggregate({
         where: { qcode, system_tag: systemTag },
         _sum: { pnl: true },
       });
@@ -1480,7 +1480,7 @@ export class PortfolioApi {
 
     const systemTag = PortfolioApi.getSystemTag(scheme, qcode);
 
-    const data = await prisma.master_sheet_test.findMany({
+    const data = await prisma.master_sheet.findMany({
       where: {
         qcode,
         system_tag: systemTag,
@@ -1545,7 +1545,7 @@ export class PortfolioApi {
         for (const s of schemes) {
           const systemTag = s === "Scheme B" ? "Zerodha Total Portfolio" : PortfolioApi.getSystemTag(s);
           if (s === "Scheme B") {
-            const schemeCashFlows = await prisma.master_sheet_test.findMany({
+            const schemeCashFlows = await prisma.master_sheet.findMany({
               where: {
                 qcode,
                 system_tag: systemTag,
@@ -1573,7 +1573,7 @@ export class PortfolioApi {
 
     const systemTag = scheme === "Scheme B" ? "Zerodha Total Portfolio" : PortfolioApi.getSystemTag(scheme);
 
-    const cashFlows = await prisma.master_sheet_test.findMany({
+    const cashFlows = await prisma.master_sheet.findMany({
       where: {
         qcode,
         system_tag: systemTag,
@@ -2260,7 +2260,7 @@ if (scheme === "Scheme PMS QAW") {
 
     // Default: compute from master_sheet for the specific scheme
     const systemTag = PortfolioApi.getSystemTag(scheme, qcode);
-    const portfolioValues = await prisma.master_sheet_test.findMany({
+    const portfolioValues = await prisma.master_sheet.findMany({
       where: { qcode, system_tag: systemTag, portfolio_value: { not: null } },
       select: { date: true, portfolio_value: true, daily_p_l: true },
       orderBy: { date: "asc" },
@@ -2439,12 +2439,12 @@ if (scheme === "Scheme PMS QAW") {
           masterSheetData = [];
         } else {
           [cashInOutData, masterSheetData] = await Promise.all([
-            prisma.master_sheet_test.findMany({
+            prisma.master_sheet.findMany({
               where: { qcode, system_tag: systemTag, capital_in_out: { not: null } },
               select: { date: true, capital_in_out: true },
               orderBy: { date: "asc" },
             }),
-            prisma.master_sheet_test.findMany({
+            prisma.master_sheet.findMany({
               where: { qcode, system_tag: systemTag },
               select: { date: true, nav: true, drawdown: true, portfolio_value: true, daily_p_l: true, pnl: true, capital_in_out: true },
               orderBy: { date: "asc" },
