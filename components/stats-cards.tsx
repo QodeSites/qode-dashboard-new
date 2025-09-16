@@ -99,8 +99,8 @@ export function StatsCards({
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 overflow-visible">
       {statItems.map((stat, index) => (
-        <div key={stat.name} className="bg-white/50 rounded-md   overflow-visible">
-          <div className="pt-2 px-5 pb-2 relative flex flex-col h-24">
+        <div key={stat.name} className="bg-white/50 rounded-md overflow-visible">
+          <div className="pt-2 px-5 pb-2 relative flex flex-col min-h-24">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <div className="text-sm font-normal text-card-text">{stat.name}</div>
@@ -150,12 +150,10 @@ export function StatsCards({
                 </div>
               )}
             </div>
-            <div className="mt-4" />
-            <div className="flex items-baseline justify-between">
-              <div className="flex items-baseline text-3xl font-[500] text-card-text-secondary font-heading">
-                {stat.value}
-              </div>
-            </div>
+            
+           <p className="flex font-[500] mt-4 text-card-text-secondary text-2xl font-heading">{stat.value}</p>
+              
+           
           </div>
         </div>
       ))}
