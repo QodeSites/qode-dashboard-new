@@ -344,29 +344,29 @@ export function buildPortfolioReportHTML(
               <tbody>
                 <tr>
                   <td style="text-align:left;font-weight:600;">Scheme (%)</td>
-                  <td>${pctStr(trailingReturnsData.fiveDays)}</td>
-                  <td>${pctStr(trailingReturnsData.tenDays)}</td>
-                  <td>${pctStr(trailingReturnsData.fifteenDays)}</td>
-                  <td>${pctStr(trailingReturnsData.oneMonth)}</td>
-                  <td>${pctStr(trailingReturnsData.threeMonths)}</td>
-                  <td>${pctStr(trailingReturnsData.oneYear)}</td>
-                  <td>${pctStr(trailingReturnsData.twoYears)}</td>
-                  <td>${pctStr(trailingReturnsData.sinceInception)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsData.fiveDays)}">${pctStr(trailingReturnsData.fiveDays)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsData.tenDays)}">${pctStr(trailingReturnsData.tenDays)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsData.fifteenDays)}">${pctStr(trailingReturnsData.fifteenDays)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsData.oneMonth)}">${pctStr(trailingReturnsData.oneMonth)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsData.threeMonths)}">${pctStr(trailingReturnsData.threeMonths)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsData.oneYear)}">${pctStr(trailingReturnsData.oneYear)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsData.twoYears)}">${pctStr(trailingReturnsData.twoYears)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsData.sinceInception)}">${pctStr(trailingReturnsData.sinceInception)}</td>
                   <td style="border-left:2px solid #DABD38;" class="negative">${pctStr(trailingReturnsData.currentDD)}</td>
                   <td class="negative">${pctStr(trailingReturnsData.MDD)}</td>
                 </tr>
                 <tr>
                   <td style="text-align:left;font-weight:600;">Benchmark (%)</td>
-                  <td>${pctStr(trailingReturnsBenchmark.fiveDays)}</td>
-                  <td>${pctStr(trailingReturnsBenchmark.tenDays)}</td>
-                  <td>${pctStr(trailingReturnsBenchmark.fifteenDays)}</td>
-                  <td>${pctStr(trailingReturnsBenchmark.oneMonth)}</td>
-                  <td>${pctStr(trailingReturnsBenchmark.threeMonths)}</td>
-                  <td>${pctStr(trailingReturnsBenchmark.oneYear)}</td>
-                  <td>${pctStr(trailingReturnsBenchmark.twoYears)}</td>
-                  <td>${pctStr(trailingReturnsBenchmark.sinceInception)}</td>
-                  <td style="border-left:2px solid #DABD38;">${pctStr(trailingReturnsBenchmark.currentDD)}</td>
-                  <td>${pctStr(trailingReturnsBenchmark.MDD)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsBenchmark.fiveDays)}">${pctStr(trailingReturnsBenchmark.fiveDays)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsBenchmark.tenDays)}">${pctStr(trailingReturnsBenchmark.tenDays)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsBenchmark.fifteenDays)}">${pctStr(trailingReturnsBenchmark.fifteenDays)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsBenchmark.oneMonth)}">${pctStr(trailingReturnsBenchmark.oneMonth)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsBenchmark.threeMonths)}">${pctStr(trailingReturnsBenchmark.threeMonths)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsBenchmark.oneYear)}">${pctStr(trailingReturnsBenchmark.oneYear)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsBenchmark.twoYears)}">${pctStr(trailingReturnsBenchmark.twoYears)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsBenchmark.sinceInception)}">${pctStr(trailingReturnsBenchmark.sinceInception)}</td>
+                  <td style="border-left:2px solid #DABD38;" class="negative">${pctStr(trailingReturnsBenchmark.currentDD)}</td>
+                  <td class="negative">${pctStr(trailingReturnsBenchmark.MDD)}</td>
                 </tr>
               </tbody>
             </table>
@@ -382,8 +382,8 @@ export function buildPortfolioReportHTML(
             <table>
               <thead><tr><th>Metric</th><th>Value</th></tr></thead>
               <tbody>
-                <tr><td style="font-weight:600;">Maximum Drawdown</td><td class="${getPnlColorClass(drawdownMetrics.maxDrawdown)}">${formatPnlValue(drawdownMetrics.maxDrawdown)}</td></tr>
-                <tr><td style="font-weight:600;">Current Drawdown</td><td class="${getPnlColorClass(drawdownMetrics.currentDrawdown)}">${formatPnlValue(drawdownMetrics.currentDrawdown)}</td></tr>
+                <tr><td style="font-weight:600;">Maximum Drawdown</td><td class="negative">${formatPnlValue(drawdownMetrics.maxDrawdown)}</td></tr>
+                <tr><td style="font-weight:600;">Current Drawdown</td><td class="negative">${formatPnlValue(drawdownMetrics.currentDrawdown)}</td></tr>
               </tbody>
             </table>
           </div>
@@ -781,9 +781,9 @@ export function buildPortfolioReportHTML(
           plotOptions: { line: { marker: { enabled: false } }, area: { fillOpacity: 0.2, marker: { enabled: false } }, series: { animation: false } },
           series: [
             { name: 'Portfolio', data: portfolioData, color: '#2E8B57', zIndex: 3, yAxis: 0, type: 'line', marker: { enabled: false } },
-            ${benchmarkEquityCurve.length ? `{ name: 'Benchmark', data: benchData, color: '#1f4f8a', zIndex: 2, yAxis: 0, type: 'line', marker: { enabled: false } },` : ``}
+            ${benchmarkEquityCurve.length ? `{ name: 'BSE500', data: benchData, color: '#1f4f8a', zIndex: 2, yAxis: 0, type: 'line', marker: { enabled: false } },` : ``}
             { name: 'Portfolio Drawdown', data: ddData, color: '#FF4560', zIndex: 1, yAxis: 1, type: 'area', marker: { enabled: false }, fillOpacity: 0.2, threshold: 0, tooltip: { valueSuffix: '%' } }
-            ${benchmarkDrawdownCurve.length ? `,{ name: 'Benchmark Drawdown', data: benchDDData, color: '#a83279', zIndex: 1, yAxis: 1, type: 'area', marker: { enabled: false }, fillOpacity: 0.15, threshold: 0, tooltip: { valueSuffix: '%' } }` : ``}
+            ${benchmarkDrawdownCurve.length ? `,{ name: 'BSE500 Drawdown', data: benchDDData, color: '#ff8700', zIndex: 1, yAxis: 1, type: 'area', marker: { enabled: false }, fillOpacity: 0.15, threshold: 0, tooltip: { valueSuffix: '%' } }` : ``}
           ],
           credits: { enabled: false }
         });
