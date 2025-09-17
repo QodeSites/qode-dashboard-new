@@ -34,9 +34,12 @@ interface RevenueChartProps {
     currentDD?: string;
   };
   drawdown: string;
+  chart_animation:boolean;
 }
 
-export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, drawdown }: RevenueChartProps) {
+export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, drawdown, chart_animation = true }: RevenueChartProps) {
+  
+  console.log(equityCurve,"=============================equityCurve2")
   const chartRef = useRef<HTMLDivElement>(null);
   const chart = useRef<any>(null);
   const { bse500Data, error } = useBse500Data(equityCurve);
@@ -494,6 +497,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         plotOptions: {
           line: { marker: { enabled: false } },
           area: { fillOpacity: 0.2, marker: { enabled: false } },
+          series: { animation: chart_animation } 
         },
         series: mergedSeries,
         credits: { enabled: false },
