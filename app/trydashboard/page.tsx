@@ -299,11 +299,13 @@ function combineTrailing(portfolio?: TrailingReturns | null, benchmark?: Trailin
 
     const portfolioValue = portfolio && portfolio[portfolioHorizon] !== undefined ? portfolio[portfolioHorizon] : null;
     const benchmarkValue = benchmark && benchmark[horizon] !== undefined ? benchmark[horizon] : null;
+    // If portfolio doesn't have the value, show "-" for benchmark as well
+    const finalBenchmarkValue = (portfolioValue === null || portfolioValue === undefined || portfolioValue === "-") ? "-" : benchmarkValue;
 
     if (portfolioValue !== null || benchmarkValue !== null) {
       out[horizon] = {
         portfolio: typeof portfolioValue === 'number' ? Number(portfolioValue.toFixed(2)) : portfolioValue,
-        benchmark: typeof benchmarkValue === 'number' ? Number(benchmarkValue.toFixed(2)) : benchmarkValue,
+        benchmark: typeof finalBenchmarkValue === 'number' ? Number(finalBenchmarkValue.toFixed(2)) : finalBenchmarkValue,
       };
     }
   }
@@ -793,6 +795,14 @@ export default function Portfolio() {
     showPmsQawView?: boolean;
   };
 
+  const benchmarkCurves = useMemo(() => {
+    if (!bse500Data?.length) return { benchmarkEquityCurve: [], benchmarkDrawdownCurve: [] };
+    return makeBenchmarkCurves(
+      bse500Data.map(pt => ({ date: pt.date, nav: pt.nav })),
+      { alignStartTo: currentEntry?.equityCurve?.[0]?.date }
+    );
+  }, [bse500Data, currentEntry]);
+
   const reportModel: ReportModel = useMemo(() => {
     let eq: EquityCurvePoint[] = [];
     let dd: { date: string; value: number }[] = [];
@@ -944,6 +954,7 @@ export default function Portfolio() {
       returnViewType,
       showOnlyQuarterlyCash,
       showPmsQawView,
+      ...benchmarkCurves,
     };
   }, [currentEntry, combinedTrailing, returnViewType]);
 
@@ -974,8 +985,8 @@ export default function Portfolio() {
 
         equityCurve: reportModel.equityCurve,
         drawdownCurve: reportModel.drawdownCurve,
-        benchmarkEquityCurve:benchmarkEquityCurve,
-        benchmarkDrawdownCurve:benchmarkDrawdownCurve,
+        benchmarkEquityCurve:reportModel.benchmarkEquityCurve,
+        benchmarkDrawdownCurve:reportModel.benchmarkDrawdownCurve,
         combinedTrailing: reportModel.combinedTrailing || {
           sinceInception: { portfolio: "-", benchmark: "-" },
         },
