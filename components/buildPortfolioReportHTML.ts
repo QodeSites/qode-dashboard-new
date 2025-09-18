@@ -260,7 +260,7 @@ export function buildPortfolioReportHTML(
     .header-right { text-align: right; }
     .header-right .date { font-size: 11px; color: #666; margin-bottom: 5px; }
     .header-right .status { background-color: #02422B; color: #DABD38; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
-    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 25px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
     .stat-card { background: #EFECD3; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 4px solid #DABD38; }
     .stat-card h3 { font-size: 11px; color: #666; margin-bottom: 8px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
     .stat-card .value { font-family: 'Inria Serif'; font-size: 18px; font-weight: 500; color: #02422B; }
@@ -323,14 +323,17 @@ export function buildPortfolioReportHTML(
         
       </div>
     </div>
+    <div> 
 
-    <div class="stats-grid">
-      ${statItems.map(s => `
-        <div class="stat-card">
-          <h4>${s.name}</h4>
-          <div class="value">${s.value}</div>
-        </div>
-      `).join("")}
+      <div class="stats-grid">
+        ${statItems.map(s => `
+          <div class="stat-card">
+            <h4>${s.name}</h4>
+            <div class="value">${s.value}</div>
+          </div>
+        `).join("")}
+      </div>
+      <div class="note"><strong>Returns:</strong> Returns above 1 year are annualised; Returns below 1 year are absolute.</div>
     </div>
 
     ${
@@ -805,7 +808,7 @@ export function buildPortfolioReportHTML(
         if (!tbody) return;
         
         const allRows = Array.from(tbody.querySelectorAll('tr'));
-        if (allRows.length <= 25) return; // Don't paginate if 25 or fewer rows
+        if (allRows.length <= 20) return; // Don't paginate if 25 or fewer rows
 
         // Store original rows
         const originalRows = allRows.map(row => row.cloneNode(true));
@@ -849,7 +852,7 @@ export function buildPortfolioReportHTML(
         
         let currentPage = page;
         let currentTbody = tbody;
-        const rowsPerPage = 25;
+        const rowsPerPage = 20;
         let rowsAddedToCurrentPage = 0;
         
         for (let i = 0; i < originalRows.length; i++) {
@@ -875,7 +878,7 @@ export function buildPortfolioReportHTML(
       const cashFlowCount = ${JSON.stringify(recentCashFlows.length)};
       console.log('Cash flow count:', cashFlowCount);
       
-      if (cashFlowCount > 25) {
+      if (cashFlowCount > 20) {
         console.log('Running pagination...');
         setTimeout(() => { 
           try { 
