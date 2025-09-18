@@ -297,7 +297,7 @@ function combineTrailing(portfolio?: TrailingReturns | null, benchmark?: Trailin
     const horizon = horizons[i];
     const portfolioHorizon = portfoliohorizons[i];
 
-    const portfolioValue = portfolio && portfolio[portfolioHorizon] !== undefined ? portfolio[portfolioHorizon] : null;
+    const portfolioValue = portfolio && portfolio[portfolioHorizon] !== undefined ? portfolio[portfolioHorizon] : portfolio[horizon];
     const benchmarkValue = benchmark && benchmark[horizon] !== undefined ? benchmark[horizon] : null;
     // If portfolio doesn't have the value, show "-" for benchmark as well
     const finalBenchmarkValue = (portfolioValue === null || portfolioValue === undefined || portfolioValue === "-") ? "-" : benchmarkValue;
@@ -775,7 +775,7 @@ export default function Portfolio() {
   type ReportModel = {
     transactions: { date: string; amount: number }[];
     cashFlowTotals: { totalIn: number; totalOut: number; netFlow: number };
-    metrics: { amountInvested: number; currentPortfolioValue: number; returns: number };
+    metrics: { amountInvested: number; currentPortfolioValue: number; returns: number, returns_percent: number };
 
     equityCurve: EquityCurvePoint[];
     drawdownCurve: { date: string; value: number }[];
@@ -842,16 +842,20 @@ export default function Portfolio() {
     let amountInvested = 0;
     let currentPortfolioValue = 0;
     let returns = 0;
+    let returns_percent = 0;
 
     if (currentEntry.mode === "sarla" || currentEntry.mode === "satidham") {
       const raw = (currentEntry as any).raw as Stats | PmsStats;
+      console.log(raw, "=======raw")
       if (isPmsStats(raw)) {
         amountInvested = raw.amountDeposited
         currentPortfolioValue = Number(raw.totalPortfolioValue ?? 0);
+        returns_percent = Number(raw.return ?? 0)
         returns = Number(raw.totalPnl ?? 0);
       } else {
         amountInvested = raw.amountDeposited
         currentPortfolioValue = Number(raw.currentExposure ?? 0);
+        returns_percent = Number(raw.return ?? 0)
         returns = Number(raw.totalProfit ?? 0);
       }
 
@@ -885,10 +889,12 @@ export default function Portfolio() {
       if (isPmsStats(raw)) {
         amountInvested = raw.amountDeposited
         currentPortfolioValue = Number(raw.totalPortfolioValue ?? 0);
+        returns_percent = Number(raw.return ?? 0)
         returns = Number(raw.totalPnl ?? 0);
       } else {
         amountInvested = raw.amountDeposited
         currentPortfolioValue = Number(raw.currentExposure ?? 0);
+        returns_percent = Number(raw.return ?? 0)
         returns = Number(raw.totalProfit ?? 0);
       }
 
@@ -925,10 +931,12 @@ export default function Portfolio() {
           amountInvested += Number(st.amountDeposited ?? 0);
           currentPortfolioValue += Number(st.totalPortfolioValue ?? 0);
           returns += Number(st.totalPnl ?? 0);
+          returns_percent = Number(raw.return ?? 0)
         } else {
           amountInvested += Number(st.amountDeposited ?? 0);
           currentPortfolioValue += Number(st.currentExposure ?? 0);
           returns += Number(st.totalProfit ?? 0);
+          returns_percent = Number(raw.return ?? 0)
         }
       }
 
@@ -937,7 +945,7 @@ export default function Portfolio() {
     return {
       transactions,
       cashFlowTotals,
-      metrics: { amountInvested, currentPortfolioValue, returns },
+      metrics: { amountInvested, currentPortfolioValue, returns, returns_percent },
 
       equityCurve: eq,
       drawdownCurve: dd,
@@ -965,17 +973,7 @@ export default function Portfolio() {
     try {
       setExporting(true);
 
-      // const { benchmarkEquityCurve, benchmarkDrawdownCurve } = useMemo(() => {
-      //   const eq = reportModel.equityCurve ?? [];
-      //   if (!bse500Data?.length || !eq.length) {
-      //     return { benchmarkEquityCurve: [], benchmarkDrawdownCurve: [] };
-      //   }
-      //   const portfolioStart = eq[0]?.date;
-      //   return makeBenchmarkCurves(
-      //     bse500Data.map(d => ({ date: d.date, nav: d.nav })),
-      //     { alignStartTo: portfolioStart }
-      //   );
-      // }, [bse500Data, reportModel.equityCurve]);
+      const formatter = (v: number) => v === 0 ? "-" : new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(v);
 
       const html = buildPortfolioReportHTML({
         // core data
@@ -985,8 +983,8 @@ export default function Portfolio() {
 
         equityCurve: reportModel.equityCurve,
         drawdownCurve: reportModel.drawdownCurve,
-        benchmarkEquityCurve:reportModel.benchmarkEquityCurve,
-        benchmarkDrawdownCurve:reportModel.benchmarkDrawdownCurve,
+        benchmarkEquityCurve: reportModel.benchmarkEquityCurve,
+        benchmarkDrawdownCurve: reportModel.benchmarkDrawdownCurve,
         combinedTrailing: reportModel.combinedTrailing || {
           sinceInception: { portfolio: "-", benchmark: "-" },
         },
@@ -1006,13 +1004,7 @@ export default function Portfolio() {
 
         // display helpers
         dateFormatter: (d) => new Date(d).toLocaleDateString("en-IN"),
-        formatter: (v) =>
-          new Intl.NumberFormat("en-IN", {
-            style: "currency",
-            currency: "INR",
-          }).format(v),
-
-        // extras for header
+        formatter: formatter,
         sessionUserName: session?.user?.name ?? "User",
         currentMetadata: {
           inceptionDate: currentMetadata?.inceptionDate ?? null,
@@ -1031,6 +1023,397 @@ export default function Portfolio() {
       alert("PDF export failed. See console for details.");
     } finally {
       setExporting(false);
+    }
+  };
+
+
+  const handleDownloadCSV = () => {
+    try {
+      let csvData = [];
+      let filename = 'portfolio_data.csv';
+
+      // Helper function to format percentage values
+      const formatPercentage = (value) => {
+        if (value === null || value === undefined) return 'N/A';
+        const numValue = typeof value === 'string' ? parseFloat(value) : value;
+        return (numValue).toFixed(2) + '%';
+      };
+
+      // Helper function to format currency values without symbol
+      const formatCurrency = (value) => {
+        if (value === null || value === undefined || value === '' || isNaN(value)) return 'N/A';
+        const numValue = typeof value === 'string' ? parseFloat(value) : value;
+        if (isNaN(numValue)) return 'N/A';
+        return new Intl.NumberFormat('en-IN', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }).format(numValue);
+      };
+
+      if ((isSarla || isSatidham) && sarlaData && selectedStrategy) {
+        // Handle Sarla/Satidham data
+        const strategyData = sarlaData[selectedStrategy];
+        const convertedStats = isPmsStats(strategyData.data) ? convertPmsStatsToStats(strategyData.data) : strategyData.data;
+
+        filename = `${selectedStrategy.replace(/\s+/g, '_')}_data.csv`;
+
+        // Basic portfolio stats
+        csvData.push(['Portfolio Statistics', '']);
+        csvData.push(['Strategy Name', selectedStrategy]);
+        csvData.push(['Amount Deposited', formatCurrency(convertedStats.amountDeposited)]);
+        csvData.push(['Current Exposure', formatCurrency(convertedStats.currentExposure)]);
+        csvData.push(['Total Return (%)', convertedStats.return + '%']);
+        csvData.push(['Total Profit', formatCurrency(convertedStats.totalProfit)]);
+        csvData.push(['Max Drawdown (%)', (convertedStats.drawdown || convertedStats.maxDrawdown) + '%']);
+        csvData.push(['', '']); // Empty row
+
+        // Trailing Returns
+        csvData.push(['Trailing Returns', '']);
+        const trailingReturns = convertedStats.trailingReturns;
+
+        csvData.push(['5 Days', formatPercentage(trailingReturns['5d'] || trailingReturns.fiveDays)]);
+        csvData.push(['10 Days', formatPercentage(trailingReturns['10d'] || trailingReturns.tenDays)]);
+        csvData.push(['15 Days', formatPercentage(trailingReturns['15d'] || trailingReturns.fifteenDays)]);
+        csvData.push(['1 Month', formatPercentage(trailingReturns['1m'] || trailingReturns.oneMonth)]);
+        csvData.push(['3 Months', formatPercentage(trailingReturns['3m'] || trailingReturns.threeMonths)]);
+        csvData.push(['6 Months', formatPercentage(trailingReturns['6m'] || trailingReturns.sixMonths)]);
+        csvData.push(['1 Year', formatPercentage(trailingReturns['1y'] || trailingReturns.oneYear)]);
+        csvData.push(['2 Years', formatPercentage(trailingReturns['2y'] || trailingReturns.twoYears)]);
+
+        // Since Inception - handle both number and string
+        const sinceInceptionValue = trailingReturns.sinceInception;
+        if (typeof sinceInceptionValue === 'number') {
+          csvData.push(['Since Inception', formatPercentage(sinceInceptionValue)]);
+        } else if (typeof sinceInceptionValue === 'string') {
+          csvData.push(['Since Inception', sinceInceptionValue.includes('%') ? sinceInceptionValue : parseFloat(sinceInceptionValue).toFixed(2) + '%']);
+        } else {
+          csvData.push(['Since Inception', 'N/A']);
+        }
+
+        csvData.push(['Max Drawdown (MDD)', trailingReturns.MDD ? trailingReturns.MDD + '%' : 'N/A']);
+        csvData.push(['Current Drawdown', trailingReturns.currentDD ? trailingReturns.currentDD + '%' : 'N/A']);
+        csvData.push(['', '']); // Empty row
+
+        // Cash Flows Summary
+        if (convertedStats.cashFlows && convertedStats.cashFlows.length > 0) {
+          const cashFlowTotals = convertedStats.cashFlows.reduce(
+            (acc, tx) => {
+              const amount = Number(tx.amount);
+              if (amount > 0) {
+                acc.totalIn += amount;
+              } else if (amount < 0) {
+                acc.totalOut += amount;
+              }
+              acc.netFlow += amount;
+              return acc;
+            },
+            { totalIn: 0, totalOut: 0, netFlow: 0 }
+          );
+
+          csvData.push(['Cash Flow Summary', '']);
+          csvData.push(['Total Cash In', formatCurrency(cashFlowTotals.totalIn)]);
+          csvData.push(['Total Cash Out', formatCurrency(cashFlowTotals.totalOut)]);
+          csvData.push(['Net Cash Flow', formatCurrency(cashFlowTotals.netFlow)]);
+          csvData.push(['', '']); // Empty row
+
+          // Detailed Cash Flows
+          csvData.push(['Cash Flows Detail', '']);
+          csvData.push(['Date', 'Amount']);
+          convertedStats.cashFlows.forEach(flow => {
+            csvData.push([flow.date, formatCurrency(flow.amount)]);
+          });
+          csvData.push(['', '']); // Empty row
+        }
+
+        // Monthly P&L
+        if (convertedStats.monthlyPnl) {
+          csvData.push(['Monthly P&L', '']);
+          csvData.push(['Year', 'Month', 'Percent Return', 'Cash Return', 'Capital In/Out']);
+
+          Object.keys(convertedStats.monthlyPnl).forEach(year => {
+            const yearData = convertedStats.monthlyPnl[year];
+            Object.keys(yearData.months).forEach(month => {
+              const monthData = yearData.months[month];
+              csvData.push([
+                year,
+                month,
+                monthData.percent,
+                formatCurrency(monthData.cash),
+                formatCurrency(monthData.capitalInOut || '0')
+              ]);
+            });
+          });
+          csvData.push(['', '']); // Empty row
+        }
+
+        // Quarterly P&L
+        if (convertedStats.quarterlyPnl) {
+          csvData.push(['Quarterly P&L', '']);
+          csvData.push(['Year', 'Quarter', 'Percent Return', 'Cash Return']);
+
+          Object.keys(convertedStats.quarterlyPnl).forEach(year => {
+            const yearData = convertedStats.quarterlyPnl[year];
+            ['q1', 'q2', 'q3', 'q4'].forEach(quarter => {
+              csvData.push([
+                year,
+                quarter.toUpperCase(),
+                yearData.percent[quarter],
+                formatCurrency(yearData.cash[quarter])
+              ]);
+            });
+          });
+          csvData.push(['', '']); // Empty row
+        }
+
+      } else if (Array.isArray(stats)) {
+        // Handle individual account data
+        filename = 'individual_accounts_data.csv';
+
+        stats.forEach((item, index) => {
+          const convertedStats = isPmsStats(item.stats) ? convertPmsStatsToStats(item.stats) : item.stats;
+
+          csvData.push([`Account ${index + 1}: ${item.metadata.account_name}`, '']);
+          csvData.push(['Account Type', item.metadata.account_type.toUpperCase()]);
+          csvData.push(['Broker', item.metadata.broker]);
+          csvData.push(['Strategy', item.metadata.strategyName || 'Unknown']);
+          csvData.push(['Amount Deposited', formatCurrency(convertedStats.amountDeposited)]);
+          csvData.push(['Current Exposure', formatCurrency(convertedStats.currentExposure)]);
+          csvData.push(['Total Return (%)', convertedStats.return + '%']);
+          csvData.push(['Total Profit', formatCurrency(convertedStats.totalProfit)]);
+          csvData.push(['Max Drawdown (%)', convertedStats.drawdown + '%']);
+          csvData.push(['', '']); // Empty row
+
+          // Trailing Returns for individual account
+          csvData.push(['Trailing Returns', '']);
+          const trailingReturns = convertedStats.trailingReturns;
+
+          csvData.push(['5 Days', formatPercentage(trailingReturns['5d'] || trailingReturns.fiveDays)]);
+          csvData.push(['10 Days', formatPercentage(trailingReturns['10d'] || trailingReturns.tenDays)]);
+          csvData.push(['15 Days', formatPercentage(trailingReturns['15d'] || trailingReturns.fifteenDays)]);
+          csvData.push(['1 Month', formatPercentage(trailingReturns['1m'] || trailingReturns.oneMonth)]);
+          csvData.push(['3 Months', formatPercentage(trailingReturns['3m'] || trailingReturns.threeMonths)]);
+          csvData.push(['6 Months', formatPercentage(trailingReturns['6m'] || trailingReturns.sixMonths)]);
+          csvData.push(['1 Year', formatPercentage(trailingReturns['1y'] || trailingReturns.oneYear)]);
+          csvData.push(['2 Years', formatPercentage(trailingReturns['2y'] || trailingReturns.twoYears)]);
+          csvData.push(['5 Years', formatPercentage(trailingReturns['5y'] || trailingReturns.fiveYears)]);
+          csvData.push(['Since Inception', trailingReturns.sinceInception + '%']);
+          csvData.push(['Max Drawdown (MDD)', trailingReturns.MDD ? trailingReturns.MDD + '%' : 'N/A']);
+          csvData.push(['Current Drawdown', trailingReturns.currentDD ? trailingReturns.currentDD + '%' : 'N/A']);
+          csvData.push(['', '']); // Empty row
+
+          // Cash Flow Summary for individual account
+          if (convertedStats.cashFlows && convertedStats.cashFlows.length > 0) {
+            const cashFlowTotals = convertedStats.cashFlows.reduce(
+              (acc, tx) => {
+                const amount = Number(tx.amount);
+                if (amount > 0) {
+                  acc.totalIn += amount;
+                } else if (amount < 0) {
+                  acc.totalOut += amount;
+                }
+                acc.netFlow += amount;
+                return acc;
+              },
+              { totalIn: 0, totalOut: 0, netFlow: 0 }
+            );
+
+            csvData.push(['Cash Flow Summary', '']);
+            csvData.push(['Total Cash In', formatCurrency(cashFlowTotals.totalIn)]);
+            csvData.push(['Total Cash Out', formatCurrency(cashFlowTotals.totalOut)]);
+            csvData.push(['Net Cash Flow', formatCurrency(cashFlowTotals.netFlow)]);
+            csvData.push(['', '']); // Empty row
+          }
+
+          // Monthly P&L for individual account
+          if (convertedStats.monthlyPnl) {
+            csvData.push(['Monthly P&L', '']);
+            csvData.push(['Year', 'Month', 'Percent Return', 'Cash Return', 'Capital In/Out']);
+
+            Object.keys(convertedStats.monthlyPnl).forEach(year => {
+              const yearData = convertedStats.monthlyPnl[year];
+              Object.keys(yearData.months).forEach(month => {
+                const monthData = yearData.months[month];
+                csvData.push([
+                  year,
+                  month,
+                  monthData.percent,
+                  formatCurrency(monthData.cash),
+                  formatCurrency(monthData.capitalInOut || '0')
+                ]);
+              });
+            });
+            csvData.push(['', '']); // Empty row
+          }
+
+          // Quarterly P&L for individual account
+          if (convertedStats.quarterlyPnl) {
+            csvData.push(['Quarterly P&L', '']);
+            csvData.push(['Year', 'Quarter', 'Percent Return', 'Cash Return']);
+
+            Object.keys(convertedStats.quarterlyPnl).forEach(year => {
+              const yearData = convertedStats.quarterlyPnl[year];
+              ['q1', 'q2', 'q3', 'q4'].forEach(quarter => {
+                const percentReturn = yearData.percent[quarter];
+                const cashReturn = yearData.cash[quarter];
+
+                // Skip quarters with no data or invalid data
+                if (percentReturn && cashReturn && percentReturn !== '-' && cashReturn !== '-') {
+                  csvData.push([
+                    year,
+                    quarter.toUpperCase(),
+                    percentReturn,
+                    formatCurrency(cashReturn)
+                  ]);
+                }
+              });
+            });
+            csvData.push(['', '']); // Empty row
+          }
+
+          csvData.push(['', '']); // Extra space between accounts
+        });
+
+      } else if (stats) {
+        // Handle single account data
+        const convertedStats = isPmsStats(stats) ? convertPmsStatsToStats(stats) : stats;
+        const accountData = accounts.find((acc) => acc.qcode === selectedAccount);
+
+        filename = `${accountData?.account_name?.replace(/\s+/g, '_') || 'portfolio'}_data.csv`;
+
+        csvData.push(['Portfolio Statistics', '']);
+        csvData.push(['Account Name', accountData?.account_name || 'Unknown']);
+        csvData.push(['Account Type', accountData?.account_type?.toUpperCase() || 'Unknown']);
+        csvData.push(['Broker', accountData?.broker || 'Unknown']);
+        csvData.push(['Amount Deposited', formatCurrency(convertedStats.amountDeposited)]);
+        csvData.push(['Current Exposure', formatCurrency(convertedStats.currentExposure)]);
+        csvData.push(['Total Return (%)', convertedStats.return + '%']);
+        csvData.push(['Total Profit', formatCurrency(convertedStats.totalProfit)]);
+        csvData.push(['Max Drawdown (%)', convertedStats.drawdown + '%']);
+        csvData.push(['', '']); // Empty row
+
+        // Trailing Returns for single account
+        csvData.push(['Trailing Returns', '']);
+        const trailingReturns = convertedStats.trailingReturns;
+
+        csvData.push(['5 Days', formatPercentage(trailingReturns['5d'] || trailingReturns.fiveDays)]);
+        csvData.push(['10 Days', formatPercentage(trailingReturns['10d'] || trailingReturns.tenDays)]);
+        csvData.push(['15 Days', formatPercentage(trailingReturns['15d'] || trailingReturns.fifteenDays)]);
+        csvData.push(['1 Month', formatPercentage(trailingReturns['1m'] || trailingReturns.oneMonth)]);
+        csvData.push(['3 Months', formatPercentage(trailingReturns['3m'] || trailingReturns.threeMonths)]);
+        csvData.push(['6 Months', formatPercentage(trailingReturns['6m'] || trailingReturns.sixMonths)]);
+        csvData.push(['1 Year', formatPercentage(trailingReturns['1y'] || trailingReturns.oneYear)]);
+        csvData.push(['2 Years', formatPercentage(trailingReturns['2y'] || trailingReturns.twoYears)]);
+        csvData.push(['5 Years', formatPercentage(trailingReturns['5y'] || trailingReturns.fiveYears)]);
+        csvData.push(['Since Inception', trailingReturns.sinceInception + '%']);
+        csvData.push(['Max Drawdown (MDD)', trailingReturns.MDD ? trailingReturns.MDD + '%' : 'N/A']);
+        csvData.push(['Current Drawdown', trailingReturns.currentDD ? trailingReturns.currentDD + '%' : 'N/A']);
+        csvData.push(['', '']); // Empty row
+
+        // Cash Flow Summary for single account
+        if (convertedStats.cashFlows && convertedStats.cashFlows.length > 0) {
+          const cashFlowTotals = convertedStats.cashFlows.reduce(
+            (acc, tx) => {
+              const amount = Number(tx.amount);
+              if (amount > 0) {
+                acc.totalIn += amount;
+              } else if (amount < 0) {
+                acc.totalOut += amount;
+              }
+              acc.netFlow += amount;
+              return acc;
+            },
+            { totalIn: 0, totalOut: 0, netFlow: 0 }
+          );
+
+          csvData.push(['Cash Flow Summary', '']);
+          csvData.push(['Total Cash In', formatCurrency(cashFlowTotals.totalIn)]);
+          csvData.push(['Total Cash Out', formatCurrency(cashFlowTotals.totalOut)]);
+          csvData.push(['Net Cash Flow', formatCurrency(cashFlowTotals.netFlow)]);
+          csvData.push(['', '']); // Empty row
+
+          // Detailed Cash Flows
+          csvData.push(['Cash Flows Detail', '']);
+          csvData.push(['Date', 'Amount']);
+          convertedStats.cashFlows.forEach(flow => {
+            csvData.push([flow.date, formatCurrency(flow.amount)]);
+          });
+          csvData.push(['', '']); // Empty row
+        }
+
+        // Monthly P&L for single account
+        if (convertedStats.monthlyPnl) {
+          csvData.push(['Monthly P&L', '']);
+          csvData.push(['Year', 'Month', 'Percent Return', 'Cash Return', 'Capital In/Out']);
+
+          Object.keys(convertedStats.monthlyPnl).forEach(year => {
+            const yearData = convertedStats.monthlyPnl[year];
+            Object.keys(yearData.months).forEach(month => {
+              const monthData = yearData.months[month];
+              csvData.push([
+                year,
+                month,
+                monthData.percent,
+                formatCurrency(monthData.cash),
+                formatCurrency(monthData.capitalInOut || '0')
+              ]);
+            });
+          });
+          csvData.push(['', '']); // Empty row
+        }
+
+        // Quarterly P&L for single account
+        if (convertedStats.quarterlyPnl) {
+          csvData.push(['Quarterly P&L', '']);
+          csvData.push(['Year', 'Quarter', 'Percent Return', 'Cash Return']);
+
+          Object.keys(convertedStats.quarterlyPnl).forEach(year => {
+            const yearData = convertedStats.quarterlyPnl[year];
+            ['q1', 'q2', 'q3', 'q4'].forEach(quarter => {
+              const percentReturn = yearData.percent[quarter];
+              const cashReturn = yearData.cash[quarter];
+
+              // Skip quarters with no data or invalid data
+              if (percentReturn && cashReturn && percentReturn !== '-' && cashReturn !== '-') {
+                csvData.push([
+                  year,
+                  quarter.toUpperCase(),
+                  percentReturn,
+                  formatCurrency(cashReturn)
+                ]);
+              }
+            });
+          });
+        }
+      }
+
+      // Convert to CSV string
+      const csvContent = csvData.map(row =>
+        row.map(field => {
+          // Handle fields that might contain commas or quotes
+          if (typeof field === 'string' && (field.includes(',') || field.includes('"') || field.includes('\n'))) {
+            return `"${field.replace(/"/g, '""')}"`;
+          }
+          return field;
+        }).join(',')
+      ).join('\n');
+
+      // Create and download the CSV file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+
+      if (link.download !== undefined) {
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', filename);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+
+    } catch (error) {
+      console.error('Error generating CSV:', error);
+      setError('Failed to generate CSV file');
     }
   };
 
@@ -1098,29 +1481,40 @@ export default function Portfolio() {
             </div>
           )}
         </div>
-
-        {(isSarla || isSatidham) && sarlaData && availableStrategies.length > 0 && (
-          <div className="hidden sm:block print-hide">
-            <Select value={selectedStrategy || ""} onValueChange={setSelectedStrategy}>
-              <SelectTrigger className="w-[400px] border-0 card-shadow text-button-text">
-                <SelectValue placeholder="Select Strategy" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableStrategies.map(strategy => {
-                  const active = sarlaData[strategy].metadata.isActive;
-                  return (
-                    <SelectItem key={strategy} value={strategy}>
-                      {strategy} {!active ? "(Inactive)" : ""}
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-            <Button onClick={handleDownloadPDF} disabled={exporting} className="text-sm w-full mt-1">
-              {exporting ? "Preparing..." : "Download PDF"}
-            </Button>
-          </div>
-        )}
+        <div
+          className={`flex justify-content ${
+            (isSarla || isSatidham) && sarlaData && availableStrategies.length > 0
+              ? 'flex-col'
+              : 'flex-row gap-2'
+          }`}
+        >
+          {(isSarla || isSatidham) && sarlaData && availableStrategies.length > 0 && (
+            <div className="hidden sm:block print-hide">
+              <Select value={selectedStrategy || ""} onValueChange={setSelectedStrategy}>
+                <SelectTrigger className="w-[400px] border-0 card-shadow text-button-text">
+                  <SelectValue placeholder="Select Strategy" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableStrategies.map(strategy => {
+                    const active = sarlaData[strategy].metadata.isActive;
+                    return (
+                      <SelectItem key={strategy} value={strategy}>
+                        {strategy} {!active ? "(Inactive)" : ""}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <Button onClick={handleDownloadPDF} disabled={exporting} className="text-sm w-full max-w-4xl ml-auto mt-1">
+            {exporting ? "Preparing..." : "Download PDF"}
+          </Button>
+          
+          <Button onClick={handleDownloadCSV} disabled={exporting} className="text-sm w-full max-w-4xl ml-auto mt-1">
+            {exporting ? "Preparing..." : "Download CSV"}
+          </Button>
+        </div>
       </div>
 
       {renderSarlaStrategyTabs()}
@@ -1248,6 +1642,17 @@ export default function Portfolio() {
                             setReturnViewType={setReturnViewType}
                           />
                         </div>
+                        <div className="flex flex-col sm:flex-col gap-4 w-full max-w-full overflow-hidden">
+                          <Card className="bg-white/50 border-0">
+                            <CardContent className="p-4">
+                              <TrailingReturnsTable
+                                equityCurve={currentEntry.equityCurve}
+                                drawdown={currentEntry.normalized.drawdown}
+                                trailingReturns={currentEntry.normalized.trailingReturns as any}
+                              />
+                            </CardContent>
+                          </Card>
+                        </div>
                         <div data-pdf="split" className="avoid-break">
                           <RevenueChart
                             equityCurve={filteredEquityCurve}
@@ -1281,6 +1686,17 @@ export default function Portfolio() {
                     returnViewType={returnViewType}
                     setReturnViewType={setReturnViewType}
                   />
+                </div>
+                <div className="flex flex-col sm:flex-col gap-4 w-full max-w-full overflow-hidden">
+                  <Card className="bg-white/50 border-0">
+                    <CardContent className="p-4">
+                      <TrailingReturnsTable
+                        equityCurve={currentEntry.equityCurve}
+                        drawdown={currentEntry.normalized.drawdown}
+                        trailingReturns={currentEntry.normalized.trailingReturns as any}
+                      />
+                    </CardContent>
+                  </Card>
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">

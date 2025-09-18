@@ -3,7 +3,7 @@ export type ReturnView = "percent" | "cash";
 
 interface Transaction { date: string; amount: number; }
 interface CashFlowTotals { totalIn: number; totalOut: number; netFlow: number; }
-interface PortfolioMetrics { amountInvested: number; currentPortfolioValue: number; returns: number; }
+interface PortfolioMetrics { amountInvested: number; currentPortfolioValue: number; returns: number;returns_percent:number; }
 
 type CombinedTrailingCell = { portfolio?: string | number | null; benchmark?: string | number | null; };
 type CombinedTrailing = {
@@ -69,7 +69,9 @@ const defaultDateFmt = (d: string) => {
   return isNaN(+dt) ? d : dt.toLocaleDateString("en-IN");
 };
 const defaultMoneyFmt = (v: number) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(v);
+  v === 0
+    ? "-"
+    : new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(v);
 
 const num = (v: unknown): number | null => {
   if (v === null || v === undefined || v === "") return null;
@@ -140,7 +142,8 @@ export function buildPortfolioReportHTML(
   const statItems = [
     { name: "Amount Invested", value: formatter(metrics?.amountInvested || 0) },
     { name: "Current Portfolio Value", value: formatter(metrics?.currentPortfolioValue || 0) },
-    { name: "Returns", value: formatter(metrics?.returns || 0) },
+    { name: "Returns (%)", value: `${metrics?.returns_percent} %` },
+    { name: "Returns (₹)", value: formatter(metrics?.returns || 0) },
   ];
 
   // Trailing returns (scheme row)
@@ -156,6 +159,7 @@ export function buildPortfolioReportHTML(
     currentDD: combinedTrailing?.currentDD?.portfolio,
     MDD: combinedTrailing?.MDD?.portfolio,
   };
+  console.log(combinedTrailing,"=====buildcombined trailings")
 
   // Benchmark row (if available)
   const trailingReturnsBenchmark = {
@@ -246,8 +250,7 @@ export function buildPortfolioReportHTML(
 <head>
   <meta charset="UTF-8">
   <title>Portfolio Report - ${title}</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Lato:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Lato:wght@300;400;500;600&family=Inria+Serif:wght@300;400;700&display=swap" rel="stylesheet">
   <script src="https://code.highcharts.com/highcharts.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -260,15 +263,15 @@ export function buildPortfolioReportHTML(
     .header-right { text-align: right; }
     .header-right .date { font-size: 11px; color: #666; margin-bottom: 5px; }
     .header-right .status { background-color: #02422B; color: #DABD38; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
-    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 25px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 25px; }
     .stat-card { background: #EFECD3; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 4px solid #DABD38; }
     .stat-card h3 { font-size: 11px; color: #666; margin-bottom: 8px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
-    .stat-card .value { font-family: 'Playfair Display', serif; font-size: 18px; font-weight: 600; color: #02422B; }
+    .stat-card .value { font-family: 'Inria Serif'; font-size: 18px; font-weight: 500; color: #02422B; }
     .section { background: #EFECD3; border-radius: 8px; margin-bottom: 20px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
     /* NOTE: default page-break-inside avoided for short sections, but we provide a utility to allow splitting */
     .section.no-split { page-break-inside: avoid; -webkit-column-break-inside: avoid; break-inside: avoid; }
     .section.allow-break { page-break-inside: auto; -webkit-column-break-inside: auto; break-inside: auto; }
-    .section-header { background-color: #02422B; color: white; padding: 12px 20px; font-family: 'Playfair Display', serif; font-size: 16px; font-weight: 600; }
+    .section-header { color: #02422B; padding: 12px 0px; font-family: 'Playfair Display', serif; font-size: 16px; font-weight: 600; }
     .section-content { padding: 0px; }
     table { width: 100%; border-collapse: collapse; font-size: 11px; }
     th { background-color: #02422B; color: white; padding: 10px 8px; text-align: center; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -288,7 +291,13 @@ export function buildPortfolioReportHTML(
     .footer { margin-top: auto; padding-top: 15px; border-top: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #666; }
     .disclaimer { font-size: 9px; color: #999; line-height: 1.4; max-width: 75%; }
     .page-number { font-family: 'Playfair Display', serif; font-size: 12px; color: #02422B; font-weight: 600; }
-    .chart-container { width: 100%; height: 300px; margin-bottom: 20px; }
+    .chart-container { width: 100%; height: 400px; margin-bottom: 20px; margin-top: 20px;}
+    .right-align {
+      text-align: right;
+    }
+    .left-align {
+      text-align: left;
+    }
     .cashflow-section {
       /* allow this section to split across pages when needed */
     }
@@ -308,20 +317,20 @@ export function buildPortfolioReportHTML(
   <div class="page">
     <div class="header">
       <div class="header-left">
-        <h1>${title}</h1>
-        <p>${showFullPages ? "Performance Summary" : "Summary"}</p>
+        <h1>${sessionUserName}<h1>
+        <p>${title}</p>
       </div>
       <div class="header-right">
         <div class="date">Inception Date: ${inceptionDisp}</div>
         <div class="date">Data as of: ${dataAsOfDisp}</div>
-        <span class="status">${statusLabel}</span>
+        
       </div>
     </div>
 
     <div class="stats-grid">
       ${statItems.map(s => `
         <div class="stat-card">
-          <h3>${s.name}</h3>
+          <h4>${s.name}</h4>
           <div class="value">${s.value}</div>
         </div>
       `).join("")}
@@ -330,15 +339,14 @@ export function buildPortfolioReportHTML(
     ${
       showFullPages
         ? `
+        <div class="section-header">Trailing Returns</div>
         <div class="section no-split">
-          <div class="section-header">Trailing Returns & Drawdown</div>
           <div class="section-content">
             <table class="trailing-returns-table">
               <thead>
                 <tr>
                   <th>Name</th>
                   <th>5d</th><th>10d</th><th>15d</th><th>1m</th><th>3m</th><th>1y</th><th>2y</th><th>Since Inception</th>
-                  <th style="border-left:2px solid #DABD38;">Current DD</th><th>Max DD</th>
                 </tr>
               </thead>
               <tbody>
@@ -352,8 +360,7 @@ export function buildPortfolioReportHTML(
                   <td class="${getPnlColorClass(trailingReturnsData.oneYear)}">${pctStr(trailingReturnsData.oneYear)}</td>
                   <td class="${getPnlColorClass(trailingReturnsData.twoYears)}">${pctStr(trailingReturnsData.twoYears)}</td>
                   <td class="${getPnlColorClass(trailingReturnsData.sinceInception)}">${pctStr(trailingReturnsData.sinceInception)}</td>
-                  <td style="border-left:2px solid #DABD38;" class="negative">${pctStr(trailingReturnsData.currentDD)}</td>
-                  <td class="negative">${pctStr(trailingReturnsData.MDD)}</td>
+      
                 </tr>
                 <tr>
                   <td style="text-align:left;font-weight:600;">Benchmark (%)</td>
@@ -365,8 +372,7 @@ export function buildPortfolioReportHTML(
                   <td class="${getPnlColorClass(trailingReturnsBenchmark.oneYear)}">${pctStr(trailingReturnsBenchmark.oneYear)}</td>
                   <td class="${getPnlColorClass(trailingReturnsBenchmark.twoYears)}">${pctStr(trailingReturnsBenchmark.twoYears)}</td>
                   <td class="${getPnlColorClass(trailingReturnsBenchmark.sinceInception)}">${pctStr(trailingReturnsBenchmark.sinceInception)}</td>
-                  <td style="border-left:2px solid #DABD38;" class="negative">${pctStr(trailingReturnsBenchmark.currentDD)}</td>
-                  <td class="negative">${pctStr(trailingReturnsBenchmark.MDD)}</td>
+                  
                 </tr>
               </tbody>
             </table>
@@ -375,31 +381,31 @@ export function buildPortfolioReportHTML(
         </div>
 
         
+        <div class="section-header">Drawdown Metrics</div>
 
         <div class="section no-split">
-          <div class="section-header">Drawdown Metrics</div>
           <div class="section-content">
             <table>
-              <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+              <thead><tr><th class="left-align">Metric</th><th class="right-align">Current Drawdown</th><th class="right-align">Maximum Drawdown</th></tr></thead>
               <tbody>
-                <tr><td style="font-weight:600;">Maximum Drawdown</td><td class="negative">${formatPnlValue(drawdownMetrics.maxDrawdown)}</td></tr>
-                <tr><td style="font-weight:600;">Current Drawdown</td><td class="negative">${formatPnlValue(drawdownMetrics.currentDrawdown)}</td></tr>
+                <tr><td style="font-weight:600;" class="left-align">SCHEME (%)</td><td class="negative right-align">${pctStr(trailingReturnsData.currentDD)}</td><td class="negative right-align">${pctStr(trailingReturnsData.MDD)}</td></tr>
+                <tr><td style="font-weight:600;" class="left-align">BENCHMARK (%)</td><td class="negative right-align">${pctStr(trailingReturnsBenchmark.currentDD)}</td><td class="negative right-align">${pctStr(trailingReturnsBenchmark.MDD)}</td></tr>
               </tbody>
             </table>
           </div>
         </div>
 
 
+        <div class="section-header">Portfolio & Benchmark — Performance and Drawdown</div>
         <div class="section no-split">
-          <div class="section-header">Portfolio & Benchmark — Performance and Drawdown</div>
           <div class="section-content">
             <div id="chart-container" class="chart-container"></div>
           </div>
         </div>
         `
         : `
+        <div class="section-header">Quarterly Profit and Loss (₹)</div>
         <div class="section no-split">
-          <div class="section-header">Quarterly Profit and Loss (₹)</div>
           <div class="section-content">
             <table class="quarterly-table">
               <thead>
@@ -427,8 +433,8 @@ export function buildPortfolioReportHTML(
     }
 
     <div class="footer">
-      <div class="disclaimer"><strong>${showFullPages ? "Portfolio Analysis" : "Summary"}:</strong> All figures are based on the latest available market data.</div>
-      <div class="page-number">1 | Qode</div>
+        <div class="disclaimer"></div>
+        <div class="page-number">1 | Qode</div>
     </div>
   </div>
 
@@ -439,18 +445,18 @@ export function buildPortfolioReportHTML(
         <div class="page">
           <div class="header">
             <div class="header-left">
-              <h1>${title}</h1>
-              <p>Profit & Loss Analysis</p>
+        <h1>${sessionUserName}<h1>
+              <p>${title}</p>
             </div>
             <div class="header-right">
               <div class="date">Inception Date: ${inceptionDisp}</div>
               <div class="date">Data as of: ${dataAsOfDisp}</div>
-              <span class="status">${statusLabel}</span>
+              
             </div>
           </div>
+          <div class="section-header">Quarterly Profit and Loss (%)</div>
 
           <div class="section no-split">
-            <div class="section-header">Quarterly Profit and Loss (%)</div>
             <div class="section-content">
               <table class="quarterly-table">
                 <thead>
@@ -474,9 +480,9 @@ export function buildPortfolioReportHTML(
               </table>
             </div>
           </div>
+          <div class="section-header">Monthly Profit and Loss (%)</div>
 
           <div class="section no-split">
-            <div class="section-header">Monthly Profit and Loss (%)</div>
             <div class="section-content">
               <table class="monthly-table">
                 <thead>
@@ -506,7 +512,7 @@ export function buildPortfolioReportHTML(
           </div>
 
           <div class="footer">
-            <div class="disclaimer"><strong>P&L Analysis:</strong> Quarterly and monthly performance breakdowns help identify seasonal trends and periodic return patterns.</div>
+            <div class="disclaimer"></div>
             <div class="page-number">2 | Qode</div>
           </div>
         </div>
@@ -515,44 +521,44 @@ export function buildPortfolioReportHTML(
         <div class="page">
           <div class="header">
             <div class="header-left">
-              <h1>${title}</h1>
-              <p>Risk & Cash Flow Analysis</p>
+        <h1>${sessionUserName}<h1>
+              <p>${title}</p>
             </div>
             <div class="header-right">
               <div class="date">Inception Date: ${inceptionDisp}</div>
               <div class="date">Data as of: ${dataAsOfDisp}</div>
-              <span class="status">${statusLabel}</span>
+              
             </div>
           </div>
 
+            <div class="section-header">Cash In / Cash Out</div>
           <!-- IMPORTANT: .section.allow-break allows this section to be split across pages dynamically -->
           <div class="section allow-break cashflow-section">
-            <div class="section-header">Cash In / Cash Out</div>
             <div class="section-content">
               ${
                 recentCashFlows.length
                   ? `
                     <table class="cash-flows-table" id="cash-flows-table">
-                      <thead><tr><th>Date</th><th>Amount</th></tr></thead>
+                      <thead><tr><th class="left-align">Date</th><th class="right-align">Amount</th></tr></thead>
                       <tbody>
                         ${recentCashFlows.map(flow => `
                           <tr>
-                            <td>${flow.date}</td>
-                            <td class="${flow.amount > 0 ? 'cash-flow-positive' : 'cash-flow-negative'}">
+                            <td class="left-align">${flow.date}</td>
+                            <td class="${flow.amount > 0 ? 'cash-flow-positive' : 'cash-flow-negative'} right-align">
                               ${flow.amount > 0 ? '+' : ''}${formatCashAmount(flow.amount)}
                             </td>
                           </tr>`).join("")}
                         <tr class="summary-row">
-                          <td style="font-weight:600;">Total Cash In</td>
-                          <td class="cash-flow-positive">+${formatCashAmount(cashFlowTotals.totalIn)}</td>
+                          <td style="font-weight:600;" class="left-align">Total Cash In</td>
+                          <td class="cash-flow-positive right-align">+${formatCashAmount(cashFlowTotals.totalIn)}</td>
                         </tr>
                         <tr class="summary-row">
-                          <td style="font-weight:600;">Total Cash Out</td>
-                          <td class="cash-flow-negative">${formatCashAmount(cashFlowTotals.totalOut)}</td>
+                          <td style="font-weight:600;" class="left-align">Total Cash Out</td>
+                          <td class="cash-flow-negative right-align">${formatCashAmount(cashFlowTotals.totalOut)}</td>
                         </tr>
                         <tr class="summary-row">
-                          <td style="font-weight:600;">Net Cash Flow</td>
-                          <td class="${cashFlowTotals.netFlow >= 0 ? 'cash-flow-positive' : 'cash-flow-negative'}">
+                          <td style="font-weight:600;" class="left-align">Net Cash Flow</td>
+                          <td class="${cashFlowTotals.netFlow >= 0 ? 'cash-flow-positive' : 'cash-flow-negative'} right-align">
                             ${cashFlowTotals.netFlow >= 0 ? '+' : ''}${formatCashAmount(cashFlowTotals.netFlow)}
                           </td>
                         </tr>
@@ -571,7 +577,7 @@ export function buildPortfolioReportHTML(
           </div>
 
           <div class="footer">
-            <div class="disclaimer"><strong>Risk & Cash Flow:</strong> Drawdown metrics measure portfolio risk while cash flow analysis tracks investment and withdrawal patterns affecting overall performance.</div>
+            <div class="disclaimer"></div>
             <div class="page-number">3 | Qode</div>
           </div>
         </div>
@@ -583,43 +589,43 @@ export function buildPortfolioReportHTML(
         <div class="page">
           <div class="header">
             <div class="header-left">
-              <h1>${title}</h1>
-              <p>Cash In / Cash Out</p>
+        <h1>${sessionUserName}<h1>
+              <p>${title}</p>
             </div>
             <div class="header-right">
               <div class="date">Inception Date: ${inceptionDisp}</div>
               <div class="date">Data as of: ${dataAsOfDisp}</div>
-              <span class="status">${statusLabel}</span>
+              
             </div>
           </div>
 
-          <div class="section allow-break cashflow-section">
             <div class="section-header">Cash In / Cash Out</div>
+          <div class="section allow-break cashflow-section">
             <div class="section-content">
               ${
                 recentCashFlows.length
                   ? `
                     <table class="cash-flows-table" id="cash-flows-table">
-                      <thead><tr><th>Date</th><th>Amount</th></tr></thead>
+                      <thead><tr><th class="left-align">Date</th><th class="right-align">Amount</th></tr></thead>
                       <tbody>
                         ${recentCashFlows.map(flow => `
                           <tr>
-                            <td>${flow.date}</td>
-                            <td class="${flow.amount > 0 ? 'cash-flow-positive' : 'cash-flow-negative'}">
+                            <td class="left-align">${flow.date}</td>
+                            <td class="right-align ${flow.amount > 0 ? 'cash-flow-positive' : 'cash-flow-negative'}">
                               ${flow.amount > 0 ? '+' : ''}${formatCashAmount(flow.amount)}
                             </td>
                           </tr>`).join("")}
                         <tr class="summary-row">
-                          <td style="font-weight:600;">Total Cash In</td>
-                          <td class="cash-flow-positive">+${formatCashAmount(cashFlowTotals.totalIn)}</td>
+                          <td style="font-weight:600;" class="left-align">Total Cash In</td>
+                          <td class="cash-flow-positive right-align">+${formatCashAmount(cashFlowTotals.totalIn)}</td>
                         </tr>
                         <tr class="summary-row">
-                          <td style="font-weight:600;">Total Cash Out</td>
-                          <td class="cash-flow-negative">${formatCashAmount(cashFlowTotals.totalOut)}</td>
+                          <td style="font-weight:600;" class="left-align">Total Cash Out</td>
+                          <td class="cash-flow-negative right-align">${formatCashAmount(cashFlowTotals.totalOut)}</td>
                         </tr>
                         <tr class="summary-row">
-                          <td style="font-weight:600;">Net Cash Flow</td>
-                          <td class="${cashFlowTotals.netFlow >= 0 ? 'cash-flow-positive' : 'cash-flow-negative'}">
+                          <td style="font-weight:600;" class="left-align">Net Cash Flow</td>
+                          <td class="${cashFlowTotals.netFlow >= 0 ? 'cash-flow-positive' : 'cash-flow-negative'} right-align">
                             ${cashFlowTotals.netFlow >= 0 ? '+' : ''}${formatCashAmount(cashFlowTotals.netFlow)}
                           </td>
                         </tr>
@@ -638,7 +644,7 @@ export function buildPortfolioReportHTML(
           </div>
 
           <div class="footer">
-            <div class="disclaimer"><strong>Cash Flow:</strong> Inflows and outflows driving net changes.</div>
+            <div class="disclaimer"></div>
             <div class="page-number">2 | Qode</div>
           </div>
         </div>
@@ -734,7 +740,7 @@ export function buildPortfolioReportHTML(
         const tickInterval = dateRange > 0 ? Math.max(7*24*60*60*1000, Math.ceil(dateRange / 20)) : undefined;
 
         Highcharts.chart('chart-container', {
-          chart: { zoomType: 'xy', height: 300, backgroundColor: 'transparent', plotBackgroundColor: 'transparent', style: { fontFamily: 'Lato, sans-serif' } },
+          chart: { zoomType: 'xy', height: 400, backgroundColor: 'transparent', plotBackgroundColor: 'transparent', style: { fontFamily: 'Lato, sans-serif' }},
           title: { text: '' },
           xAxis: {
             type: 'datetime',
@@ -793,122 +799,146 @@ export function buildPortfolioReportHTML(
       // Dynamic pagination for long cash-flow tables
       // =====================
       function paginateLongTable(tableId) {
-        const table = document.getElementById(tableId);
-        if (!table) return;
+  const table = document.getElementById(tableId);
+  if (!table) return;
 
-        // Find the closest .page ancestor and measure available content height
-        const page = table.closest('.page');
-        if (!page) return;
+  // Find the closest .page ancestor and measure available content height
+  const page = table.closest('.page');
+  if (!page) return;
 
-        // compute usable height inside a page (page height minus header/footer)
-        const pageHeight = page.getBoundingClientRect().height;
+  // compute usable height inside a page (page height minus header/footer)
+  const pageHeight = page.getBoundingClientRect().height;
 
-        // header and footer heights: find elements inside page
-        const header = page.querySelector('.header');
-        const footer = page.querySelector('.footer');
-        const headerH = header ? header.getBoundingClientRect().height : 0;
-        const footerH = footer ? footer.getBoundingClientRect().height : 0;
+  // header and footer heights: find elements inside page
+  const header = page.querySelector('.header');
+  const footer = page.querySelector('.footer');
+  const headerH = header ? header.getBoundingClientRect().height : 0;
+  const footerH = footer ? footer.getBoundingClientRect().height : 0;
 
-        // some padding inside page
-        const pagePaddingTop = 20; // approximate padding
-        const pagePaddingBottom = 20;
+  // some padding inside page
+  const pagePaddingTop = 20; 
+  const pagePaddingBottom = 20;
 
-        const usableHeight = pageHeight - headerH - footerH - pagePaddingTop - pagePaddingBottom - 50; // buffer
+  const usableHeight = pageHeight - headerH - footerH - pagePaddingTop - pagePaddingBottom - 60; // buffer
 
-        // get tbody rows (exclude THEAD) and preserve original data immediately
-        const tbody = table.querySelector('tbody');
-        if (!tbody) return;
-        const originalRows = Array.from(tbody.querySelectorAll('tr'));
-        if (!originalRows.length) return;
+  // get tbody rows (exclude THEAD) and preserve original data immediately
+  const tbody = table.querySelector('tbody');
+  if (!tbody) return;
+  const originalRows = Array.from(tbody.querySelectorAll('tr'));
+  if (!originalRows.length) return;
 
-        // Store the original row data before any manipulation
-        const originalRowData = originalRows.map(row => row.cloneNode(true));
+  // Store the original row data before any manipulation
+  const originalRowData = originalRows.map(row => row.cloneNode(true));
 
-        // If table fits, nothing to do
-        const tableRect = table.getBoundingClientRect();
-        if (tableRect.height <= usableHeight) return;
+  // If table fits, nothing to do
+  const tableRect = table.getBoundingClientRect();
+  if (tableRect.height <= usableHeight) return;
 
-        function createNewPageAfter(refPage) {
-          const newPage = refPage.cloneNode(false);
-          newPage.innerHTML = '';
-          
-          // Clone header and footer
-          const headerClone = refPage.querySelector('.header')?.cloneNode(true);
-          const footerClone = refPage.querySelector('.footer')?.cloneNode(true);
-          
-          if (headerClone) newPage.appendChild(headerClone);
+  // Track current page number for proper incrementing
+  let currentPageNum = 1;
+  const originalFooter = page.querySelector('.footer .page-number');
+  if (originalFooter) {
+    const match = originalFooter.textContent.match(/(\d+)/);
+    if (match) {
+      currentPageNum = parseInt(match[1]);
+    }
+  }
 
-          // Create section structure
-          const section = document.createElement('div');
-          section.className = 'section allow-break cashflow-section';
-          newPage.appendChild(section);
+  function createNewPageAfter(refPage) {
+    const newPage = refPage.cloneNode(false);
+    newPage.innerHTML = '';
+    
+    // Clone header and footer
+    const headerClone = refPage.querySelector('.header')?.cloneNode(true);
+    const footerClone = refPage.querySelector('.footer')?.cloneNode(true);
+    
+    if (headerClone) newPage.appendChild(headerClone);
 
-          const sectionHeader = document.createElement('div');
-          sectionHeader.className = 'section-header';
-          sectionHeader.textContent = 'Cash In / Cash Out (continued)';
-          section.appendChild(sectionHeader);
+    // Create section structure
+    const parent = document.createElement('div');
+    const section = document.createElement('div');
+    section.className = 'section allow-break cashflow-section';
+    newPage.appendChild(parent);
 
-          const sectionContent = document.createElement('div');
-          sectionContent.className = 'section-content';
-          section.appendChild(sectionContent);
+    const sectionHeader = document.createElement('div');
+    sectionHeader.className = 'section-header';
+    sectionHeader.textContent = 'Cash In / Cash Out';
+    parent.appendChild(sectionHeader);
 
-          // Create table with same structure
-          const tbl = document.createElement('table');
-          tbl.className = table.className;
-          tbl.id = tableId + '_page_' + Date.now(); // unique id for continuation pages
-          tbl.innerHTML = '<thead>' + table.querySelector('thead').innerHTML + '</thead><tbody></tbody>';
-          sectionContent.appendChild(tbl);
+    const sectionContent = document.createElement('div');
+    sectionContent.className = 'section-content';
+    section.appendChild(sectionContent);
 
-          if (footerClone) {
-            // Update page number in footer
-            const pageNum = footerClone.querySelector('.page-number');
-            if (pageNum) {
-              const match = pageNum.textContent.match(/(\d+)/);
-              if (match) {
-                const currentNum = parseInt(match[1]);
-                pageNum.textContent = pageNum.textContent.replace(/\d+/, currentNum + 1);
-              }
-            }
-            newPage.appendChild(footerClone);
-          }
+    // Create table with same structure
+    const tbl = document.createElement('table');
+    tbl.className = table.className;
+    tbl.id = tableId + '_page_' + Date.now(); // unique id for continuation pages
+    tbl.innerHTML = '<thead>' + table.querySelector('thead').innerHTML + '</thead><tbody></tbody>';
+    sectionContent.appendChild(tbl);
+    parent.appendChild(section);
 
-          // Insert after reference page
-          refPage.parentNode.insertBefore(newPage, refPage.nextSibling);
-          return newPage;
-        }
-
-        // Clear the original table body and rebuild with pagination
-        tbody.innerHTML = '';
-
-        let currentPage = page;
-        let currentTable = table;
-        let currentTbody = tbody;
-
-        for (let i = 0; i < originalRowData.length; i++) {
-          const rowClone = originalRowData[i].cloneNode(true);
-          
-          // Test if adding this row would exceed the height limit
-          currentTbody.appendChild(rowClone);
-          const currentHeight = currentTable.getBoundingClientRect().height;
-
-          if (currentHeight > usableHeight && currentTbody.children.length > 1) {
-            // Remove the row that caused overflow
-            currentTbody.removeChild(rowClone);
-            
-            // Create new page and move the row there
-            const newPage = createNewPageAfter(currentPage);
-            const newTable = newPage.querySelector('table');
-            const newTbody = newTable.querySelector('tbody');
-            
-            newTbody.appendChild(rowClone);
-            
-            // Update references for next iteration
-            currentPage = newPage;
-            currentTable = newTable;
-            currentTbody = newTbody;
-          }
-        }
+    if (footerClone) {
+      // Increment page number properly
+      currentPageNum++;
+      const pageNum = footerClone.querySelector('.page-number');
+      if (pageNum) {
+        // Replace the entire page number text with new number
+        pageNum.textContent = currentPageNum + ' | Qode';
+      } else {
+        // If no page number element found, create one
+        const newPageNum = document.createElement('div');
+        newPageNum.className = 'page-number';
+        newPageNum.textContent = currentPageNum + ' | Qode';
+        footerClone.appendChild(newPageNum);
       }
+      
+      // Ensure footer has the proper styling (border-top)
+      if (!footerClone.style.borderTop && !footerClone.className.includes('footer')) {
+        footerClone.style.borderTop = '1px solid #ddd';
+        footerClone.style.paddingTop = '15px';
+        footerClone.style.marginTop = 'auto';
+      }
+      
+      newPage.appendChild(footerClone);
+    }
+
+    // Insert after reference page
+    refPage.parentNode.insertBefore(newPage, refPage.nextSibling);
+    return newPage;
+  }
+
+  // Clear the original table body and rebuild with pagination
+  tbody.innerHTML = '';
+
+  let currentPage = page;
+  let currentTable = table;
+  let currentTbody = tbody;
+
+  for (let i = 0; i < originalRowData.length; i++) {
+    const rowClone = originalRowData[i].cloneNode(true);
+    
+    // Test if adding this row would exceed the height limit
+    currentTbody.appendChild(rowClone);
+    const currentHeight = currentTable.getBoundingClientRect().height;
+
+    if (currentHeight > usableHeight && currentTbody.children.length > 1) {
+      // Remove the row that caused overflow
+      currentTbody.removeChild(rowClone);
+      
+      // Create new page and move the row there
+      const newPage = createNewPageAfter(currentPage);
+      const newTable = newPage.querySelector('table');
+      const newTbody = newTable.querySelector('tbody');
+      
+      newTbody.appendChild(rowClone);
+      
+      // Update references for next iteration
+      currentPage = newPage;
+      currentTable = newTable;
+      currentTbody = newTbody;
+    }
+  }
+}
       // Run pagination after a short delay to allow fonts and layout to stabilize
       setTimeout(() => { try { paginateLongTable('cash-flows-table'); } catch(e) { /* ignore */ } }, 300);
 
