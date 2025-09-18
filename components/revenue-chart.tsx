@@ -34,9 +34,12 @@ interface RevenueChartProps {
     currentDD?: string;
   };
   drawdown: string;
+  chart_animation:boolean;
 }
 
-export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, drawdown }: RevenueChartProps) {
+export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, drawdown, chart_animation = true }: RevenueChartProps) {
+  
+  console.log(equityCurve,"=============================equityCurve2")
   const chartRef = useRef<HTMLDivElement>(null);
   const chart = useRef<any>(null);
   const { bse500Data, error } = useBse500Data(equityCurve);
@@ -494,6 +497,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         plotOptions: {
           line: { marker: { enabled: false } },
           area: { fillOpacity: 0.2, marker: { enabled: false } },
+          series: { animation: chart_animation } 
         },
         series: mergedSeries,
         credits: { enabled: false },
@@ -526,15 +530,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
 
   return (
     <div className="space-y-6">
-      <Card className="bg-white/50   border-0">
-        <CardContent className="p-4">
-          <TrailingReturnsTable
-            trailingReturns={trailingReturns}
-            drawdown={drawdown}
-            equityCurve={equityCurve}
-          />
-        </CardContent>
-      </Card>
+      
       <Card className="bg-white/50   border-0">
         <CardContent className="p-4">
           <CardTitle className="text-card-text text-sm sm:text-lg mb-4">Portfolio Performance & Drawdown</CardTitle>

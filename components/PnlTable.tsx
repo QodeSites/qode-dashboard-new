@@ -42,9 +42,8 @@ export function PnlTable({
 }: PnlTableProps) {
   console.log(showOnlyQuarterlyCash);
 
-  const [viewType, setViewType] = useState<"percent" | "cash">(
-    showPmsQawView ? "percent" : "cash"
-  );
+  const [viewType, setViewType] = useState<"percent" | "cash">("percent");
+
 
   // Use percent view for PDF export, otherwise use state or props
   const effectiveViewType = isPdfExport ? "percent" : viewType;

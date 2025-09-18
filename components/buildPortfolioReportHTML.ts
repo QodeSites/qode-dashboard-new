@@ -1,0 +1,924 @@
+
+export type ReturnView = "percent" | "cash";
+
+interface Transaction { date: string; amount: number; }
+interface CashFlowTotals { totalIn: number; totalOut: number; netFlow: number; }
+interface PortfolioMetrics { amountInvested: number; currentPortfolioValue: number; returns: number; }
+
+type CombinedTrailingCell = { portfolio?: string | number | null; benchmark?: string | number | null; };
+type CombinedTrailing = {
+  fiveDays?: CombinedTrailingCell;
+  tenDays?: CombinedTrailingCell;
+  fifteenDays?: CombinedTrailingCell;
+  oneMonth?: CombinedTrailingCell;
+  threeMonths?: CombinedTrailingCell;
+  sixMonths?: CombinedTrailingCell;
+  oneYear?: CombinedTrailingCell;
+  twoYears?: CombinedTrailingCell;
+  fiveYears?: CombinedTrailingCell;
+  sinceInception: CombinedTrailingCell;
+  MDD?: CombinedTrailingCell;
+  currentDD?: CombinedTrailingCell;
+};
+
+interface QuarterlyPnl {
+  [year: string]: {
+    percent: { q1: string | number; q2: string | number; q3: string | number; q4: string | number; total: string | number; };
+    cash: { q1: string | number; q2: string | number; q3: string | number; q4: string | number; total: string | number; };
+    yearCash: string | number;
+  };
+}
+
+interface MonthlyPnl {
+  [year: string]: {
+    months: { [month: string]: { percent?: string | number; cash?: string | number; capitalInOut?: string | number; } };
+    totalPercent?: number | string;
+    totalCash?: number | string;
+    totalCapitalInOut?: number | string;
+  };
+}
+
+export interface PortfolioReportProps {
+  transactions: Transaction[];
+  cashFlowTotals: CashFlowTotals;
+  metrics: PortfolioMetrics;
+  equityCurve?: { date: string; value?: number; nav?: number }[];
+  drawdownCurve?: { date: string; value?: number; drawdown?: number }[];
+  /** NEW: optional benchmark series for the chart */
+  benchmarkEquityCurve?: { date: string; value?: number; nav?: number }[];
+  benchmarkDrawdownCurve?: { date: string; value?: number; drawdown?: number }[];
+  combinedTrailing: CombinedTrailing;
+  drawdown?: string;
+  monthlyPnl?: MonthlyPnl | null;
+  quarterlyPnl?: QuarterlyPnl | null;
+  lastDate?: string | null;
+  strategyName?: string;
+  isTotalPortfolio?: boolean;
+  isActive?: boolean;
+  returnViewType?: "percent";
+  showOnlyQuarterlyCash?: boolean;
+  showPmsQawView?: boolean;
+  dateFormatter?: (date: string) => string;
+  formatter?: (value: number) => string;
+}
+
+type Metadata = { inceptionDate?: string | null; dataAsOfDate?: string | null };
+
+const defaultDateFmt = (d: string) => {
+  const dt = new Date(d);
+  return isNaN(+dt) ? d : dt.toLocaleDateString("en-IN");
+};
+const defaultMoneyFmt = (v: number) =>
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(v);
+
+const num = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+const pctStr = (v: unknown): string => {
+  const n = num(v);
+  return n === null ? "-" : `${n.toFixed(2)}%`;
+};
+
+const getPnlColorClass = (v: unknown) => {
+  const n = num(v);
+  if (n === null) return "neutral";
+  if (n > 0) return "positive";
+  if (n < 0) return "negative";
+  return "neutral";
+};
+
+const formatPnlValue = (v: unknown) => {
+  const n = num(v);
+  return n === null ? "-" : `${n.toFixed(2)}%`;
+};
+
+const formatCashAmountWith = (fmt: (x: number) => string) => (v: unknown) => {
+  const n = num(v);
+  return n === null ? "-" : fmt(n);
+};
+
+const monthOrderFull = [
+  "January","February","March","April","May","June",
+  "July","August","September","October","November","December"
+];
+
+export function buildPortfolioReportHTML(
+  props: PortfolioReportProps & {
+    sessionUserName?: string | null;
+    currentMetadata?: Metadata;
+  }
+) {
+  const {
+    transactions = [],
+    cashFlowTotals,
+    metrics,
+    equityCurve = [],
+    drawdownCurve = [],
+    benchmarkEquityCurve = [],
+    benchmarkDrawdownCurve = [],
+    combinedTrailing,
+    monthlyPnl = null,
+    quarterlyPnl = null,
+    lastDate,
+    strategyName,
+    isActive = true,
+    isTotalPortfolio = false,
+    dateFormatter = defaultDateFmt,
+    formatter = defaultMoneyFmt,
+    sessionUserName = "User",
+    currentMetadata
+  } = props;
+
+  // Header display
+  const title = strategyName || "Total Portfolio";
+  const statusLabel = isActive ? "ACTIVE PORTFOLIO" : "INACTIVE";
+
+  // Top stats
+  const statItems = [
+    { name: "Amount Invested", value: formatter(metrics?.amountInvested || 0) },
+    { name: "Current Portfolio Value", value: formatter(metrics?.currentPortfolioValue || 0) },
+    { name: "Returns", value: formatter(metrics?.returns || 0) },
+  ];
+
+  // Trailing returns (scheme row)
+  const trailingReturnsData = {
+    fiveDays: combinedTrailing?.fiveDays?.portfolio,
+    tenDays: combinedTrailing?.tenDays?.portfolio,
+    fifteenDays: combinedTrailing?.fifteenDays?.portfolio,
+    oneMonth: combinedTrailing?.oneMonth?.portfolio,
+    threeMonths: combinedTrailing?.threeMonths?.portfolio,
+    oneYear: combinedTrailing?.oneYear?.portfolio,
+    twoYears: combinedTrailing?.twoYears?.portfolio,
+    sinceInception: combinedTrailing?.sinceInception?.portfolio,
+    currentDD: combinedTrailing?.currentDD?.portfolio,
+    MDD: combinedTrailing?.MDD?.portfolio,
+  };
+
+  // Benchmark row (if available)
+  const trailingReturnsBenchmark = {
+    fiveDays: combinedTrailing?.fiveDays?.benchmark,
+    tenDays: combinedTrailing?.tenDays?.benchmark,
+    fifteenDays: combinedTrailing?.fifteenDays?.benchmark,
+    oneMonth: combinedTrailing?.oneMonth?.benchmark,
+    threeMonths: combinedTrailing?.threeMonths?.benchmark,
+    oneYear: combinedTrailing?.oneYear?.benchmark,
+    twoYears: combinedTrailing?.twoYears?.benchmark,
+    sinceInception: combinedTrailing?.sinceInception?.benchmark,
+    currentDD: combinedTrailing?.currentDD?.benchmark,
+    MDD: combinedTrailing?.MDD?.benchmark,
+  };
+
+  // Drawdown metrics
+  const drawdownMetrics = {
+    maxDrawdown: trailingReturnsData.MDD ?? null,
+    currentDrawdown: trailingReturnsData.currentDD ?? null,
+  };
+
+  // Quarterly (%)
+  const quarterlyDataPercent = Object.keys(quarterlyPnl || {})
+    .sort()
+    .map((year) => {
+      const row = (quarterlyPnl as QuarterlyPnl)[year]?.percent;
+      return {
+        year,
+        q1: row?.q1 ?? null,
+        q2: row?.q2 ?? null,
+        q3: row?.q3 ?? null,
+        q4: row?.q4 ?? null,
+        total: row?.total ?? null,
+      };
+    });
+
+  // Quarterly (₹) for Total Portfolio mode
+  const quarterlyDataCash = Object.keys(quarterlyPnl || {})
+    .sort()
+    .map((year) => {
+      const row = (quarterlyPnl as QuarterlyPnl)[year]?.cash;
+      return {
+        year,
+        q1: row?.q1 ?? null,
+        q2: row?.q2 ?? null,
+        q3: row?.q3 ?? null,
+        q4: row?.q4 ?? null,
+        total: row?.total ?? null,
+      };
+    });
+
+  // Monthly (%)
+  const monthlyData = Object.keys(monthlyPnl || {})
+    .sort()
+    .map((year) => {
+      const rec = (monthlyPnl as MonthlyPnl)[year];
+      const months = rec?.months || {};
+      const row: any = { year, months: {}, totalPercent: rec?.totalPercent };
+      monthOrderFull.forEach((m) => {
+        row.months[m] = { percent: months[m]?.percent ?? null };
+      });
+      return row;
+    });
+
+  // Recent cash flows
+  const formatCashAmount = formatCashAmountWith(formatter);
+  const recentCashFlows = transactions.map((t) => ({
+    date: dateFormatter(t.date),
+    amount: Number(t.amount),
+  }));
+
+  // Month header (short)
+  const monthOrderShort = monthOrderFull.map((m) => m.slice(0, 3));
+
+  // Inception/data dates
+  const inceptionDisp = currentMetadata?.inceptionDate ? dateFormatter(currentMetadata.inceptionDate) : "N/A";
+  const dataAsOfDisp = currentMetadata?.dataAsOfDate
+    ? dateFormatter(currentMetadata.dataAsOfDate)
+    : (lastDate ? dateFormatter(lastDate) : "N/A");
+
+  // =============== HTML ===============
+  const showFullPages = !isTotalPortfolio; // if total portfolio => only summary + quarterly cash + cash flows
+  console.log(cashFlowTotals,"+++++++++++++++++++++++++++++++++++++++++++++++")
+
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Portfolio Report - ${title}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Lato:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <script src="https://code.highcharts.com/highcharts.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Lato', sans-serif; background-color: #EFECD3; color: #333; line-height: 1.5; font-size: 12px; }
+    .page { width: 210mm; height: 297mm; padding: 5mm; margin: 0; background-color: #EFECD3; page-break-after: always; display: flex; flex-direction: column; position: relative; }
+    .page:last-child { page-break-after: auto; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 3px solid #02422B; }
+    .header-left h1 { font-family: 'Playfair Display', serif; font-size: 24px; font-weight: 700; color: #02422B; margin-bottom: 5px; }
+    .header-left p { font-size: 14px; color: #666; font-weight: 400; }
+    .header-right { text-align: right; }
+    .header-right .date { font-size: 11px; color: #666; margin-bottom: 5px; }
+    .header-right .status { background-color: #02422B; color: #DABD38; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 25px; }
+    .stat-card { background: #EFECD3; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 4px solid #DABD38; }
+    .stat-card h3 { font-size: 11px; color: #666; margin-bottom: 8px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-card .value { font-family: 'Playfair Display', serif; font-size: 18px; font-weight: 600; color: #02422B; }
+    .section { background: #EFECD3; border-radius: 8px; margin-bottom: 20px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    /* NOTE: default page-break-inside avoided for short sections, but we provide a utility to allow splitting */
+    .section.no-split { page-break-inside: avoid; -webkit-column-break-inside: avoid; break-inside: avoid; }
+    .section.allow-break { page-break-inside: auto; -webkit-column-break-inside: auto; break-inside: auto; }
+    .section-header { background-color: #02422B; color: white; padding: 12px 20px; font-family: 'Playfair Display', serif; font-size: 16px; font-weight: 600; }
+    .section-content { padding: 0px; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th { background-color: #02422B; color: white; padding: 10px 8px; text-align: center; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+    td { padding: 8px; text-align: center; border-bottom: 1px solid #eee; }
+    tr { }
+    thead { display: table-header-group; }
+    tbody { display: table-row-group; }
+    tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
+    .positive { color: #059669; }
+    .negative { color: #dc2626; }
+    .neutral { color: #374151; }
+    .cash-flow-positive { color: #059669; font-weight: 600; }
+    .cash-flow-negative { color: #dc2626; font-weight: 600; }
+    .summary-row { background-color: rgba(243,244,246,0.5); font-weight: 600; }
+    .trailing-returns-table th:first-child, .trailing-returns-table td:first-child { text-align: left; font-weight: 500; }
+    .note { font-size: 10px; color: #666; margin-top: 10px; font-style: italic; padding: 0 8px 8px; }
+    .footer { margin-top: auto; padding-top: 15px; border-top: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #666; }
+    .disclaimer { font-size: 9px; color: #999; line-height: 1.4; max-width: 75%; }
+    .page-number { font-family: 'Playfair Display', serif; font-size: 12px; color: #02422B; font-weight: 600; }
+    .chart-container { width: 100%; height: 300px; margin-bottom: 20px; }
+    .cashflow-section {
+      /* allow this section to split across pages when needed */
+    }
+    @page { size: A4 portrait; margin: 0; }
+    @media print {
+      body, .page, .stat-card, .section, .header, th, .section-header, .header-right .status, .chart-container {
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+      }
+      /* allow content splitting for long flows */
+      .section.allow-break { page-break-inside: auto; -webkit-column-break-inside: auto; break-inside: auto; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Page 1: Always shows Summary -->
+  <div class="page">
+    <div class="header">
+      <div class="header-left">
+        <h1>${title}</h1>
+        <p>${showFullPages ? "Performance Summary" : "Summary"}</p>
+      </div>
+      <div class="header-right">
+        <div class="date">Inception Date: ${inceptionDisp}</div>
+        <div class="date">Data as of: ${dataAsOfDisp}</div>
+        <span class="status">${statusLabel}</span>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      ${statItems.map(s => `
+        <div class="stat-card">
+          <h3>${s.name}</h3>
+          <div class="value">${s.value}</div>
+        </div>
+      `).join("")}
+    </div>
+
+    ${
+      showFullPages
+        ? `
+        <div class="section no-split">
+          <div class="section-header">Trailing Returns & Drawdown</div>
+          <div class="section-content">
+            <table class="trailing-returns-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>5d</th><th>10d</th><th>15d</th><th>1m</th><th>3m</th><th>1y</th><th>2y</th><th>Since Inception</th>
+                  <th style="border-left:2px solid #DABD38;">Current DD</th><th>Max DD</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style="text-align:left;font-weight:600;">Scheme (%)</td>
+                  <td class="${getPnlColorClass(trailingReturnsData.fiveDays)}">${pctStr(trailingReturnsData.fiveDays)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsData.tenDays)}">${pctStr(trailingReturnsData.tenDays)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsData.fifteenDays)}">${pctStr(trailingReturnsData.fifteenDays)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsData.oneMonth)}">${pctStr(trailingReturnsData.oneMonth)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsData.threeMonths)}">${pctStr(trailingReturnsData.threeMonths)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsData.oneYear)}">${pctStr(trailingReturnsData.oneYear)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsData.twoYears)}">${pctStr(trailingReturnsData.twoYears)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsData.sinceInception)}">${pctStr(trailingReturnsData.sinceInception)}</td>
+                  <td style="border-left:2px solid #DABD38;" class="negative">${pctStr(trailingReturnsData.currentDD)}</td>
+                  <td class="negative">${pctStr(trailingReturnsData.MDD)}</td>
+                </tr>
+                <tr>
+                  <td style="text-align:left;font-weight:600;">Benchmark (%)</td>
+                  <td class="${getPnlColorClass(trailingReturnsBenchmark.fiveDays)}">${pctStr(trailingReturnsBenchmark.fiveDays)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsBenchmark.tenDays)}">${pctStr(trailingReturnsBenchmark.tenDays)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsBenchmark.fifteenDays)}">${pctStr(trailingReturnsBenchmark.fifteenDays)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsBenchmark.oneMonth)}">${pctStr(trailingReturnsBenchmark.oneMonth)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsBenchmark.threeMonths)}">${pctStr(trailingReturnsBenchmark.threeMonths)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsBenchmark.oneYear)}">${pctStr(trailingReturnsBenchmark.oneYear)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsBenchmark.twoYears)}">${pctStr(trailingReturnsBenchmark.twoYears)}</td>
+                  <td class="${getPnlColorClass(trailingReturnsBenchmark.sinceInception)}">${pctStr(trailingReturnsBenchmark.sinceInception)}</td>
+                  <td style="border-left:2px solid #DABD38;" class="negative">${pctStr(trailingReturnsBenchmark.currentDD)}</td>
+                  <td class="negative">${pctStr(trailingReturnsBenchmark.MDD)}</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="note"><strong>Returns:</strong> Periods under 1 year are absolute; 1+ year are annualized (CAGR).</div>
+          </div>
+        </div>
+
+        
+
+        <div class="section no-split">
+          <div class="section-header">Drawdown Metrics</div>
+          <div class="section-content">
+            <table>
+              <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+              <tbody>
+                <tr><td style="font-weight:600;">Maximum Drawdown</td><td class="negative">${formatPnlValue(drawdownMetrics.maxDrawdown)}</td></tr>
+                <tr><td style="font-weight:600;">Current Drawdown</td><td class="negative">${formatPnlValue(drawdownMetrics.currentDrawdown)}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+
+        <div class="section no-split">
+          <div class="section-header">Portfolio & Benchmark — Performance and Drawdown</div>
+          <div class="section-content">
+            <div id="chart-container" class="chart-container"></div>
+          </div>
+        </div>
+        `
+        : `
+        <div class="section no-split">
+          <div class="section-header">Quarterly Profit and Loss (₹)</div>
+          <div class="section-content">
+            <table class="quarterly-table">
+              <thead>
+                <tr><th>Year</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>Total</th></tr>
+              </thead>
+              <tbody>
+                ${
+                  quarterlyDataCash.length
+                    ? quarterlyDataCash.map(row => `
+                      <tr>
+                        <td style="font-weight:600;">${row.year}</td>
+                        <td class="${getPnlColorClass(row.q1)}">${formatCashAmount(row.q1)}</td>
+                        <td class="${getPnlColorClass(row.q2)}">${formatCashAmount(row.q2)}</td>
+                        <td class="${getPnlColorClass(row.q3)}">${formatCashAmount(row.q3)}</td>
+                        <td class="${getPnlColorClass(row.q4)}">${formatCashAmount(row.q4)}</td>
+                        <td class="${getPnlColorClass(row.total)}" style="font-weight:600;">${formatCashAmount(row.total)}</td>
+                      </tr>`).join("")
+                    : `<tr><td colspan="6" style="text-align:center;">No data available</td></tr>`
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+        `
+    }
+
+    <div class="footer">
+      <div class="disclaimer"><strong>${showFullPages ? "Portfolio Analysis" : "Summary"}:</strong> All figures are based on the latest available market data.</div>
+      <div class="page-number">1 | Qode</div>
+    </div>
+  </div>
+
+  ${
+    showFullPages
+      ? `
+        <!-- Page 2: P&L (%) -->
+        <div class="page">
+          <div class="header">
+            <div class="header-left">
+              <h1>${title}</h1>
+              <p>Profit & Loss Analysis</p>
+            </div>
+            <div class="header-right">
+              <div class="date">Inception Date: ${inceptionDisp}</div>
+              <div class="date">Data as of: ${dataAsOfDisp}</div>
+              <span class="status">${statusLabel}</span>
+            </div>
+          </div>
+
+          <div class="section no-split">
+            <div class="section-header">Quarterly Profit and Loss (%)</div>
+            <div class="section-content">
+              <table class="quarterly-table">
+                <thead>
+                  <tr><th>Year</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>Total</th></tr>
+                </thead>
+                <tbody>
+                  ${
+                    quarterlyDataPercent.length
+                      ? quarterlyDataPercent.map(row => `
+                        <tr>
+                          <td style="font-weight:600;">${row.year}</td>
+                          <td class="${getPnlColorClass(row.q1)}">${formatPnlValue(row.q1)}</td>
+                          <td class="${getPnlColorClass(row.q2)}">${formatPnlValue(row.q2)}</td>
+                          <td class="${getPnlColorClass(row.q3)}">${formatPnlValue(row.q3)}</td>
+                          <td class="${getPnlColorClass(row.q4)}">${formatPnlValue(row.q4)}</td>
+                          <td class="${getPnlColorClass(row.total)}" style="font-weight:600;">${formatPnlValue(row.total)}</td>
+                        </tr>`).join("")
+                      : `<tr><td colspan="6" style="text-align:center;">No data available</td></tr>`
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="section no-split">
+            <div class="section-header">Monthly Profit and Loss (%)</div>
+            <div class="section-content">
+              <table class="monthly-table">
+                <thead>
+                  <tr>
+                    <th>Year</th>
+                    ${monthOrderShort.map(m => `<th>${m}</th>`).join("")}
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${
+                    monthlyData.length
+                      ? monthlyData.map(row => `
+                        <tr>
+                          <td style="font-weight:600;">${row.year}</td>
+                          ${monthOrderFull.map(m => {
+                            const val = row.months[m]?.percent ?? null;
+                            return `<td class="${getPnlColorClass(val)}">${formatPnlValue(val)}</td>`;
+                          }).join("")}
+                          <td class="${getPnlColorClass(row.totalPercent)}" style="font-weight:600;">${formatPnlValue(row.totalPercent)}</td>
+                        </tr>`).join("")
+                      : `<tr><td colspan="14" style="text-align:center;">No data available</td></tr>`
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="footer">
+            <div class="disclaimer"><strong>P&L Analysis:</strong> Quarterly and monthly performance breakdowns help identify seasonal trends and periodic return patterns.</div>
+            <div class="page-number">2 | Qode</div>
+          </div>
+        </div>
+
+        <!-- Page 3: Cash Flows -->
+        <div class="page">
+          <div class="header">
+            <div class="header-left">
+              <h1>${title}</h1>
+              <p>Risk & Cash Flow Analysis</p>
+            </div>
+            <div class="header-right">
+              <div class="date">Inception Date: ${inceptionDisp}</div>
+              <div class="date">Data as of: ${dataAsOfDisp}</div>
+              <span class="status">${statusLabel}</span>
+            </div>
+          </div>
+
+          <!-- IMPORTANT: .section.allow-break allows this section to be split across pages dynamically -->
+          <div class="section allow-break cashflow-section">
+            <div class="section-header">Cash In / Cash Out</div>
+            <div class="section-content">
+              ${
+                recentCashFlows.length
+                  ? `
+                    <table class="cash-flows-table" id="cash-flows-table">
+                      <thead><tr><th>Date</th><th>Amount</th></tr></thead>
+                      <tbody>
+                        ${recentCashFlows.map(flow => `
+                          <tr>
+                            <td>${flow.date}</td>
+                            <td class="${flow.amount > 0 ? 'cash-flow-positive' : 'cash-flow-negative'}">
+                              ${flow.amount > 0 ? '+' : ''}${formatCashAmount(flow.amount)}
+                            </td>
+                          </tr>`).join("")}
+                        <tr class="summary-row">
+                          <td style="font-weight:600;">Total Cash In</td>
+                          <td class="cash-flow-positive">+${formatCashAmount(cashFlowTotals.totalIn)}</td>
+                        </tr>
+                        <tr class="summary-row">
+                          <td style="font-weight:600;">Total Cash Out</td>
+                          <td class="cash-flow-negative">${formatCashAmount(cashFlowTotals.totalOut)}</td>
+                        </tr>
+                        <tr class="summary-row">
+                          <td style="font-weight:600;">Net Cash Flow</td>
+                          <td class="${cashFlowTotals.netFlow >= 0 ? 'cash-flow-positive' : 'cash-flow-negative'}">
+                            ${cashFlowTotals.netFlow >= 0 ? '+' : ''}${formatCashAmount(cashFlowTotals.netFlow)}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <div class="note" style="margin-top:15px;">
+                      <strong>Notes:</strong><br>
+                      • Positive amounts represent cash inflows<br>
+                      • Negative amounts represent cash outflows<br>
+                      • Showing ${recentCashFlows.length} transactions
+                    </div>
+                  `
+                  : `<div style="text-align:center;padding:20px;color:#666;">No cash flow data available</div>`
+              }
+            </div>
+          </div>
+
+          <div class="footer">
+            <div class="disclaimer"><strong>Risk & Cash Flow:</strong> Drawdown metrics measure portfolio risk while cash flow analysis tracks investment and withdrawal patterns affecting overall performance.</div>
+            <div class="page-number">3 | Qode</div>
+          </div>
+        </div>
+      `
+      : `
+        
+
+        <!-- Total Portfolio: Page 3 — Cash Flows -->
+        <div class="page">
+          <div class="header">
+            <div class="header-left">
+              <h1>${title}</h1>
+              <p>Cash In / Cash Out</p>
+            </div>
+            <div class="header-right">
+              <div class="date">Inception Date: ${inceptionDisp}</div>
+              <div class="date">Data as of: ${dataAsOfDisp}</div>
+              <span class="status">${statusLabel}</span>
+            </div>
+          </div>
+
+          <div class="section allow-break cashflow-section">
+            <div class="section-header">Cash In / Cash Out</div>
+            <div class="section-content">
+              ${
+                recentCashFlows.length
+                  ? `
+                    <table class="cash-flows-table" id="cash-flows-table">
+                      <thead><tr><th>Date</th><th>Amount</th></tr></thead>
+                      <tbody>
+                        ${recentCashFlows.map(flow => `
+                          <tr>
+                            <td>${flow.date}</td>
+                            <td class="${flow.amount > 0 ? 'cash-flow-positive' : 'cash-flow-negative'}">
+                              ${flow.amount > 0 ? '+' : ''}${formatCashAmount(flow.amount)}
+                            </td>
+                          </tr>`).join("")}
+                        <tr class="summary-row">
+                          <td style="font-weight:600;">Total Cash In</td>
+                          <td class="cash-flow-positive">+${formatCashAmount(cashFlowTotals.totalIn)}</td>
+                        </tr>
+                        <tr class="summary-row">
+                          <td style="font-weight:600;">Total Cash Out</td>
+                          <td class="cash-flow-negative">${formatCashAmount(cashFlowTotals.totalOut)}</td>
+                        </tr>
+                        <tr class="summary-row">
+                          <td style="font-weight:600;">Net Cash Flow</td>
+                          <td class="${cashFlowTotals.netFlow >= 0 ? 'cash-flow-positive' : 'cash-flow-negative'}">
+                            ${cashFlowTotals.netFlow >= 0 ? '+' : ''}${formatCashAmount(cashFlowTotals.netFlow)}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <div class="note" style="margin-top:15px;">
+                      <strong>Notes:</strong><br>
+                      • Positive amounts represent cash inflows<br>
+                      • Negative amounts represent cash outflows<br>
+                      • Showing ${recentCashFlows.length} transactions
+                    </div>
+                  `
+                  : `<div style="text-align:center;padding:20px;color:#666;">No cash flow data available</div>`
+              }
+            </div>
+          </div>
+
+          <div class="footer">
+            <div class="disclaimer"><strong>Cash Flow:</strong> Inflows and outflows driving net changes.</div>
+            <div class="page-number">2 | Qode</div>
+          </div>
+        </div>
+      `
+  }
+
+  <script>
+    (function(){
+      const equityCurve = ${JSON.stringify(equityCurve || [])};
+      const drawdownCurve = ${JSON.stringify(drawdownCurve || [])};
+      const benchCurve = ${JSON.stringify(benchmarkEquityCurve || [])};
+      const benchDDCurve = ${JSON.stringify(benchmarkDrawdownCurve || [])};
+      const showFullPages = ${JSON.stringify(showFullPages)};
+
+      if (showFullPages) {
+        // Portfolio series
+        const portfolioDataRaw = (equityCurve || []).map(p => {
+          const val = parseFloat(p.value ?? p.nav);
+          if (!isFinite(val)) return null;
+          return [ new Date(p.date).getTime(), val ];
+        }).filter(Boolean);
+
+        const firstVal = (portfolioDataRaw[0] && portfolioDataRaw[0][1]) || 100;
+        const portfolioData = portfolioDataRaw.map(d => [ d[0], (d[1] / firstVal) * 100 ]);
+
+        // Benchmark series (optional)
+        const benchDataRaw = (benchCurve || []).map(p => {
+          const val = parseFloat(p.value ?? p.nav);
+          if (!isFinite(val)) return null;
+          return [ new Date(p.date).getTime(), val ];
+        }).filter(Boolean);
+        const benchFirstVal = (benchDataRaw[0] && benchDataRaw[0][1]) || (portfolioDataRaw[0]?.[1] ?? 100);
+        const benchData = benchDataRaw.length
+          ? benchDataRaw.map(d => [ d[0], (d[1] / benchFirstVal) * 100 ])
+          : [];
+
+        // Drawdown series
+        const ddData = (drawdownCurve || []).map(p => {
+          const v = parseFloat(p.value ?? p.drawdown);
+          if (!isFinite(v)) return null;
+          return [ new Date(p.date).getTime(), v === 0 ? 0 : -Math.abs(v) ];
+        }).filter(Boolean);
+
+        const benchDDData = (benchDDCurve || []).map(p => {
+          const v = parseFloat(p.value ?? p.drawdown);
+          if (!isFinite(v)) return null;
+          return [ new Date(p.date).getTime(), v === 0 ? 0 : -Math.abs(v) ];
+        }).filter(Boolean);
+
+        // Align dd series start
+        if (ddData.length && portfolioData.length && ddData[0][0] > portfolioData[0][0]) {
+          ddData.unshift([ portfolioData[0][0], 0 ]);
+        }
+        if (benchDDData.length && benchData.length && benchDDData[0][0] > benchData[0][0]) {
+          benchDDData.unshift([ benchData[0][0], 0 ]);
+        }
+
+        function calcNavScale(values) {
+          if (!values.length) return {min: 0, max: 100, tickAmount: 6};
+          const mn = Math.min.apply(null, values);
+          const mx = Math.max.apply(null, values);
+          const range = mx - mn;
+          const buffer = range * (range < 5 ? 0.5 : range < 20 ? 0.3 : range < 50 ? 0.2 : 0.1);
+          const min = Math.max(0, mn - buffer), max = mx + buffer;
+          const tickAmount = Math.max(5, Math.min(12, Math.ceil((max - min) / 10)));
+          return { min, max, tickAmount };
+        }
+
+        function calcDDScale(values) {
+          const nums = values.filter(v => typeof v === 'number' && isFinite(v));
+          if (!nums.length) return { min: -10, max: 0, tickAmount: 3 };
+          const mn = Math.min.apply(null, nums.concat([0]));
+          const mx = Math.max.apply(null, nums.concat([0]));
+          const range = Math.abs(mx - mn);
+          const buf = Math.max(range * 0.1, 1);
+          const min = Math.min(mn - buf, -2);
+          const max = Math.max(mx + buf/2, 1);
+          const tickAmount = Math.max(3, Math.min(4, Math.ceil(Math.abs(max - min) / 2)));
+          return { min, max: 0, tickAmount };
+        }
+
+        const navVals = portfolioData.map(d => d[1]).concat(benchData.map(d => d[1]));
+        const ddVals  = ddData.map(d => d[1]).concat(benchDDData.map(d => d[1]));
+        const navScale = calcNavScale(navVals);
+        const ddScale  = calcDDScale(ddVals);
+
+        const dateRange = (function() {
+          const combined = portfolioData.concat(benchData);
+          if (combined.length <= 1) return 0;
+          const sorted = combined.slice().sort((a,b)=>a[0]-b[0]);
+          return sorted[sorted.length - 1][0] - sorted[0][0];
+        })();
+        const tickInterval = dateRange > 0 ? Math.max(7*24*60*60*1000, Math.ceil(dateRange / 20)) : undefined;
+
+        Highcharts.chart('chart-container', {
+          chart: { zoomType: 'xy', height: 300, backgroundColor: 'transparent', plotBackgroundColor: 'transparent', style: { fontFamily: 'Lato, sans-serif' } },
+          title: { text: '' },
+          xAxis: {
+            type: 'datetime',
+            title: { text: 'Date', style: { color: '#2E8B57', fontSize: '12px', fontFamily: 'Lato, sans-serif' } },
+            labels: { format: '{value:%d-%m-%Y}', style: { color: '#2E8B57', fontSize: '12px', fontFamily: 'Lato, sans-serif' } },
+            tickInterval,
+            gridLineColor: '#e6e6e6',
+            tickWidth: 1,
+            lineColor: '#2E8B57'
+          },
+          yAxis: [{
+            title: { text: 'Performance', style: { color: '#2E8B57', fontSize: '12px', fontFamily: 'Lato, sans-serif' } },
+            height: '50%', top: '0%',
+            labels: { formatter: function(){ return (Math.round(this.value*100)/100) + ''; }, style: { color: '#2E8B57', fontSize: '12px' } },
+            min: navScale.min, max: navScale.max, tickAmount: navScale.tickAmount,
+            lineColor: '#2E8B57', tickColor: '#2E8B57', tickWidth: 1, gridLineColor: '#e6e6e6',
+            plotLines: [{ value: 100, color: '#2E8B57', width: 1, zIndex: 5, dashStyle: 'dot' }]
+          },{
+            title: { text: 'Drawdown', style: { color: '#FF4560', fontSize: '12px', fontFamily: 'Lato, sans-serif' } },
+            height: '30%', top: '65%', offset: 0,
+            min: ddScale.min, max: 0, tickAmount: ddScale.tickAmount,
+            labels: { formatter: function(){ return (Math.round(this.value*100)/100) + '%'; }, style: { color: '#FF4560', fontSize: '12px' } },
+            lineColor: '#FF4560', tickColor: '#FF4560', tickWidth: 1, gridLineColor: '#e6e6e6'
+          }],
+          tooltip: {
+            shared: true, xDateFormat: '%d-%m-%Y', valueDecimals: 2, style: { fontFamily: 'Lato, sans-serif' },
+            formatter: function() {
+              const get = (name) => this.points?.find(pt => pt.series.name === name);
+              const p  = get('Portfolio');
+              const pb = get('Benchmark');
+              const d  = get('Portfolio Drawdown');
+              const db = get('Benchmark Drawdown');
+              let s = '<b>' + Highcharts.dateFormat('%d-%m-%Y', this.x) + '</b><br/><br/>';
+              s += '<span style="font-weight:bold;">Performance:</span><br/>';
+              s += '<span style="color:#2E8B57;">●</span> Portfolio: ' + (p ? p.y.toFixed(2) : 'N/A') + '<br/>';
+              if (pb) s += '<span style="color:#1f4f8a;">●</span> Benchmark: ' + pb.y.toFixed(2) + '<br/>';
+              s += '<br/><span style="font-weight:bold;">Drawdown:</span><br/>';
+              s += '<span style="color:#FF4560;">●</span> Portfolio: ' + (d ? d.y.toFixed(2) + '%' : 'N/A') + '<br/>';
+              if (db) s += '<span style="color:#a83279;">●</span> Benchmark: ' + db.y.toFixed(2) + '%' + '<br/>';
+              return s;
+            }
+          },
+          legend: { enabled: true, layout: 'horizontal', align: 'center', verticalAlign: 'bottom', itemStyle: { fontSize: '12px', color: '#2E8B57' } },
+          plotOptions: { line: { marker: { enabled: false } }, area: { fillOpacity: 0.2, marker: { enabled: false } }, series: { animation: false } },
+          series: [
+            { name: 'Portfolio', data: portfolioData, color: '#2E8B57', zIndex: 3, yAxis: 0, type: 'line', marker: { enabled: false } },
+            ${benchmarkEquityCurve.length ? `{ name: 'BSE500', data: benchData, color: '#1f4f8a', zIndex: 2, yAxis: 0, type: 'line', marker: { enabled: false } },` : ``}
+            { name: 'Portfolio Drawdown', data: ddData, color: '#FF4560', zIndex: 1, yAxis: 1, type: 'area', marker: { enabled: false }, fillOpacity: 0.2, threshold: 0, tooltip: { valueSuffix: '%' } }
+            ${benchmarkDrawdownCurve.length ? `,{ name: 'BSE500 Drawdown', data: benchDDData, color: '#ff8700', zIndex: 1, yAxis: 1, type: 'area', marker: { enabled: false }, fillOpacity: 0.15, threshold: 0, tooltip: { valueSuffix: '%' } }` : ``}
+          ],
+          credits: { enabled: false }
+        });
+      }
+
+      // =====================
+      // Dynamic pagination for long cash-flow tables
+      // =====================
+      function paginateLongTable(tableId) {
+        const table = document.getElementById(tableId);
+        if (!table) return;
+
+        // Find the closest .page ancestor and measure available content height
+        const page = table.closest('.page');
+        if (!page) return;
+
+        // compute usable height inside a page (page height minus header/footer)
+        const pageHeight = page.getBoundingClientRect().height;
+
+        // header and footer heights: find elements inside page
+        const header = page.querySelector('.header');
+        const footer = page.querySelector('.footer');
+        const headerH = header ? header.getBoundingClientRect().height : 0;
+        const footerH = footer ? footer.getBoundingClientRect().height : 0;
+
+        // some padding inside page
+        const pagePaddingTop = 20; // approximate padding
+        const pagePaddingBottom = 20;
+
+        const usableHeight = pageHeight - headerH - footerH - pagePaddingTop - pagePaddingBottom - 50; // buffer
+
+        // get tbody rows (exclude THEAD) and preserve original data immediately
+        const tbody = table.querySelector('tbody');
+        if (!tbody) return;
+        const originalRows = Array.from(tbody.querySelectorAll('tr'));
+        if (!originalRows.length) return;
+
+        // Store the original row data before any manipulation
+        const originalRowData = originalRows.map(row => row.cloneNode(true));
+
+        // If table fits, nothing to do
+        const tableRect = table.getBoundingClientRect();
+        if (tableRect.height <= usableHeight) return;
+
+        function createNewPageAfter(refPage) {
+          const newPage = refPage.cloneNode(false);
+          newPage.innerHTML = '';
+          
+          // Clone header and footer
+          const headerClone = refPage.querySelector('.header')?.cloneNode(true);
+          const footerClone = refPage.querySelector('.footer')?.cloneNode(true);
+          
+          if (headerClone) newPage.appendChild(headerClone);
+
+          // Create section structure
+          const section = document.createElement('div');
+          section.className = 'section allow-break cashflow-section';
+          newPage.appendChild(section);
+
+          const sectionHeader = document.createElement('div');
+          sectionHeader.className = 'section-header';
+          sectionHeader.textContent = 'Cash In / Cash Out (continued)';
+          section.appendChild(sectionHeader);
+
+          const sectionContent = document.createElement('div');
+          sectionContent.className = 'section-content';
+          section.appendChild(sectionContent);
+
+          // Create table with same structure
+          const tbl = document.createElement('table');
+          tbl.className = table.className;
+          tbl.id = tableId + '_page_' + Date.now(); // unique id for continuation pages
+          tbl.innerHTML = '<thead>' + table.querySelector('thead').innerHTML + '</thead><tbody></tbody>';
+          sectionContent.appendChild(tbl);
+
+          if (footerClone) {
+            // Update page number in footer
+            const pageNum = footerClone.querySelector('.page-number');
+            if (pageNum) {
+              const match = pageNum.textContent.match(/(\d+)/);
+              if (match) {
+                const currentNum = parseInt(match[1]);
+                pageNum.textContent = pageNum.textContent.replace(/\d+/, currentNum + 1);
+              }
+            }
+            newPage.appendChild(footerClone);
+          }
+
+          // Insert after reference page
+          refPage.parentNode.insertBefore(newPage, refPage.nextSibling);
+          return newPage;
+        }
+
+        // Clear the original table body and rebuild with pagination
+        tbody.innerHTML = '';
+
+        let currentPage = page;
+        let currentTable = table;
+        let currentTbody = tbody;
+
+        for (let i = 0; i < originalRowData.length; i++) {
+          const rowClone = originalRowData[i].cloneNode(true);
+          
+          // Test if adding this row would exceed the height limit
+          currentTbody.appendChild(rowClone);
+          const currentHeight = currentTable.getBoundingClientRect().height;
+
+          if (currentHeight > usableHeight && currentTbody.children.length > 1) {
+            // Remove the row that caused overflow
+            currentTbody.removeChild(rowClone);
+            
+            // Create new page and move the row there
+            const newPage = createNewPageAfter(currentPage);
+            const newTable = newPage.querySelector('table');
+            const newTbody = newTable.querySelector('tbody');
+            
+            newTbody.appendChild(rowClone);
+            
+            // Update references for next iteration
+            currentPage = newPage;
+            currentTable = newTable;
+            currentTbody = newTbody;
+          }
+        }
+      }
+      // Run pagination after a short delay to allow fonts and layout to stabilize
+      setTimeout(() => { try { paginateLongTable('cash-flows-table'); } catch(e) { /* ignore */ } }, 300);
+
+      // Optional: auto-print after render
+      setTimeout(() => { try { window.print(); } catch(e) {} }, 800);
+    })();
+  </script>
+</body>
+</html>
+  `;
+
+  return html;
+}

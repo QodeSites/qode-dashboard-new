@@ -376,6 +376,31 @@ model master_sheet_test {
   @@schema("public")
 }
 
+<<<<<<< Updated upstream
+=======
+model mutual_fund_holding_sheet {
+  id                BigInt    @id @default(autoincrement())
+  qcode             String?
+  as_of_date        DateTime? @db.Date
+  symbol            String?
+  isin              String?
+  scheme_code       String?
+  quantity          Decimal?  @db.Decimal(20, 6)
+  avg_price         Decimal?  @db.Decimal(18, 4)
+  broker            String?
+  debt_equity       String?
+  mastersheet_tag   String?
+  sub_category      String?
+  nav               Decimal?  @db.Decimal(18, 4)
+  buy_value         Decimal?  @db.Decimal(18, 2)
+  value_as_of_today Decimal?  @db.Decimal(18, 2)
+  pnl_amount        Decimal?  @db.Decimal(18, 2)
+  percent_pnl       Decimal?  @db.Decimal(9, 4)
+
+  @@schema("public")
+}
+
+>>>>>>> Stashed changes
 model pms_clients_master {
   id                  Int       @id @default(autoincrement())
   clientid            String?   @db.VarChar(50)
