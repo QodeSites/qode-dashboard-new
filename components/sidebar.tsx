@@ -19,6 +19,8 @@ const navigation = [
   { name: "Home", href: "/", icon: HomeIcon },
   { name: "Portfolio", href: "/dashboard", icon: ChartBarIcon },
   { name: "Personal Details", href: "/personal-details", icon: UserCircleIcon },
+  { name: "Holding Summary", href: "/holding-summary", icon: UserCircleIcon },
+
 ];
 
 interface SidebarProps {
