@@ -555,670 +555,334 @@ const HoldingsSummaryPage = () => {
     };
 
     // Dynamic Pagination PDF Download Function
+    // 1) REPLACE your handleDownloadPDF with this:
     const handleDownloadPDF = async () => {
         if (!holdingsData) {
-            setError('No holdings data available for PDF export');
+            setError('No holdings data available to print');
             return;
         }
 
         setIsGeneratingPdf(true);
-
         try {
             const assetAllocation = getAssetAllocation();
             const { stocks, mutualFunds } = separateHoldings();
             const total = assetAllocation.equity + assetAllocation.debt + assetAllocation.hybrid;
 
-            const ITEMS_PER_PAGE = 5;
+            // --- Shared helpers ---
+            const formatNumber = (num: number) =>
+                num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-            // Split holdings into pages
-            const stockPages = [];
-            const mutualFundPages = [];
-
-            // Create stock pages
-            if (stocks.length > 0) {
-                for (let i = 0; i < stocks.length; i += ITEMS_PER_PAGE) {
-                    stockPages.push(stocks.slice(i, i + ITEMS_PER_PAGE));
-                }
-            }
-
-            // Create mutual fund pages
-            if (mutualFunds.length > 0) {
-                for (let i = 0; i < mutualFunds.length; i += ITEMS_PER_PAGE) {
-                    mutualFundPages.push(mutualFunds.slice(i, i + ITEMS_PER_PAGE));
-                }
-            }
-
-            const totalPages = 1 + stockPages.length + mutualFundPages.length;
-
-            // Common styles for all pages
             const commonStyles = `
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+  * { box-sizing: border-box; }
 
-        body {
-            font-family: 'Lato', sans-serif;
-            background-color: #EFECD3;
-            color: #333;
-            line-height: 1.5;
-            font-size: 14px;
-        }
+  /* 🔑 Force browsers to keep background colors in print */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+  html, body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+    background: #EFECD3 !important; /* solid, no transparency */
+  }
 
-        .page {
-            width: 297mm; /* Landscape width */
-    height: 210mm; /* Landscape height */
-            padding: 5mm;
-            margin: 0;
-            background-color: #EFECD3;
-            box-sizing: border-box;
-            page-break-after: always;
-            display: flex;
-            flex-direction: column;
-        }
+  /* Avoid transparencies in print — they often get dropped */
+  .card-shadow, .bg-white\\/50, .backdrop-blur-sm { 
+    background: #EFECD3 !important;
+  }
 
-        .page:last-child {
-            page-break-after: auto;
-        }
+  
 
-        /* Header styles */
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 20mm;
-            padding-bottom: 6mm;
-            border-bottom: 3px solid #2F5233;
-        }
+  body { font-family: 'Lato', sans-serif; background: #EFECD3 !important; color: #333; line-height: 1.5; font-size: 12px; }
+  h1, h2, h3 { margin:0; }
+  .page { padding:12mm; page-break-after: always; }
+  .page:last-child { page-break-after: auto; }
+  .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10mm; padding-bottom:4mm; border-bottom:3px solid #2F5233; background: transparent !important; }
+  .header-left h1 { font-family: 'Playfair Display', Georgia, serif; font-size:28px; font-weight:700; color:#2F5233; margin-bottom:6px; }
+  .header-left p { font-size:14px; color:#666; }
+  .header-right { text-align:right; }
+  .header-right .date { font-size:12px; color:#666; margin-bottom:8px; }
+  .header-right .status { background:#2F5233 !important; color:#D4AF37 !important; padding:6px 10px; border-radius:6px; font-size:11px; font-weight:700; }
+  .section { margin-bottom:10mm; }
+  .section-title { font-family: 'Playfair Display', Georgia, serif; font-size:18px; font-weight:700; color:#2F5233; margin-bottom:6mm; border-bottom:2px solid #ddd; padding-bottom:4px; }
+  .executive-summary { border-left:6px solid #D4AF37; padding-left:10px; background: transparent !important; }
+  .summary-grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; }
+  .summary-item { text-align:center; padding:12px; border:2px solid rgba(47, 82, 51, 0.1); border-radius:8px; background:#EFECD3 !important; }
+  .summary-item .label { font-size:10px; color:#666; font-weight:600; letter-spacing:0.5px; margin-bottom:6px; text-transform: uppercase; }
+  .summary-item .value { font-size:18px; font-weight:700; color:#2F5233; }
+  .summary-item .value.positive { color:#2F5233; }
+  .summary-item .value.negative { color:#e53e3e; }
+  .summary-item .subvalue { font-size:10px; color:#666; margin-top:4px; }
 
-        .header-left h1 {
-            font-family: 'Playfair Display', serif;
-            font-size: 32px;
-            font-weight: 700;
-            color: #2F5233;
-            margin-bottom: 8px;
-        }
+  .chart-bar { display:flex; height:32px; border-radius:16px; overflow:hidden; margin:10px 0 12px; background:#f2f5f3 !important; }
+  .equity-bar, .debt-bar { display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:12px; }
+  .equity-bar { background:#D4AF37 !important; }
+  .debt-bar { background:#2F5233 !important; }
 
-        .header-left p {
-            font-size: 16px;
-            color: #666;
-            font-weight: 400;
-        }
+  .legend { display:flex; gap:8px; flex-direction:column; }
+  .legend-item { display:flex; justify-content:space-between; padding:10px; border:2px solid rgba(47, 82, 51, 0.1); border-radius:8px; background:#EFECD3 !important; }
+  .legend-left { display:flex; align-items:center; gap:8px; }
+  .legend-color { width:14px; height:14px; border-radius:4px; }
+  .legend-color.equity { background:#D4AF37 !important; }
+  .legend-color.debt { background:#2F5233 !important; }
+  .legend-text { font-size:13px; color:#4a5568; font-weight:600; }
+  .legend-value { font-size:13px; font-weight:700; color:#2d3748; }
 
-        .header-right {
-            text-align: right;
-        }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  thead { background:rgba(47, 82, 51, 0.1) !important; }
+  th { text-align:left; padding:10px 6px; font-weight:700; color:#2F5233; text-transform:uppercase; font-size:10px; letter-spacing:0.4px; border-bottom:2px solid #2F5233; }
+  td { padding:9px 6px; border-bottom:1px solid #eee; color:#2d3748; vertical-align:top; }
+  .text-right { text-align:right; }
+  .symbol-cell { font-weight:700; color:#2F5233; font-size:13px; }
+  .exchange-text { font-size:10px; color:#718096; margin-top:2px; }
+  .profit { color:#38a169 !important; font-weight:700; }
+  .loss { color:#e53e3e !important; font-weight:700; }
+  .category-badge { padding:3px 7px; border-radius:4px; font-size:9px; font-weight:700; text-transform:uppercase; }
+  .category-equity { background:#2F5233 !important; color:#D4AF37 !important; }
+  .category-debt { background:#D4AF37 !important; color:#2F5233 !important; }
+  .total-row { background:rgba(47, 82, 51, 0.1) !important; font-weight:700; border-top:3px solid #2F5233; }
+  .total-row td { padding:12px 6px; font-weight:700; color:#2F5233; font-size:13px; }
+  .footer { margin-top:8mm; padding-top:6mm; border-top:1px solid #ddd; display:flex; justify-content:space-between; align-items:center; font-size:10px; color:#666; background: transparent !important; }
+  .disclaimer { font-size:9px; color:#777; line-height:1.4; max-width:75%; }
 
-        .header-right .date {
-            font-size: 14px;
-            color: #666;
-            margin-bottom: 8px;
-        }
+  .break { page-break-before: always; }
 
-        .header-right .status {
-            background-color: #2F5233;
-            color: #D4AF37;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 700;
-        }
+  @page { size: A4 landscape; margin: 0mm; }
+  @media print {
+    html, body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  }
+`;
 
-        /* Section styles */
-        .section {
-            background-color: #EFECD3;
-            border-radius: 12px;
-            padding: 18px;
-            margin-bottom: 18px;
-        }
 
-        .section-title {
-            font-family: 'Playfair Display', serif;
-            font-size: 20px;
-            font-weight: 700;
-            color: #2F5233;
-            margin-bottom: 18px;
-            border-bottom: 2px solid #ddd;
-            padding-bottom: 6px;
-        }
-
-        /* Executive Summary styles */
-        .executive-summary {
-            border-left: 6px solid #D4AF37;
-        }
-
-        .summary-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 12px;
-        }
-
-        .summary-item {
-            text-align: center;
-            padding: 16px;
-            background-color: #EFECD3;
-            border-radius: 8px;
-            border: 2px solid rgba(47, 82, 51, 0.1);
-        }
-
-        .summary-item .label {
-            font-size: 11px;
-            color: #666;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.8px;
-            margin-bottom: 8px;
-        }
-
-        .summary-item .value {
-            font-size: 20px;
-            font-weight: 700;
-            color: #2F5233;
-            margin-bottom: 6px;
-        }
-
-        .summary-item .value.positive {
-            color: #38a169;
-        }
-
-        .summary-item .value.negative {
-            color: #e53e3e;
-        }
-
-        .summary-item .subvalue {
-            font-size: 10px;
-            color: #666;
-        }
-
-        /* Asset allocation */
-        .allocation-section {
-            background-color: #EFECD3;
-            border-radius: 12px;
-            padding: 18px;
-            margin-bottom: 18px;
-        }
-
-        /* Chart styles */
-        .chart-container {
-            margin: 18px 0;
-        }
-
-        .chart-bar {
-            width: 100%;
-            height: 35px;
-            border-radius: 18px;
-            overflow: hidden;
-            display: flex;
-            margin-bottom: 18px;
-        }
-
-        .equity-bar {
-            background-color: #D4AF37;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: 700;
-            font-size: 13px;
-        }
-
-        .debt-bar {
-            background-color: #2F5233;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: 700;
-            font-size: 13px;
-        }
-
-        .legend {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .legend-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px;
-            background-color: #EFECD3;
-            border-radius: 8px;
-            border: 2px solid rgba(47, 82, 51, 0.1);
-        }
-
-        .legend-left {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .legend-color {
-            width: 16px;
-            height: 16px;
-            border-radius: 4px;
-        }
-
-        .legend-color.equity {
-            background-color: #D4AF37;
-        }
-
-        .legend-color.debt {
-            background-color: #2F5233;
-        }
-
-        .legend-text {
-            font-size: 14px;
-            color: #4a5568;
-            font-weight: 600;
-        }
-
-        .legend-value {
-            font-size: 14px;
-            font-weight: 700;
-            color: #2d3748;
-        }
-
-        /* Table styles */
-        .table-container {
-            overflow-x: auto;
-            margin-top: 15px;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 12px;
-        }
-
-        thead {
-            background-color: rgba(47, 82, 51, 0.1);
-        }
-
-        th {
-            padding: 12px 6px;
-            text-align: left;
-            font-weight: 700;
-            color: #2F5233;
-            text-transform: uppercase;
-            font-size: 10px;
-            letter-spacing: 0.4px;
-            border-bottom: 2px solid #2F5233;
-        }
-
-        th.text-right {
-            text-align: right;
-        }
-
-        td {
-            padding: 10px 6px;
-            border-bottom: 1px solid #eee;
-            color: #2d3748;
-        }
-
-        td.text-right {
-            text-align: right;
-        }
-
-        .symbol-cell {
-            font-weight: 700;
-            color: #2F5233;
-            font-size: 13px;
-        }
-
-        .exchange-text {
-            font-size: 10px;
-            color: #718096;
-            margin-top: 2px;
-        }
-
-        .profit {
-            color: #38a169;
-            font-weight: 700;
-        }
-
-        .loss {
-            color: #e53e3e;
-            font-weight: 700;
-        }
-
-        .category-badge {
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 9px;
-            font-weight: 700;
-            text-transform: uppercase;
-        }
-
-        .category-equity {
-            background-color: #2F5233;
-            color: #D4AF37;
-        }
-
-        .category-debt {
-            background-color: #D4AF37;
-            color: #2F5233;
-        }
-
-        .total-row {
-            background-color: rgba(47, 82, 51, 0.08);
-            font-weight: 700;
-            border-top: 3px solid #2F5233;
-        }
-
-        .total-row td {
-            padding: 15px 6px;
-            font-weight: 700;
-            color: #2F5233;
-            font-size: 13px;
-        }
-
-        /* Footer */
-        .footer {
-            margin-top: auto;
-            padding-top: 15px;
-            border-top: 1px solid #ddd;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 10px;
-            color: #666;
-        }
-
-        .disclaimer {
-            font-size: 9px;
-            color: #999;
-            line-height: 1.4;
-            max-width: 75%;
-        }
-
-        .page-number {
-            font-weight: 700;
-        }
-
-        @media print {
-            .page {
-                margin: 0;
-            }
-        }
+            const headerHTML = (title: string, subtitle: string, statusBadge: string) => `
+      <div class="header">
+        <div class="header-left">
+          <h1>${title}</h1>
+          <p>${subtitle}</p>
+        </div>
+        <div class="header-right">
+          <div class="date">Generated: ${new Date().toLocaleDateString('en-IN')}${lastUpdatedDate ? ` | Data as of: ${formatDate(lastUpdatedDate)}` : ''}</div>
+          
+        </div>
+      </div>
     `;
 
-            // Helper function to create holdings table HTML
-            const createHoldingsTableHtml = (holdings, title, isMutualFund = false, pageNum, totalPages, isLastPage = false, allHoldings = []) => {
-                const tableRows = holdings.map(holding => `
+            const executiveSummaryHTML = `
+      <div class="section executive-summary">
+        <div class="section-title">Executive Summary</div>
+        <div class="summary-grid">
+          <div class="summary-item">
+            <div class="label">Total Investment</div>
+            <div class="value">₹${formatNumber(holdingsData.totalBuyValue)}</div>
+            <div class="subvalue">Principal Amount</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Current Value</div>
+            <div class="value">₹${formatNumber(holdingsData.totalCurrentValue)}</div>
+            <div class="subvalue">Market Value</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Total Gain</div>
+            <div class="value ${holdingsData.totalPnl >= 0 ? 'positive' : 'negative'}">₹${formatNumber(Math.abs(holdingsData.totalPnl))}</div>
+            <div class="subvalue">Absolute Return</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Return %</div>
+            <div class="value ${holdingsData.totalPnlPercent >= 0 ? 'positive' : 'negative'}">${formatNumber(holdingsData.totalPnlPercent)}%</div>
+            <div class="subvalue">Overall Performance</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+            const allocationHTML = `
+      <div class="section">
+        <div class="section-title">Asset Allocation</div>
+        ${total > 0
+                    ? `
+          <div class="chart-bar">
+            ${assetAllocation.equity > 0 ? `<div class="equity-bar" style="width:${((assetAllocation.equity / total) * 100).toFixed(1)}%;">Equity ${((assetAllocation.equity / total) * 100).toFixed(1)}%</div>` : ''}
+            ${assetAllocation.debt > 0 ? `<div class="debt-bar" style="width:${((assetAllocation.debt / total) * 100).toFixed(1)}%;">Debt ${((assetAllocation.debt / total) * 100).toFixed(1)}%</div>` : ''}
+          </div>
+          <div class="legend">
+            ${assetAllocation.equity > 0 ? `
+              <div class="legend-item">
+                <div class="legend-left">
+                  <div class="legend-color equity"></div>
+                  <div class="legend-text">Equity Holdings</div>
+                </div>
+                <div class="legend-value">₹${formatNumber(assetAllocation.equity)}</div>
+              </div>` : ''}
+            ${assetAllocation.debt > 0 ? `
+              <div class="legend-item">
+                <div class="legend-left">
+                  <div class="legend-color debt"></div>
+                  <div class="legend-text">Debt Holdings</div>
+                </div>
+                <div class="legend-value">₹${formatNumber(assetAllocation.debt)}</div>
+              </div>` : ''}
+          </div>
+        ` : `<div style="text-align:center; padding:20px; color:#666;">No allocation data available</div>`
+                }
+      </div>
+    `;
+
+            const tableHeader = (isMF: boolean) => `
+      <thead>
         <tr>
-            <td>
-                <div class="symbol-cell">${holding.symbol}</div>
-                <div class="exchange-text">${isMutualFund ? (holding.isin || '') : (holding.exchange || '')}</div>
-            </td>
-            <td class="text-right">${holding.quantity.toLocaleString()}</td>
-            <td class="text-right">₹${formatNumber(holding.avgPrice)}</td>
-            <td class="text-right">₹${formatNumber(holding.ltp)}</td>
-            <td class="text-right">₹${formatNumber(holding.buyValue)}</td>
-            <td class="text-right">₹${formatNumber(holding.valueAsOfToday)}</td>
-            <td class="text-right ${holding.pnlAmount >= 0 ? 'profit' : 'loss'}">₹${formatNumber(holding.pnlAmount)}</td>
-            <td class="text-right ${holding.percentPnl >= 0 ? 'profit' : 'loss'}">${formatNumber(holding.percentPnl)}%</td>
-            <td class="text-right">${total > 0 ? ((holding.valueAsOfToday / total) * 100).toFixed(2) : 0}%</td>
-            <td><span class="category-badge category-${holding.debtEquity.toLowerCase()}">${holding.debtEquity}</span></td>
-        </tr>`).join('');
+          <th>${isMF ? 'Fund Name & ISIN' : 'Symbol & Exchange'}</th>
+          <th class="text-right">Quantity</th>
+          <th class="text-right">${isMF ? 'Avg NAV' : 'Avg Cost'}</th>
+          <th class="text-right">${isMF ? 'Current NAV' : 'Current Price'}</th>
+          <th class="text-right">Invested Amount</th>
+          <th class="text-right">Current Value</th>
+          <th class="text-right">P&L Amount</th>
+          <th class="text-right">P&L %</th>
+          <th>Category</th>
+        </tr>
+      </thead>
+    `;
 
-                // Add total row only on the last page of each holding type
-                const totalRow = isLastPage ? `
-        <tr class="total-row">
-            <td colspan="4"><strong>${isMutualFund ? 'MUTUAL FUND' : 'STOCK'} TOTAL</strong></td>
-            <td class="text-right"><strong>₹${formatNumber(allHoldings.reduce((sum, h) => sum + h.buyValue, 0))}</strong></td>
-            <td class="text-right"><strong>₹${formatNumber(allHoldings.reduce((sum, h) => sum + h.valueAsOfToday, 0))}</strong></td>
-            <td class="text-right ${allHoldings.reduce((sum, h) => sum + h.pnlAmount, 0) >= 0 ? 'profit' : 'loss'}"><strong>₹${formatNumber(allHoldings.reduce((sum, h) => sum + h.pnlAmount, 0))}</strong></td>
-            <td class="text-right ${allHoldings.reduce((sum, h) => sum + h.pnlAmount, 0) >= 0 ? 'profit' : 'loss'}"><strong>${formatNumber((allHoldings.reduce((sum, h) => sum + h.pnlAmount, 0) / allHoldings.reduce((sum, h) => sum + h.buyValue, 0)) * 100)}%</strong></td>
-            <td class="text-right"><strong>${total > 0 ? ((allHoldings.reduce((sum, h) => sum + h.valueAsOfToday, 0) / total) * 100).toFixed(2) : 0}%</strong></td>
-            <td></td>
-        </tr>` : '';
+            const rowsHTML = (arr: Holding[], isMF: boolean) => arr.map(h => `
+      <tr>
+        <td>
+          <div class="symbol-cell">${h.symbol}</div>
+          <div class="exchange-text">${isMF ? (h.isin || '') : (h.exchange || '')}</div>
+        </td>
+        <td class="text-right">${h.quantity.toLocaleString()}</td>
+        <td class="text-right">₹${formatNumber(h.avgPrice)}</td>
+        <td class="text-right">₹${formatNumber(h.ltp)}</td>
+        <td class="text-right">₹${formatNumber(h.buyValue)}</td>
+        <td class="text-right">₹${formatNumber(h.valueAsOfToday)}</td>
+        <td class="text-right ${h.pnlAmount >= 0 ? 'profit' : 'loss'}">₹${formatNumber(h.pnlAmount)}</td>
+        <td class="text-right ${h.percentPnl >= 0 ? 'profit' : 'loss'}">${formatNumber(h.percentPnl)}%</td>
+        <td><span class="category-badge ${h.debtEquity.toLowerCase() === 'equity' ? 'category-equity' : 'category-debt'}">${h.debtEquity}</span></td>
+      </tr>
+    `).join('');
 
+            const totalsRowHTML = (arr: Holding[]) => {
+                if (!arr.length) return '';
+                const invested = arr.reduce((s, h) => s + h.buyValue, 0);
+                const current = arr.reduce((s, h) => s + h.valueAsOfToday, 0);
+                const pnl = arr.reduce((s, h) => s + h.pnlAmount, 0);
+                const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
+                const pnlCls = pnl >= 0 ? 'profit' : 'loss';
                 return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portfolio Holdings Report - ${title}</title>
-    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&display=swap" rel="stylesheet">
-    <style>${commonStyles}</style>
-</head>
-<body>
-    <div class="page">
-        <!-- Header -->
-        <div class="header">
-            <div class="header-left">
-                <h1>${title}</h1>
-                <p>${isMutualFund ? 'Fund Position Analysis' : 'Equity Position Analysis'}</p>
-            </div>
-            <div class="header-right">
-                <div class="date">${new Date().toLocaleDateString('en-IN')}</div>
-                <span class="status">${isMutualFund ? 'FUNDS REPORT' : 'EQUITY REPORT'}</span>
-            </div>
-        </div>
-
-        <!-- Holdings Table -->
-        <div class="section" style="flex-grow: 1;">
-            <div class="section-title">${title} with Performance Metrics</div>
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>${isMutualFund ? 'Fund Name & ISIN' : 'Symbol & Exchange'}</th>
-                            <th class="text-right">Quantity</th>
-                            <th class="text-right">${isMutualFund ? 'Avg NAV' : 'Avg Cost'}</th>
-                            <th class="text-right">${isMutualFund ? 'Current NAV' : 'Current Price'}</th>
-                            <th class="text-right">Invested Amount</th>
-                            <th class="text-right">Current Value</th>
-                            <th class="text-right">P&L Amount</th>
-                            <th class="text-right">P&L %</th>
-                            <th>Category</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${tableRows}
-                        ${totalRow}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- Footer -->
-        <div class="footer">
-            <div class="disclaimer">
-                <strong>${isMutualFund ? 'Mutual Fund Holdings:' : 'Stock Holdings:'}</strong> ${isMutualFund ? 'This section details mutual fund investments including NAV-based calculations.' : 'This section details equity positions including ETFs and individual stocks.'} 
-                Performance metrics are calculated based on average cost and current market prices.
-            </div>
-            <div class="page-number">Page ${pageNum} of ${totalPages}</div>
-        </div>
-    </div>
-</body>
-</html>`;
+        <tr class="total-row">
+          <td colspan="4"><strong>Total</strong></td>
+          <td class="text-right"><strong>₹${formatNumber(invested)}</strong></td>
+          <td class="text-right"><strong>₹${formatNumber(current)}</strong></td>
+          <td class="text-right ${pnlCls}"><strong>₹${formatNumber(pnl)}</strong></td>
+          <td class="text-right ${pnlCls}"><strong>${formatNumber(pnlPct)}%</strong></td>
+          <td></td>
+        </tr>
+      `;
             };
 
-            // Page 1: Executive Summary and Asset Allocation
-            const page1Html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portfolio Holdings Report - Page 1</title>
-    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&display=swap" rel="stylesheet">
-    <style>${commonStyles}</style>
-</head>
-<body>
-    <div class="page">
-        <!-- Header -->
-        <div class="header">
-            <div class="header-left">
-                <h1>Portfolio Holdings Report</h1>
-                <p>Investment Analysis Summary</p>
-            </div>
-            <div class="header-right">
-                <div class="date">Generated: ${new Date().toLocaleDateString('en-IN')} ${lastUpdatedDate ? `| Data as of: ${formatDate(lastUpdatedDate)}` : ''}</div>
-                <span class="status">ACTIVE PORTFOLIO</span>
-            </div>
-        </div>
-
-        <!-- Executive Summary -->
-        <div class="section executive-summary">
-            <div class="section-title">Executive Summary</div>
-            <div class="summary-grid">
-                <div class="summary-item">
-                    <div class="label">Total Investment</div>
-                    <div class="value">₹${formatNumber(holdingsData.totalBuyValue)}</div>
-                    <div class="subvalue">Principal Amount</div>
-                </div>
-                <div class="summary-item">
-                    <div class="label">Current Value</div>
-                    <div class="value">₹${formatNumber(holdingsData.totalCurrentValue)}</div>
-                    <div class="subvalue">Market Value</div>
-                </div>
-                <div class="summary-item">
-                    <div class="label">Total Gain</div>
-                    <div class="value ${holdingsData.totalPnl >= 0 ? 'positive' : 'negative'}">₹${formatNumber(Math.abs(holdingsData.totalPnl))}</div>
-                    <div class="subvalue">Absolute Return</div>
-                </div>
-                <div class="summary-item">
-                    <div class="label">Return %</div>
-                    <div class="value ${holdingsData.totalPnlPercent >= 0 ? 'positive' : 'negative'}">${formatNumber(holdingsData.totalPnlPercent)}%</div>
-                    <div class="subvalue">Overall Performance</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Asset Allocation -->
-        <div class="allocation-section">
-            <div class="section-title">Asset Allocation</div>
-            <div class="chart-container">
-                ${total > 0 ? `
-                <div class="chart-bar">
-                    ${assetAllocation.equity > 0 ? `<div class="equity-bar" style="width: ${((assetAllocation.equity / total) * 100).toFixed(1)}%;">Equity ${((assetAllocation.equity / total) * 100).toFixed(1)}%</div>` : ''}
-                    ${assetAllocation.debt > 0 ? `<div class="debt-bar" style="width: ${((assetAllocation.debt / total) * 100).toFixed(1)}%;">Debt ${((assetAllocation.debt / total) * 100).toFixed(1)}%</div>` : ''}
-                </div>
-                <div class="legend">
-                    ${assetAllocation.equity > 0 ? `
-                    <div class="legend-item">
-                        <div class="legend-left">
-                            <div class="legend-color equity"></div>
-                            <div class="legend-text">Equity Holdings</div>
-                        </div>
-                        <div class="legend-value">₹${formatNumber(assetAllocation.equity)}</div>
-                    </div>` : ''}
-                    ${assetAllocation.debt > 0 ? `
-                    <div class="legend-item">
-                        <div class="legend-left">
-                            <div class="legend-color debt"></div>
-                            <div class="legend-text">Debt Holdings</div>
-                        </div>
-                        <div class="legend-value">₹${formatNumber(assetAllocation.debt)}</div>
-                    </div>` : ''}
-                </div>` : '<div style="text-align: center; padding: 30px; color: #666;">No allocation data available</div>'}
-            </div>
-        </div>
-
-        <!-- Footer -->
+            // --- Build full HTML (multiple natural pages with CSS breaks) ---
+            const firstPage = `
+      <div class="page">
+        ${headerHTML('Portfolio Holdings Report', 'Investment Analysis Summary', 'ACTIVE PORTFOLIO')}
+        ${executiveSummaryHTML}
+        ${allocationHTML}
         <div class="footer">
-            <div class="disclaimer">
-                <strong>Report Overview:</strong> This portfolio analysis provides insights into your investment performance 
-                and asset allocation across different investment vehicles.
-            </div>
-            <div class="page-number">Page 1 of ${totalPages}</div>
+          <div class="disclaimer">
+            Report Overview: This portfolio analysis provides insights into your investment performance
+            and asset allocation across different investment vehicles.
+          </div>
+          <div>Powered by myQode</div>
         </div>
-    </div>
-</body>
-</html>`;
+      </div>
+    `;
 
-            // Create PDF with portrait orientation
-            const pdf = new jsPDF({
-                orientation: 'landscape',
-                unit: 'mm',
-                format: 'a4',
+            const stocksPage = `
+      <div class="page break">
+        ${headerHTML('Stock Holdings', 'Equity Position Analysis', 'EQUITY REPORT')}
+        <div class="section">
+          <div class="section-title">Stock Holdings with Performance Metrics</div>
+          <div class="table-container">
+            <table>
+              ${tableHeader(false)}
+              <tbody>
+                ${rowsHTML(stocks, false)}
+                ${totalsRowHTML(stocks)}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="footer">
+          <div class="disclaimer">
+            Equity positions include ETFs and individual stocks. Metrics are based on average cost vs current market price.
+          </div>
+          <div>Powered by myQode</div>
+        </div>
+      </div>
+    `;
+
+            const mfPage = `
+      <div class="page break">
+        ${headerHTML('Mutual Fund Holdings', 'Fund Position Analysis', 'FUNDS REPORT')}
+        <div class="section">
+          <div class="section-title">Mutual Fund Holdings with Performance Metrics</div>
+          <div class="table-container">
+            <table>
+              ${tableHeader(true)}
+              <tbody>
+                ${rowsHTML(mutualFunds, true)}
+                ${totalsRowHTML(mutualFunds)}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="footer">
+          <div class="disclaimer">
+            Mutual fund values are NAV-based where available. Performance is computed against average purchase NAV.
+          </div>
+          <div>Powered by myQode</div>
+        </div>
+      </div>
+    `;
+
+            const fullHTML = `
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <!-- Optional fonts; remove if you want zero external requests -->
+          <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&family=Playfair+Display:wght@400;700;900&display=swap" rel="stylesheet">
+          <title>Portfolio Holdings Report</title>
+          <style>${commonStyles}</style>
+        </head>
+        <body>
+          ${firstPage}
+          ${stocks.length ? stocksPage : ''}
+          ${mutualFunds.length ? mfPage : ''}
+          <script>
+            // Ensure print after layout/paint
+            window.addEventListener('load', () => {
+              setTimeout(() => {
+                window.focus();
+                window.print();
+                window.close();
+              }, 150);
             });
+          </script>
+        </body>
+      </html>
+    `;
 
-            const pageWidth = pdf.internal.pageSize.getWidth();
-            const pageHeight = pdf.internal.pageSize.getHeight();
-
-            // Build all pages
-            const allPages = [page1Html];
-            let currentPageNum = 2;
-
-            // Add stock pages
-            stockPages.forEach((pageStocks, index) => {
-                const isLastStockPage = index === stockPages.length - 1;
-                const pageHtml = createHoldingsTableHtml(
-                    pageStocks,
-                    `Stock Holdings${stockPages.length > 1 ? ` (Page ${index + 1} of ${stockPages.length})` : ''}`,
-                    false,
-                    currentPageNum,
-                    totalPages,
-                    isLastStockPage,
-                    stocks
-                );
-                allPages.push(pageHtml);
-                currentPageNum++;
-            });
-
-            // Add mutual fund pages
-            mutualFundPages.forEach((pageFunds, index) => {
-                const isLastMutualFundPage = index === mutualFundPages.length - 1;
-                const pageHtml = createHoldingsTableHtml(
-                    pageFunds,
-                    `Mutual Fund Holdings${mutualFundPages.length > 1 ? ` (Page ${index + 1} of ${mutualFundPages.length})` : ''}`,
-                    true,
-                    currentPageNum,
-                    totalPages,
-                    isLastMutualFundPage,
-                    mutualFunds
-                );
-                allPages.push(pageHtml);
-                currentPageNum++;
-            });
-
-            // Generate PDF pages
-            for (let i = 0; i < allPages.length; i++) {
-                const tempDiv = document.createElement('div');
-                tempDiv.innerHTML = allPages[i];
-                tempDiv.style.position = 'absolute';
-                tempDiv.style.top = '-9999px';
-                tempDiv.style.left = '-9999px';
-                tempDiv.style.width = '210mm';
-                tempDiv.style.height = 'auto';
-                document.body.appendChild(tempDiv);
-
-                await document.fonts.ready;
-
-                const canvas = await html2canvas(tempDiv, {
-                    scale: 1.3,
-                    useCORS: true,
-                    logging: false,
-                    backgroundColor: '#EFECD3',
-                    width: tempDiv.scrollWidth,
-                    height: tempDiv.scrollHeight,
-                });
-
-                document.body.removeChild(tempDiv);
-
-                const imgData = canvas.toDataURL('image/png');
-
-                if (i > 0) {
-                    pdf.addPage();
-                }
-
-                pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, pageHeight);
-            }
-
-            pdf.save(`portfolio_holdings_report_${new Date().getTime()}.pdf`);
-
-        } catch (error) {
-            console.error('Error generating PDF:', error);
-            setError('Failed to generate PDF');
+        const w = window.open("", "_blank", "width=1200,height=900");
+      if (w) {
+        w.document.open();
+        w.document.write(fullHTML);
+        w.document.close();
+      }
+        } catch (e) {
+            console.error(e);
+            setError('Failed to open print preview');
         } finally {
             setIsGeneratingPdf(false);
         }
