@@ -1507,13 +1507,15 @@ export default function Portfolio() {
               </Select>
             </div>
           )}
-          <Button onClick={handleDownloadPDF} disabled={exporting} className="text-sm w-full max-w-4xl ml-auto mt-1">
-            {exporting ? "Preparing..." : "Download PDF"}
-          </Button>
-          
-          <Button onClick={handleDownloadCSV} disabled={exporting} className="text-sm w-full max-w-4xl ml-auto mt-1">
-            {exporting ? "Preparing..." : "Download CSV"}
-          </Button>
+          <div className="flex gap-2 flex-row w-full">
+            <Button onClick={handleDownloadPDF} disabled={exporting} className="text-sm w-full max-w-4xl ml-auto mt-2">
+              {exporting ? "Preparing..." : "Download PDF"}
+            </Button>
+            
+            <Button onClick={handleDownloadCSV} disabled={exporting} className="text-sm w-full max-w-4xl ml-auto mt-2">
+              {exporting ? "Preparing..." : "Download CSV"}
+            </Button>
+          </div>
         </div>
       </div>
 

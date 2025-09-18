@@ -1,4 +1,3 @@
-
 export type ReturnView = "percent" | "cash";
 
 interface Transaction { date: string; amount: number; }
@@ -159,7 +158,6 @@ export function buildPortfolioReportHTML(
     currentDD: combinedTrailing?.currentDD?.portfolio,
     MDD: combinedTrailing?.MDD?.portfolio,
   };
-  console.log(combinedTrailing,"=====buildcombined trailings")
 
   // Benchmark row (if available)
   const trailingReturnsBenchmark = {
@@ -242,7 +240,6 @@ export function buildPortfolioReportHTML(
 
   // =============== HTML ===============
   const showFullPages = !isTotalPortfolio; // if total portfolio => only summary + quarterly cash + cash flows
-  console.log(cashFlowTotals,"+++++++++++++++++++++++++++++++++++++++++++++++")
 
   const html = `
 <!DOCTYPE html>
@@ -583,9 +580,7 @@ export function buildPortfolioReportHTML(
         </div>
       `
       : `
-        
-
-        <!-- Total Portfolio: Page 3 — Cash Flows -->
+        <!-- Total Portfolio: Page 2 — Cash Flows -->
         <div class="page">
           <div class="header">
             <div class="header-left">
@@ -658,6 +653,7 @@ export function buildPortfolioReportHTML(
       const benchCurve = ${JSON.stringify(benchmarkEquityCurve || [])};
       const benchDDCurve = ${JSON.stringify(benchmarkDrawdownCurve || [])};
       const showFullPages = ${JSON.stringify(showFullPages)};
+      const isTotalPortfolio = ${JSON.stringify(isTotalPortfolio)};
 
       if (showFullPages) {
         // Portfolio series
@@ -796,153 +792,103 @@ export function buildPortfolioReportHTML(
       }
 
       // =====================
-      // Dynamic pagination for long cash-flow tables
+      // Fixed pagination for cash flow tables
       // =====================
       function paginateLongTable(tableId) {
-  const table = document.getElementById(tableId);
-  if (!table) return;
+        const table = document.getElementById(tableId);
+        if (!table) return;
 
-  // Find the closest .page ancestor and measure available content height
-  const page = table.closest('.page');
-  if (!page) return;
+        const page = table.closest('.page');
+        if (!page) return;
 
-  // compute usable height inside a page (page height minus header/footer)
-  const pageHeight = page.getBoundingClientRect().height;
+        const tbody = table.querySelector('tbody');
+        if (!tbody) return;
+        
+        const allRows = Array.from(tbody.querySelectorAll('tr'));
+        if (allRows.length <= 25) return; // Don't paginate if 25 or fewer rows
 
-  // header and footer heights: find elements inside page
-  const header = page.querySelector('.header');
-  const footer = page.querySelector('.footer');
-  const headerH = header ? header.getBoundingClientRect().height : 0;
-  const footerH = footer ? footer.getBoundingClientRect().height : 0;
+        // Store original rows
+        const originalRows = allRows.map(row => row.cloneNode(true));
+        
+        // Set starting page number based on portfolio type
+        let nextPageNum = isTotalPortfolio ? 3 : 4; // Next page after cash flows page
+        
+        function createContinuationPage(refPage, pageNum) {
+          const newPage = refPage.cloneNode(true);
+          
+          // Update page number in footer
+          const footerPageNum = newPage.querySelector('.footer .page-number');
+          if (footerPageNum) {
+            footerPageNum.textContent = pageNum + ' | Qode';
+          }
+          
+          // Update section header to show continuation
+          const sectionHeader = newPage.querySelector('.section-header');
+          if (sectionHeader) {
+            sectionHeader.textContent = 'Cash In / Cash Out';
+          }
+          
+          // Clear the table body in new page
+          const newTbody = newPage.querySelector('tbody');
+          if (newTbody) {
+            newTbody.innerHTML = '';
+          }
+          
+          // Insert the new page after the reference page
+          if (refPage.nextSibling) {
+            refPage.parentNode.insertBefore(newPage, refPage.nextSibling);
+          } else {
+            refPage.parentNode.appendChild(newPage);
+          }
+          
+          return newPage;
+        }
 
-  // some padding inside page
-  const pagePaddingTop = 20; 
-  const pagePaddingBottom = 20;
+        // Clear original tbody and repopulate with first 25 rows
+        tbody.innerHTML = '';
+        
+        let currentPage = page;
+        let currentTbody = tbody;
+        const rowsPerPage = 25;
+        let rowsAddedToCurrentPage = 0;
+        
+        for (let i = 0; i < originalRows.length; i++) {
+          // If current page is full, create continuation page
+          if (rowsAddedToCurrentPage >= rowsPerPage) {
+            console.log('Creating continuation page:', nextPageNum);
+            currentPage = createContinuationPage(currentPage, nextPageNum);
+            currentTbody = currentPage.querySelector('tbody');
+            nextPageNum++;
+            rowsAddedToCurrentPage = 0;
+          }
+          
+          // Add row to current page
+          const rowClone = originalRows[i].cloneNode(true);
+          currentTbody.appendChild(rowClone);
+          rowsAddedToCurrentPage++;
+        }
+        
+        console.log('Pagination completed. Total rows:', originalRows.length, 'Pages created:', nextPageNum - (isTotalPortfolio ? 3 : 4));
+      }
 
-  const usableHeight = pageHeight - headerH - footerH - pagePaddingTop - pagePaddingBottom - 60; // buffer
-
-  // get tbody rows (exclude THEAD) and preserve original data immediately
-  const tbody = table.querySelector('tbody');
-  if (!tbody) return;
-  const originalRows = Array.from(tbody.querySelectorAll('tr'));
-  if (!originalRows.length) return;
-
-  // Store the original row data before any manipulation
-  const originalRowData = originalRows.map(row => row.cloneNode(true));
-
-  // If table fits, nothing to do
-  const tableRect = table.getBoundingClientRect();
-  if (tableRect.height <= usableHeight) return;
-
-  // Track current page number for proper incrementing
-  let currentPageNum = 1;
-  const originalFooter = page.querySelector('.footer .page-number');
-  if (originalFooter) {
-    const match = originalFooter.textContent.match(/(\d+)/);
-    if (match) {
-      currentPageNum = parseInt(match[1]);
-    }
-  }
-
-  function createNewPageAfter(refPage) {
-    const newPage = refPage.cloneNode(false);
-    newPage.innerHTML = '';
-    
-    // Clone header and footer
-    const headerClone = refPage.querySelector('.header')?.cloneNode(true);
-    const footerClone = refPage.querySelector('.footer')?.cloneNode(true);
-    
-    if (headerClone) newPage.appendChild(headerClone);
-
-    // Create section structure
-    const parent = document.createElement('div');
-    const section = document.createElement('div');
-    section.className = 'section allow-break cashflow-section';
-    newPage.appendChild(parent);
-
-    const sectionHeader = document.createElement('div');
-    sectionHeader.className = 'section-header';
-    sectionHeader.textContent = 'Cash In / Cash Out';
-    parent.appendChild(sectionHeader);
-
-    const sectionContent = document.createElement('div');
-    sectionContent.className = 'section-content';
-    section.appendChild(sectionContent);
-
-    // Create table with same structure
-    const tbl = document.createElement('table');
-    tbl.className = table.className;
-    tbl.id = tableId + '_page_' + Date.now(); // unique id for continuation pages
-    tbl.innerHTML = '<thead>' + table.querySelector('thead').innerHTML + '</thead><tbody></tbody>';
-    sectionContent.appendChild(tbl);
-    parent.appendChild(section);
-
-    if (footerClone) {
-      // Increment page number properly
-      currentPageNum++;
-      const pageNum = footerClone.querySelector('.page-number');
-      if (pageNum) {
-        // Replace the entire page number text with new number
-        pageNum.textContent = currentPageNum + ' | Qode';
+      // Run pagination for tables with many rows
+      const cashFlowCount = ${JSON.stringify(recentCashFlows.length)};
+      console.log('Cash flow count:', cashFlowCount);
+      
+      if (cashFlowCount > 25) {
+        console.log('Running pagination...');
+        setTimeout(() => { 
+          try { 
+            paginateLongTable('cash-flows-table'); 
+          } catch(e) { 
+            console.error('Pagination error:', e); 
+          } 
+        }, 500);
       } else {
-        // If no page number element found, create one
-        const newPageNum = document.createElement('div');
-        newPageNum.className = 'page-number';
-        newPageNum.textContent = currentPageNum + ' | Qode';
-        footerClone.appendChild(newPageNum);
+        console.log('No pagination needed - row count is', cashFlowCount);
       }
-      
-      // Ensure footer has the proper styling (border-top)
-      if (!footerClone.style.borderTop && !footerClone.className.includes('footer')) {
-        footerClone.style.borderTop = '1px solid #ddd';
-        footerClone.style.paddingTop = '15px';
-        footerClone.style.marginTop = 'auto';
-      }
-      
-      newPage.appendChild(footerClone);
-    }
 
-    // Insert after reference page
-    refPage.parentNode.insertBefore(newPage, refPage.nextSibling);
-    return newPage;
-  }
-
-  // Clear the original table body and rebuild with pagination
-  tbody.innerHTML = '';
-
-  let currentPage = page;
-  let currentTable = table;
-  let currentTbody = tbody;
-
-  for (let i = 0; i < originalRowData.length; i++) {
-    const rowClone = originalRowData[i].cloneNode(true);
-    
-    // Test if adding this row would exceed the height limit
-    currentTbody.appendChild(rowClone);
-    const currentHeight = currentTable.getBoundingClientRect().height;
-
-    if (currentHeight > usableHeight && currentTbody.children.length > 1) {
-      // Remove the row that caused overflow
-      currentTbody.removeChild(rowClone);
-      
-      // Create new page and move the row there
-      const newPage = createNewPageAfter(currentPage);
-      const newTable = newPage.querySelector('table');
-      const newTbody = newTable.querySelector('tbody');
-      
-      newTbody.appendChild(rowClone);
-      
-      // Update references for next iteration
-      currentPage = newPage;
-      currentTable = newTable;
-      currentTbody = newTbody;
-    }
-  }
-}
-      // Run pagination after a short delay to allow fonts and layout to stabilize
-      setTimeout(() => { try { paginateLongTable('cash-flows-table'); } catch(e) { /* ignore */ } }, 300);
-
-      // Optional: auto-print after render
+      // Auto-print after render
       setTimeout(() => { try { window.print(); } catch(e) {} }, 800);
     })();
   </script>
