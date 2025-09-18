@@ -25,6 +25,49 @@ interface MonthlyPnL {
   };
 }
 
+interface Holding {
+  symbol: string;
+  exchange: string;
+  quantity: number;
+  avgPrice: number;
+  ltp: number;
+  buyValue: number;
+  valueAsOfToday: number;
+  pnlAmount: number;
+  percentPnl: number;
+  broker: string;
+  debtEquity: string;
+  subCategory: string;
+  date: Date;
+}
+
+// Interface for holdings summary
+interface HoldingsSummary {
+  totalBuyValue: number;
+  totalCurrentValue: number;
+  totalPnl: number;
+  totalPnlPercent: number;
+  holdingsCount: number;
+  equityHoldings: Holding[];
+  debtHoldings: Holding[];
+  categoryBreakdown: {
+    [category: string]: {
+      buyValue: number;
+      currentValue: number;
+      pnl: number;
+      count: number;
+    };
+  };
+  brokerBreakdown: {
+    [broker: string]: {
+      buyValue: number;
+      currentValue: number;
+      pnl: number;
+      count: number;
+    };
+  };
+}
+
 interface DrawdownMetrics {
   currentDD: number;
   mdd: number;
@@ -45,6 +88,8 @@ interface PortfolioData {
   monthlyPnl: MonthlyPnL;
   cashFlows: CashFlow[];
   strategyName: string;
+  holdings: Holding[]; // Add this
+  holdingsSummary: HoldingsSummary; // Add this
 }
 
 interface Metadata {
@@ -2394,131 +2439,384 @@ if (scheme === "Scheme PMS QAW") {
       isActive: PORTFOLIO_MAPPING[accountCode][scheme].isActive,
     };
   }
-  public static async GET(request: Request): Promise<NextResponse> {
-    let accountCode: string = "AC5"; // Default value, declare outside try block
 
-    try {
-      let results: Record<string, PortfolioResponse> = {};
-      const url = new URL(request.url);
-      const qcode = url.searchParams.get("qcode") || "QAC00041"; // Default to QAC00041 if no qcode provided
-      accountCode = qcode === "QAC00046" ? "AC8" : "AC5"; // AC8 for Satidham (QAC00046), AC5 for Sarla (QAC00041)
-      const allSchemes = Object.keys(PORTFOLIO_MAPPING[accountCode]).filter(s => s !== "Scheme PMS-QAW");
-      let schemes: string[] = [];
+  private static async getHoldings(qcode: string): Promise<Holding[]> {
+    // Fetch equity holdings
+    const equityHoldings = await prisma.equity_holding_test.findMany({
+      where: {
+        qcode,
+      },
+      orderBy: [
+        { symbol: 'asc' },
+        { date: 'desc' }
+      ],
+    });
 
-      if (accountCode === "AC8") {
-        // Satidham order
-        const prioritySchemes = ["Total Portfolio", "Scheme PMS QAW"];
-        const remainingSchemes = allSchemes.filter(s => !prioritySchemes.includes(s));
-        schemes = [...prioritySchemes, ...remainingSchemes];
-      } else {
-        // Sarla order
-        const prioritySchemes = ["Total Portfolio", "Scheme B", "Scheme PMS QAW"];
-        const remainingSchemes = allSchemes.filter(s => !prioritySchemes.includes(s));
-        schemes = [...prioritySchemes, ...remainingSchemes];
+    // Fetch mutual fund holdings
+    const mutualFundHoldings = await prisma.mutual_fund_holding.findMany({
+      where: {
+        qcode,
+        status: 'P', // Only active records
+      },
+      orderBy: [
+        { symbol: 'asc' },
+        { date: 'desc' }
+      ],
+    });
+
+    // Group equity holdings by symbol and take the latest entry for each
+    const latestEquityHoldings = new Map<string, any>();
+    equityHoldings.forEach(holding => {
+      const key = `${holding.symbol}-${holding.exchange}`;
+      if (!latestEquityHoldings.has(key) ||
+        (holding.date && latestEquityHoldings.get(key).date && holding.date > latestEquityHoldings.get(key).date)) {
+        latestEquityHoldings.set(key, holding);
       }
+    });
 
-      // const remainingSchemes = allSchemes.filter(s => !prioritySchemes.includes(s));
-      // const schemes = [...prioritySchemes, ...remainingSchemes];
-
-      for (const scheme of schemes) {
-        let cashInOutData: Array<{ date: Date; capital_in_out: Decimal | number | null }> = [];
-        let masterSheetData: Array<{
-          date: Date;
-          nav: number | null;
-          drawdown: number | null;
-          portfolio_value: number | null;
-          daily_p_l: number | null;
-          pnl: number | null;
-          capital_in_out: Decimal | number | null;
-        }> = [];
-        const portfolioNames = PortfolioApi.getPortfolioNames(accountCode, scheme);
-        const systemTag = PortfolioApi.getSystemTag(scheme, qcode);
-
-        if (scheme === "Scheme PMS QAW") {
-          cashInOutData = [];
-          masterSheetData = [];
-        } else {
-          [cashInOutData, masterSheetData] = await Promise.all([
-            prisma.master_sheet.findMany({
-              where: { qcode, system_tag: systemTag, capital_in_out: { not: null } },
-              select: { date: true, capital_in_out: true },
-              orderBy: { date: "asc" },
-            }),
-            prisma.master_sheet.findMany({
-              where: { qcode, system_tag: systemTag },
-              select: { date: true, nav: true, drawdown: true, portfolio_value: true, daily_p_l: true, pnl: true, capital_in_out: true },
-              orderBy: { date: "asc" },
-            }),
-          ]);
-        }
-
-        const investedAmount = await PortfolioApi.getAmountDeposited(qcode, scheme);
-        const latestExposure = await PortfolioApi.getLatestExposure(qcode, scheme);
-        const totalProfit = await PortfolioApi.getTotalProfit(qcode, scheme);
-        const returns = await PortfolioApi.getPortfolioReturns(qcode, scheme);
-        const historicalData = await PortfolioApi.getHistoricalData(qcode, scheme);
-        const cashFlows = await PortfolioApi.getCashFlows(qcode, scheme);
-        const drawdownMetrics = PortfolioApi.calculateDrawdownMetrics(historicalData.map(d => ({ date: PortfolioApi.normalizeDate(d.date)!, nav: d.nav })));
-        const trailingReturns = await PortfolioApi.calculateTrailingReturns(qcode, scheme, drawdownMetrics);
-        const monthlyPnl = await PortfolioApi.calculateMonthlyPnL(qcode, scheme);
-        const quarterlyPnl = await PortfolioApi.calculateQuarterlyPnLWithDailyPL(
-          qcode,
-          scheme,
-          historicalData.map(d => ({
-            date: PortfolioApi.normalizeDate(d.date)!,
-            nav: d.nav,
-            pnl: d.pnl,
-          }))
-        );
-
-        const portfolioData: PortfolioData = {
-          amountDeposited: investedAmount.toFixed(2),
-          currentExposure: latestExposure?.portfolioValue.toFixed(2) || "0",
-          return: returns.toFixed(2),
-          totalProfit: totalProfit.toFixed(2),
-          trailingReturns,
-          drawdown: drawdownMetrics.currentDD.toFixed(2),
-          maxDrawdown: drawdownMetrics.mdd.toFixed(2),
-          equityCurve: historicalData.map(d => ({ date: PortfolioApi.normalizeDate(d.date)!, nav: d.nav })),
-          drawdownCurve: drawdownMetrics.ddCurve,
-          quarterlyPnl,
-          monthlyPnl,
-          cashFlows,
-          strategyName: scheme,
-        };
-
-        const metadata: Metadata = {
-          icode: `${scheme}`,
-          accountCount: 1,
-          lastUpdated: new Date().toISOString(),
-          filtersApplied: {
-            accountType: null,
-            broker: null,
-            startDate: null,
-            endDate: null,
-          },
-          inceptionDate: historicalData.length > 0 ? PortfolioApi.normalizeDate(historicalData[0].date)! : "2022-09-14",
-          dataAsOfDate: latestExposure?.date.toISOString().split("T")[0] || "2025-07-18",
-          strategyName: scheme,
-          isActive: portfolioNames.isActive,
-        };
-
-        results = {
-          ...results,
-          [scheme]: { data: portfolioData, metadata },
-        };
+    // Group mutual fund holdings by symbol and take the latest entry for each
+    const latestMutualFundHoldings = new Map<string, any>();
+    mutualFundHoldings.forEach(holding => {
+      const key = `${holding.symbol}-${holding.isin}`;
+      if (!latestMutualFundHoldings.has(key) ||
+        (holding.date && latestMutualFundHoldings.get(key).date && holding.date > latestMutualFundHoldings.get(key).date)) {
+        latestMutualFundHoldings.set(key, holding);
       }
+    });
 
-      return NextResponse.json(results, { status: 200 });
-    } catch (error) {
-      console.error(`${accountCode === "AC8" ? "Satidham" : "Sarla"} Portfolio API Error:`, error);
-      return NextResponse.json(
-        {
-          error: "Internal server error",
-          message: error instanceof Error ? error.message : "Unknown error",
-        },
-        { status: 500 }
-      );
-    }
+    // Convert equity holdings to Holding interface
+    const processedEquityHoldings = Array.from(latestEquityHoldings.values())
+      .filter(h => h.quantity && h.quantity > 0) // Only active holdings
+      .map(holding => ({
+        symbol: holding.symbol || '',
+        exchange: holding.exchange || '',
+        quantity: Number(holding.quantity) || 0,
+        avgPrice: Number(holding.avg_price) || 0,
+        ltp: Number(holding.ltp) || 0,
+        buyValue: Number(holding.buy_value) || 0,
+        valueAsOfToday: Number(holding.value_as_of_today) || 0,
+        pnlAmount: Number(holding.pnl_amount) || 0,
+        percentPnl: Number(holding.percent_pnl) || 0,
+        broker: holding.broker || '',
+        debtEquity: holding.debt_equity || '',
+        subCategory: holding.sub_category || '',
+        date: holding.date || new Date(),
+        type: 'equity' as const,
+      }));
+
+    // Convert mutual fund holdings to Holding interface
+    const processedMutualFundHoldings = Array.from(latestMutualFundHoldings.values())
+      .filter(h => h.quantity && h.quantity > 0) // Only active holdings
+      .map(holding => ({
+        symbol: holding.symbol || '',
+        exchange: 'MUTUAL_FUND', // Set a default exchange for mutual funds
+        quantity: Number(holding.quantity) || 0,
+        avgPrice: Number(holding.price) || 0,
+        ltp: Number(holding.price) || 0, // For MF, price is the NAV
+        buyValue: Number(holding.quantity) * Number(holding.price) || 0,
+        valueAsOfToday: Number(holding.quantity) * Number(holding.price) || 0, // You might need current NAV here
+        pnlAmount: 0, // Calculate based on current NAV vs purchase price
+        percentPnl: 0, // Calculate based on current NAV vs purchase price
+        broker: holding.broker || '',
+        debtEquity: holding.debt_equity || '',
+        subCategory: holding.sub_category || '',
+        date: holding.date || new Date(),
+        type: 'mutual_fund' as const,
+        isin: holding.isin || '',
+      }));
+
+    return [...processedEquityHoldings, ...processedMutualFundHoldings];
   }
+  public static async GET(request: Request): Promise<NextResponse> {
+  let accountCode: string = "AC5"; // Default value, declare outside try block
+
+  try {
+    let results: Record<string, PortfolioResponse> = {};
+    const url = new URL(request.url);
+    const qcode = url.searchParams.get("qcode") || "QAC00041"; // Default to QAC00041 if no qcode provided
+    accountCode = qcode === "QAC00046" ? "AC8" : "AC5"; // AC8 for Satidham (QAC00046), AC5 for Sarla (QAC00041)
+    const allSchemes = Object.keys(PORTFOLIO_MAPPING[accountCode]).filter(s => s !== "Scheme PMS-QAW");
+    let schemes: string[] = [];
+
+    if (accountCode === "AC8") {
+      // Satidham order
+      const prioritySchemes = ["Total Portfolio", "Scheme PMS QAW"];
+      const remainingSchemes = allSchemes.filter(s => !prioritySchemes.includes(s));
+      schemes = [...prioritySchemes, ...remainingSchemes];
+    } else {
+      // Sarla order
+      const prioritySchemes = ["Total Portfolio", "Scheme B", "Scheme PMS QAW"];
+      const remainingSchemes = allSchemes.filter(s => !prioritySchemes.includes(s));
+      schemes = [...prioritySchemes, ...remainingSchemes];
+    }
+
+    for (const scheme of schemes) {
+      let cashInOutData: Array<{ date: Date; capital_in_out: Decimal | number | null }> = [];
+      let masterSheetData: Array<{
+        date: Date;
+        nav: number | null;
+        drawdown: number | null;
+        portfolio_value: number | null;
+        daily_p_l: number | null;
+        pnl: number | null;
+        capital_in_out: Decimal | number | null;
+      }> = [];
+      const portfolioNames = PortfolioApi.getPortfolioNames(accountCode, scheme);
+      const systemTag = PortfolioApi.getSystemTag(scheme, qcode);
+
+      if (scheme === "Scheme PMS QAW") {
+        cashInOutData = [];
+        masterSheetData = [];
+      } else {
+        [cashInOutData, masterSheetData] = await Promise.all([
+          prisma.master_sheet.findMany({
+            where: { qcode, system_tag: systemTag, capital_in_out: { not: null } },
+            select: { date: true, capital_in_out: true },
+            orderBy: { date: "asc" },
+          }),
+          prisma.master_sheet.findMany({
+            where: { qcode, system_tag: systemTag },
+            select: { date: true, nav: true, drawdown: true, portfolio_value: true, daily_p_l: true, pnl: true, capital_in_out: true },
+            orderBy: { date: "asc" },
+          }),
+        ]);
+      }
+
+      // Get all the existing data
+      const [
+        investedAmount,
+        latestExposure,
+        totalProfit,
+        returns,
+        historicalData,
+        cashFlows,
+        holdings // Add holdings to the parallel fetch
+      ] = await Promise.all([
+        PortfolioApi.getAmountDeposited(qcode, scheme),
+        PortfolioApi.getLatestExposure(qcode, scheme),
+        PortfolioApi.getTotalProfit(qcode, scheme),
+        PortfolioApi.getPortfolioReturns(qcode, scheme),
+        PortfolioApi.getHistoricalData(qcode, scheme),
+        PortfolioApi.getCashFlows(qcode, scheme),
+        PortfolioApi.getHoldings(qcode) // Add this line
+      ]);
+
+      const drawdownMetrics = PortfolioApi.calculateDrawdownMetrics(historicalData.map(d => ({ date: PortfolioApi.normalizeDate(d.date)!, nav: d.nav })));
+      const trailingReturns = await PortfolioApi.calculateTrailingReturns(qcode, scheme, drawdownMetrics);
+      const monthlyPnl = await PortfolioApi.calculateMonthlyPnL(qcode, scheme);
+      const quarterlyPnl = await PortfolioApi.calculateQuarterlyPnLWithDailyPL(
+        qcode,
+        scheme,
+        historicalData.map(d => ({
+          date: PortfolioApi.normalizeDate(d.date)!,
+          nav: d.nav,
+          pnl: d.pnl,
+        }))
+      );
+
+      // Process holdings summary
+      const holdingsSummary = PortfolioApi.processHoldingsSummary(holdings);
+
+      const portfolioData: PortfolioData = {
+        amountDeposited: investedAmount.toFixed(2),
+        currentExposure: latestExposure?.portfolioValue.toFixed(2) || "0",
+        return: returns.toFixed(2),
+        totalProfit: totalProfit.toFixed(2),
+        trailingReturns,
+        drawdown: drawdownMetrics.currentDD.toFixed(2),
+        maxDrawdown: drawdownMetrics.mdd.toFixed(2),
+        equityCurve: historicalData.map(d => ({ date: PortfolioApi.normalizeDate(d.date)!, nav: d.nav })),
+        drawdownCurve: drawdownMetrics.ddCurve,
+        quarterlyPnl,
+        monthlyPnl,
+        cashFlows,
+        strategyName: scheme,
+        holdings: holdings, // Add holdings to portfolio data
+        holdingsSummary: holdingsSummary, // Add holdings summary
+      };
+
+      const metadata: Metadata = {
+        icode: `${scheme}`,
+        accountCount: 1,
+        lastUpdated: new Date().toISOString(),
+        filtersApplied: {
+          accountType: null,
+          broker: null,
+          startDate: null,
+          endDate: null,
+        },
+        inceptionDate: historicalData.length > 0 ? PortfolioApi.normalizeDate(historicalData[0].date)! : "2022-09-14",
+        dataAsOfDate: latestExposure?.date.toISOString().split("T")[0] || "2025-07-18",
+        strategyName: scheme,
+        isActive: portfolioNames.isActive,
+      };
+
+      results = {
+        ...results,
+        [scheme]: { data: portfolioData, metadata },
+      };
+    }
+
+    return NextResponse.json(results, { status: 200 });
+  } catch (error) {
+    console.error(`${accountCode === "AC8" ? "Satidham" : "Sarla"} Portfolio API Error:`, error);
+    return NextResponse.json(
+      {
+        error: "Internal server error",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// Add the getHoldings method to your PortfolioApi class
+async getHoldings(qcode: string): Promise<Holding[]> {
+  // Fetch equity holdings
+  const equityHoldings = await prisma.equity_holding_test.findMany({
+    where: {
+      qcode,
+    },
+    orderBy: [
+      { symbol: 'asc' },
+      { date: 'desc' }
+    ],
+  });
+
+  // Fetch mutual fund holdings
+  const mutualFundHoldings = await prisma.mutual_fund_holding.findMany({
+    where: {
+      qcode,
+      status: 'P', // Only active records
+    },
+    orderBy: [
+      { symbol: 'asc' },
+      { date: 'desc' }
+    ],
+  });
+
+  // Group equity holdings by symbol and take the latest entry for each
+  const latestEquityHoldings = new Map<string, any>();
+  equityHoldings.forEach(holding => {
+    const key = `${holding.symbol}-${holding.exchange}`;
+    if (!latestEquityHoldings.has(key) ||
+      (holding.date && latestEquityHoldings.get(key).date && holding.date > latestEquityHoldings.get(key).date)) {
+      latestEquityHoldings.set(key, holding);
+    }
+  });
+
+  // Group mutual fund holdings by symbol and take the latest entry for each
+  const latestMutualFundHoldings = new Map<string, any>();
+  mutualFundHoldings.forEach(holding => {
+    const key = `${holding.symbol}-${holding.isin}`;
+    if (!latestMutualFundHoldings.has(key) ||
+      (holding.date && latestMutualFundHoldings.get(key).date && holding.date > latestMutualFundHoldings.get(key).date)) {
+      latestMutualFundHoldings.set(key, holding);
+    }
+  });
+
+  // Convert equity holdings to Holding interface
+  const processedEquityHoldings = Array.from(latestEquityHoldings.values())
+    .filter(h => h.quantity && h.quantity > 0) // Only active holdings
+    .map(holding => ({
+      symbol: holding.symbol || '',
+      exchange: holding.exchange || '',
+      quantity: Number(holding.quantity) || 0,
+      avgPrice: Number(holding.avg_price) || 0,
+      ltp: Number(holding.ltp) || 0,
+      buyValue: Number(holding.buy_value) || 0,
+      valueAsOfToday: Number(holding.value_as_of_today) || 0,
+      pnlAmount: Number(holding.pnl_amount) || 0,
+      percentPnl: Number(holding.percent_pnl) || 0,
+      broker: holding.broker || '',
+      debtEquity: holding.debt_equity || '',
+      subCategory: holding.sub_category || '',
+      date: holding.date || new Date(),
+      type: 'equity' as const,
+    }));
+
+  // Convert mutual fund holdings to Holding interface
+  const processedMutualFundHoldings = Array.from(latestMutualFundHoldings.values())
+    .filter(h => h.quantity && h.quantity > 0) // Only active holdings
+    .map(holding => ({
+      symbol: holding.symbol || '',
+      exchange: 'MUTUAL_FUND', // Set a default exchange for mutual funds
+      quantity: Number(holding.quantity) || 0,
+      avgPrice: Number(holding.price) || 0,
+      ltp: Number(holding.price) || 0, // For MF, price is the NAV
+      buyValue: Number(holding.quantity) * Number(holding.price) || 0,
+      valueAsOfToday: Number(holding.quantity) * Number(holding.price) || 0, // You might need current NAV here
+      pnlAmount: 0, // Calculate based on current NAV vs purchase price
+      percentPnl: 0, // Calculate based on current NAV vs purchase price
+      broker: holding.broker || '',
+      debtEquity: holding.debt_equity || '',
+      subCategory: holding.sub_category || '',
+      date: holding.date || new Date(),
+      type: 'mutual_fund' as const,
+      isin: holding.isin || '',
+    }));
+
+  return [...processedEquityHoldings, ...processedMutualFundHoldings];
+}
+
+// Add a helper method to process holdings summary
+static processHoldingsSummary(holdings: Holding[]): HoldingsSummary {
+  const equityHoldings = holdings.filter(h => h.type === 'equity');
+  const debtHoldings = holdings.filter(h => h.debtEquity === 'Debt');
+  const mutualFundHoldings = holdings.filter(h => h.type === 'mutual_fund');
+
+  const totalBuyValue = holdings.reduce((sum, h) => sum + h.buyValue, 0);
+  const totalCurrentValue = holdings.reduce((sum, h) => sum + h.valueAsOfToday, 0);
+  const totalPnl = holdings.reduce((sum, h) => sum + h.pnlAmount, 0);
+  const totalPnlPercent = totalBuyValue > 0 ? (totalPnl / totalBuyValue) * 100 : 0;
+
+  // Category breakdown
+  const categoryBreakdown: { [category: string]: any } = {};
+  holdings.forEach(holding => {
+    const category = holding.subCategory || 'Other';
+    if (!categoryBreakdown[category]) {
+      categoryBreakdown[category] = {
+        buyValue: 0,
+        currentValue: 0,
+        pnl: 0,
+        count: 0
+      };
+    }
+    categoryBreakdown[category].buyValue += holding.buyValue;
+    categoryBreakdown[category].currentValue += holding.valueAsOfToday;
+    categoryBreakdown[category].pnl += holding.pnlAmount;
+    categoryBreakdown[category].count += 1;
+  });
+
+  // Broker breakdown
+  const brokerBreakdown: { [broker: string]: any } = {};
+  holdings.forEach(holding => {
+    const broker = holding.broker || 'Unknown';
+    if (!brokerBreakdown[broker]) {
+      brokerBreakdown[broker] = {
+        buyValue: 0,
+        currentValue: 0,
+        pnl: 0,
+        count: 0
+      };
+    }
+    brokerBreakdown[broker].buyValue += holding.buyValue;
+    brokerBreakdown[broker].currentValue += holding.valueAsOfToday;
+    brokerBreakdown[broker].pnl += holding.pnlAmount;
+    brokerBreakdown[broker].count += 1;
+  });
+
+  return {
+    totalBuyValue,
+    totalCurrentValue,
+    totalPnl,
+    totalPnlPercent,
+    holdingsCount: holdings.length,
+    equityHoldings,
+    debtHoldings,
+    mutualFundHoldings,
+    categoryBreakdown,
+    brokerBreakdown
+  };
+}
 }
