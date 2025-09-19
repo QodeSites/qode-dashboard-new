@@ -1526,7 +1526,7 @@ export default function Portfolio() {
           <div className="space-y-6">
             <div data-pdf="split" className="avoid-break space-y-6">
               <div className={`w-fit bg-logo-green font-heading text-button-text text-sm px-3 py-1 rounded-full ${!currentEntry.isActive ? "opacity-70" : ""}`}>
-                <p className="text-xs">
+                <p className="text-sm p-2">
                   {currentEntry.strategyName} {!currentEntry.isActive ? "(Inactive)" : ""}
                 </p>
               </div>

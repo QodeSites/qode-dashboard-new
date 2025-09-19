@@ -131,7 +131,7 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
                         )}
                         {hybridPercent > 0 && (
                             <div
-                                className="bg-amber-200 h-full flex items-center justify-center text-gray-800 text-xs font-medium"
+                                className="bg-[#008455] h-full flex items-center justify-center text-white text-xs font-medium"
                                 style={{ width: `${hybridPercent}%` }}
                             >
                                 {hybridPercent > 10 ? `${hybridPercent.toFixed(1)}%` : ''}
@@ -163,7 +163,7 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
                         )}
                         {hybridValue > 0 && (
                             <div className="flex items-center gap-2">
-                                <div className="w-4 h-4 bg-amber-200 rounded"></div>
+                                <div className="w-4 h-4 bg-[#008455] rounded"></div>
                                 <div className="text-sm">
                                     <span className="font-medium text-card-text">Hybrid</span>
                                     <div className="text-xs text-gray-600">
@@ -290,7 +290,7 @@ const HoldingsTable = ({
                                                 ? 'bg-logo-green text-[#DABD38]'
                                                 : holding.debtEquity.toLowerCase() === 'debt'
                                                     ? 'bg-[#DABD38] text-logo-green'
-                                                    : 'bg-amber-200 text-amber-800'
+                                                    : 'bg-[#008455] text-white'
                                                 }`}>
                                                 {holding.debtEquity}
                                             </span>
@@ -684,13 +684,12 @@ const HoldingsSummaryPage = () => {
                     'Broker',
                     'Quantity',
                     'Average Price',
-                    'Current Price',
-                    'Invested Amount',
-                    'Current Value',
-                    'P&L Amount',
-                    'P&L Percentage',
+                    'Current Price (₹)',
+                    'Invested Amount (₹)',
+                    'Current Value (₹)',
+                    'Profit & Loss Amount (₹)',
+                    'Profit & Loss (%)',
                     'Category',
-                    'Sub Category'
                 ]);
 
                 stocks.forEach(holding => {
@@ -706,7 +705,6 @@ const HoldingsSummaryPage = () => {
                         formatCurrency(holding.pnlAmount),
                         formatPercentage(holding.percentPnl),
                         holding.debtEquity || 'N/A',
-                        holding.subCategory || 'N/A'
                     ]);
                 });
 
@@ -742,10 +740,10 @@ const HoldingsSummaryPage = () => {
                     'ISIN',
                     'Broker',
                     'Units',
-                    'Average NAV',
-                    'Current NAV',
+                    'Average Cost',
+                    'Last Traded Price',
                     'Invested Amount',
-                    'Current Value',
+                    'Current Value()',
                     'P&L Amount',
                     'P&L Percentage',
                     'Category',
@@ -758,7 +756,6 @@ const HoldingsSummaryPage = () => {
                         holding.isin || 'N/A',
                         holding.broker || 'N/A',
                         holding.quantity.toLocaleString(),
-                        formatCurrency(holding.avgPrice),
                         formatCurrency(holding.ltp),
                         formatCurrency(holding.buyValue),
                         formatCurrency(holding.valueAsOfToday),
@@ -825,7 +822,7 @@ const HoldingsSummaryPage = () => {
         }
     };
 
-    // Dynamic Pagination PDF Download Function (updated)
+    // Dynamic Pagination PDF Download Function (fixed with proper table pagination and headers)
     const handleDownloadPDF = async () => {
         if (!holdingsData) {
             setError('No holdings data available to print');
@@ -841,7 +838,7 @@ const HoldingsSummaryPage = () => {
             const formatNumber = (num: number) =>
                 num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-            // ⚙️ Print CSS: tables flow across pages, footer fixed at bottom on every page
+            // ⚙️ Print CSS: page structure with headers on every page
             const commonStyles = `
 * { box-sizing: border-box; }
 * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
@@ -858,83 +855,230 @@ html, body {
   color: #333;
   line-height: 1.5;
   font-size: 12px;
-  counter-reset: page;
 }
 
-/* reserve space so footer doesn't overlap flowing content */
-body { padding-bottom: 18mm; }
+/* Page container */
+.page {
+  width: 297mm;
+  height: 210mm;
+  padding: 5mm;
+  margin: 0;
+  background-color: #EFECD3;
+  page-break-after: always;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  min-height: 180mm;
+  max-height: 200mm;
+  overflow: hidden;
+}
+
+.page:last-child {
+  page-break-after: auto;
+}
 
 h1, h2, h3 { margin: 0; }
 
+/* Header on every page */
 .header {
-  display:flex; justify-content:space-between; align-items:flex-start;
-  margin-bottom:10mm; padding-bottom:4mm; border-bottom:3px solid #2F5233;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 6mm;
+  padding-bottom: 3mm;
+  border-bottom: 3px solid #2F5233;
   background: transparent !important;
+  flex-shrink: 0;
 }
-.header-left h1 { font-family:'Playfair Display', Georgia, serif; font-size:28px; font-weight:700; color:#2F5233; margin-bottom:6px; }
-.header-left p { font-size:14px; color:#666; }
-.header-right { text-align:right; }
-.header-right .date { font-size:12px; color:#666; margin-bottom:8px; }
 
-.section { margin-bottom:10mm; }
-.section-header { color:#02422B; padding:12px 0; font-family:'Playfair Display', serif; font-size:16px; font-weight:600; }
-.section-title { font-family:'Playfair Display', Georgia, serif; font-size:18px; font-weight:700; color:#2F5233; margin-bottom:6mm; border-bottom:2px solid #ddd; padding-bottom:4px; }
-
-.summary-grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; }
-.summary-item { background:#EFECD3; border-radius:8px; padding:20px; border-left:4px solid #DABD38; }
-.summary-item .label { font-size:10px; color:#666; font-weight:600; letter-spacing:0.5px; margin-bottom:6px; text-transform:uppercase; }
-.summary-item .value { font-size:18px; font-weight:700; color:#2F5233; }
-.summary-item .value.positive { color:#2F5233; }
-.summary-item .value.negative { color:#e53e3e; }
-
-.chart-bar { display:flex; height:32px; border-radius:16px; overflow:hidden; margin:10px 0 12px; background:#f2f5f3 !important; }
-.equity-bar, .debt-bar { display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:12px; }
-.equity-bar { background:#02422B !important; }
-.debt-bar { background:#DABD38 !important; }
-
-.legend { display:flex; gap:8px; flex-direction:column; }
-.legend-item { display:flex; justify-content:space-between; padding:10px; border:2px solid rgba(47,82,51,.1); border-radius:8px; background:#EFECD3 !important; }
-.legend-left { display:flex; align-items:center; gap:8px; }
-.legend-color { width:14px; height:14px; border-radius:4px; }
-.legend-color.equity { background:#02422B !important; }
-.legend-color.debt   { background:#DABD38 !important; }
-.legend-text { font-size:13px; color:#4a5568; font-weight:600; }
-.legend-value { font-size:13px; font-weight:700; color:#2d3748; }
-
-/* ✅ Let tables flow across pages; avoid breaking inside a row */
-.table-container { page-break-inside: auto; }
-table { width:100%; border-collapse:collapse; font-size:12px; page-break-inside:auto; }
-thead { background:rgba(47,82,51,.1) !important; display: table-header-group; }
-tfoot { display: table-row-group; }
-tr { page-break-inside: avoid; page-break-after: auto; }
-th { text-align:left; padding:10px 6px; font-weight:700; color:#2F5233; text-transform:uppercase; font-size:10px; letter-spacing:.4px; border-bottom:2px solid #2F5233; }
-td { padding:9px 6px; border-bottom:1px solid #eee; color:#2d3748; vertical-align:top; }
-.text-right { text-align:right; }
-.symbol-cell { font-weight:700; color:#2F5233; font-size:13px; }
-.exchange-text { font-size:10px; color:#718096; margin-top:2px; }
-.profit { color:#38a169 !important; font-weight:700; }
-.loss { color:#e53e3e !important; font-weight:700; }
-.category-badge { padding:3px 7px; border-radius:4px; font-size:9px; font-weight:700; text-transform:uppercase; }
-.category-equity { background:#2F5233 !important; color:#D4AF37 !important; }
-.category-debt   { background:#D4AF37 !important; color:#2F5233 !important; }
-.total-row { background:rgba(47,82,51,.1) !important; font-weight:700; border-top:3px solid #2F5233; }
-.total-row td { padding:12px 6px; font-weight:700; color:#2F5233; font-size:13px; }
-
-/* 📌 Footer repeated on every printed page */
-.footer-fixed {
-  position: fixed;
-  bottom: 0; left: 0; right: 0;
-  height: 14mm;
-  display:flex; justify-content:space-between; align-items:center;
-  padding: 4mm 6mm 0 6mm;
-  border-top:1px solid #ddd;
-  font-size:10px; color:#666;
-  background: #EFECD3 !important;
+.header-left h1 { 
+  font-family: 'Playfair Display', Georgia, serif; 
+  font-size: 28px; 
+  font-weight: 700; 
+  color: #2F5233; 
+  margin-bottom: 6px; 
 }
-.footer-fixed .page-number::after { content: counter(page); font-family: 'Playfair Display', serif; font-weight:600; color:#02422B; }
+.header-left p { 
+  font-size: 14px; 
+  color: #666; 
+}
+.header-right { 
+  text-align: right; 
+}
+.header-right .date { 
+  font-size: 12px; 
+  color: #666; 
+  margin-bottom: 8px; 
+}
 
-.break { page-break-before: always; }
-@media print { html, body { -webkit-print-color-adjust: exact !important; } }
+.section { 
+  margin-bottom: 6mm; 
+  flex: 1;
+}
+
+.section.summary { 
+  margin-bottom: 3mm; 
+  flex: 0 0 auto;
+}
+
+.section.allocation {
+  flex: 1;
+  min-height: 0;
+}
+
+.section-header { 
+  color: #02422B; 
+  padding: 12px 0; 
+  font-family: 'Playfair Display', serif; 
+  font-size: 16px; 
+  font-weight: 600; 
+}
+.section-title { 
+  font-family: 'Playfair Display', Georgia, serif; 
+  font-size: 18px; 
+  font-weight: 700; 
+  color: #2F5233; 
+  margin-bottom: 6mm; 
+  border-bottom: 2px solid #ddd; 
+  padding-bottom: 4px; 
+}
+
+.summary-grid { 
+  display: grid; 
+  grid-template-columns: repeat(4, 1fr); 
+  gap: 10px; 
+}
+.stat-card { background: #EFECD3; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 4px solid #DABD38; }
+.stat-card h3 { font-size: 11px; color: #666; margin-bottom: 8px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+.stat-card .value { font-family: 'Inria Serif'; font-size: 18px; font-weight: 500; color: #02422B; }
+
+.summary-item .value.positive { color: #2F5233; }
+.summary-item .value.negative { color: #e53e3e; }
+
+.chart-bar { 
+  display: flex; 
+  height: 32px; 
+  border-radius: 16px; 
+  overflow: hidden; 
+  margin: 10px 0 12px; 
+  background: #f2f5f3 !important; 
+}
+.equity-bar, .debt-bar, .hybrid-bar { 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  color: #fff; 
+  font-weight: 700; 
+  font-size: 12px; 
+}
+  .debt-bar{ color : "#02422B"; }
+.equity-bar { background: #02422B !important; }
+.debt-bar { background: #DABD38 !important; }
+.hybrid-bar { background: #008455 !important; }
+
+.legend { 
+  display: flex; 
+  gap: 8px; 
+  flex-direction: column; 
+}
+.legend-item { 
+  display: flex; 
+  justify-content: space-between; 
+  padding: 10px; 
+  border: 2px solid rgba(47,82,51,.1); 
+  border-radius: 8px; 
+  background: #EFECD3 !important; 
+}
+.legend-left { 
+  display: flex; 
+  align-items: center; 
+  gap: 8px; 
+}
+.legend-color { 
+  width: 14px; 
+  height: 14px; 
+  border-radius: 4px; 
+}
+.legend-color.equity { background: #02422B !important; }
+.legend-color.debt   { background: #DABD38 !important; }
+.legend-color.hybrid   { background: #008455 !important; }
+.legend-text { 
+  font-size: 13px; 
+  color: #4a5568; 
+  font-weight: 600; 
+}
+.legend-value { 
+  font-size: 13px; 
+  font-weight: 700; 
+  color: #2d3748; 
+}
+
+/* Table styles */
+.table-container { 
+  flex: 1;
+}
+table { width: 100%; border-collapse: collapse; font-size: 11px; }
+th { background-color: #02422B; color: white; padding: 10px 8px; text-align: center; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+td { padding: 8px; text-align: center; border-bottom: 1px solid #eee; }
+tr { }
+thead { display: table-header-group; }
+tbody { display: table-row-group; }
+tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
+.positive { color: #059669; }
+.negative { color: #dc2626; }
+.neutral { color: #374151; }
+.cash-flow-positive { color: #059669; font-weight: 600; }
+.cash-flow-negative { color: #dc2626; font-weight: 600; }
+.summary-row { background-color: rgba(243,244,246,0.5); font-weight: 600; }
+.trailing-returns-table th:first-child, .trailing-returns-table td:first-child { text-align: left; font-weight: 500; }
+.note { font-size: 10px; color: #666; margin-top: 10px; font-style: italic; padding: 0 8px 8px; }
+.footer { margin-top: auto; padding-top: 15px; border-top: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #666; }
+.disclaimer { font-size: 9px; color: #999; line-height: 1.4; max-width: 75%; }
+.page-number { font-family: 'Playfair Display', serif; font-size: 12px; color: #02422B; font-weight: 600; }
+.chart-container { width: 100%; height: 400px; margin-bottom: 20px; margin-top: 20px;}
+.right-align {
+    text-align: right;
+}
+.left-align {
+    text-align: left;
+    }
+.text-right { text-align: right; }
+.text-left { text-align: left; }
+.symbol-cell { 
+  font-weight: 700; 
+  color: #2F5233; 
+  font-size: 13px; 
+}
+.exchange-text { 
+  font-size: 10px; 
+  color: #718096; 
+  margin-top: 2px; 
+}
+.profit { color: #38a169 !important; font-weight: 700; }
+.loss { color: #e53e3e !important; font-weight: 700; }
+.category-badge { 
+  padding: 3px 7px; 
+  border-radius: 4px; 
+  font-size: 9px; 
+  font-weight: 700; 
+  text-transform: uppercase; 
+}
+.category-equity { 
+  background: #2F5233 !important; 
+  color: #D4AF37 !important; 
+}
+.category-debt   { 
+  background: #D4AF37 !important; 
+  color: #2F5233 !important; 
+}
+.category-hybrid   { 
+  background: #008455 !important; 
+  color: #FFFFFF !important; 
+}
+
+@media print { 
+  html, body { -webkit-print-color-adjust: exact !important; } 
+}
 `;
 
             const headerHTML = () => `
@@ -952,23 +1096,23 @@ td { padding:9px 6px; border-bottom:1px solid #eee; color:#2d3748; vertical-alig
     `;
 
             const executiveSummaryHTML = `
-      <div class="section">
+      <div class="section summary">
         <div class="summary-grid">
-          <div class="summary-item">
+          <div class="summary-item stat-card">
             <div class="label">Total Investment</div>
             <div class="value">₹${formatNumber(holdingsData.totalBuyValue)}</div>
           </div>
-          <div class="summary-item">
+          <div class="summary-item stat-card">
             <div class="label">Current Value</div>
             <div class="value">₹${formatNumber(holdingsData.totalCurrentValue)}</div>
           </div>
-          <div class="summary-item">
+          <div class="summary-item stat-card">
             <div class="label">Return (%)</div>
             <div class="value ${holdingsData.totalPnlPercent >= 0 ? 'positive' : 'negative'}">
               ${formatNumber(holdingsData.totalPnlPercent)}%
             </div>
           </div>
-          <div class="summary-item">
+          <div class="summary-item stat-card">
             <div class="label">Return (₹)</div>
             <div class="value ${holdingsData.totalPnl >= 0 ? 'positive' : 'negative'}">
               ${holdingsData.totalPnl >= 0 ? '' : '-'} ₹${formatNumber(Math.abs(holdingsData.totalPnl))}
@@ -979,49 +1123,59 @@ td { padding:9px 6px; border-bottom:1px solid #eee; color:#2d3748; vertical-alig
     `;
 
             const allocationHTML = `
-      <div class="section">
-        <div class="section-header">Holding Distribution</div>
-        ${total > 0
+        <div class="section allocation">
+            <div class="section-header">Holding Distribution</div>
+            ${total > 0
                     ? `
-            <div class="chart-bar">
-              ${assetAllocation.equity > 0 ? `<div class="equity-bar" style="width:${((assetAllocation.equity / total) * 100).toFixed(1)}%;">Equity ${((assetAllocation.equity / total) * 100).toFixed(1)}%</div>` : ''}
-              ${assetAllocation.debt > 0 ? `<div class="debt-bar"   style="width:${((assetAllocation.debt / total) * 100).toFixed(1)}%;">Debt ${((assetAllocation.debt / total) * 100).toFixed(1)}%</div>` : ''}
-            </div>
-            <div class="legend">
-              ${assetAllocation.equity > 0 ? `
-                <div class="legend-item">
-                  <div class="legend-left">
-                    <div class="legend-color equity"></div>
-                    <div class="legend-text">Equity Holdings</div>
-                  </div>
-                  <div class="legend-value">₹${formatNumber(assetAllocation.equity)}</div>
-                </div>` : ''}
-              ${assetAllocation.debt > 0 ? `
-                <div class="legend-item">
-                  <div class="legend-left">
-                    <div class="legend-color debt"></div>
-                    <div class="legend-text">Debt Holdings</div>
-                  </div>
-                  <div class="legend-value">₹${formatNumber(assetAllocation.debt)}</div>
-                </div>` : ''}
-            </div>
-          `
+                <div class="chart-bar">
+                ${assetAllocation.equity > 0 ? `<div class="equity-bar" style="width:${((assetAllocation.equity / total) * 100).toFixed(1)}%;">Equity ${((assetAllocation.equity / total) * 100).toFixed(1)}%</div>` : ''}
+                ${assetAllocation.debt > 0 ? `<div class="debt-bar"   style="width:${((assetAllocation.debt / total) * 100).toFixed(1)}%;">Debt ${((assetAllocation.debt / total) * 100).toFixed(1)}%</div>` : ''}
+                ${assetAllocation.hybrid > 0 ? `<div class="hybrid-bar"   style="width:${((assetAllocation.hybrid / total) * 100).toFixed(1)}%;">Hybrid ${((assetAllocation.hybrid / total) * 100).toFixed(1)}%</div>` : ''}
+                
+                </div>
+                <div class="legend">
+                ${assetAllocation.equity > 0 ? `
+                    <div class="legend-item">
+                    <div class="legend-left">
+                        <div class="legend-color equity"></div>
+                        <div class="legend-text">Equity Holdings</div>
+                    </div>
+                    <div class="legend-value">₹${formatNumber(assetAllocation.equity)}</div>
+                    </div>` : ''}
+                ${assetAllocation.debt > 0 ? `
+                    <div class="legend-item">
+                    <div class="legend-left">
+                        <div class="legend-color debt"></div>
+                        <div class="legend-text">Debt Holdings</div>
+                    </div>
+                    <div class="legend-value">₹${formatNumber(assetAllocation.debt)}</div>
+                    </div>` : ''}
+                ${assetAllocation.hybrid > 0 ? `
+                    <div class="legend-item">
+                    <div class="legend-left">
+                        <div class="legend-color hybrid"></div>
+                        <div class="legend-text ">Hybrid Holdings</div>
+                    </div>
+                    <div class="legend-value">₹${formatNumber(assetAllocation.hybrid)}</div>
+                    </div>` : ''}
+                </div>
+            `
                     : `<div style="text-align:center;padding:20px;color:#666;">No allocation data available</div>`
                 }
-      </div>
-    `;
+        </div>
+        `;
 
             const tableHeader = (isMF: boolean) => `
       <thead>
         <tr>
-          <th>${isMF ? 'Fund Name & ISIN' : 'Symbol & Exchange'}</th>
+          <th class="text-left">${'Fund Name'}</th>
           <th class="text-right">Quantity</th>
-          <th class="text-right">${isMF ? 'Avg NAV' : 'Avg Cost (₹)'}</th>
-          <th class="text-right">${isMF ? 'Current NAV' : 'Current Price (₹)'}</th>
+          <th class="text-right">${'Average Cost (₹)'}</th>
+          <th class="text-right">${'Latest Trade Price (₹)'}</th>
           <th class="text-right">Invested Amount (₹)</th>
           <th class="text-right">Current Value (₹)</th>
-          <th class="text-right">Profit & Loss Amount (₹)</th>
-          <th class="text-right">Profit & Loss %</th>
+          <th class="text-right">Profit & Loss (₹)</th>
+          <th class="text-right">Profit & Loss (%)</th>
           <th>Category</th>
         </tr>
       </thead>
@@ -1029,18 +1183,17 @@ td { padding:9px 6px; border-bottom:1px solid #eee; color:#2d3748; vertical-alig
 
             const rowsHTML = (arr: Holding[], isMF: boolean) => arr.map(h => `
       <tr>
-        <td>
+        <td class="text-left">
           <div class="symbol-cell">${h.symbol}</div>
-          <div class="exchange-text">${isMF ? (h.isin || '') : (h.exchange || '')}</div>
         </td>
-        <td class="text-right">${h.quantity.toLocaleString()}</td>
+        <td class="text-right">${h.quantity.toFixed(2)}</td>
         <td class="text-right">${formatNumber(h.avgPrice)}</td>
         <td class="text-right">${formatNumber(h.ltp)}</td>
         <td class="text-right">${formatNumber(h.buyValue)}</td>
         <td class="text-right">${formatNumber(h.valueAsOfToday)}</td>
         <td class="text-right ${h.pnlAmount >= 0 ? 'profit' : 'loss'}">${formatNumber(h.pnlAmount)}</td>
         <td class="text-right ${h.percentPnl >= 0 ? 'profit' : 'loss'}">${formatNumber(h.percentPnl)}%</td>
-        <td><span class="category-badge ${h.debtEquity.toLowerCase() === 'equity' ? 'category-equity' : 'category-debt'}">${h.debtEquity}</span></td>
+        <td><span class="category-badge ${h.debtEquity.toLowerCase() === 'equity' ? 'category-equity' : h.debtEquity.toLowerCase() === 'hybrid' ? 'category-hybrid':'category-debt'}">${h.debtEquity}</span></td>
       </tr>
     `).join('');
 
@@ -1063,46 +1216,70 @@ td { padding:9px 6px; border-bottom:1px solid #eee; color:#2d3748; vertical-alig
       `;
             };
 
-            // 🔻 We no longer wrap each “page” — content flows and the fixed footer repeats per page
-            const contentHTML = `
+            // Build pages
+            let contentHTML = `
+    <!-- Page 1: Summary -->
+    <div class="page">
       ${headerHTML()}
-      <div class="section">
-        ${executiveSummaryHTML}
-      </div>
-      <div class="section">
-        ${allocationHTML}
-      </div>
+      ${executiveSummaryHTML}
+      ${allocationHTML}
+      <div class="footer">
 
-      ${stocks.length ? `
-        <div class="section break">
-          <div class="section-title">Stock Holdings</div>
-          <div class="table-container">
-            <table>
-              ${tableHeader(false)}
-              <tbody>
-                ${rowsHTML(stocks, false)}
-                ${totalsRowHTML(stocks)}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ` : ''}
-
-      ${mutualFunds.length ? `
-        <div class="section break">
-          <div class="section-title">Mutual Fund Holdings</div>
-          <div class="table-container">
-            <table>
-              ${tableHeader(true)}
-              <tbody>
-                ${rowsHTML(mutualFunds, true)}
-                ${totalsRowHTML(mutualFunds)}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ` : ''}
+        <div class="page-number">Page 1 | Qode</div>
+      </div>
+    </div>
     `;
+
+            // Add stocks pages
+            if (stocks.length) {
+                contentHTML += `
+    <div class="page" id="stocks-page">
+      ${headerHTML()}
+      <div class="section-title">Stock Holdings</div>
+      <div class="section allow-break">
+        <div class="table-container">
+          <table id="stocks-table">
+            ${tableHeader(false)}
+            <tbody>
+              ${rowsHTML(stocks, false)}
+              ${totalsRowHTML(stocks)}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="footer">
+
+        <div class="page-number">Page 2 | Qode</div>
+      </div>
+    </div>
+      `;
+            }
+
+            // Add mutual funds pages  
+            if (mutualFunds.length) {
+                const pageNum = stocks.length ? 3 : 2;
+                contentHTML += `
+                <div class="page" id="mf-page">
+                ${headerHTML()}
+                <div class="section-title">Mutual Fund Holdings</div>
+                <div class="section allow-break">
+                    <div class="table-container">
+                    <table id="mf-table">
+                        ${tableHeader(true)}
+                        <tbody>
+                        ${rowsHTML(mutualFunds, true)}
+                        ${totalsRowHTML(mutualFunds)}
+                        </tbody>
+                    </table>
+                    </div>
+                </div>
+                <div class="footer">
+
+                    <div class="page-number">Page ${pageNum} | Qode</div>
+                </div>
+                </div>
+            `;
+            }
 
             const fullHTML = `
 <!DOCTYPE html>
@@ -1110,28 +1287,152 @@ td { padding:9px 6px; border-bottom:1px solid #eee; color:#2d3748; vertical-alig
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&family=Playfair+Display:wght@400;700;900&display=swap" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Lato:wght@300;400;500;600&family=Inria+Serif:wght@300;400;700&display=swap" rel="stylesheet">
   <title>Portfolio Holdings Report</title>
   <style>${commonStyles}</style>
 </head>
 <body>
   ${contentHTML}
 
-  <!-- 📌 fixed footer (repeats on every printed page) -->
-  <div class="footer-fixed">
-    <div class="disclaimer">
-      This report is for information only. Values are based on available prices and may differ from statement values.
-    </div>
-    <div class="page-number">Page </div>
-  </div>
-
   <script>
-    window.addEventListener('load', () => {
-      setTimeout(() => {
-        window.focus();
-        window.print();
-        window.close();
-      }, 150);
+    // Fixed table pagination function
+    function paginateLongTable(tableId, sectionTitle, basePageNum) {
+        console.log('Starting pagination for:', tableId);
+        const table = document.getElementById(tableId);
+        if (!table) {
+            console.log('Table not found:', tableId);
+            return;
+        }
+
+        const currentPage = table.closest('.page');
+        if (!currentPage) {
+            console.log('Page container not found for table:', tableId);
+            return;
+        }
+
+        const tbody = table.querySelector('tbody');
+        if (!tbody) {
+            console.log('Tbody not found for table:', tableId);
+            return;
+        }
+        
+        const allRows = Array.from(tbody.querySelectorAll('tr'));
+        console.log('Total rows found:', allRows.length);
+        
+        if (allRows.length <= 6) {
+            console.log('No pagination needed - row count is', allRows.length);
+            return;
+        }
+
+        // Store original rows (excluding totals row)
+        const totalRow = allRows.find(row => row.classList.contains('total-row'));
+        const dataRows = allRows.filter(row => !row.classList.contains('total-row'));
+        console.log('Data rows:', dataRows.length, 'Total row exists:', !!totalRow);
+
+        const rowsPerPage = 6;
+        let pageNum = basePageNum + 1;
+        
+        // Clear original tbody and add first page rows
+        tbody.innerHTML = '';
+        
+        for (let i = 0; i < Math.min(rowsPerPage, dataRows.length); i++) {
+            tbody.appendChild(dataRows[i].cloneNode(true));
+        }
+        
+        // Add total row to first page if it's the last page
+        if (dataRows.length <= rowsPerPage && totalRow) {
+            tbody.appendChild(totalRow.cloneNode(true));
+        }
+
+        // Create continuation pages for remaining rows
+        let remainingRows = dataRows.slice(rowsPerPage);
+        
+        while (remainingRows.length > 0) {
+            console.log('Creating continuation page:', pageNum, 'with', Math.min(rowsPerPage, remainingRows.length), 'rows');
+            
+            // Create new page with proper header
+            const newPageHTML = \`
+                <div class="page">
+                    <div class="header">
+                        <div class="header-left">
+                            <h1>\${document.querySelector('.header-left h1').textContent}</h1>
+                            <p>Holdings Summary</p>
+                        </div>
+                        <div class="header-right">
+                            <div class="date">
+                                \${document.querySelector('.header-right .date').textContent}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="section-title">\${sectionTitle}</div>
+                    <div class="section allow-break">
+                        <div class="table-container">
+                            <table>
+                                \${table.querySelector('thead').outerHTML}
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="footer">
+                        <div class="page-number">Page \${pageNum} | Qode</div>
+                    </div>
+                </div>
+            \`;
+            
+            // Insert new page
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = newPageHTML;
+            const newPage = tempDiv.firstElementChild;
+            
+            // Insert after current page
+            currentPage.parentNode.insertBefore(newPage, currentPage.nextSibling);
+            
+            // Add rows to new page
+            const newTbody = newPage.querySelector('tbody');
+            const pageRows = remainingRows.slice(0, rowsPerPage);
+            
+            pageRows.forEach(row => {
+                newTbody.appendChild(row.cloneNode(true));
+            });
+            
+            // Add total row to last page
+            if (remainingRows.length <= rowsPerPage && totalRow) {
+                newTbody.appendChild(totalRow.cloneNode(true));
+            }
+            
+            remainingRows = remainingRows.slice(rowsPerPage);
+            pageNum++;
+        }
+        
+        console.log('Pagination completed for', tableId);
+    }
+
+    // Run pagination after DOM is ready
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOM loaded, starting pagination...');
+        
+        // Pagination for stocks table
+        if (${stocks.length} > 6) {
+            console.log('Paginating stocks table...');
+            setTimeout(() => paginateLongTable('stocks-table', 'Stock Holdings', 2), 100);
+        }
+        
+        // Pagination for mutual funds table
+        if (${mutualFunds.length} > 6) {
+            console.log('Paginating mutual funds table...');
+            const mfBasePageNum = ${stocks.length} > 0 ? 3 : 2;
+            setTimeout(() => paginateLongTable('mf-table', 'Mutual Fund Holdings', mfBasePageNum), 200);
+        }
+        
+        // Auto-print after pagination is complete
+        setTimeout(() => { 
+            console.log('Triggering print...');
+            try { 
+                window.print(); 
+            } catch(e) { 
+                console.error('Print error:', e); 
+            } 
+        }, 1000);
     });
   </script>
 </body>
