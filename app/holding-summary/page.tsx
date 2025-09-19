@@ -287,10 +287,10 @@ const HoldingsTable = ({
                                     <TableCell className="py-3 text-sm text-gray-600">
                                         <div className="flex items-center space-x-1">
                                             <span className={`px-2 py-1 rounded text-xs ${holding.debtEquity.toLowerCase() === 'equity'
-                                                    ? 'bg-logo-green text-[#DABD38]'
-                                                    : holding.debtEquity.toLowerCase() === 'debt'
-                                                        ? 'bg-[#DABD38] text-logo-green'
-                                                        : 'bg-amber-200 text-amber-800'
+                                                ? 'bg-logo-green text-[#DABD38]'
+                                                : holding.debtEquity.toLowerCase() === 'debt'
+                                                    ? 'bg-[#DABD38] text-logo-green'
+                                                    : 'bg-amber-200 text-amber-800'
                                                 }`}>
                                                 {holding.debtEquity}
                                             </span>
