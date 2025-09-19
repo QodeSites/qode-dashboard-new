@@ -9,8 +9,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 
 interface Holding {
     symbol: string;
@@ -133,7 +131,7 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
                         )}
                         {hybridPercent > 0 && (
                             <div
-                                className="bg-[#FCF9EB] h-full flex items-center justify-center text-white text-xs font-medium"
+                                className="bg-amber-200 h-full flex items-center justify-center text-gray-800 text-xs font-medium"
                                 style={{ width: `${hybridPercent}%` }}
                             >
                                 {hybridPercent > 10 ? `${hybridPercent.toFixed(1)}%` : ''}
@@ -165,7 +163,7 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
                         )}
                         {hybridValue > 0 && (
                             <div className="flex items-center gap-2">
-                                <div className="w-4 h-4 bg-[#FCF9EB] rounded"></div>
+                                <div className="w-4 h-4 bg-amber-200 rounded"></div>
                                 <div className="text-sm">
                                     <span className="font-medium text-card-text">Hybrid</span>
                                     <div className="text-xs text-gray-600">
@@ -289,8 +287,10 @@ const HoldingsTable = ({
                                     <TableCell className="py-3 text-sm text-gray-600">
                                         <div className="flex items-center space-x-1">
                                             <span className={`px-2 py-1 rounded text-xs ${holding.debtEquity.toLowerCase() === 'equity'
-                                                ? 'bg-logo-green text-[#DABD38]'
-                                                : 'bg-[#DABD38] text-logo-green'
+                                                    ? 'bg-logo-green text-[#DABD38]'
+                                                    : holding.debtEquity.toLowerCase() === 'debt'
+                                                        ? 'bg-[#DABD38] text-logo-green'
+                                                        : 'bg-amber-200 text-amber-800'
                                                 }`}>
                                                 {holding.debtEquity}
                                             </span>
@@ -388,18 +388,18 @@ const HoldingsSummaryPage = () => {
             const res = await fetch(`/api/sarla-api?qcode=${qcode}&accountCode=${accountCode}`, {
                 credentials: "include"
             });
- 
+
             if (!res.ok) {
                 const errorData = await res.json();
                 throw new Error(errorData.error || "Failed to load holdings data");
             }
- 
+
             const data = await res.json();
             console.log('Full API response:', data);
- 
+
             if (data && typeof data === 'object') {
                 let targetStrategy;
- 
+
                 if (isSarla) {
                     // For Sarla, specifically look for "Scheme B"
                     targetStrategy = "Scheme B";
@@ -407,28 +407,28 @@ const HoldingsSummaryPage = () => {
                     // For Satidham, use the first available strategy or specify the target strategy
                     targetStrategy = Object.keys(data)[0];
                 }
- 
+
                 console.log('Target strategy:', targetStrategy);
- 
+
                 if (targetStrategy && data[targetStrategy]?.data?.holdingsSummary) {
                     const holdingsSummary = data[targetStrategy].data.holdingsSummary;
                     console.log('Holdings summary found:', holdingsSummary);
                     setHoldingsData(holdingsSummary);
- 
+
                     // Get the latest date from holdings
                     const allHoldings = [
                         ...(holdingsSummary.equityHoldings || []),
                         ...(holdingsSummary.debtHoldings || []),
                         ...(holdingsSummary.mutualFundHoldings || [])
                     ];
- 
+
                     if (allHoldings.length > 0 && allHoldings[0]?.date) {
                         setLastUpdatedDate(new Date(allHoldings[0].date));
                     }
                 } else {
                     console.warn(`No holdings data found for strategy: ${targetStrategy}`);
                     console.log('Available strategies:', Object.keys(data));
- 
+
                     // Fallback: try to find any strategy with holdings data
                     for (const [strategyName, strategyData] of Object.entries(data)) {
                         if (strategyData?.data?.holdingsSummary) {
@@ -496,7 +496,12 @@ const HoldingsSummaryPage = () => {
     const getAssetAllocation = () => {
         if (!holdingsData) return { equity: 0, debt: 0, hybrid: 0 };
 
-        const allHoldings = [...holdingsData.equityHoldings, ...holdingsData.debtHoldings];
+        // Include ALL holdings: equity, debt, AND mutual fund holdings
+        const allHoldings = [
+            ...(holdingsData.equityHoldings || []),
+            ...(holdingsData.debtHoldings || []),
+            ...(holdingsData.mutualFundHoldings || []) // Add mutual fund holdings
+        ];
 
         return allHoldings.reduce((acc, holding) => {
             const category = holding.debtEquity.toLowerCase();
@@ -504,7 +509,10 @@ const HoldingsSummaryPage = () => {
                 acc.equity += holding.valueAsOfToday;
             } else if (category === 'debt') {
                 acc.debt += holding.valueAsOfToday;
+            } else if (category === 'hybrid') {
+                acc.hybrid += holding.valueAsOfToday;
             } else {
+                // Handle any other categories as hybrid
                 acc.hybrid += holding.valueAsOfToday;
             }
             return acc;
@@ -552,6 +560,269 @@ const HoldingsSummaryPage = () => {
 
     const formatNumber = (num: number) => {
         return num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
+
+    const handleDownloadCSV = () => {
+        try {
+            if (!holdingsData) {
+                setError('No holdings data available to export');
+                return;
+            }
+
+            let csvData = [];
+            const filename = `holdings_summary_${new Date().toISOString().split('T')[0]}.csv`;
+
+            // Helper function to format currency values without symbol
+            const formatCurrency = (value) => {
+                if (value === null || value === undefined || value === '' || isNaN(value)) return 'N/A';
+                const numValue = typeof value === 'string' ? parseFloat(value) : value;
+                if (isNaN(numValue)) return 'N/A';
+                return new Intl.NumberFormat('en-IN', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                }).format(numValue);
+            };
+
+            // Helper function to format percentage values
+            const formatPercentage = (value) => {
+                if (value === null || value === undefined) return 'N/A';
+                const numValue = typeof value === 'string' ? parseFloat(value) : value;
+                return (numValue).toFixed(2) + '%';
+            };
+
+            // Portfolio Summary Section
+            csvData.push(['Portfolio Holdings Summary', '']);
+            csvData.push(['Generated On', new Date().toLocaleDateString('en-IN')]);
+            if (lastUpdatedDate) {
+                csvData.push(['Data As Of', formatDate(lastUpdatedDate)]);
+            }
+            csvData.push(['Account Name', session?.user?.name || 'N/A']);
+
+            // Handle special accounts (Sarla/Satidham) vs regular accounts
+            if (isSarla || isSatidham) {
+                csvData.push(['Account Type', isSarla ? 'Sarla Account' : 'Satidham Account']);
+            } else if (selectedAccount && accounts.length > 0) {
+                const accountData = accounts.find(acc => acc.qcode === selectedAccount);
+                csvData.push(['Account Name', accountData?.account_name || 'Unknown']);
+                csvData.push(['Account Type', accountData?.account_type?.toUpperCase() || 'Unknown']);
+                csvData.push(['Broker', accountData?.broker || 'Unknown']);
+            }
+
+            csvData.push(['', '']); // Empty row
+
+            // Portfolio Statistics
+            csvData.push(['Portfolio Statistics', '']);
+            csvData.push(['Total Investment Value', formatCurrency(holdingsData.totalBuyValue)]);
+            csvData.push(['Current Portfolio Value', formatCurrency(holdingsData.totalCurrentValue)]);
+            csvData.push(['Total Profit/Loss Amount', formatCurrency(holdingsData.totalPnl)]);
+            csvData.push(['Total Profit/Loss Percentage', formatPercentage(holdingsData.totalPnlPercent)]);
+            csvData.push(['Total Holdings Count', holdingsData.holdingsCount || 0]);
+            csvData.push(['', '']); // Empty row
+
+            // Asset Allocation
+            const assetAllocation = getAssetAllocation();
+            const total = assetAllocation.equity + assetAllocation.debt + assetAllocation.hybrid;
+
+            if (total > 0) {
+                csvData.push(['Asset Allocation', '']);
+                csvData.push(['Asset Type', 'Value', 'Percentage']);
+
+                if (assetAllocation.equity > 0) {
+                    csvData.push(['Equity', formatCurrency(assetAllocation.equity), formatPercentage((assetAllocation.equity / total) * 100)]);
+                }
+                if (assetAllocation.debt > 0) {
+                    csvData.push(['Debt', formatCurrency(assetAllocation.debt), formatPercentage((assetAllocation.debt / total) * 100)]);
+                }
+                if (assetAllocation.hybrid > 0) {
+                    csvData.push(['Hybrid', formatCurrency(assetAllocation.hybrid), formatPercentage((assetAllocation.hybrid / total) * 100)]);
+                }
+                csvData.push(['', '']); // Empty row
+            }
+
+            // Category Breakdown
+            if (holdingsData.categoryBreakdown && Object.keys(holdingsData.categoryBreakdown).length > 0) {
+                csvData.push(['Category Breakdown', '']);
+                csvData.push(['Category', 'Buy Value', 'Current Value', 'P&L', 'Holdings Count']);
+
+                Object.entries(holdingsData.categoryBreakdown).forEach(([category, data]) => {
+                    csvData.push([
+                        category,
+                        formatCurrency(data.buyValue),
+                        formatCurrency(data.currentValue),
+                        formatCurrency(data.pnl),
+                        data.count
+                    ]);
+                });
+                csvData.push(['', '']); // Empty row
+            }
+
+            // Broker Breakdown
+            if (holdingsData.brokerBreakdown && Object.keys(holdingsData.brokerBreakdown).length > 0) {
+                csvData.push(['Broker Breakdown', '']);
+                csvData.push(['Broker', 'Buy Value', 'Current Value', 'P&L', 'Holdings Count']);
+
+                Object.entries(holdingsData.brokerBreakdown).forEach(([broker, data]) => {
+                    csvData.push([
+                        broker,
+                        formatCurrency(data.buyValue),
+                        formatCurrency(data.currentValue),
+                        formatCurrency(data.pnl),
+                        data.count
+                    ]);
+                });
+                csvData.push(['', '']); // Empty row
+            }
+
+            // Stock Holdings Detail
+            const { stocks, mutualFunds } = separateHoldings();
+
+            if (stocks && stocks.length > 0) {
+                csvData.push(['Stock Holdings Detail', '']);
+                csvData.push([
+                    'Symbol',
+                    'Exchange',
+                    'Broker',
+                    'Quantity',
+                    'Average Price',
+                    'Current Price',
+                    'Invested Amount',
+                    'Current Value',
+                    'P&L Amount',
+                    'P&L Percentage',
+                    'Category',
+                    'Sub Category'
+                ]);
+
+                stocks.forEach(holding => {
+                    csvData.push([
+                        holding.symbol,
+                        holding.exchange || 'N/A',
+                        holding.broker || 'N/A',
+                        holding.quantity.toLocaleString(),
+                        formatCurrency(holding.avgPrice),
+                        formatCurrency(holding.ltp),
+                        formatCurrency(holding.buyValue),
+                        formatCurrency(holding.valueAsOfToday),
+                        formatCurrency(holding.pnlAmount),
+                        formatPercentage(holding.percentPnl),
+                        holding.debtEquity || 'N/A',
+                        holding.subCategory || 'N/A'
+                    ]);
+                });
+
+                // Stock Holdings Summary
+                const stockTotals = stocks.reduce((acc, holding) => ({
+                    investedAmount: acc.investedAmount + holding.buyValue,
+                    currentValue: acc.currentValue + holding.valueAsOfToday,
+                    pnl: acc.pnl + holding.pnlAmount,
+                }), { investedAmount: 0, currentValue: 0, pnl: 0 });
+
+                csvData.push([
+                    'TOTAL STOCKS',
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                    formatCurrency(stockTotals.investedAmount),
+                    formatCurrency(stockTotals.currentValue),
+                    formatCurrency(stockTotals.pnl),
+                    formatPercentage(stockTotals.investedAmount > 0 ? (stockTotals.pnl / stockTotals.investedAmount) * 100 : 0),
+                    '',
+                    ''
+                ]);
+                csvData.push(['', '']); // Empty row
+            }
+
+            // Mutual Fund Holdings Detail
+            if (mutualFunds && mutualFunds.length > 0) {
+                csvData.push(['Mutual Fund Holdings Detail', '']);
+                csvData.push([
+                    'Fund Name',
+                    'ISIN',
+                    'Broker',
+                    'Units',
+                    'Average NAV',
+                    'Current NAV',
+                    'Invested Amount',
+                    'Current Value',
+                    'P&L Amount',
+                    'P&L Percentage',
+                    'Category',
+                    'Sub Category'
+                ]);
+
+                mutualFunds.forEach(holding => {
+                    csvData.push([
+                        holding.symbol,
+                        holding.isin || 'N/A',
+                        holding.broker || 'N/A',
+                        holding.quantity.toLocaleString(),
+                        formatCurrency(holding.avgPrice),
+                        formatCurrency(holding.ltp),
+                        formatCurrency(holding.buyValue),
+                        formatCurrency(holding.valueAsOfToday),
+                        formatCurrency(holding.pnlAmount),
+                        formatPercentage(holding.percentPnl),
+                        holding.debtEquity || 'N/A',
+                        holding.subCategory || 'N/A'
+                    ]);
+                });
+
+                // Mutual Fund Holdings Summary
+                const mfTotals = mutualFunds.reduce((acc, holding) => ({
+                    investedAmount: acc.investedAmount + holding.buyValue,
+                    currentValue: acc.currentValue + holding.valueAsOfToday,
+                    pnl: acc.pnl + holding.pnlAmount,
+                }), { investedAmount: 0, currentValue: 0, pnl: 0 });
+
+                csvData.push([
+                    'TOTAL MUTUAL FUNDS',
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                    formatCurrency(mfTotals.investedAmount),
+                    formatCurrency(mfTotals.currentValue),
+                    formatCurrency(mfTotals.pnl),
+                    formatPercentage(mfTotals.investedAmount > 0 ? (mfTotals.pnl / mfTotals.investedAmount) * 100 : 0),
+                    '',
+                    ''
+                ]);
+                csvData.push(['', '']); // Empty row
+            }
+
+            // Convert to CSV string
+            const csvContent = csvData.map(row =>
+                row.map(field => {
+                    // Handle fields that might contain commas or quotes
+                    if (typeof field === 'string' && (field.includes(',') || field.includes('"') || field.includes('\n'))) {
+                        return `"${field.replace(/"/g, '""')}"`;
+                    }
+                    return field;
+                }).join(',')
+            ).join('\n');
+
+            // Create and download the CSV file
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+
+            if (link.download !== undefined) {
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', filename);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url); // Clean up the URL object
+            }
+
+        } catch (error) {
+            console.error('Error generating CSV:', error);
+            setError('Failed to generate CSV file');
+        }
     };
 
     // Dynamic Pagination PDF Download Function (updated)
@@ -916,13 +1187,24 @@ td { padding:9px 6px; border-bottom:1px solid #eee; color:#2d3748; vertical-alig
 
 
                     <div className="flex flex-col">
-                        <Button
-                            onClick={handleDownloadPDF}
-                            disabled={isGeneratingPdf}
-                            className="text-sm w-full max-w-4xl ml-auto mt-2"
-                        >
-                            {isGeneratingPdf ? 'Generating PDF...' : 'Download PDF'}
-                        </Button>
+                        <div className="flex gap-2">
+                            <Button
+                                onClick={handleDownloadCSV}
+                                className="text-sm"
+                                variant="outline"
+                            >
+                                <Download className="h-4 w-4 mr-2" />
+                                Download CSV
+                            </Button>
+                            <Button
+                                onClick={handleDownloadPDF}
+                                disabled={isGeneratingPdf}
+                                className="text-sm"
+                            >
+                                <Download className="h-4 w-4 mr-2" />
+                                {isGeneratingPdf ? 'Generating PDF...' : 'Download PDF'}
+                            </Button>
+                        </div>
                         {lastUpdatedDate && (
                             <div className="text-right">
                                 <div className="text-sm text-gray-500 font-medium">

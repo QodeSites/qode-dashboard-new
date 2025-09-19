@@ -5,7 +5,7 @@ import { useSession, signIn } from 'next-auth/react';
 import Head from "next/head";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import DashboardLayout from "../dashboard/layout";
-import { User, Mail, Phone, MapPin, CreditCard, Building, AlertCircle, Loader, DollarSign } from 'lucide-react';
+import { User, Mail, Phone, MapPin, CreditCard, Building, AlertCircle, Loader,IndianRupee } from 'lucide-react';
 import { useRouter, useSearchParams } from "next/navigation";
 
 interface InvestorData {
@@ -101,7 +101,7 @@ const router = useRouter();
 
   const PersonalInformationCard = () => (
     <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-        <CardTitle className="text-white p-3 mb-4 rounded-t-sm  bg-logo-green text-lg font-heading-bold flex items-center space-x-2">
+        <CardTitle className="text-black p-3 rounded-t-sm   text-lg font-heading-bold flex items-center space-x-2">
           <span>Personal Information</span>
         </CardTitle>
       <CardContent className="space-y-4">
@@ -160,7 +160,7 @@ const router = useRouter();
   const AccountInformationCard = () => (
     <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
       
-        <CardTitle className="text-white p-3 mb-4 rounded-t-sm  bg-logo-green text-lg font-heading-bold flex items-center space-x-2">
+        <CardTitle className="text-black p-3 rounded-t-sm   text-lg font-heading-bold flex items-center space-x-2">
           <span>Account Information</span>
         </CardTitle>
       
@@ -188,7 +188,7 @@ const router = useRouter();
           <div className="space-y-2 md:col-span-2">
             <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Fee Structure</label>
             <div className="flex items-center space-x-2">
-              <DollarSign className="h-4 w-4 text-gray-400" />
+              <IndianRupee className="h-4 w-4 text-gray-400" />
               <p className="text-gray-600 dark:text-gray-400">{clientData?.New_Fee_Structure || 'Not provided'}</p>
             </div>
           </div>
@@ -200,7 +200,7 @@ const router = useRouter();
   const ZerodhaDetailsCard = () => (
     <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
       
-        <CardTitle className="text-white p-3 mb-4 rounded-t-sm  bg-logo-green text-lg font-heading-bold flex items-center space-x-2">
+        <CardTitle className="text-black p-3 rounded-t-sm   text-lg font-heading-bold flex items-center space-x-2">
           <span>Zerodha Details</span>
         </CardTitle>
       

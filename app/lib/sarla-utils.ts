@@ -2453,14 +2453,13 @@ if (scheme === "Scheme PMS QAW") {
     });
 
     // Fetch mutual fund holdings
-    const mutualFundHoldings = await prisma.mutual_fund_holding.findMany({
+    const mutualFundHoldings = await prisma.mutual_fund_holding_sheet_test.findMany({
       where: {
         qcode,
-        status: 'P', // Only active records
       },
       orderBy: [
         { symbol: 'asc' },
-        { date: 'desc' }
+        { as_of_date: 'desc' }
       ],
     });
 
@@ -2505,26 +2504,37 @@ if (scheme === "Scheme PMS QAW") {
       }));
 
     // Convert mutual fund holdings to Holding interface
-    const processedMutualFundHoldings = Array.from(latestMutualFundHoldings.values())
-      .filter(h => h.quantity && h.quantity > 0) // Only active holdings
-      .map(holding => ({
-        symbol: holding.symbol || '',
-        exchange: 'MUTUAL_FUND', // Set a default exchange for mutual funds
-        quantity: Number(holding.quantity) || 0,
-        avgPrice: Number(holding.price) || 0,
-        ltp: Number(holding.price) || 0, // For MF, price is the NAV
-        buyValue: Number(holding.quantity) * Number(holding.price) || 0,
-        valueAsOfToday: Number(holding.quantity) * Number(holding.price) || 0, // You might need current NAV here
-        pnlAmount: 0, // Calculate based on current NAV vs purchase price
-        percentPnl: 0, // Calculate based on current NAV vs purchase price
-        broker: holding.broker || '',
-        debtEquity: holding.debt_equity || '',
-        subCategory: holding.sub_category || '',
-        date: holding.date || new Date(),
-        type: 'mutual_fund' as const,
-        isin: holding.isin || '',
-      }));
+const processedMutualFundHoldings = Array.from(latestMutualFundHoldings.values())
+  .filter(h => h.quantity && h.quantity > 0) // Only active holdings
+  .map(holding => {
+    const quantity = Number(holding.quantity) || 0;
+    const avgPrice = Number(holding.avg_price) || 0; // Use avg_price from DB
+    const currentNav = Number(holding.nav) || 0; // Use current NAV from DB
+    const buyValue = Number(holding.buy_value) || (quantity * avgPrice); // Use buy_value from DB or calculate
+    const currentValue = Number(holding.value_as_of_today) || (quantity * currentNav); // Use value_as_of_today from DB or calculate
+    const pnlAmount = Number(holding.pnl_amount) || (currentValue - buyValue); // Use pnl_amount from DB or calculate
+    const percentPnl = Number(holding.percent_pnl) || (buyValue > 0 ? ((pnlAmount / buyValue) * 100) : 0); // Use percent_pnl from DB or calculate
 
+    return {
+      symbol: holding.symbol || '',
+      exchange: 'MUTUAL_FUND', // Set a default exchange for mutual funds
+      quantity: quantity,
+      avgPrice: avgPrice, // Average purchase price/NAV
+      ltp: currentNav, // Current NAV
+      buyValue: buyValue, // Total invested amount
+      valueAsOfToday: currentValue, // Current market value
+      pnlAmount: pnlAmount, // Profit/Loss amount
+      percentPnl: percentPnl, // Profit/Loss percentage
+      broker: holding.broker || '',
+      debtEquity: holding.debt_equity || '',
+      subCategory: holding.sub_category || '',
+      date: holding.as_of_date ? new Date(holding.as_of_date) : new Date(),
+      type: 'mutual_fund' as const,
+      isin: holding.isin || '',
+      schemeCode: holding.scheme_code || '', // Added scheme_code
+      mastersheetTag: holding.mastersheet_tag || '', // Added mastersheet_tag
+    };
+  });
     return [...processedEquityHoldings, ...processedMutualFundHoldings];
   }
   public static async GET(request: Request): Promise<NextResponse> {
@@ -2684,14 +2694,13 @@ async getHoldings(qcode: string): Promise<Holding[]> {
   });
 
   // Fetch mutual fund holdings
-  const mutualFundHoldings = await prisma.mutual_fund_holding.findMany({
+  const mutualFundHoldings = await prisma.mutual_fund_holding_sheet_test.findMany({
     where: {
       qcode,
-      status: 'P', // Only active records
     },
     orderBy: [
       { symbol: 'asc' },
-      { date: 'desc' }
+      { as_of_date: 'desc' }
     ],
   });
 
