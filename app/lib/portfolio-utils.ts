@@ -341,46 +341,47 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
   }
 
   async getPortfolioReturns(qcode: string, strategy?: string): Promise<number> {
-    try {
-      const systemTag = this.getSystemTag(strategy);
-      const firstNavRecord = await prisma.master_sheet.findFirst({
-        where: { qcode, system_tag: systemTag, nav: { not: null } },
-        orderBy: { date: "asc" },
-        select: { nav: true, date: true },
-      });
+  try {
+    const systemTag = this.getSystemTag(strategy);
+    const firstNavRecord = await prisma.master_sheet.findFirst({
+      where: { qcode, system_tag: systemTag, nav: { not: null } },
+      orderBy: { date: "asc" },
+      select: { nav: true, date: true },
+    });
 
-      const latestNavRecord = await prisma.master_sheet.findFirst({
-        where: { qcode, system_tag: systemTag, nav: { not: null } },
-        orderBy: { date: "desc" },
-        select: { nav: true, date: true },
-      });
+    const latestNavRecord = await prisma.master_sheet.findFirst({
+      where: { qcode, system_tag: systemTag, nav: { not: null } },
+      orderBy: { date: "desc" },
+      select: { nav: true, date: true },
+    });
 
-      const capitalFlows = await prisma.master_sheet.aggregate({
-        where: { qcode, system_tag: systemTag, capital_in_out: { not: null } },
-        _sum: { capital_in_out: true },
-      });
-
-      if (!firstNavRecord || !latestNavRecord) {
-        return 0;
-      }
-
-      const originalInitialNav = Number(firstNavRecord.nav) || 0;
-      const finalNav = Number(latestNavRecord.nav) || 0;
-      const totalCapitalInOut = Number(capitalFlows._sum.capital_in_out) || 0;
-
-      const initialNav = originalInitialNav !== 100 ? 100 : originalInitialNav;
-
-      console.log(`Zerodha Return: systemTag=${systemTag}, finalNav=${finalNav}, initialNav=${initialNav}`);
-
-      const portfolioReturn = initialNav !== 0 ? ((finalNav / initialNav) - 1) * 100 : 0;
-      console.log(`portfolioReturn=${portfolioReturn}`);
-
-      return portfolioReturn;
-    } catch (error) {
-      console.error(`Error calculating portfolio returns for qcode ${qcode}, strategy ${strategy}:`, error);
+    if (!firstNavRecord || !latestNavRecord) {
       return 0;
     }
+
+    const originalInitialNav = Number(firstNavRecord.nav) || 0;
+    const finalNav = Number(latestNavRecord.nav) || 0;
+    const initialNav = originalInitialNav !== 100 ? 100 : originalInitialNav;
+
+    const days = (latestNavRecord.date.getTime() - firstNavRecord.date.getTime()) / (1000 * 60 * 60 * 24);
+
+    let portfolioReturn = 0;
+
+    if (days < 365) {
+      portfolioReturn = ((finalNav / initialNav) - 1) * 100;
+      console.log(`Zerodha Return (ABS): final=${finalNav}, initial=${initialNav}, days=${days}, return=${portfolioReturn}`);
+    } else {
+      portfolioReturn = (Math.pow(finalNav / initialNav, 365 / days) - 1) * 100;
+      console.log(`Zerodha Return (CAGR): final=${finalNav}, initial=${initialNav}, days=${days}, return=${portfolioReturn}`);
+    }
+
+    return portfolioReturn;
+  } catch (error) {
+    console.error(`Error calculating portfolio returns for qcode ${qcode}, strategy ${strategy}:`, error);
+    return 0;
   }
+}
+
 
   async getTotalProfit(qcode: string, strategy?: string): Promise<number> {
     const systemTag = this.getSystemTag(strategy);
@@ -546,17 +547,52 @@ class PmsStrategy implements DataFetchingStrategy {
   }
 
   async getPortfolioReturns(qcode: string): Promise<number> {
-    try {
-      const portfolioReturn = await prisma.pms_master_sheet.aggregate({
-        where: { qcode, daily_p_l: { not: null } },
-        _sum: { daily_p_l: true },
-      });
-      return Number(portfolioReturn._sum.daily_p_l) || 0;
-    } catch (error) {
-      console.error(`Error calculating portfolio returns for qcode ${qcode}:`, error);
+  try {
+    const custodianCodes = await prisma.account_custodian_codes.findMany({
+      where: { qcode },
+      select: { custodian_code: true },
+    });
+    const codes = custodianCodes.map(c => c.custodian_code);
+
+    const firstNavRecord = await prisma.pms_master_sheet.findFirst({
+      where: { account_code: { in: codes }, nav: { not: null } },
+      orderBy: { report_date: "asc" },
+      select: { nav: true, report_date: true },
+    });
+
+    const latestNavRecord = await prisma.pms_master_sheet.findFirst({
+      where: { account_code: { in: codes }, nav: { not: null } },
+      orderBy: { report_date: "desc" },
+      select: { nav: true, report_date: true },
+    });
+
+    if (!firstNavRecord || !latestNavRecord) {
       return 0;
     }
+
+    const initialNav = Number(firstNavRecord.nav) || 0;
+    const finalNav = Number(latestNavRecord.nav) || 0;
+
+    if (initialNav <= 0 || finalNav <= 0) return 0;
+
+    const days = (latestNavRecord.report_date.getTime() - firstNavRecord.report_date.getTime()) / (1000 * 60 * 60 * 24);
+
+    let portfolioReturn = 0;
+
+    if (days < 365) {
+      portfolioReturn = ((finalNav / initialNav) - 1) * 100;
+      console.log(`PMS Return (ABS): final=${finalNav}, initial=${initialNav}, days=${days}, return=${portfolioReturn}`);
+    } else {
+      portfolioReturn = (Math.pow(finalNav / initialNav, 365 / days) - 1) * 100;
+      console.log(`PMS Return (CAGR): final=${finalNav}, initial=${initialNav}, days=${days}, return=${portfolioReturn}`);
+    }
+
+    return portfolioReturn;
+  } catch (error) {
+    console.error(`Error calculating portfolio returns for qcode ${qcode}:`, error);
+    return 0;
   }
+}
 
   async getTotalProfit(qcode: string): Promise<number> {
     const custodianCodes = await prisma.account_custodian_codes.findMany({
@@ -1260,70 +1296,86 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
     };
 
     periodLabels.forEach(period => {
-      if (period === "MDD" || period === "currentDD") {
-        if (equityCurve.length === 0) {
-          finalTrailingReturns[period] = null;
-        } else {
-          let peakNav = 0;
-          let maxDrawdown = 0;
-          for (const entry of equityCurve) {
-            peakNav = Math.max(peakNav, entry.value);
-            const drawdown = peakNav > 0 ? ((peakNav - entry.value) / peakNav) * 100 : 0;
-            maxDrawdown = Math.max(maxDrawdown, drawdown);
-          }
-          if (period === "MDD") {
-            finalTrailingReturns[period] = maxDrawdown;
-          } else if (period === "currentDD") {
-            const latestNav = equityCurve[equityCurve.length - 1].value;
-            finalTrailingReturns[period] = peakNav > 0 ? ((peakNav - latestNav) / peakNav) * 100 : 0;
-          }
-        }
-      } else {
-        const latestNavEntry = equityCurve[equityCurve.length - 1];
-        if (!latestNavEntry) {
-          finalTrailingReturns[period] = null;
-          return;
-        }
-
-        const startNav = latestNavEntry.value;
-        const startDate = new Date(latestNavEntry.date);
-
-        let endNav = 0;
-        let endDate: Date | null = null;
-
-        console.log(`\nDEBUG TRAILING: period=${period}`);
-        console.log(`  → using latest NAV: ${startNav.toFixed(4)} on ${startDate}`);
-
-        if (period === "sinceInception") {
-          const firstNavEntry = equityCurve[0];
-          if (firstNavEntry) {
-            endNav = firstNavEntry.value;
-            endDate = new Date(firstNavEntry.date);
-            console.log(`  → sinceInception picks first NAV: ${endNav.toFixed(4)} on ${endDate}`);
-          }
-        } else {
-          const days = periodDays[period];
-          const targetEntry = getNavEntriesAgo(equityCurve, days);
-          if (targetEntry) {
-            endNav = targetEntry.value;
-            endDate = new Date(targetEntry.date);
-            console.log(`  → ${days} days ago NAV: ${endNav.toFixed(4)} on ${endDate}`);
-          }
-        }
-
-        if (endNav > 0 && endDate) {
-          const periodReturn = ((startNav / endNav) - 1) * 100;
-          console.log(
-            `  → computed return: ((${startNav.toFixed(4)} / ` +
-            `${endNav.toFixed(4)}) - 1) × 100 = ${periodReturn.toFixed(2)}%`
-          );
-          finalTrailingReturns[period] = periodReturn;
-        } else {
-          console.log(`  → no data available for ${period}`);
-          finalTrailingReturns[period] = null;
-        }
+  if (period === "MDD" || period === "currentDD") {
+    if (equityCurve.length === 0) {
+      finalTrailingReturns[period] = null;
+    } else {
+      let peakNav = 0;
+      let maxDrawdown = 0;
+      for (const entry of equityCurve) {
+        peakNav = Math.max(peakNav, entry.value);
+        const drawdown = peakNav > 0 ? ((peakNav - entry.value) / peakNav) * 100 : 0;
+        maxDrawdown = Math.max(maxDrawdown, drawdown);
       }
-    });
+      if (period === "MDD") {
+        finalTrailingReturns[period] = maxDrawdown;
+      } else if (period === "currentDD") {
+        const latestNav = equityCurve[equityCurve.length - 1].value;
+        finalTrailingReturns[period] = peakNav > 0 ? ((peakNav - latestNav) / peakNav) * 100 : 0;
+      }
+    }
+  } else {
+    const latestNavEntry = equityCurve[equityCurve.length - 1];
+    if (!latestNavEntry) {
+      finalTrailingReturns[period] = null;
+      return;
+    }
+
+    const startNav = latestNavEntry.value;
+    const startDate = new Date(latestNavEntry.date);
+
+    let endNav = 0;
+    let endDate: Date | null = null;
+
+    console.log(`\nDEBUG TRAILING: period=${period}`);
+    console.log(`  → using latest NAV: ${startNav.toFixed(4)} on ${startDate}`);
+
+    if (period === "sinceInception") {
+      const firstNavEntry = equityCurve[0];
+      if (firstNavEntry) {
+        endNav = firstNavEntry.value;
+        endDate = new Date(firstNavEntry.date);
+        console.log(`  → sinceInception picks first NAV: ${endNav.toFixed(4)} on ${endDate}`);
+      }
+    } else {
+      const days = periodDays[period];
+      const targetEntry = getNavEntriesAgo(equityCurve, days);
+      if (targetEntry) {
+        endNav = targetEntry.value;
+        endDate = new Date(targetEntry.date);
+        console.log(`  → ${days} days ago NAV: ${endNav.toFixed(4)} on ${endDate}`);
+      }
+    }
+
+    if (endNav > 0 && endDate) {
+      let periodReturn: number;
+
+      // Calculate days between start and end
+      const days = (startDate.getTime() - endDate.getTime()) / (1000 * 60 * 60 * 24);
+
+      if (period === "sinceInception" && days > 365) {
+        // Use CAGR formula for sinceInception when period > 1 year
+        periodReturn = (Math.pow(startNav / endNav, 365 / days) - 1) * 100;
+        console.log(
+          `  → computed CAGR: (Math.pow(${startNav.toFixed(4)} / ` +
+          `${endNav.toFixed(4)}, 365 / ${days.toFixed(2)}) - 1) × 100 = ${periodReturn.toFixed(2)}%`
+        );
+      } else {
+        // Use simple return formula
+        periodReturn = ((startNav / endNav) - 1) * 100;
+        console.log(
+          `  → computed return: ((${startNav.toFixed(4)} / ` +
+          `${endNav.toFixed(4)}) - 1) × 100 = ${periodReturn.toFixed(2)}%`
+        );
+      }
+
+      finalTrailingReturns[period] = periodReturn;
+    } else {
+      console.log(`  → no data available for ${period}`);
+      finalTrailingReturns[period] = null;
+    }
+  }
+});
 
     // Determine the final strategy name
     let finalStrategyName: string;
