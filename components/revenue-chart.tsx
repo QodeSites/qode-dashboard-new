@@ -34,9 +34,12 @@ interface RevenueChartProps {
     currentDD?: string;
   };
   drawdown: string;
+  chart_animation:boolean;
 }
 
-export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, drawdown }: RevenueChartProps) {
+export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, drawdown, chart_animation = true }: RevenueChartProps) {
+  
+  console.log(equityCurve,"=============================equityCurve2")
   const chartRef = useRef<HTMLDivElement>(null);
   const chart = useRef<any>(null);
   const { bse500Data, error } = useBse500Data(equityCurve);
@@ -121,6 +124,9 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         chart.current.destroy();
       }
 
+      const firstPortfolioDate = new Date(equityCurve[0].date).getTime();
+      const earliestDate = firstPortfolioDate;
+
       const portfolioData = equityCurve
         .map((p) => {
           let navValue;
@@ -147,22 +153,40 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
 
       const processedPortfolioData = processDataSeries(portfolioData, false, portfolioData[0][1]);
 
-      const portfolioFirstValue = portfolioData[0][1];
-      const firstPortfolioDate = processedPortfolioData[0][0];
-      const prependDate = Math.abs(portfolioFirstValue - 100) > 0.01
-        ? firstPortfolioDate - 24 * 60 * 60 * 1000
-        : undefined;
+      // Process benchmark data aligned to portfolio start
+      let processedBenchmarkData: [number, number][] = [];
+      if (bse500Data.length > 0) {
+        const benchmarkDataPoints = bse500Data.map((item) => [
+          new Date(item.date).getTime(),
+          parseFloat(item.nav),
+        ]);
 
-      const benchmarkDataPoints = bse500Data.map((item) => [
-        new Date(item.date).getTime(),
-        parseFloat(item.nav),
-      ]);
-      const processedBenchmarkData = processDataSeries(benchmarkDataPoints, true, benchmarkDataPoints[0]?.[1], prependDate);
+        // Find the benchmark NAV at or just before portfolio start date
+        let benchmarkBaseNav = benchmarkDataPoints[0][1];
+        for (let i = benchmarkDataPoints.length - 1; i >= 0; i--) {
+          if (benchmarkDataPoints[i][0] <= firstPortfolioDate) {
+            benchmarkBaseNav = benchmarkDataPoints[i][1];
+            break;
+          }
+        }
 
-      const firstBenchmarkDate = processedBenchmarkData[0]?.[0];
-      const earliestDate = firstPortfolioDate && firstBenchmarkDate
-        ? Math.min(firstPortfolioDate, firstBenchmarkDate)
-        : firstPortfolioDate || firstBenchmarkDate;
+        processedBenchmarkData = processDataSeries(benchmarkDataPoints, true, benchmarkBaseNav);
+
+        // Insert a point exactly at firstPortfolioDate with y=100 if not present
+        const hasExact = processedBenchmarkData.some(p => p[0] === firstPortfolioDate);
+        if (!hasExact) {
+          const insertIndex = processedBenchmarkData.findIndex(p => p[0] > firstPortfolioDate);
+          const newPoint: [number, number] = [firstPortfolioDate, 100];
+          if (insertIndex === -1) {
+            processedBenchmarkData.push(newPoint);
+          } else {
+            processedBenchmarkData.splice(insertIndex, 0, newPoint);
+          }
+        }
+
+        // Filter to start from firstPortfolioDate
+        processedBenchmarkData = processedBenchmarkData.filter(d => d[0] >= firstPortfolioDate);
+      }
 
       console.log("Raw drawdown data:", drawdownCurve.slice(-3));
 
@@ -194,17 +218,34 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
 
       console.log("Processed drawdown data:", portfolioDrawdownData.slice(-3));
 
-      if (portfolioDrawdownData.length && earliestDate && portfolioDrawdownData[0][0] > earliestDate) {
+      if (portfolioDrawdownData.length && portfolioDrawdownData[0][0] > earliestDate) {
         portfolioDrawdownData.unshift([earliestDate, 0]);
       }
 
       let benchmarkDrawdownCurve: [number, number][] = [];
       if (bse500Data.length > 0) {
-        let maxBenchmark = parseFloat(bse500Data[0]?.nav) || 100;
-        benchmarkDrawdownCurve = [[earliestDate, 0]];
-        bse500Data.forEach((point) => {
-          const timestamp = new Date(point.date).getTime();
-          const nav = parseFloat(point.nav);
+        const benchmarkDataPoints = bse500Data.map((item) => [
+          new Date(item.date).getTime(),
+          parseFloat(item.nav),
+        ]);
+
+        // Use the same benchmarkBaseNav for drawdown initial max
+        let startBenchmarkNav = benchmarkDataPoints[0][1];
+        for (let i = benchmarkDataPoints.length - 1; i >= 0; i--) {
+          if (benchmarkDataPoints[i][0] <= firstPortfolioDate) {
+            startBenchmarkNav = benchmarkDataPoints[i][1];
+            break;
+          }
+        }
+
+        let maxBenchmark = startBenchmarkNav;
+        benchmarkDrawdownCurve.push([earliestDate, 0]);
+
+        // Only process points >= firstPortfolioDate
+        const futurePoints = benchmarkDataPoints.filter(p => p[0] >= firstPortfolioDate);
+        futurePoints.forEach((point) => {
+          const timestamp = point[0];
+          const nav = point[1];
           maxBenchmark = Math.max(maxBenchmark, nav);
           const dd = ((nav - maxBenchmark) / maxBenchmark) * 100;
           benchmarkDrawdownCurve.push([timestamp, dd]);
@@ -213,13 +254,13 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
 
       const allNavValues = [
         ...processedPortfolioData.map(d => d[1]),
-        ...(processedBenchmarkData.length > 0 ? processedBenchmarkData.map(d => d[1]) : []),
+        ...processedBenchmarkData.map(d => d[1]),
       ].filter(val => !isNaN(val));
 
       const navScaling = calculateScalingParams(allNavValues);
 
       const portfolioDrawdownValues = portfolioDrawdownData.map(d => d[1]);
-      const benchmarkDrawdownValues = benchmarkDrawdownCurve.length > 0 ? benchmarkDrawdownCurve.map(d => d[1]) : [];
+      const benchmarkDrawdownValues = benchmarkDrawdownCurve.map(d => d[1]);
       const drawdownScaling = calculateDrawdownScaling(portfolioDrawdownValues, benchmarkDrawdownValues);
 
       const navRange = navScaling.max - navScaling.min;
@@ -494,6 +535,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         plotOptions: {
           line: { marker: { enabled: false } },
           area: { fillOpacity: 0.2, marker: { enabled: false } },
+          series: { animation: chart_animation } 
         },
         series: mergedSeries,
         credits: { enabled: false },
@@ -514,7 +556,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
 
   if (!equityCurve?.length || error) {
     return (
-      <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
+      <Card className="bg-white/50   border-0">
         <CardContent>
           <div className="w-full h-[700px] flex items-center justify-center">
             <p>{error || "No data available."}</p>
@@ -526,7 +568,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
 
   return (
     <div className="space-y-6">
-      <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
+      <Card className="bg-white/50   border-0">
         <CardContent className="p-4">
           <TrailingReturnsTable
             trailingReturns={trailingReturns}
@@ -535,7 +577,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
           />
         </CardContent>
       </Card>
-      <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
+      <Card className="bg-white/50   border-0">
         <CardContent className="p-4">
           <CardTitle className="text-card-text text-sm sm:text-lg mb-4">Portfolio Performance & Drawdown</CardTitle>
           <div className="w-full">
