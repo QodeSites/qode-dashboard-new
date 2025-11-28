@@ -133,7 +133,7 @@ model equity_holding {
   value_as_of_today Decimal?  @db.Decimal(15, 2)
   pnl_amount        Decimal?  @db.Decimal(15, 2)
   percent_pnl       Decimal?  @db.Decimal(5, 2)
-  id                BigInt    @id
+  id                BigInt    @id @default(autoincrement())
 
   @@schema("public")
 }
@@ -373,5 +373,311 @@ model master_sheet_test {
   system_tag           String?   @db.VarChar(50)
   created_at           DateTime? @default(now()) @db.Date
 
+  @@schema("public")
+}
+
+model pms_clients_master {
+  id                     Int       @id @default(autoincrement())
+  clientid               String?   @db.VarChar(50)
+  clientname             String?   @db.VarChar(100)
+  clientcode             String?   @db.VarChar(50)
+  clienttype             String?   @db.VarChar(20)
+  accounttype            String?   @db.VarChar(20)
+  account_open_date      DateTime? @db.Date
+  inceptiondate          DateTime? @db.Date
+  mobile                 String?   @db.VarChar(15)
+  email                  String?   @db.VarChar(100)
+  address1               String?   @db.VarChar(200)
+  address2               String?   @db.VarChar(200)
+  city                   String?   @db.VarChar(50)
+  pincode                String?   @db.VarChar(6)
+  state                  String?   @db.VarChar(50)
+  pannumber              String?   @db.VarChar(10)
+  ownerid                String?   @db.VarChar(50)
+  ownername              String?   @db.VarChar(100)
+  groupid                String?   @db.VarChar(50)
+  groupname              String?   @db.VarChar(100)
+  schemeid               String?   @db.VarChar(50)
+  schemename             String?   @db.VarChar(100)
+  advisorname            String?   @db.VarChar(100)
+  username               String?   @db.VarChar(50)
+  salutation             String?   @db.VarChar(10)
+  firstname              String?   @db.VarChar(50)
+  middlename             String?   @db.VarChar(50)
+  lastname               String?   @db.VarChar(50)
+  first_holder_gender    String?   @db.VarChar(20)
+  created_at             DateTime? @default(now()) @db.Timestamp(6)
+  updated_at             DateTime? @default(now()) @db.Timestamp(6)
+  password               String?   @default("Qode@123") @db.VarChar(100)
+  head_of_family         Boolean?
+  password_setup_token   String?   @db.VarChar(255)
+  password_setup_expires DateTime? @db.Timestamptz(6)
+  password_set_at        DateTime? @db.Timestamptz(6)
+  first_login_at         DateTime? @db.Timestamptz(6)
+  onboarding_status      String?   @default("pending") @db.VarChar(20)
+  login_attempts         Int?      @default(0)
+  locked_until           DateTime? @db.Timestamptz(6)
+
+  @@index([clientid], map: "idx_pms_clients_master_clientid")
+  @@index([email], map: "idx_pms_clients_master_email")
+  @@index([mobile], map: "idx_pms_clients_master_mobile")
+  @@index([pannumber], map: "idx_pms_clients_master_pannumber")
+  @@index([onboarding_status], map: "idx_pms_clients_onboarding_status")
+  @@index([password_setup_token], map: "idx_pms_clients_password_token")
+  @@schema("public")
+}
+
+model equity_holding_test {
+  qcode             String?   @db.VarChar(50)
+  date              DateTime? @db.Date
+  symbol            String?   @db.VarChar(20)
+  mastersheet_tag   String?   @db.VarChar(100)
+  exchange          String?   @db.VarChar(50)
+  quantity          Int?
+  avg_price         Decimal?  @db.Decimal(10, 2)
+  broker            String?   @db.VarChar(100)
+  debt_equity       String?   @db.VarChar(20)
+  sub_category      String?   @db.VarChar(100)
+  ltp               Decimal?  @db.Decimal(10, 2)
+  buy_value         Decimal?  @db.Decimal(15, 2)
+  value_as_of_today Decimal?  @db.Decimal(15, 2)
+  pnl_amount        Decimal?  @db.Decimal(15, 2)
+  percent_pnl       Decimal?  @db.Decimal(5, 2)
+  id                Int       @id @default(autoincrement())
+
+  @@schema("public")
+}
+
+model holding_sync_logs {
+  id                BigInt   @id @default(autoincrement())
+  qcode             String   @db.VarChar(50)
+  client_name       String?  @db.VarChar(255)
+  sync_type         String   @db.VarChar(50)
+  sync_status       String   @db.VarChar(20)
+  records_deleted   Int?
+  records_inserted  Int?
+  records_processed Int?
+  error_message     String?
+  sync_timestamp    DateTime @db.Timestamp(6)
+  created_at        DateTime @default(now()) @db.Timestamp(6)
+
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model master_sheet_sync_logs {
+  id                Int      @id @default(autoincrement())
+  qcode             String   @db.VarChar(20)
+  client_name       String?  @db.VarChar(255)
+  sync_status       String   @db.VarChar(20)
+  records_deleted   Int      @default(0)
+  records_inserted  Int      @default(0)
+  records_processed Int      @default(0)
+  error_message     String?
+  sync_timestamp    DateTime @db.Timestamptz(6)
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([qcode], map: "idx_master_sheet_sync_logs_qcode")
+  @@index([sync_timestamp], map: "idx_master_sheet_sync_logs_sync_timestamp")
+  @@schema("public")
+}
+
+model mutual_fund_holding_sheet {
+  id                BigInt    @id @default(autoincrement())
+  qcode             String?
+  as_of_date        DateTime? @db.Date
+  symbol            String?
+  isin              String?
+  scheme_code       String?
+  quantity          Decimal?  @db.Decimal(20, 6)
+  avg_price         Decimal?  @db.Decimal(18, 4)
+  broker            String?
+  debt_equity       String?
+  mastersheet_tag   String?
+  sub_category      String?
+  nav               Decimal?  @db.Decimal(18, 4)
+  buy_value         Decimal?  @db.Decimal(18, 2)
+  value_as_of_today Decimal?  @db.Decimal(18, 2)
+  pnl_amount        Decimal?  @db.Decimal(18, 2)
+  percent_pnl       Decimal?  @db.Decimal(9, 4)
+
+  @@schema("public")
+}
+
+model mutual_fund_holding_sheet_test {
+  qcode             String?
+  as_of_date        DateTime? @db.Date
+  symbol            String?
+  isin              String?
+  scheme_code       String?
+  quantity          Decimal?  @db.Decimal(20, 6)
+  avg_price         Decimal?  @db.Decimal(18, 4)
+  broker            String?
+  debt_equity       String?
+  mastersheet_tag   String?
+  sub_category      String?
+  nav               Decimal?  @db.Decimal(18, 4)
+  buy_value         Decimal?  @db.Decimal(18, 2)
+  value_as_of_today Decimal?  @db.Decimal(18, 2)
+  pnl_amount        Decimal?  @db.Decimal(18, 2)
+  percent_pnl       Decimal?  @db.Decimal(9, 4)
+  id                Int       @id @default(autoincrement())
+
+  @@schema("public")
+}
+
+model password_reset_tokens {
+  id         BigInt   @id @default(autoincrement())
+  email      String
+  token_hash String
+  expires_at DateTime @db.Timestamptz(6)
+  used       Boolean  @default(false)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([email], map: "idx_password_reset_tokens_email")
+  @@index([token_hash], map: "idx_password_reset_tokens_token_hash")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model payment_transactions {
+  id                 Int       @id @default(autoincrement())
+  order_id           String    @unique @db.VarChar(255)
+  client_id          String    @db.VarChar(255)
+  nuvama_code        String    @db.VarChar(50)
+  client_name        String    @db.VarChar(255)
+  amount             Decimal   @db.Decimal(10, 2)
+  currency           String?   @default("INR") @db.VarChar(3)
+  payment_type       String    @db.VarChar(20)
+  payment_status     String?   @default("CREATED") @db.VarChar(50)
+  payment_session_id String?   @db.VarChar(255)
+  cf_order_id        String?   @db.VarChar(255)
+  cf_subscription_id String?   @db.VarChar(255)
+  account_number     String?   @db.VarChar(50)
+  ifsc_code          String?   @db.VarChar(20)
+  frequency          String?   @db.VarChar(20)
+  start_date         DateTime? @db.Date
+  end_date           DateTime? @db.Date
+  total_installments Int?
+  next_charge_date   DateTime? @db.Date
+  created_at         DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime? @default(now()) @db.Timestamptz(6)
+  canceled_at        DateTime? @db.Timestamptz(6)
+  is_new_strategy    Boolean?  @default(false)
+  strategy_type      String?   @db.VarChar(10)
+
+  @@index([client_id, payment_status], map: "idx_client_status")
+  @@index([created_at], map: "idx_created_at")
+  @@index([order_id], map: "idx_order_id")
+  @@schema("public")
+}
+
+model pms_clients_audit_log {
+  id                  Int       @id @default(autoincrement())
+  operation_type      String    @db.VarChar(10)
+  clientid            String    @db.VarChar(50)
+  clientname          String?   @db.VarChar(255)
+  old_data            Json?
+  new_data            Json?
+  changed_fields      String[]
+  operation_timestamp DateTime? @default(now()) @db.Timestamp(6)
+  batch_id            String?   @db.VarChar(50)
+  notes               String?
+
+  @@schema("public")
+}
+
+model pms_clients_master1 {
+  id                     Int       @id @default(autoincrement())
+  clientid               String?   @db.VarChar(50)
+  clientname             String?   @db.VarChar(255)
+  clientcode             String?   @db.VarChar(50)
+  clienttype             String?   @db.VarChar(50)
+  accounttype            String?   @db.VarChar(50)
+  account_open_date      DateTime? @db.Date
+  inceptiondate          DateTime? @db.Date
+  mobile                 String?   @db.VarChar(15)
+  email                  String?   @db.VarChar(255)
+  address1               String?
+  address2               String?
+  city                   String?   @db.VarChar(100)
+  pincode                String?   @db.VarChar(10)
+  state                  String?   @db.VarChar(100)
+  pannumber              String?   @db.VarChar(20)
+  ownerid                String?   @db.VarChar(50)
+  ownername              String?   @db.VarChar(255)
+  groupid                String?   @db.VarChar(50)
+  groupname              String?   @db.VarChar(255)
+  schemeid               String?   @db.VarChar(50)
+  schemename             String?   @db.VarChar(255)
+  advisorname            String?   @db.VarChar(255)
+  username               String?   @db.VarChar(100)
+  salutation             String?   @db.VarChar(20)
+  firstname              String?   @db.VarChar(100)
+  middlename             String?   @db.VarChar(100)
+  lastname               String?   @db.VarChar(100)
+  first_holder_gender    String?   @db.VarChar(10)
+  created_at             DateTime? @default(now()) @db.Timestamp(6)
+  updated_at             DateTime? @default(now()) @db.Timestamp(6)
+  password               String?   @db.VarChar(100)
+  head_of_family         Boolean?
+  password_setup_token   String?   @db.VarChar(255)
+  password_setup_expires DateTime? @db.Timestamp(6)
+  password_set_at        DateTime? @db.Timestamp(6)
+  first_login_at         DateTime? @db.Timestamp(6)
+  onboarding_status      String?   @default("PENDING") @db.VarChar(50)
+  login_attempts         Int?      @default(0)
+  locked_until           DateTime? @db.Timestamp(6)
+
+  @@schema("public")
+}
+
+model pms_clients_master2 {
+  id                  Int       @id(map: "pms_clients_master_pkey1") @default(autoincrement())
+  clientid            String?   @db.VarChar(50)
+  clientname          String?   @db.VarChar(100)
+  clientcode          String?   @db.VarChar(50)
+  clienttype          String?   @db.VarChar(20)
+  accounttype         String?   @db.VarChar(20)
+  account_open_date   DateTime? @db.Date
+  inceptiondate       DateTime? @db.Date
+  mobile              String?   @db.VarChar(15)
+  email               String?   @db.VarChar(100)
+  address1            String?   @db.VarChar(200)
+  address2            String?   @db.VarChar(200)
+  city                String?   @db.VarChar(50)
+  pincode             String?   @db.VarChar(6)
+  state               String?   @db.VarChar(50)
+  pannumber           String?   @db.VarChar(10)
+  ownerid             String?   @db.VarChar(50)
+  ownername           String?   @db.VarChar(100)
+  groupid             String?   @db.VarChar(50)
+  groupname           String?   @db.VarChar(100)
+  schemeid            String?   @db.VarChar(50)
+  schemename          String?   @db.VarChar(100)
+  advisorname         String?   @db.VarChar(100)
+  username            String?   @db.VarChar(50)
+  salutation          String?   @db.VarChar(10)
+  firstname           String?   @db.VarChar(50)
+  middlename          String?   @db.VarChar(50)
+  lastname            String?   @db.VarChar(50)
+  first_holder_gender String?   @db.VarChar(20)
+  head_of_family      String?   @db.VarChar(5)
+  created_at          DateTime? @default(now()) @db.Timestamp(6)
+  updated_at          DateTime? @default(now()) @db.Timestamp(6)
+
+  @@schema("public")
+}
+
+model prop_account_default_tags {
+  qcode        String   @unique
+  deposit_tag  String
+  nav_tag      String
+  cashflow_tag String?
+  created_at   DateTime @default(now()) @db.Timestamp(6)
+  updated_at   DateTime @db.Timestamp(6)
+  id           BigInt   @id @default(autoincrement())
+
+  @@index([updated_at])
   @@schema("public")
 }

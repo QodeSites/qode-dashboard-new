@@ -357,7 +357,7 @@ const calculateBenchmarkReturns = useCallback(() => {
                     className={`text-center px-4 py-2 font-medium text-black uppercase tracking-wider min-w-[80px]
                       ${period.key === "currentDD" ? "border-l border-black" : ""}`}
                   >
-                    <div className="truncate text-sm" title={period.label}>
+                    <div className=" text-sm" title={period.label}>
                       {period.label}
                     </div>
                   </th>
