@@ -279,11 +279,46 @@ const calculateBenchmarkReturns = useCallback(() => {
 
     // Calculate benchmark drawdowns
     if (bse500Data.length) {
-      let maxDrawdown = 0;
-      let peakNav = -Infinity;
-      let currentNav = parseFloat(bse500Data[bse500Data.length - 1].nav);
+      const portfolioStartDateStr = startDate.toISOString().split('T')[0];
+      const portfolioEndDateStr = endDate.toISOString().split('T')[0];
 
-      bse500Data.forEach(point => {
+      // For MDD calculation, we need to start from the previous trading day before portfolio inception
+      // to get the initial benchmark value (similar to how we calculate "Since Inception" returns)
+      // This ensures we're comparing apples to apples with the portfolio's performance
+      const portfolioRangeBenchmarkData = bse500Data.filter(point => {
+        const pointDateStr = point.date.split('T')[0];
+        return pointDateStr <= portfolioEndDateStr;
+      });
+
+      // Find the starting point - closest date on or before portfolio start
+      let startingNav: number | null = null;
+      let startingDate = '';
+
+      portfolioRangeBenchmarkData.forEach(point => {
+        const pointDateStr = point.date.split('T')[0];
+        if (pointDateStr <= portfolioStartDateStr) {
+          if (!startingDate || pointDateStr > startingDate) {
+            startingDate = pointDateStr;
+            startingNav = parseFloat(point.nav);
+          }
+        }
+      });
+
+      console.log(`📉 Starting benchmark DD calculation from ${startingDate} (NAV: ${startingNav})`);
+
+      // Filter to only include data from starting point onwards
+      const relevantData = portfolioRangeBenchmarkData.filter(point => {
+        const pointDateStr = point.date.split('T')[0];
+        return pointDateStr >= startingDate;
+      });
+
+      console.log(`📉 Calculating drawdowns for ${relevantData.length} benchmark points (from ${startingDate} to ${portfolioEndDateStr})`);
+
+      let maxDrawdown = 0;
+      let peakNav = startingNav || -Infinity;
+
+      // Calculate MDD from the starting point
+      relevantData.forEach(point => {
         const nav = parseFloat(point.nav);
 
         if (nav > peakNav) {
@@ -297,8 +332,13 @@ const calculateBenchmarkReturns = useCallback(() => {
         }
       });
 
-      let allTimePeak = -Infinity;
-      bse500Data.forEach(point => {
+      // Calculate current drawdown
+      const currentNav = relevantData.length > 0
+        ? parseFloat(relevantData[relevantData.length - 1].nav)
+        : 0;
+
+      let allTimePeak = startingNav || -Infinity;
+      relevantData.forEach(point => {
         const nav = parseFloat(point.nav);
         if (nav > allTimePeak) {
           allTimePeak = nav;
@@ -306,6 +346,9 @@ const calculateBenchmarkReturns = useCallback(() => {
       });
 
       const currentDrawdown = allTimePeak > 0 ? ((currentNav - allTimePeak) / allTimePeak) * 100 : 0;
+
+      console.log(`📉 Peak NAV: ${peakNav}, Current NAV: ${currentNav}`);
+      console.log(`📉 Benchmark MDD: ${maxDrawdown.toFixed(2)}%, Current DD: ${currentDrawdown.toFixed(2)}%`);
 
       benchmarkReturns.MDD = (-Math.abs(maxDrawdown)).toFixed(2);
       benchmarkReturns.currentDD = (-Math.abs(currentDrawdown)).toFixed(2);
