@@ -109,9 +109,9 @@ export function TrailingReturnsTable({
   };
 
 const calculateBenchmarkReturns = useCallback(() => {
-    // console.log("🔍 Starting benchmark returns calculation...");
-    // console.log("BSE500 data length:", bse500Data.length);
-    // console.log("Equity curve length:", equityCurve.length);
+    console.log("🔍 Starting benchmark returns calculation...");
+    console.log("BSE500 data length:", bse500Data.length);
+    console.log("Equity curve length:", equityCurve.length);
 
     const benchmarkReturns: { [key: string]: string } = {};
 
@@ -121,51 +121,68 @@ const calculateBenchmarkReturns = useCallback(() => {
     });
 
     if (!bse500Data.length || !equityCurve.length) {
-      // console.log("❌ Missing data - BSE500:", bse500Data.length, "EquityCurve:", equityCurve.length);
+      console.log("❌ Missing data - BSE500:", bse500Data.length, "EquityCurve:", equityCurve.length);
       return benchmarkReturns;
     }
 
     const endDate = new Date(equityCurve[equityCurve.length - 1].date);
     const startDate = new Date(equityCurve[0].date);
 
-    // console.log("📅 Date range:");
-    // console.log("Start date:", startDate.toISOString());
-    // console.log("End date:", endDate.toISOString());
+    console.log("📅 Portfolio Date range:");
+    console.log("Portfolio Start date:", startDate.toISOString());
+    console.log("Portfolio End date:", endDate.toISOString());
 
-    const findNav = (targetDate: Date) => {
+    // Log benchmark data date range
+    if (bse500Data.length > 0) {
+      const benchmarkStartDate = new Date(bse500Data[0].date);
+      const benchmarkEndDate = new Date(bse500Data[bse500Data.length - 1].date);
+      console.log("📊 Benchmark (BSE500) Date range:");
+      console.log("Benchmark Start date:", benchmarkStartDate.toISOString());
+      console.log("Benchmark End date:", benchmarkEndDate.toISOString());
+      console.log("Benchmark First NAV:", bse500Data[0].nav);
+      console.log("Benchmark Last NAV:", bse500Data[bse500Data.length - 1].nav);
+    }
+
+    const findNav = (targetDate: Date): number => {
+      // Normalize dates to YYYY-MM-DD string for comparison (ignoring time/timezone)
+      const getDateString = (d: Date | string): string => {
+        if (typeof d === 'string') {
+          return d.split('T')[0];
+        }
+        const isoString = d.toISOString();
+        return isoString.split('T')[0];
+      };
+
+      const targetDateStr = getDateString(targetDate);
+      console.log(`🔍 Finding NAV for target date: ${targetDateStr}`);
+      console.log(`📋 Available benchmark dates:`, bse500Data.map(p => p.date.split('T')[0]));
+
       const exactMatch = bse500Data.find(point => {
-        const pointDate = new Date(point.date);
-        return pointDate.toDateString() === targetDate.toDateString();
+        const pointDateStr = point.date.split('T')[0];
+        return pointDateStr === targetDateStr;
       });
 
       if (exactMatch) {
+        console.log(`✅ Exact match found for ${targetDateStr}: NAV=${exactMatch.nav}, Date=${exactMatch.date}`);
         return parseFloat(exactMatch.nav);
       }
 
-      let closestPrevious = null;
-      let closestPreviousDiff = Infinity;
-      let closestFuture = null;
-      let closestFutureDiff = Infinity;
+      interface NavPoint {
+        dateStr: string;
+        nav: number;
+        date: string;
+      }
+
+      let closestPrevious: NavPoint | null = null;
 
       bse500Data.forEach(point => {
-        const pointDate = new Date(point.date);
-        const timeDiff = targetDate.getTime() - pointDate.getTime();
+        const pointDateStr = point.date.split('T')[0];
 
-        if (timeDiff >= 0) {
-          if (timeDiff < closestPreviousDiff) {
-            closestPreviousDiff = timeDiff;
+        // String comparison works for YYYY-MM-DD format
+        if (pointDateStr <= targetDateStr) {
+          if (!closestPrevious || pointDateStr > closestPrevious.dateStr) {
             closestPrevious = {
-              diff: timeDiff,
-              nav: parseFloat(point.nav),
-              date: point.date
-            };
-          }
-        } else {
-          const futureDiff = Math.abs(timeDiff);
-          if (futureDiff < closestFutureDiff) {
-            closestFutureDiff = futureDiff;
-            closestFuture = {
-              diff: futureDiff,
+              dateStr: pointDateStr,
               nav: parseFloat(point.nav),
               date: point.date
             };
@@ -173,8 +190,35 @@ const calculateBenchmarkReturns = useCallback(() => {
         }
       });
 
-      const selectedPoint = closestPrevious || closestFuture;
-      return selectedPoint ? selectedPoint.nav : 0;
+      if (closestPrevious !== null) {
+        console.log(`⬅️ No exact match for ${targetDateStr}, using closest previous: NAV=${closestPrevious.nav}, Date=${closestPrevious.date}`);
+        return closestPrevious.nav;
+      }
+
+      // If no previous date found, look for closest future date as fallback
+      let closestFuture: NavPoint | null = null;
+
+      bse500Data.forEach(point => {
+        const pointDateStr = point.date.split('T')[0];
+
+        if (pointDateStr > targetDateStr) {
+          if (!closestFuture || pointDateStr < closestFuture.dateStr) {
+            closestFuture = {
+              dateStr: pointDateStr,
+              nav: parseFloat(point.nav),
+              date: point.date
+            };
+          }
+        }
+      });
+
+      if (closestFuture !== null) {
+        console.log(`➡️ No previous date for ${targetDateStr}, using closest future: NAV=${closestFuture.nav}, Date=${closestFuture.date}`);
+        return closestFuture.nav;
+      }
+
+      console.log(`❌ No matching date found for ${targetDateStr}`);
+      return 0;
     };
 
     const calculateReturn = (start: Date, end: Date, periodKey: string) => {
@@ -184,56 +228,50 @@ const calculateBenchmarkReturns = useCallback(() => {
       if (startNav && endNav && startNav !== 0) {
         // Calculate the duration in years
         const durationYears = (end.getTime() - start.getTime()) / (365 * 24 * 60 * 60 * 1000);
-        
-        // console.log(`📊 Period ${periodKey}: Start=${start.toISOString().split('T')[0]}, End=${end.toISOString().split('T')[0]}, Duration=${durationYears.toFixed(2)} years`);
-        // console.log(`📊 NAV values: Start=${startNav}, End=${endNav}`);
-        
+
+        console.log(`📊 Period ${periodKey}: Start=${start.toISOString().split('T')[0]}, End=${end.toISOString().split('T')[0]}, Duration=${durationYears.toFixed(2)} years`);
+        console.log(`📊 NAV values: Start=${startNav}, End=${endNav}`);
+
         let returnValue: number;
-        
+
         // Use CAGR for periods >= 1 year, absolute return for shorter periods
         if (durationYears >= 1) {
           // CAGR formula: (End Value / Start Value)^(1/years) - 1
           returnValue = (Math.pow(endNav / startNav, 1 / durationYears) - 1) * 100;
-          // console.log(`📊 Using CAGR: ${returnValue.toFixed(2)}%`);
+          console.log(`📊 Using CAGR: ${returnValue.toFixed(2)}%`);
         } else {
           // Absolute return formula: (End Value - Start Value) / Start Value
           returnValue = ((endNav - startNav) / startNav) * 100;
-          // console.log(`📊 Using Absolute Return: ${returnValue.toFixed(2)}%`);
+          console.log(`📊 Using Absolute Return: ${returnValue.toFixed(2)}%`);
         }
-        
+
         return returnValue.toFixed(2);
       }
 
       return "-";
     };
 
-    // Helper function to convert period type to days
-    const getDaysForPeriod = (period: any) => {
-      if (period.type === "days") {
-        return period.duration;
-      } else if (period.type === "months") {
-        // Convert months to approximate days
-        return period.duration * 30;
-      } else if (period.type === "years") {
-        // Convert years to days (accounting for leap years)
-        return period.duration * 365; // Using 366 to match your original logic
-      }
-      return 0;
-    };
-
     // Calculate returns for all periods
     allPeriods.forEach(period => {
       if (period.type === "days" || period.type === "months" || period.type === "years") {
+        // Calculate the target start date by going back the specified period
         const start = new Date(endDate);
 
-        // Fix: Use consistent day-based calculation
-        const daysToSubtract = getDaysForPeriod(period);
-        start.setDate(endDate.getDate() - daysToSubtract);
+        if (period.duration !== null) {
+          if (period.type === "days") {
+            start.setDate(endDate.getDate() - period.duration);
+          } else if (period.type === "months") {
+            start.setMonth(endDate.getMonth() - period.duration);
+          } else if (period.type === "years") {
+            start.setFullYear(endDate.getFullYear() - period.duration);
+          }
 
-        const returnValue = calculateReturn(start, endDate, period.key);
-        benchmarkReturns[period.key] = returnValue;
+          const returnValue = calculateReturn(start, endDate, period.key);
+          benchmarkReturns[period.key] = returnValue;
+        }
 
       } else if (period.type === "inception") {
+        console.log(`🎯 Calculating ${period.key} - Portfolio Start Date: ${startDate.toISOString()}, End Date: ${endDate.toISOString()}`);
         const returnValue = calculateReturn(startDate, endDate, period.key);
         benchmarkReturns[period.key] = returnValue;
       }
@@ -273,7 +311,7 @@ const calculateBenchmarkReturns = useCallback(() => {
       benchmarkReturns.currentDD = (-Math.abs(currentDrawdown)).toFixed(2);
     }
 
-    // console.log("🎯 Final benchmark returns:", benchmarkReturns);
+    console.log("🎯 Final benchmark returns:", benchmarkReturns);
     return benchmarkReturns;
   }, [bse500Data, equityCurve, allPeriods]);
 

@@ -240,7 +240,7 @@ export default function Portfolio() {
   const [sarlaData, setSarlaData] = useState<SarlaApiResponse | null>(null);
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
   const [availableStrategies, setAvailableStrategies] = useState<string[]>([]);
-const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percent");
+  const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percent");
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push("/");
@@ -501,7 +501,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
     return (
       <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0 p-4">
-          <CardTitle className="text-sm sm:text-lg text-black">Cash In / Out</CardTitle>
+        <CardTitle className="text-sm sm:text-lg text-black">Cash In / Out</CardTitle>
         <CardContent className="p-0 mt-4">
           <div className="overflow-x-auto">
             <Table className="min-w-full">
@@ -654,14 +654,14 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           {selectedStrategy} {!isActive ? "(Inactive)" : ""}
         </Button>
         <StatsCards
-  stats={convertedStats}
-  accountType="sarla"
-  broker="Sarla"
-  isTotalPortfolio={isTotalPortfolio}
-  isActive={isActive}
-  returnViewType={returnViewType}
-  setReturnViewType={setReturnViewType}
-/>
+          stats={convertedStats}
+          accountType="sarla"
+          broker="Sarla"
+          isTotalPortfolio={isTotalPortfolio}
+          isActive={isActive}
+          returnViewType={returnViewType}
+          setReturnViewType={setReturnViewType}
+        />
         {!isTotalPortfolio && (
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
             <div className="flex-1 min-w-0 sm:w-5/6">
@@ -719,14 +719,14 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           {selectedStrategy} {!isActive ? "(Inactive)" : ""}
         </Button>
         <StatsCards
-  stats={convertedStats}
-  accountType="sarla"
-  broker="Sarla"
-  isTotalPortfolio={isTotalPortfolio}
-  isActive={isActive}
-  returnViewType={returnViewType}
-  setReturnViewType={setReturnViewType}
-/>
+          stats={convertedStats}
+          accountType="sarla"
+          broker="Sarla"
+          isTotalPortfolio={isTotalPortfolio}
+          isActive={isActive}
+          returnViewType={returnViewType}
+          setReturnViewType={setReturnViewType}
+        />
         {!isTotalPortfolio && (
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
             <div className="flex-1 min-w-0 sm:w-5/6">
@@ -876,14 +876,14 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                       </CardHeader>
                       <CardContent>
                         <StatsCards
-  stats={convertedStats}
-  accountType="sarla"
-  broker="Sarla"
-  isTotalPortfolio={isTotalPortfolio}
-  isActive={isActive}
-  returnViewType={returnViewType}
-  setReturnViewType={setReturnViewType}
-/>
+                          stats={convertedStats}
+                          accountType="sarla"
+                          broker="Sarla"
+                          isTotalPortfolio={isTotalPortfolio}
+                          isActive={isActive}
+                          returnViewType={returnViewType}
+                          setReturnViewType={setReturnViewType}
+                        />
                         <RevenueChart
                           equityCurve={filteredEquityCurve}
                           drawdownCurve={item.stats.drawdownCurve}
