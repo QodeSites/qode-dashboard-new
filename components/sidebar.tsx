@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment } from "react"
+import { Fragment, use } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Dialog, Transition } from "@headlessui/react"
@@ -9,14 +9,20 @@ import {
   ChartBarIcon,
   XMarkIcon,
   ArrowRightOnRectangleIcon,
+  UserCircleIcon,
+  
 } from "@heroicons/react/24/outline"
 import { cn } from "@/lib/utils"
 import { signOut, useSession } from "next-auth/react"
 import { Button } from "./ui/button"
 import { useRouter } from "next/navigation"
+import { ChartCandlestickIcon } from "lucide-react"
 const navigation = [
   { name: "Home", href: "/", icon: HomeIcon },
   { name: "Portfolio", href: "/dashboard", icon: ChartBarIcon },
+  { name: "Holding Summary", href: "/holding-summary", icon: ChartCandlestickIcon },
+  { name: "Personal Details", href: "/personal-details", icon: UserCircleIcon },
+
 ];
 
 interface SidebarProps {

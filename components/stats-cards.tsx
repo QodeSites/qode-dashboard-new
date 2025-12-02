@@ -22,6 +22,15 @@ interface Stats {
   drawdown: string;
   equityCurve: { date: string; value: number }[];
   drawdownCurve: { date: string; value: number }[];
+  fees?: {
+    [year: string]: {
+      q1: string;
+      q2: string;
+      q3: string;
+      q4: string;
+      total: string;
+    };
+  };
 }
 
 interface StatsCardsProps {
@@ -31,6 +40,8 @@ interface StatsCardsProps {
   isTotalPortfolio?: boolean;
   returnViewType?: "percent" | "cash"; // Add this prop
   setReturnViewType?: (type: "percent" | "cash") => void; // Add this prop
+  afterFees?: boolean;
+  setAfterFees?: (afterFees: boolean) => void;
 }
 
 export function StatsCards({ 
@@ -39,13 +50,27 @@ export function StatsCards({
   broker, 
   isTotalPortfolio = false,
   returnViewType = "percent", // Default fallback
-  setReturnViewType // Use the prop instead of local state
+  setReturnViewType, // Use the prop instead of local state
+  afterFees = false,
+  setAfterFees,
 }: StatsCardsProps) {
-  // Remove the local useState - we now use props
-  // const [returnViewType, setReturnViewType] = useState<"percent" | "cash">(isTotalPortfolio ? "cash" : "percent");
-
   // For total portfolio, force cash view
   const effectiveReturnViewType = isTotalPortfolio ? "cash" : returnViewType;
+
+  // Compute total fees
+  const totalFees = React.useMemo(() => {
+    if (!stats.fees || !afterFees) return 0;
+    return Object.values(stats.fees).reduce((sum, yearFees) => {
+      return sum + parseFloat(yearFees.total || '0');
+    }, 0);
+  }, [stats.fees, afterFees]);
+
+  const originalTotalProfit = parseFloat(stats.totalProfit);
+  const adjustedTotalProfit = originalTotalProfit - totalFees;
+
+  const originalReturnPercent = parseFloat(stats.return);
+  const amountDeposited = parseFloat(stats.amountDeposited);
+  const adjustedReturnPercent = amountDeposited > 0 ? (adjustedTotalProfit / amountDeposited) * 100 : originalReturnPercent;
 
   // Function to get card labels based on account type and broker
   const getCardLabels = (accountType: string, broker?: string) => {
@@ -73,25 +98,32 @@ export function StatsCards({
       name: labels.amountDeposited,
       value: `₹ ${parseFloat(stats.amountDeposited).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       change: "",
-      changeType: "neutral",
+      changeType: "neutral" as const,
       showNote: false,
     },
     {
       name: labels.currentExposure,
       value: `₹ ${parseFloat(stats.currentExposure).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       change: "",
-      changeType: "neutral",
+      changeType: "neutral" as const,
       showNote: false,
     },
     {
       name: labels.return,
       value: effectiveReturnViewType === "percent"
-        ? `${parseFloat(stats.return).toFixed(2)}%`
-        : `₹ ${parseFloat(stats.totalProfit).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        ? `${(afterFees ? adjustedReturnPercent : originalReturnPercent).toFixed(2)}%`
+        : `₹ ${(afterFees ? adjustedTotalProfit : originalTotalProfit).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       change: effectiveReturnViewType === "cash"
-        ? parseFloat(stats.return) >= 0 ? `+${parseFloat(stats.return).toFixed(2)}%` : `${parseFloat(stats.return).toFixed(2)}%`
-        : parseFloat(stats.totalProfit) >= 0 ? `+₹${parseFloat(stats.totalProfit).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `-₹${parseFloat(stats.totalProfit).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      changeType: parseFloat(effectiveReturnViewType === "percent" ? stats.return : stats.totalProfit) >= 0 ? "positive" : "negative",
+        ? (afterFees ? adjustedReturnPercent : originalReturnPercent) >= 0 
+          ? `+${(afterFees ? adjustedReturnPercent : originalReturnPercent).toFixed(2)}%` 
+          : `${(afterFees ? adjustedReturnPercent : originalReturnPercent).toFixed(2)}%`
+        : (afterFees ? adjustedTotalProfit : originalTotalProfit) >= 0 
+          ? `+₹${(afterFees ? adjustedTotalProfit : originalTotalProfit).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
+          : `-₹${Math.abs(afterFees ? adjustedTotalProfit : originalTotalProfit).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      changeType: (effectiveReturnViewType === "percent" 
+        ? (afterFees ? adjustedReturnPercent : originalReturnPercent) 
+        : (afterFees ? adjustedTotalProfit : originalTotalProfit)
+      ) >= 0 ? "positive" : "negative",
       showNote: true,
     },
   ];
@@ -99,11 +131,11 @@ export function StatsCards({
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 overflow-visible">
       {statItems.map((stat, index) => (
-        <div key={stat.name} className="bg-white/50 rounded-md backdrop-blur-sm card-shadow overflow-visible">
-          <div className="pt-2 px-5 pb-2 relative flex flex-col h-24">
+        <div key={stat.name} className="bg-white/50 rounded-md overflow-visible">
+          <div className="pt-2 px-5 pb-2 relative flex flex-col min-h-24">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <div className="text-sm font-normal text-card-text truncate">{stat.name}</div>
+                <div className="text-sm font-normal text-card-text">{stat.name}</div>
                 {stat.showNote && !isTotalPortfolio && (
                   <Tooltip
                     side="top"
@@ -150,12 +182,10 @@ export function StatsCards({
                 </div>
               )}
             </div>
-            <div className="mt-4" />
-            <div className="flex items-baseline justify-between">
-              <div className="flex items-baseline text-3xl font-[500] text-card-text-secondary font-heading">
-                {stat.value}
-              </div>
-            </div>
+            
+           <p className="flex font-[500] mt-4 text-card-text-secondary text-2xl font-heading">{stat.value}</p>
+              
+           
           </div>
         </div>
       ))}

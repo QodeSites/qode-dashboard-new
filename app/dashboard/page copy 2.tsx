@@ -40,14 +40,8 @@ export default function Portfolio() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sarlaData, setSarlaData] = useState<SarlaApiResponse | null>(null);
-<<<<<<< HEAD
-  const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
-  const [availableStrategies, setAvailableStrategies] = useState<string[]>([]);
-  const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percent");
-=======
 
   // Authentication check
->>>>>>> 8e442ad2dfa6aea2656ed34bac3beb1b1b540ee5
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push("/");

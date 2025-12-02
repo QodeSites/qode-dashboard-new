@@ -413,7 +413,7 @@ export function TrailingReturnsTable({
                     className={`text-center px-4 py-2 font-medium text-gray-500 uppercase tracking-wider min-w-[80px]
                       ${period.key === "currentDD" ? "border-l-2 border-gray-300" : ""}`}
                   >
-                    <div className="truncate text-[10px]" title={period.label}>
+                    <div className=" text-[10px]" title={period.label}>
                       {period.label}
                     </div>
                   </th>

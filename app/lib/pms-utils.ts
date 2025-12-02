@@ -71,8 +71,8 @@ interface PmsStats {
   cashInOut: { transactions: { date: string; amount: string }[]; total: number };
 }
 
-// Helper function to truncate to 2 decimal places
-function truncateTo2(num: number): number {
+// Helper function to  to 2 decimal places
+function To2(num: number): number {
   return Math.trunc(num * 100) / 100;
 }
 
@@ -169,9 +169,9 @@ function calculateMonthlyPnL(dailyData: PmsData[]): {
     return {
       year,
       month: monthsFull[monthIndex],
-      pnlPercent: truncateTo2(pnlPercent),
-      pnlCash: truncateTo2(pnlCash),
-      capitalInOut: truncateTo2(capitalInOut),
+      pnlPercent: To2(pnlPercent),
+      pnlCash: To2(pnlCash),
+      capitalInOut: To2(capitalInOut),
     };
   });
 
@@ -261,7 +261,7 @@ function calculateTrailingReturns(dailyData: PmsData[]): { [key: string]: string
         });
         results[key] = "-";
       } else {
-        results[key] = truncateTo2(trailingReturn).toFixed(2);
+        results[key] = To2(trailingReturn).toFixed(2);
       }
     } else {
       results[key] = "-";
@@ -278,7 +278,7 @@ function calculateTrailingReturns(dailyData: PmsData[]): { [key: string]: string
     const firstNAV = parseFloat(firstValidRecord.nav || "0") || 0;
     if (firstNAV > 0) {
       const sinceInceptionReturn = ((currentNAV - firstNAV) / firstNAV) * 100;
-      results["sinceInception"] = truncateTo2(sinceInceptionReturn).toFixed(2);
+      results["sinceInception"] = To2(sinceInceptionReturn).toFixed(2);
     } else {
       results["sinceInception"] = "-";
     }
@@ -304,7 +304,7 @@ function calculateTrailingReturns(dailyData: PmsData[]): { [key: string]: string
   });
 
   // FIXED: Use negative value for drawdown display
-  results.MDD = truncateTo2(-Math.abs(maxDrawdown * 100)).toFixed(2);
+  results.MDD = To2(-Math.abs(maxDrawdown * 100)).toFixed(2);
 
   // Calculate current drawdown
   const validNAVs = sortedData
@@ -315,7 +315,7 @@ function calculateTrailingReturns(dailyData: PmsData[]): { [key: string]: string
     const historicalPeak = Math.max(...validNAVs);
     const currentDrawdown = (currentNAV - historicalPeak) / historicalPeak;
     // FIXED: Use negative value for drawdown display
-    results["currentDD"] = truncateTo2(-Math.abs(currentDrawdown * 100)).toFixed(2);
+    results["currentDD"] = To2(-Math.abs(currentDrawdown * 100)).toFixed(2);
   } else {
     results["currentDD"] = "0.00";
   }
@@ -553,8 +553,8 @@ export async function getPmsData(
       const avgNav = count > 0 ? totalNav / count : 0;
       const avgDrawdown = count > 0 ? totalDrawdown / count : 0;
       const equityValue = baseNAV !== 0 ? (avgNav / baseNAV) * 100 : 100;
-      equityCurve.push({ date: dateStr, value: truncateTo2(equityValue) });
-      drawdownCurve.push({ date: dateStr, value: truncateTo2(avgDrawdown) });
+      equityCurve.push({ date: dateStr, value: To2(equityValue) });
+      drawdownCurve.push({ date: dateStr, value: To2(avgDrawdown) });
     });
 
     // Calculate monthly and quarterly PNL with proper cash and percentage calculations

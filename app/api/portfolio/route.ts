@@ -88,6 +88,7 @@ export async function GET(request: Request) {
     const broker = searchParams.get("broker");
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
+    const tag = searchParams.get("tag"); // Tag filter for prop accounts
 
     // Fetch qcodes with filters
     let qcodes = await getUserQcodes(icode);
@@ -98,12 +99,25 @@ export async function GET(request: Request) {
       qcodes = qcodes.filter(account => account.broker === broker);
     }
 
-    if (qcodes.length === 0) {
+   if (qcodes.length === 0) {
       return NextResponse.json({ error: "No accounts found for this user" }, { status: 404 });
     }
 
-    // Calculate metrics
-    const metrics = await calculatePortfolioMetrics(qcodes);
+    // For prop accounts, tag is required
+    const isPropAccount = qcodes.some(q => q.account_type === 'prop');
+    if (isPropAccount && !tag) {
+      // Fetch default tag from /api/tags
+      // Or return an error asking for tag selection
+      return NextResponse.json({ 
+        error: "Tag selection required for prop accounts",
+        requiresTag: true 
+      }, { status: 400 });
+    }
+
+    // Calculate metrics with tag (important for prop accounts)
+
+    // Calculate metrics with optional tag filter
+    const metrics = await calculatePortfolioMetrics(qcodes, tag);
     if (!metrics) {
       return NextResponse.json({ error: "Failed to calculate portfolio metrics" }, { status: 500 });
     }
