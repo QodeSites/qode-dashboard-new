@@ -6,7 +6,7 @@ const strategyNameMap: { [key: string]: string } = {
   'QTF+': 'Qode Tactical Fund+',
   'QTF++': 'Qode Tactical Fund++',
   'QYE+': 'Qode Yield Enhancer+',
-  'QYE++': 'Qode Yield Enhancer++',
+  'QYE++': 'Total Portfolio Exposure',
 };
 interface Holding {
   symbol: string;
@@ -353,8 +353,19 @@ class JainamManagedStrategy implements DataFetchingStrategy {
 
 // Strategy for Managed Accounts (Zerodha)
 class ZerodhaManagedStrategy implements DataFetchingStrategy {
+  private broker: string;
+
+  constructor(broker: string) {
+    this.broker = broker;
+  }
+
   // Map strategy to system_tag for Returns and NAV
   private getSystemTag(strategy?: string): string {
+    // If broker is Radiance, always use 'Total Portfolio Exposure'
+    if (this.broker.toLowerCase() === 'radiance') {
+      return 'Total Portfolio Exposure';
+    }
+
     const strategyMap: { [key: string]: string } = {
       'QAW+': 'Zerodha Total Portfolio',
       'QAW++': 'Zerodha Total Portfolio',
@@ -363,11 +374,12 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
       'QYE+': 'Total Portfolio Value',
       'QYE++': 'Total Portfolio Value',
     };
-    return strategy && strategyMap[strategy] ? strategyMap[strategy] : 'Zerodha Total Portfolio';
+    return strategy && strategyMap[strategy] ? strategyMap[strategy] : 'Total Portfolio Exposure';
   }
 
   async getAmountDeposited(qcode: string, tag?: string): Promise<number> {
-    const systemTag = tag || "Zerodha Total Portfolio";
+    // If broker is Radiance, use 'Total Portfolio Exposure' for amount deposited
+    const systemTag = tag || (this.broker.toLowerCase() === 'radiance' ? 'Total Portfolio Exposure' : 'Zerodha Total Portfolio');
     const depositSum = await prisma.master_sheet.aggregate({
       where: { qcode, system_tag: systemTag, capital_in_out: { not: null } },
       _sum: { capital_in_out: true },
@@ -376,7 +388,8 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
   }
 
   async getLatestExposure(qcode: string, tag?: string): Promise<{ portfolioValue: number; drawdown: number; nav: number; date: Date } | null> {
-    const systemTag = tag || "Zerodha Total Portfolio";
+    // If broker is Radiance, use 'Total Portfolio Exposure' for latest exposure
+    const systemTag = tag || (this.broker.toLowerCase() === 'radiance' ? 'Total Portfolio Exposure' : 'Zerodha Total Portfolio');
     const record = await prisma.master_sheet.findFirst({
       where: { qcode, system_tag: systemTag },
       orderBy: { date: "desc" },
@@ -460,7 +473,8 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
   }
 
   async getCashFlows(qcode: string, tag?: string): Promise<{ date: Date; amount: number }[]> {
-    const systemTag = tag || "Zerodha Total Portfolio";
+    // If broker is Radiance, use 'Total Portfolio Exposure' for cash flows
+    const systemTag = tag || (this.broker.toLowerCase() === 'radiance' ? 'Total Portfolio Exposure' : 'Zerodha Total Portfolio');
     const cashFlows = await prisma.master_sheet.findMany({
       where: {
         qcode,
@@ -1010,8 +1024,8 @@ function getDataFetchingStrategy(account: { account_type: string; broker: string
     return new PmsStrategy();
   } else if (account.account_type === 'managed_account' && account.broker === 'jainam') {
     return new JainamManagedStrategy();
-  } else if (account.account_type === 'managed_account' && account.broker === 'zerodha') {
-    return new ZerodhaManagedStrategy();
+  } else if (account.account_type === 'managed_account') {
+    return new ZerodhaManagedStrategy(account.broker);
   }
   throw new Error(`Unsupported account type: ${account.account_type} or broker: ${account.broker}`);
 }
@@ -1641,7 +1655,7 @@ if (Array.isArray(holdingsResponse)) {
 }
 
 allHoldings.push(...accountHoldings);
-        console.log(`Fetched ${holdings.length} holdings for qcode ${qcode}`);
+        console.log(`Fetched ${accountHoldings.length} holdings for qcode ${qcode}`);
       } catch (error) {
         console.error(`Error fetching holdings for qcode ${qcode}:`, error);
       }
