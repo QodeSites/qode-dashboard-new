@@ -1,12 +1,16 @@
 import { prisma } from "@/lib/prisma";
 import { Decimal } from "@prisma/client/runtime/library";
+
+// Determine which table to use based on environment
+const isDevelopment = process.env.NODE_ENV === 'development';
+
 const strategyNameMap: { [key: string]: string } = {
   'QAW+': 'Qode All Weather+',
   'QAW++': 'Qode All Weather++',
   'QTF+': 'Qode Tactical Fund+',
   'QTF++': 'Qode Tactical Fund++',
   'QYE+': 'Qode Yield Enhancer+',
-  'QYE++': 'Total Portfolio Exposure',
+  'QYE++': 'Qode Yield Enhancer++',
 };
 interface Holding {
   symbol: string;
@@ -111,19 +115,23 @@ interface DataFetchingStrategy {
 
 // Strategy for Managed Accounts (Jainam)
 class JainamManagedStrategy implements DataFetchingStrategy {
-  async getAmountDeposited(qcode: string, tag?: string): Promise<number> {
-    const systemTag = tag || "Jainam Total Portfolio Deposit";
-    const depositRecords = await prisma.master_sheet.findFirst({
-      where: { qcode, system_tag: systemTag },
-      orderBy: { date: "desc" },
-      select: { portfolio_value: true },
+  async getAmountDeposited(qcode: string, tag?: string, strategy?: string): Promise<number> {
+    // For deposits, always use 'Zerodha Total Portfolio'
+    const systemTag = tag || 'Zerodha Total Portfolio';
+    const masterSheet = (isDevelopment ? prisma.master_sheet_test : prisma.master_sheet) as any;
+    const depositRecords = await masterSheet.aggregate({
+       where: { qcode, system_tag: systemTag, capital_in_out: { not: null } },
+      _sum: { capital_in_out: true },
     });
-    return Number(depositRecords?.portfolio_value) || 0;
+    console.log('depositRecords:', depositRecords);
+    return Number(depositRecords._sum?.capital_in_out) || 0;
   }
 
-  async getLatestExposure(qcode: string, tag?: string): Promise<{ portfolioValue: number; drawdown: number; nav: number; date: Date } | null> {
-    const systemTag = tag || "Jainam Total Portfolio Exposure";
-    const record = await prisma.master_sheet.findFirst({
+  async getLatestExposure(qcode: string, tag?: string, strategy?: string): Promise<{ portfolioValue: number; drawdown: number; nav: number; date: Date } | null> {
+    // For current portfolio value, use 'Zerodha Total Portfolio'
+    const systemTag = tag || 'Zerodha Total Portfolio';
+    const masterSheet = (isDevelopment ? prisma.master_sheet_test : prisma.master_sheet) as any;
+    const record = await masterSheet.findFirst({
       where: { qcode, system_tag: systemTag },
       orderBy: { date: "desc" },
       select: { portfolio_value: true, drawdown: true, nav: true, date: true },
@@ -139,14 +147,16 @@ class JainamManagedStrategy implements DataFetchingStrategy {
 
   async getPortfolioReturns(qcode: string, strategy?: string, tag?: string): Promise<number> {
     try {
-      const systemTag = tag || "Jainam Total Portfolio Exposure";
-      const firstNavRecord = await prisma.master_sheet.findFirst({
+      // For returns, use 'Total Portfolio Value'
+      const systemTag = tag || 'Total Portfolio Value';
+      const masterSheet = (isDevelopment ? prisma.master_sheet_test : prisma.master_sheet) as any;
+      const firstNavRecord = await masterSheet.findFirst({
         where: { qcode, system_tag: systemTag, nav: { not: null } },
         orderBy: { date: "asc" },
         select: { nav: true, date: true },
       });
 
-      const latestNavRecord = await prisma.master_sheet.findFirst({
+      const latestNavRecord = await masterSheet.findFirst({
         where: { qcode, system_tag: systemTag, nav: { not: null } },
         orderBy: { date: "desc" },
         select: { nav: true, date: true },
@@ -156,10 +166,9 @@ class JainamManagedStrategy implements DataFetchingStrategy {
         return 0;
       }
 
-      const initialNav = Number(firstNavRecord.nav);
-      const finalNav = Number(latestNavRecord.nav);
-
-      if (initialNav <= 0 || finalNav <= 0) return 0;
+      const originalInitialNav = Number(firstNavRecord.nav) || 0;
+      const finalNav = Number(latestNavRecord.nav) || 0;
+      const initialNav = originalInitialNav !== 100 ? 100 : originalInitialNav;
 
       const days = (latestNavRecord.date.getTime() - firstNavRecord.date.getTime()) / (1000 * 60 * 60 * 24);
 
@@ -181,17 +190,21 @@ class JainamManagedStrategy implements DataFetchingStrategy {
   }
 
   async getTotalProfit(qcode: string, strategy?: string, tag?: string): Promise<number> {
-    const systemTag = tag || "Jainam Total Portfolio Exposure";
-    const profitSum = await prisma.master_sheet.aggregate({
+    // For total profit, use 'Total Portfolio Value'
+    const systemTag = tag || 'Total Portfolio Value';
+    const masterSheet = (isDevelopment ? prisma.master_sheet_test : prisma.master_sheet) as any;
+    const profitSum = await masterSheet.aggregate({
       where: { qcode, system_tag: systemTag },
       _sum: { pnl: true },
     });
     return Number(profitSum._sum.pnl) || 0;
   }
 
-  async getCashFlows(qcode: string, tag?: string): Promise<{ date: Date; amount: number }[]> {
-    const systemTag = tag || "Jainam Total Portfolio Deposit";
-    const rows = await prisma.master_sheet.findMany({
+  async getCashFlows(qcode: string, tag?: string, strategy?: string): Promise<{ date: Date; amount: number }[]> {
+    // For cash flows, use 'Total Portfolio Value'
+    const systemTag = tag || 'Zerodha Total Portfolio';
+    const masterSheet = (isDevelopment ? prisma.master_sheet_test : prisma.master_sheet) as any;
+    const rows = await masterSheet.findMany({
       where: {
         qcode,
         system_tag: systemTag,
@@ -200,20 +213,38 @@ class JainamManagedStrategy implements DataFetchingStrategy {
       select: { date: true, capital_in_out: true },
       orderBy: { date: "asc" },
     });
-    return rows.map(r => ({
+    return rows.map((r: any) => ({
       date: r.date,
       amount: Number(r.capital_in_out),
     }));
   }
 
   async getHistoricalData(qcode: string, strategy?: string, tag?: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]> {
-    const systemTag = tag || "Jainam Total Portfolio Exposure";
-    const data = await prisma.master_sheet.findMany({
+    // For historical data, use 'Total Portfolio Value'
+    const systemTag = tag || 'Total Portfolio Value';
+    console.log('[JainamManagedStrategy.getHistoricalData] qcode:', qcode);
+    console.log('[JainamManagedStrategy.getHistoricalData] strategy:', strategy);
+    console.log('[JainamManagedStrategy.getHistoricalData] tag:', tag);
+    console.log('[JainamManagedStrategy.getHistoricalData] systemTag:', systemTag);
+    console.log('[JainamManagedStrategy.getHistoricalData] isDevelopment:', isDevelopment);
+    console.log('[JainamManagedStrategy.getHistoricalData] Using table:', isDevelopment ? 'master_sheet_test' : 'master_sheet');
+    const masterSheet = (isDevelopment ? prisma.master_sheet_test : prisma.master_sheet) as any;
+
+    // Debug: Check what system_tags exist for this qcode
+    const availableTags = await masterSheet.findMany({
+      where: { qcode },
+      select: { system_tag: true },
+      distinct: ['system_tag'],
+    });
+    console.log('[JainamManagedStrategy.getHistoricalData] Available system_tags for qcode:', availableTags.map((t: any) => t.system_tag));
+
+    const data = await masterSheet.findMany({
       where: { qcode, system_tag: systemTag, nav: { not: null }, drawdown: { not: null } },
       select: { date: true, nav: true, drawdown: true, pnl: true, capital_in_out: true },
       orderBy: { date: "asc" },
     });
-    return data.map(entry => ({
+    console.log('[JainamManagedStrategy.getHistoricalData] Found', data.length, 'records');
+    return data.map((entry: any) => ({
       date: entry.date,
       nav: Number(entry.nav) || 0,
       drawdown: Math.abs(Number(entry.drawdown) || 0),
@@ -223,8 +254,10 @@ class JainamManagedStrategy implements DataFetchingStrategy {
   }
 
   async getFirstNav(qcode: string, strategy?: string, tag?: string): Promise<{ nav: number; date: Date } | null> {
-    const systemTag = tag || "Jainam Total Portfolio Exposure";
-    const record = await prisma.master_sheet.findFirst({
+    // For first NAV, use 'Total Portfolio Value'
+    const systemTag = tag || 'Total Portfolio Value';
+    const masterSheet = (isDevelopment ? prisma.master_sheet_test : prisma.master_sheet) as any;
+    const record = await masterSheet.findFirst({
       where: { qcode, system_tag: systemTag, nav: { not: null } },
       orderBy: { date: "asc" },
       select: { nav: true, date: true },
@@ -234,7 +267,9 @@ class JainamManagedStrategy implements DataFetchingStrategy {
   }
 
   async getNavAtDate(qcode: string, targetDate: Date, direction: 'before' | 'after' | 'closest', strategy?: string, tag?: string): Promise<{ nav: number; date: Date } | null> {
-    const systemTag = tag || "Jainam Total Portfolio Exposure";
+    // For NAV at date, use 'Total Portfolio Value'
+    const systemTag = tag || 'Total Portfolio Value';
+    const masterSheet = (isDevelopment ? prisma.master_sheet_test : prisma.master_sheet) as any;
     let whereClause: any = { qcode, system_tag: systemTag, nav: { not: null } };
     let orderBy: any = { date: "desc" };
 
@@ -246,7 +281,7 @@ class JainamManagedStrategy implements DataFetchingStrategy {
       orderBy = { date: "asc" };
     }
 
-    const result = await prisma.master_sheet.findFirst({ where: whereClause, orderBy, select: { nav: true, date: true } });
+    const result = await masterSheet.findFirst({ where: whereClause, orderBy, select: { nav: true, date: true } });
     if (!result) {
       if (direction === 'closest') {
         const beforeResult = await this.getNavAtDate(qcode, targetDate, 'before');
@@ -291,17 +326,17 @@ class JainamManagedStrategy implements DataFetchingStrategy {
       AND quantity > 0
     ORDER BY symbol ASC, exchange ASC, date DESC
   `;
-   const mutualFundHoldings = latestMFDate?.as_of_date
-    ? await prisma.mutual_fund_holding_sheet_test.findMany({
-        where: {
-          qcode,
-          as_of_date: latestMFDate.as_of_date,
-          quantity: { gt: 0 },
-          isin: { not: null, notIn: ['', ' '] }
-        },
-        orderBy: { symbol: 'asc' }
-      })
-    : [];
+
+  // Get all mutual fund holdings for this qcode
+  // Since data is replaced on each upload, we don't need to filter by date
+  const mutualFundHoldings = await prisma.mutual_fund_holding_sheet_test.findMany({
+    where: {
+      qcode,
+      quantity: { gt: 0 },
+      isin: { not: null, notIn: ['', ' '] }
+    },
+    orderBy: { symbol: 'asc' }
+  });
 
     const isinMap = new Map<string, any>();
   mutualFundHoldings.forEach(holding => {
@@ -333,21 +368,42 @@ class JainamManagedStrategy implements DataFetchingStrategy {
     existing.pnl_amount += Number(holding.pnl_amount) || 0;
   });
 
-    return holdings.map(holding => ({
-      symbol: holding.symbol || '',
-      exchange: holding.exchange || '',
-      quantity: Number(holding.quantity) || 0,
-      avgPrice: Number(holding.avg_price) || 0,
-      ltp: Number(holding.ltp) || 0,
-      buyValue: Number(holding.buy_value) || 0,
-      valueAsOfToday: Number(holding.value_as_of_today) || 0,
-      pnlAmount: Number(holding.pnl_amount) || 0,
-      percentPnl: Number(holding.percent_pnl) || 0,
-      broker: holding.broker || '',
-      debtEquity: holding.debt_equity || '',
-      subCategory: holding.sub_category || '',
-      date: holding.date || new Date(),
-    }));
+  // Convert equity holdings to standard format
+  const equityHoldings: Holding[] = holdings.map(holding => ({
+    symbol: holding.symbol || '',
+    exchange: holding.exchange || '',
+    quantity: Number(holding.quantity) || 0,
+    avgPrice: Number(holding.avg_price) || 0,
+    ltp: Number(holding.ltp) || 0,
+    buyValue: Number(holding.buy_value) || 0,
+    valueAsOfToday: Number(holding.value_as_of_today) || 0,
+    pnlAmount: Number(holding.pnl_amount) || 0,
+    percentPnl: Number(holding.percent_pnl) || 0,
+    broker: holding.broker || '',
+    debtEquity: holding.debt_equity || '',
+    subCategory: holding.sub_category || '',
+    date: holding.date || new Date(),
+  }));
+
+  // Convert mutual fund holdings to standard format
+  const mfHoldings: Holding[] = Array.from(isinMap.values()).map(mf => ({
+    symbol: mf.symbol || '',
+    exchange: 'MF',
+    quantity: mf.quantity,
+    avgPrice: mf.quantity > 0 ? mf.buy_value / mf.quantity : 0,
+    ltp: Number(mf.nav) || 0,
+    buyValue: mf.buy_value,
+    valueAsOfToday: mf.value_as_of_today,
+    pnlAmount: mf.pnl_amount,
+    percentPnl: mf.buy_value > 0 ? (mf.pnl_amount / mf.buy_value) * 100 : 0,
+    broker: mf.broker || '',
+    debtEquity: mf.debt_equity || '',
+    subCategory: mf.sub_category || '',
+    date: mf.as_of_date || new Date(),
+  }));
+
+  // Combine equity and mutual fund holdings
+  return [...equityHoldings, ...mfHoldings];
   }
 }
 
@@ -380,7 +436,11 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
   async getAmountDeposited(qcode: string, tag?: string): Promise<number> {
     // If broker is Radiance, use 'Total Portfolio Exposure' for amount deposited
     const systemTag = tag || (this.broker.toLowerCase() === 'radiance' ? 'Total Portfolio Exposure' : 'Zerodha Total Portfolio');
-    const depositSum = await prisma.master_sheet.aggregate({
+    const masterSheet = (isDevelopment ? prisma.master_sheet_test : prisma.master_sheet) as any;
+    console.log('[ZerodhaManagedStrategy.getAmountDeposited] isDevelopment:', isDevelopment);
+    console.log('[ZerodhaManagedStrategy.getAmountDeposited] Using table:', isDevelopment ? 'master_sheet_test' : 'master_sheet');
+    console.log('[ZerodhaManagedStrategy.getAmountDeposited] NODE_ENV:', process.env.NODE_ENV);
+    const depositSum = await masterSheet.aggregate({
       where: { qcode, system_tag: systemTag, capital_in_out: { not: null } },
       _sum: { capital_in_out: true },
     });
@@ -390,7 +450,8 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
   async getLatestExposure(qcode: string, tag?: string): Promise<{ portfolioValue: number; drawdown: number; nav: number; date: Date } | null> {
     // If broker is Radiance, use 'Total Portfolio Exposure' for latest exposure
     const systemTag = tag || (this.broker.toLowerCase() === 'radiance' ? 'Total Portfolio Exposure' : 'Zerodha Total Portfolio');
-    const record = await prisma.master_sheet.findFirst({
+    const masterSheet = (isDevelopment ? prisma.master_sheet_test : prisma.master_sheet) as any;
+    const record = await masterSheet.findFirst({
       where: { qcode, system_tag: systemTag },
       orderBy: { date: "desc" },
       select: { portfolio_value: true, drawdown: true, nav: true, date: true },
@@ -406,14 +467,18 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
 
   async getPortfolioReturns(qcode: string, strategy?: string, tag?: string): Promise<number> {
     try {
+      console.log('[ZerodhaManagedStrategy.getPortfolioReturns] isDevelopment:', isDevelopment);
+      console.log('[ZerodhaManagedStrategy.getPortfolioReturns] Using table:', isDevelopment ? 'master_sheet_test' : 'master_sheet');
+      console.log('[ZerodhaManagedStrategy.getPortfolioReturns] NODE_ENV:', process.env.NODE_ENV);
       const systemTag = this.getSystemTag(strategy);
-      const firstNavRecord = await prisma.master_sheet.findFirst({
+      const masterSheet = (isDevelopment ? prisma.master_sheet_test : prisma.master_sheet) as any;
+      const firstNavRecord = await masterSheet.findFirst({
         where: { qcode, system_tag: systemTag, nav: { not: null } },
         orderBy: { date: "asc" },
         select: { nav: true, date: true },
       });
 
-      const latestNavRecord = await prisma.master_sheet.findFirst({
+      const latestNavRecord = await masterSheet.findFirst({
         where: { qcode, system_tag: systemTag, nav: { not: null } },
         orderBy: { date: "desc" },
         select: { nav: true, date: true },
@@ -448,8 +513,12 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
 
 
   async getTotalProfit(qcode: string, strategy?: string, tag?: string): Promise<number> {
+    console.log('[ZerodhaManagedStrategy.getTotalProfit] isDevelopment:', isDevelopment);
+    console.log('[ZerodhaManagedStrategy.getTotalProfit] Using table:', isDevelopment ? 'master_sheet_test' : 'master_sheet');
+    console.log('[ZerodhaManagedStrategy.getTotalProfit] NODE_ENV:', process.env.NODE_ENV);
     const systemTag = tag || this.getSystemTag(strategy);
-    const profitSum = await prisma.master_sheet.aggregate({
+    const masterSheet = (isDevelopment ? prisma.master_sheet_test : prisma.master_sheet) as any;
+    const profitSum = await masterSheet.aggregate({
       where: { qcode, system_tag: systemTag },
       _sum: { pnl: true },
     });
@@ -457,13 +526,17 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
   }
 
   async getHistoricalData(qcode: string, strategy?: string, tag?: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]> {
+    console.log('[ZerodhaManagedStrategy.getHistoricalData] isDevelopment:', isDevelopment);
+    console.log('[ZerodhaManagedStrategy.getHistoricalData] Using table:', isDevelopment ? 'master_sheet_test' : 'master_sheet');
+    console.log('[ZerodhaManagedStrategy.getHistoricalData] NODE_ENV:', process.env.NODE_ENV);
     const systemTag = tag || this.getSystemTag(strategy);
-    const data = await prisma.master_sheet.findMany({
+    const masterSheet = (isDevelopment ? prisma.master_sheet_test : prisma.master_sheet) as any;
+    const data = await masterSheet.findMany({
       where: { qcode, system_tag: systemTag, nav: { not: null }, drawdown: { not: null } },
       select: { date: true, nav: true, drawdown: true, pnl: true, capital_in_out: true },
       orderBy: { date: "asc" },
     });
-    return data.map(entry => ({
+    return data.map((entry: any) => ({
       date: entry.date,
       nav: Number(entry.nav) || 0,
       drawdown: Math.abs(Number(entry.drawdown) || 0),
@@ -473,9 +546,13 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
   }
 
   async getCashFlows(qcode: string, tag?: string): Promise<{ date: Date; amount: number }[]> {
+    console.log('[ZerodhaManagedStrategy.getCashFlows] isDevelopment:', isDevelopment);
+    console.log('[ZerodhaManagedStrategy.getCashFlows] Using table:', isDevelopment ? 'master_sheet_test' : 'master_sheet');
+    console.log('[ZerodhaManagedStrategy.getCashFlows] NODE_ENV:', process.env.NODE_ENV);
     // If broker is Radiance, use 'Total Portfolio Exposure' for cash flows
     const systemTag = tag || (this.broker.toLowerCase() === 'radiance' ? 'Total Portfolio Exposure' : 'Zerodha Total Portfolio');
-    const cashFlows = await prisma.master_sheet.findMany({
+    const masterSheet = (isDevelopment ? prisma.master_sheet_test : prisma.master_sheet) as any;
+    const cashFlows = await masterSheet.findMany({
       where: {
         qcode,
         system_tag: systemTag,
@@ -485,7 +562,7 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
       orderBy: { date: "asc" },
     });
 
-    return cashFlows.map(entry => ({
+    return cashFlows.map((entry: any) => ({
       date: entry.date,
       amount: entry.capital_in_out!.toNumber(),
     }));
@@ -493,7 +570,8 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
 
   async getFirstNav(qcode: string, strategy?: string, tag?: string): Promise<{ nav: number; date: Date } | null> {
     const systemTag = tag || this.getSystemTag(strategy);
-    const record = await prisma.master_sheet.findFirst({
+    const masterSheet = (isDevelopment ? prisma.master_sheet_test : prisma.master_sheet) as any;
+    const record = await masterSheet.findFirst({
       where: { qcode, system_tag: systemTag, nav: { not: null } },
       orderBy: { date: "asc" },
       select: { nav: true, date: true },
@@ -504,6 +582,7 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
 
   async getNavAtDate(qcode: string, targetDate: Date, direction: 'before' | 'after' | 'closest', strategy?: string, tag?: string): Promise<{ nav: number; date: Date } | null> {
     const systemTag = tag || this.getSystemTag(strategy);
+    const masterSheet = (isDevelopment ? prisma.master_sheet_test : prisma.master_sheet) as any;
     let whereClause: any = { qcode, system_tag: systemTag, nav: { not: null } };
     let orderBy: any = { date: "desc" };
 
@@ -515,7 +594,7 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
       orderBy = { date: "asc" };
     }
 
-    const result = await prisma.master_sheet.findFirst({ where: whereClause, orderBy, select: { nav: true, date: true } });
+    const result = await masterSheet.findFirst({ where: whereClause, orderBy, select: { nav: true, date: true } });
     if (!result) {
       if (direction === 'closest') {
         const beforeResult = await this.getNavAtDate(qcode, targetDate, 'before', strategy, tag);
@@ -582,6 +661,8 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
         exchange: h.exchange || 'NSE',
         quantity: 0,
         buyValue: 0,
+        valueAsOfToday: 0,
+        pnlAmount: 0,
         ltp: Number(h.ltp) || 0,
         broker: h.broker || 'Zerodha',
         debtEquity: isDebt ? 'Debt' : 'Equity',
@@ -592,10 +673,14 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
 
     const entry = map.get(key);
     const qty = Number(h.quantity) || 0;
-    const avgPrice = Number(h.avg_price) || 0;
+    const buyVal = Number(h.buy_value) || 0;
+    const currentVal = Number(h.value_as_of_today) || 0;
+    const pnl = Number(h.pnl_amount) || 0;
 
     entry.quantity += qty;
-    entry.buyValue += qty * avgPrice;
+    entry.buyValue += buyVal;
+    entry.valueAsOfToday += currentVal;
+    entry.pnlAmount += pnl;
   }
 
   // Process Mutual Funds
@@ -1045,7 +1130,12 @@ export async function getUserQcodes(icode: string): Promise<{ qcode: string; acc
       distinct: ['qcode'],
     });
     console.log(`getUserQcodes: icode=${icode}, result=${JSON.stringify(accounts)}`);
-    return accounts;
+    return accounts.map(acc => ({
+      qcode: acc.qcode,
+      account_type: acc.account_type,
+      broker: acc.broker,
+      strategy: acc.strategy ?? undefined,
+    }));
   } catch (error) {
     console.error("Error fetching qcodes:", error);
     return [];
