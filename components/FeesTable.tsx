@@ -23,7 +23,7 @@ export function FeesTable({ fees }: FeesTableProps) {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
-    return `-₹${formattedValue}`;
+    return `₹${formattedValue}`;
   };
 
   const quarterlyYears = Object.keys(fees).sort((a, b) => parseInt(a) - parseInt(b));
@@ -38,22 +38,22 @@ export function FeesTable({ fees }: FeesTableProps) {
           <table className="min-w-full border-collapse divide-y">
             <thead className="border-none border-gray-100">
               <tr className="bg-black/5 border-black/5 text-sm">
-                <th className="text-center px-4 py-2 text-sm font-medium text-black uppercase tracking-wider min-w-[60px]">
+                <th className="text-right px-4 py-2 text-sm font-medium text-black uppercase tracking-wider min-w-[60px]">
                   Year
                 </th>
-                <th className="text-center px-4 py-2 text-sm font-medium text-black uppercase tracking-wider min-w-[80px]">
+                <th className="text-right px-4 py-2 text-sm font-medium text-black uppercase tracking-wider min-w-[80px]">
                   Q1
                 </th>
-                <th className="text-center px-4 py-2 text-sm font-medium text-black uppercase tracking-wider min-w-[80px]">
+                <th className="text-right px-4 py-2 text-sm font-medium text-black uppercase tracking-wider min-w-[80px]">
                   Q2
                 </th>
-                <th className="text-center px-4 py-2 text-sm font-medium text-black uppercase tracking-wider min-w-[80px]">
+                <th className="text-right px-4 py-2 text-sm font-medium text-black uppercase tracking-wider min-w-[80px]">
                   Q3
                 </th>
-                <th className="text-center px-4 py-2 text-sm font-medium text-black uppercase tracking-wider min-w-[80px]">
+                <th className="text-right px-4 py-2 text-sm font-medium text-black uppercase tracking-wider min-w-[80px]">
                   Q4
                 </th>
-                <th className="text-center px-4 py-2 text-sm font-medium text-black uppercase tracking-wider min-w-[80px]">
+                <th className="text-right px-4 py-2 text-sm font-medium text-black uppercase tracking-wider min-w-[80px]">
                   Total
                 </th>
               </tr>
@@ -61,7 +61,7 @@ export function FeesTable({ fees }: FeesTableProps) {
             <tbody className="divide-y">
               {quarterlyYears.map((year) => (
                 <tr key={year} className="border-gray-300 text-sm">
-                  <td className="px-4 py-3 text-center whitespace-nowrap text-black min-w-[60px]">
+                  <td className="px-4 py-3 text-right whitespace-nowrap text-black min-w-[60px]">
                     {year}
                   </td>
                   {["q1", "q2", "q3", "q4", "total"].map((quarter) => {
@@ -70,7 +70,7 @@ export function FeesTable({ fees }: FeesTableProps) {
                     return (
                       <td
                         key={quarter}
-                        className="px-4 py-3 text-center whitespace-nowrap text-black"
+                        className="px-4 py-3 text-right whitespace-nowrap text-black"
                       >
                         {displayValue}
                       </td>

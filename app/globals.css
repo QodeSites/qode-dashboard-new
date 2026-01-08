@@ -32,12 +32,13 @@
     @apply border-border;
   }
   body {
-    @apply bg-primary-bg text-foreground;
+    @apply bg-primary-bg text-foreground font-sans;
   }
-}
 
-.card-shadow {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  /* Ensure consistent font rendering */
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading;
+  }
 }
 
 .pdf-clone [data-pdf-center] { text-align: center !important; }

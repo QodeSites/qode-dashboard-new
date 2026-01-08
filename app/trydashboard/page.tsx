@@ -686,6 +686,7 @@ export default function Portfolio() {
     const calcReturn = (start: Date, end: Date) => {
       const s = findNav(start);
       const e = findNav(end);
+      console.log(start, end, s, e, "<<< calcReturn");  
       if (!s || !e || s === 0) return "-";
       const years = (end.getTime() - start.getTime()) / (365 * 24 * 60 * 60 * 1000);
       let val: number;
@@ -706,6 +707,7 @@ export default function Portfolio() {
 
     for (const p of periods) {
       if (p.type === "inception") {
+        console.log(startDate, endDate, "<<< startDate endDate for inception");
         asStringMap[p.key] = calcReturn(startDate, endDate);
       } else if (p.type === "days" || p.type === "months" || p.type === "years") {
         const start = new Date(endDate);
@@ -745,7 +747,7 @@ export default function Portfolio() {
       extractBenchmarkTrailing(currentEntry.normalized, currentEntry.metadata);
 
     let benchmarkTrailing: TrailingReturns | null = null;
-
+    console.log(fromApi, "<<< fromApi benchmarkTrailing")
     if (fromApi) {
       benchmarkTrailing = fromApi;
     } else {
@@ -1032,24 +1034,6 @@ export default function Portfolio() {
       let csvData = [];
       let filename = 'portfolio_data.csv';
 
-      // Helper function to format percentage values
-      const formatPercentage = (value) => {
-        if (value === null || value === undefined) return 'N/A';
-        const numValue = typeof value === 'string' ? parseFloat(value) : value;
-        return (numValue).toFixed(2) + '%';
-      };
-
-      // Helper function to format currency values without symbol
-      const formatCurrency = (value) => {
-        if (value === null || value === undefined || value === '' || isNaN(value)) return 'N/A';
-        const numValue = typeof value === 'string' ? parseFloat(value) : value;
-        if (isNaN(numValue)) return 'N/A';
-        return new Intl.NumberFormat('en-IN', {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        }).format(numValue);
-      };
-
       if ((isSarla || isSatidham) && sarlaData && selectedStrategy) {
         // Handle Sarla/Satidham data
         const strategyData = sarlaData[selectedStrategy];
@@ -1060,38 +1044,28 @@ export default function Portfolio() {
         // Basic portfolio stats
         csvData.push(['Portfolio Statistics', '']);
         csvData.push(['Strategy Name', selectedStrategy]);
-        csvData.push(['Amount Deposited', formatCurrency(convertedStats.amountDeposited)]);
-        csvData.push(['Current Exposure', formatCurrency(convertedStats.currentExposure)]);
-        csvData.push(['Total Return (%)', convertedStats.return + '%']);
-        csvData.push(['Total Profit', formatCurrency(convertedStats.totalProfit)]);
-        csvData.push(['Max Drawdown (%)', (convertedStats.drawdown || convertedStats.maxDrawdown) + '%']);
+        csvData.push(['Amount Deposited', parseFloat(convertedStats.amountDeposited) || 0]);
+        csvData.push(['Current Exposure', parseFloat(convertedStats.currentExposure) || 0]);
+        csvData.push(['Total Return (%)', parseFloat(convertedStats.return) || 0]);
+        csvData.push(['Total Profit', parseFloat(convertedStats.totalProfit) || 0]);
+        csvData.push(['Max Drawdown (%)', parseFloat(convertedStats.drawdown) || 0]);
         csvData.push(['', '']); // Empty row
 
         // Trailing Returns
         csvData.push(['Trailing Returns', '']);
-        const trailingReturns = convertedStats.trailingReturns;
+        const trailingReturns = convertedStats.trailingReturns as any;
 
-        csvData.push(['5 Days', formatPercentage(trailingReturns['5d'] || trailingReturns.fiveDays)]);
-        csvData.push(['10 Days', formatPercentage(trailingReturns['10d'] || trailingReturns.tenDays)]);
-        csvData.push(['15 Days', formatPercentage(trailingReturns['15d'] || trailingReturns.fifteenDays)]);
-        csvData.push(['1 Month', formatPercentage(trailingReturns['1m'] || trailingReturns.oneMonth)]);
-        csvData.push(['3 Months', formatPercentage(trailingReturns['3m'] || trailingReturns.threeMonths)]);
-        csvData.push(['6 Months', formatPercentage(trailingReturns['6m'] || trailingReturns.sixMonths)]);
-        csvData.push(['1 Year', formatPercentage(trailingReturns['1y'] || trailingReturns.oneYear)]);
-        csvData.push(['2 Years', formatPercentage(trailingReturns['2y'] || trailingReturns.twoYears)]);
-
-        // Since Inception - handle both number and string
-        const sinceInceptionValue = trailingReturns.sinceInception;
-        if (typeof sinceInceptionValue === 'number') {
-          csvData.push(['Since Inception', formatPercentage(sinceInceptionValue)]);
-        } else if (typeof sinceInceptionValue === 'string') {
-          csvData.push(['Since Inception', sinceInceptionValue.includes('%') ? sinceInceptionValue : parseFloat(sinceInceptionValue).toFixed(2) + '%']);
-        } else {
-          csvData.push(['Since Inception', 'N/A']);
-        }
-
-        csvData.push(['Max Drawdown (MDD)', trailingReturns.MDD ? trailingReturns.MDD + '%' : 'N/A']);
-        csvData.push(['Current Drawdown', trailingReturns.currentDD ? trailingReturns.currentDD + '%' : 'N/A']);
+        csvData.push(['5 Days', parseFloat(trailingReturns?.['5d'] || trailingReturns?.fiveDays) || 0]);
+        csvData.push(['10 Days', parseFloat(trailingReturns?.['10d'] || trailingReturns?.tenDays) || 0]);
+        csvData.push(['15 Days', parseFloat(trailingReturns?.['15d'] || trailingReturns?.fifteenDays) || 0]);
+        csvData.push(['1 Month', parseFloat(trailingReturns?.['1m'] || trailingReturns?.oneMonth) || 0]);
+        csvData.push(['3 Months', parseFloat(trailingReturns?.['3m'] || trailingReturns?.threeMonths) || 0]);
+        csvData.push(['6 Months', parseFloat(trailingReturns?.['6m'] || trailingReturns?.sixMonths) || 0]);
+        csvData.push(['1 Year', parseFloat(trailingReturns?.['1y'] || trailingReturns?.oneYear) || 0]);
+        csvData.push(['2 Years', parseFloat(trailingReturns?.['2y'] || trailingReturns?.twoYears) || 0]);
+        csvData.push(['Since Inception', parseFloat(trailingReturns?.sinceInception) || 0]);
+        csvData.push(['Max Drawdown (MDD)', parseFloat(trailingReturns?.MDD || '') || 0]);
+        csvData.push(['Current Drawdown', parseFloat(trailingReturns?.currentDD || '') || 0]);
         csvData.push(['', '']); // Empty row
 
         // Cash Flows Summary
@@ -1111,16 +1085,16 @@ export default function Portfolio() {
           );
 
           csvData.push(['Cash Flow Summary', '']);
-          csvData.push(['Total Cash In', formatCurrency(cashFlowTotals.totalIn)]);
-          csvData.push(['Total Cash Out', formatCurrency(cashFlowTotals.totalOut)]);
-          csvData.push(['Net Cash Flow', formatCurrency(cashFlowTotals.netFlow)]);
+          csvData.push(['Total Cash In', cashFlowTotals.totalIn]);
+          csvData.push(['Total Cash Out', cashFlowTotals.totalOut]);
+          csvData.push(['Net Cash Flow', cashFlowTotals.netFlow]);
           csvData.push(['', '']); // Empty row
 
           // Detailed Cash Flows
           csvData.push(['Cash Flows Detail', '']);
           csvData.push(['Date', 'Amount']);
           convertedStats.cashFlows.forEach(flow => {
-            csvData.push([flow.date, formatCurrency(flow.amount)]);
+            csvData.push([flow.date, Number(flow.amount)]);
           });
           csvData.push(['', '']); // Empty row
         }
@@ -1137,9 +1111,9 @@ export default function Portfolio() {
               csvData.push([
                 year,
                 month,
-                monthData.percent,
-                formatCurrency(monthData.cash),
-                formatCurrency(monthData.capitalInOut || '0')
+                parseFloat(monthData.percent) || 0,
+                parseFloat(monthData.cash) || 0,
+                parseFloat(monthData.capitalInOut || '0') || 0
               ]);
             });
           });
@@ -1153,12 +1127,12 @@ export default function Portfolio() {
 
           Object.keys(convertedStats.quarterlyPnl).forEach(year => {
             const yearData = convertedStats.quarterlyPnl[year];
-            ['q1', 'q2', 'q3', 'q4'].forEach(quarter => {
+            (['q1', 'q2', 'q3', 'q4'] as const).forEach(quarter => {
               csvData.push([
                 year,
                 quarter.toUpperCase(),
-                yearData.percent[quarter],
-                formatCurrency(yearData.cash[quarter])
+                parseFloat(yearData.percent[quarter]) || 0,
+                parseFloat(yearData.cash[quarter]) || 0
               ]);
             });
           });
@@ -1176,29 +1150,29 @@ export default function Portfolio() {
           csvData.push(['Account Type', item.metadata.account_type.toUpperCase()]);
           csvData.push(['Broker', item.metadata.broker]);
           csvData.push(['Strategy', item.metadata.strategyName || 'Unknown']);
-          csvData.push(['Amount Deposited', formatCurrency(convertedStats.amountDeposited)]);
-          csvData.push(['Current Exposure', formatCurrency(convertedStats.currentExposure)]);
-          csvData.push(['Total Return (%)', convertedStats.return + '%']);
-          csvData.push(['Total Profit', formatCurrency(convertedStats.totalProfit)]);
-          csvData.push(['Max Drawdown (%)', convertedStats.drawdown + '%']);
+          csvData.push(['Amount Deposited', parseFloat(convertedStats.amountDeposited) || 0]);
+          csvData.push(['Current Exposure', parseFloat(convertedStats.currentExposure) || 0]);
+          csvData.push(['Total Return (%)', parseFloat(convertedStats.return) || 0]);
+          csvData.push(['Total Profit', parseFloat(convertedStats.totalProfit) || 0]);
+          csvData.push(['Max Drawdown (%)', parseFloat(convertedStats.drawdown) || 0]);
           csvData.push(['', '']); // Empty row
 
           // Trailing Returns for individual account
           csvData.push(['Trailing Returns', '']);
-          const trailingReturns = convertedStats.trailingReturns;
+          const trailingReturns = convertedStats.trailingReturns as any;
 
-          csvData.push(['5 Days', formatPercentage(trailingReturns['5d'] || trailingReturns.fiveDays)]);
-          csvData.push(['10 Days', formatPercentage(trailingReturns['10d'] || trailingReturns.tenDays)]);
-          csvData.push(['15 Days', formatPercentage(trailingReturns['15d'] || trailingReturns.fifteenDays)]);
-          csvData.push(['1 Month', formatPercentage(trailingReturns['1m'] || trailingReturns.oneMonth)]);
-          csvData.push(['3 Months', formatPercentage(trailingReturns['3m'] || trailingReturns.threeMonths)]);
-          csvData.push(['6 Months', formatPercentage(trailingReturns['6m'] || trailingReturns.sixMonths)]);
-          csvData.push(['1 Year', formatPercentage(trailingReturns['1y'] || trailingReturns.oneYear)]);
-          csvData.push(['2 Years', formatPercentage(trailingReturns['2y'] || trailingReturns.twoYears)]);
-          csvData.push(['5 Years', formatPercentage(trailingReturns['5y'] || trailingReturns.fiveYears)]);
-          csvData.push(['Since Inception', trailingReturns.sinceInception + '%']);
-          csvData.push(['Max Drawdown (MDD)', trailingReturns.MDD ? trailingReturns.MDD + '%' : 'N/A']);
-          csvData.push(['Current Drawdown', trailingReturns.currentDD ? trailingReturns.currentDD + '%' : 'N/A']);
+          csvData.push(['5 Days', parseFloat(trailingReturns?.['5d'] || trailingReturns?.fiveDays) || 0]);
+          csvData.push(['10 Days', parseFloat(trailingReturns?.['10d'] || trailingReturns?.tenDays) || 0]);
+          csvData.push(['15 Days', parseFloat(trailingReturns?.['15d'] || trailingReturns?.fifteenDays) || 0]);
+          csvData.push(['1 Month', parseFloat(trailingReturns?.['1m'] || trailingReturns?.oneMonth) || 0]);
+          csvData.push(['3 Months', parseFloat(trailingReturns?.['3m'] || trailingReturns?.threeMonths) || 0]);
+          csvData.push(['6 Months', parseFloat(trailingReturns?.['6m'] || trailingReturns?.sixMonths) || 0]);
+          csvData.push(['1 Year', parseFloat(trailingReturns?.['1y'] || trailingReturns?.oneYear) || 0]);
+          csvData.push(['2 Years', parseFloat(trailingReturns?.['2y'] || trailingReturns?.twoYears) || 0]);
+          csvData.push(['5 Years', parseFloat(trailingReturns?.['5y'] || trailingReturns?.fiveYears) || 0]);
+          csvData.push(['Since Inception', parseFloat(trailingReturns?.sinceInception) || 0]);
+          csvData.push(['Max Drawdown (MDD)', parseFloat(trailingReturns?.MDD || '') || 0]);
+          csvData.push(['Current Drawdown', parseFloat(trailingReturns?.currentDD || '') || 0]);
           csvData.push(['', '']); // Empty row
 
           // Cash Flow Summary for individual account
@@ -1218,9 +1192,9 @@ export default function Portfolio() {
             );
 
             csvData.push(['Cash Flow Summary', '']);
-            csvData.push(['Total Cash In', formatCurrency(cashFlowTotals.totalIn)]);
-            csvData.push(['Total Cash Out', formatCurrency(cashFlowTotals.totalOut)]);
-            csvData.push(['Net Cash Flow', formatCurrency(cashFlowTotals.netFlow)]);
+            csvData.push(['Total Cash In', cashFlowTotals.totalIn]);
+            csvData.push(['Total Cash Out', cashFlowTotals.totalOut]);
+            csvData.push(['Net Cash Flow', cashFlowTotals.netFlow]);
             csvData.push(['', '']); // Empty row
           }
 
@@ -1236,9 +1210,9 @@ export default function Portfolio() {
                 csvData.push([
                   year,
                   month,
-                  monthData.percent,
-                  formatCurrency(monthData.cash),
-                  formatCurrency(monthData.capitalInOut || '0')
+                  parseFloat(monthData.percent) || 0,
+                  parseFloat(monthData.cash) || 0,
+                  parseFloat(monthData.capitalInOut || '0') || 0
                 ]);
               });
             });
@@ -1252,7 +1226,7 @@ export default function Portfolio() {
 
             Object.keys(convertedStats.quarterlyPnl).forEach(year => {
               const yearData = convertedStats.quarterlyPnl[year];
-              ['q1', 'q2', 'q3', 'q4'].forEach(quarter => {
+              (['q1', 'q2', 'q3', 'q4'] as const).forEach(quarter => {
                 const percentReturn = yearData.percent[quarter];
                 const cashReturn = yearData.cash[quarter];
 
@@ -1261,8 +1235,8 @@ export default function Portfolio() {
                   csvData.push([
                     year,
                     quarter.toUpperCase(),
-                    percentReturn,
-                    formatCurrency(cashReturn)
+                    parseFloat(percentReturn) || 0,
+                    parseFloat(cashReturn) || 0
                   ]);
                 }
               });
@@ -1284,29 +1258,29 @@ export default function Portfolio() {
         csvData.push(['Account Name', accountData?.account_name || 'Unknown']);
         csvData.push(['Account Type', accountData?.account_type?.toUpperCase() || 'Unknown']);
         csvData.push(['Broker', accountData?.broker || 'Unknown']);
-        csvData.push(['Amount Deposited', formatCurrency(convertedStats.amountDeposited)]);
-        csvData.push(['Current Exposure', formatCurrency(convertedStats.currentExposure)]);
-        csvData.push(['Total Return (%)', convertedStats.return + '%']);
-        csvData.push(['Total Profit', formatCurrency(convertedStats.totalProfit)]);
-        csvData.push(['Max Drawdown (%)', convertedStats.drawdown + '%']);
+        csvData.push(['Amount Deposited', parseFloat(convertedStats.amountDeposited) || 0]);
+        csvData.push(['Current Exposure', parseFloat(convertedStats.currentExposure) || 0]);
+        csvData.push(['Total Return (%)', parseFloat(convertedStats.return) || 0]);
+        csvData.push(['Total Profit', parseFloat(convertedStats.totalProfit) || 0]);
+        csvData.push(['Max Drawdown (%)', parseFloat(convertedStats.drawdown) || 0]);
         csvData.push(['', '']); // Empty row
 
         // Trailing Returns for single account
         csvData.push(['Trailing Returns', '']);
-        const trailingReturns = convertedStats.trailingReturns;
+        const trailingReturns = convertedStats.trailingReturns as any;
 
-        csvData.push(['5 Days', formatPercentage(trailingReturns['5d'] || trailingReturns.fiveDays)]);
-        csvData.push(['10 Days', formatPercentage(trailingReturns['10d'] || trailingReturns.tenDays)]);
-        csvData.push(['15 Days', formatPercentage(trailingReturns['15d'] || trailingReturns.fifteenDays)]);
-        csvData.push(['1 Month', formatPercentage(trailingReturns['1m'] || trailingReturns.oneMonth)]);
-        csvData.push(['3 Months', formatPercentage(trailingReturns['3m'] || trailingReturns.threeMonths)]);
-        csvData.push(['6 Months', formatPercentage(trailingReturns['6m'] || trailingReturns.sixMonths)]);
-        csvData.push(['1 Year', formatPercentage(trailingReturns['1y'] || trailingReturns.oneYear)]);
-        csvData.push(['2 Years', formatPercentage(trailingReturns['2y'] || trailingReturns.twoYears)]);
-        csvData.push(['5 Years', formatPercentage(trailingReturns['5y'] || trailingReturns.fiveYears)]);
-        csvData.push(['Since Inception', trailingReturns.sinceInception + '%']);
-        csvData.push(['Max Drawdown (MDD)', trailingReturns.MDD ? trailingReturns.MDD + '%' : 'N/A']);
-        csvData.push(['Current Drawdown', trailingReturns.currentDD ? trailingReturns.currentDD + '%' : 'N/A']);
+        csvData.push(['5 Days', parseFloat(trailingReturns?.['5d'] || trailingReturns?.fiveDays) || 0]);
+        csvData.push(['10 Days', parseFloat(trailingReturns?.['10d'] || trailingReturns?.tenDays) || 0]);
+        csvData.push(['15 Days', parseFloat(trailingReturns?.['15d'] || trailingReturns?.fifteenDays) || 0]);
+        csvData.push(['1 Month', parseFloat(trailingReturns?.['1m'] || trailingReturns?.oneMonth) || 0]);
+        csvData.push(['3 Months', parseFloat(trailingReturns?.['3m'] || trailingReturns?.threeMonths) || 0]);
+        csvData.push(['6 Months', parseFloat(trailingReturns?.['6m'] || trailingReturns?.sixMonths) || 0]);
+        csvData.push(['1 Year', parseFloat(trailingReturns?.['1y'] || trailingReturns?.oneYear) || 0]);
+        csvData.push(['2 Years', parseFloat(trailingReturns?.['2y'] || trailingReturns?.twoYears) || 0]);
+        csvData.push(['5 Years', parseFloat(trailingReturns?.['5y'] || trailingReturns?.fiveYears) || 0]);
+        csvData.push(['Since Inception', parseFloat(trailingReturns?.sinceInception) || 0]);
+        csvData.push(['Max Drawdown (MDD)', parseFloat(trailingReturns?.MDD || '') || 0]);
+        csvData.push(['Current Drawdown', parseFloat(trailingReturns?.currentDD || '') || 0]);
         csvData.push(['', '']); // Empty row
 
         // Cash Flow Summary for single account
@@ -1326,16 +1300,16 @@ export default function Portfolio() {
           );
 
           csvData.push(['Cash Flow Summary', '']);
-          csvData.push(['Total Cash In', formatCurrency(cashFlowTotals.totalIn)]);
-          csvData.push(['Total Cash Out', formatCurrency(cashFlowTotals.totalOut)]);
-          csvData.push(['Net Cash Flow', formatCurrency(cashFlowTotals.netFlow)]);
+          csvData.push(['Total Cash In', cashFlowTotals.totalIn]);
+          csvData.push(['Total Cash Out', cashFlowTotals.totalOut]);
+          csvData.push(['Net Cash Flow', cashFlowTotals.netFlow]);
           csvData.push(['', '']); // Empty row
 
           // Detailed Cash Flows
           csvData.push(['Cash Flows Detail', '']);
           csvData.push(['Date', 'Amount']);
           convertedStats.cashFlows.forEach(flow => {
-            csvData.push([flow.date, formatCurrency(flow.amount)]);
+            csvData.push([flow.date, Number(flow.amount)]);
           });
           csvData.push(['', '']); // Empty row
         }
@@ -1352,9 +1326,9 @@ export default function Portfolio() {
               csvData.push([
                 year,
                 month,
-                monthData.percent,
-                formatCurrency(monthData.cash),
-                formatCurrency(monthData.capitalInOut || '0')
+                parseFloat(monthData.percent) || 0,
+                parseFloat(monthData.cash) || 0,
+                parseFloat(monthData.capitalInOut || '0') || 0
               ]);
             });
           });
@@ -1368,7 +1342,7 @@ export default function Portfolio() {
 
           Object.keys(convertedStats.quarterlyPnl).forEach(year => {
             const yearData = convertedStats.quarterlyPnl[year];
-            ['q1', 'q2', 'q3', 'q4'].forEach(quarter => {
+            (['q1', 'q2', 'q3', 'q4'] as const).forEach(quarter => {
               const percentReturn = yearData.percent[quarter];
               const cashReturn = yearData.cash[quarter];
 
@@ -1377,8 +1351,8 @@ export default function Portfolio() {
                 csvData.push([
                   year,
                   quarter.toUpperCase(),
-                  percentReturn,
-                  formatCurrency(cashReturn)
+                  parseFloat(percentReturn) || 0,
+                  parseFloat(cashReturn) || 0
                 ]);
               }
             });

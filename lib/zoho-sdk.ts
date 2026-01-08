@@ -131,18 +131,23 @@ class ZohoCRMSDK {
 
   public async getRecords(moduleAPIName: string, page: number = 1, perPage: number = 200, fields: string[] = [
   'id',
-  'Reporting_Dashboard_Icode',
-  'Name',                           // First Name (Full Name - part 1)
-  'Last_Name',                      // Last Name (Full Name - part 2)  
-  'Adhaar',                         // Aadhar
-  'PAN',                            // PAN
-  'Email',                          // Email
-  'Strategy_Invested_In',           // Strategy Invested In
-  'Zerodha_Account_ID',            // Zerodha Account ID
-  'Full_Line',                      // Full Address
-  'Mobile_no_linked_to_zerodha',   // Mobile number linked to Zerodha
-  'Email_linked_to_Zerodha',        // Email linked to Zerodha
-  'New_Fee_Structure'         // Fee Structure
+  'iQode',                                // iQode (Dashboard ICode)
+  'Name',                                 // Investor Name (First Name)
+  'Last_name',                            // Last name
+  'Email',                                // Email
+  'Phone',                                // Phone
+  'Full_Address',                         // Full Address (Multi Line Small)
+  'Strategy_Invested_In',                 // Strategy Invested In (Single Line)
+  'Broker',                               // Broker (Single Line)
+  'Mobile_No_Linked_to_Zerodha',          // Mobile No. Linked to Broker (Phone)
+  'Email_Linked_to_Zerodha',              // Email Linked to Broker (Email)
+  'Performance_Fee',                      // Performance Fees (Single Line)
+  'Fixed_Fee',                            // Fixed Fee (Single Line)
+  'Old_Fee_Structure',                    // Old Fee Structure (Single Line)
+  'Hurdle_Rat',                           // Hurdle Rate (Single Line)
+  'GST_as_Applicable',                    // GST as Applicable (Single Line)
+  'Current_AUM',                          // Current AUM (Currency)
+  'Invested_Amount'                       // Invested Amount (Currency)
 ]) {
     const endpoint = `/${moduleAPIName}?page=${page}&per_page=${perPage}&fields=${encodeURIComponent(fields.join(','))}`;
     console.log('Fetching records from endpoint:', endpoint);

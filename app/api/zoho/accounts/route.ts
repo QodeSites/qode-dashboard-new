@@ -35,10 +35,20 @@ export async function GET(request: Request) {
     } else if (search) {
       // Search accounts
       const searchCriteria = `(Account_Name:contains:${search})or(Website:contains:${search})or(Phone:contains:${search})`;
-      result = await zohoSDK.searchRecords("maleads", searchCriteria);
+      result = await zohoSDK.searchRecords("Investors", searchCriteria);
     } else {
       // Get all accounts with pagination
-      result = await zohoSDK.getRecords("maleads");
+      result = await zohoSDK.getRecords("Investors");
+    }
+
+    // Log the result for debugging
+    console.log("Zoho API Result:", JSON.stringify(result, null, 2));
+    console.log("Number of records:", result.data?.length || 0);
+
+    // Log first record structure if available
+    if (result.data && result.data.length > 0) {
+      console.log("First record structure:", Object.keys(result.data[0]));
+      console.log("First record sample:", JSON.stringify(result.data[0], null, 2));
     }
 
     // Filter fields if requested

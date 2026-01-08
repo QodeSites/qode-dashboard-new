@@ -276,7 +276,7 @@ export default function Portfolio() {
         </div>
 
         {/* Account Selector for non-Sarla/Satidham users */}
-        {!isSarla && !isSatidham && accounts.length > 0 && (
+        {/* {!isSarla && !isSatidham && accounts.length > 0 && (
           <div className="w-full sm:w-auto">
             <Select value={selectedAccount || ""} onValueChange={setSelectedAccount}>
               <SelectTrigger className="w-full sm:w-[300px] border-0 card-shadow text-button-text">
@@ -291,7 +291,7 @@ export default function Portfolio() {
               </SelectContent>
             </Select>
           </div>
-        )}
+        )} */}
       </div>
 
       {/* Main Content - Render appropriate component based on user type */}

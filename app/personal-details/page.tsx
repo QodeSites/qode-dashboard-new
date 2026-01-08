@@ -5,23 +5,27 @@ import { useSession, signIn } from 'next-auth/react';
 import Head from "next/head";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import DashboardLayout from "../dashboard/layout";
-import { User, Mail, Phone, MapPin, CreditCard, Building, AlertCircle, Loader,IndianRupee } from 'lucide-react';
+import { User, Mail, Phone, Building, AlertCircle, Loader } from 'lucide-react';
 import { useRouter, useSearchParams } from "next/navigation";
 
 interface InvestorData {
   id: string;
-  Reporting_Dashboard_Icode: string;
+  iQode: string;
   Name: string;
-  Last_Name: string;
-  Adhaar: string;
-  PAN: string;
+  Last_name: string;
   Email: string;
+  Phone: string;
   Strategy_Invested_In: string;
-  Zerodha_Account_ID: string;
-  Full_Line: string;
-  Mobile_no_linked_to_zerodha: string;
-  Email_linked_to_Zerodha: string;
-  Fee_Structure: string;
+  Broker: string;
+  Mobile_No_Linked_to_Zerodha: string;
+  Email_Linked_to_Zerodha: string;
+  Performance_Fee: string;
+  Fixed_Fee: string;
+  Old_Fee_Structure: string;
+  Hurdle_Rat: string;
+  GST_as_Applicable: string;
+  Current_AUM: number;
+  Invested_Amount: number;
 }
 
 interface APIResponse {
@@ -81,15 +85,30 @@ const router = useRouter();
         throw new Error(result.error || 'Failed to fetch data');
       }
 
+      console.log('API Response:', result);
+      console.log('Total records:', result.data?.length || 0);
+      console.log('Looking for icode:', session.user.icode);
+
+      // Log available icodes for debugging
+      if (result.data && result.data.length > 0) {
+        console.log('Available iQodes:',
+          result.data.map(client => client.iQode).filter(Boolean)
+        );
+        console.log('First record structure:', Object.keys(result.data[0]));
+      }
+
       // Find the specific client data based on session.user.icode
       const clientInfo = result.data.find(
-        client => client.Reporting_Dashboard_Icode === session.user.icode
+        client => client.iQode=== session.user.icode
       );
 
       if (clientInfo) {
+        console.log('Client data found:', clientInfo);
         setClientData(clientInfo);
       } else {
-        setError('No client data found for your account');
+        const errorMsg = `No client data found for icode: ${session.user.icode}. Total records in database: ${result.data?.length || 0}`;
+        console.error(errorMsg);
+        setError(errorMsg);
       }
     } catch (err) {
       console.error('Error fetching client data:', err);
@@ -109,7 +128,7 @@ const router = useRouter();
           <div className="space-y-2">
             <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Full Name</label>
             <p className="text-card-text font-medium">
-              {clientData?.Name} {clientData?.Last_Name}
+              {clientData?.Name} {clientData?.Last_name}
             </p>
           </div>
 
@@ -123,36 +142,32 @@ const router = useRouter();
             </div>
           )}
 
-          {clientData?.PAN && (
+          {clientData?.Phone && (
             <div className="space-y-2">
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">PAN Number</label>
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Phone Number</label>
               <div className="flex items-center space-x-2">
-                <CreditCard className="h-4 w-4 text-gray-400" />
-                <p className="text-gray-600 dark:text-gray-400">{clientData.PAN}</p>
+                <Phone className="h-4 w-4 text-gray-400" />
+                <p className="text-gray-600 dark:text-gray-400">{clientData.Phone}</p>
               </div>
             </div>
           )}
 
-          {clientData?.Adhaar && (
+          {/* {clientData?.Current_AUM && (
             <div className="space-y-2">
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Aadhar Number</label>
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Current AUM</label>
               <div className="flex items-center space-x-2">
-                <CreditCard className="h-4 w-4 text-gray-400" />
-                <p className="text-gray-600 dark:text-gray-400">{clientData.Adhaar}</p>
+                <IndianRupee className="h-4 w-4 text-gray-400" />
+                <p className="text-gray-600 dark:text-gray-400">
+                  {clientData.Current_AUM.toLocaleString('en-IN', {
+                    style: 'currency',
+                    currency: 'INR',
+                    maximumFractionDigits: 0
+                  })}
+                </p>
               </div>
             </div>
-          )}
+          )} */}
         </div>
-
-        {clientData?.Full_Line && (
-          <div className="space-y-2 pt-4 border-t border-gray-100">
-            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Address</label>
-            <div className="flex items-start space-x-2">
-              <MapPin className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
-              <p className="text-gray-600 dark:text-gray-400">{clientData.Full_Line}</p>
-            </div>
-          </div>
-        )}
       </CardContent>
     </Card>
   );
@@ -180,16 +195,73 @@ const router = useRouter();
             <label className="text-xs font-medium text-gray-500  tracking-wide">iQode</label>
             <div className="flex items-center space-x-2">
               <User className="h-4 w-4 text-gray-400" />
-              <p className="text-gray-600 dark:text-gray-400">{clientData?.Reporting_Dashboard_Icode}</p>
+              <p className="text-gray-600 dark:text-gray-400">{clientData?.iQode}</p>
             </div>
           </div>
 
-          {/* Fee Structure - Placeholder for now */}
+          {/* {clientData?.Invested_Amount && (
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Invested Amount</label>
+              <div className="flex items-center space-x-2">
+                <IndianRupee className="h-4 w-4 text-gray-400" />
+                <p className="text-gray-600 dark:text-gray-400">
+                  {clientData.Invested_Amount.toLocaleString('en-IN', {
+                    style: 'currency',
+                    currency: 'INR',
+                    maximumFractionDigits: 0
+                  })}
+                </p>
+              </div>
+            </div>
+          )} */}
+
+          {/* Fee Structure */}
           <div className="space-y-2 md:col-span-2">
             <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Fee Structure</label>
-            <div className="flex items-center space-x-2">
-              <IndianRupee className="h-4 w-4 text-gray-400" />
-              <p className="text-gray-600 dark:text-gray-400">{clientData?.New_Fee_Structure || 'Not provided'}</p>
+            <div className="flex flex-col space-y-2">
+              {clientData?.Performance_Fee && (
+                <>
+                  {clientData.Performance_Fee.split(',').map((fee, index) => (
+                    <div key={`perf-${index}`} className="flex items-start space-x-2">
+                      <span className="text-gray-400 mt-0.5">•</span>
+                      <p className="text-gray-600 dark:text-gray-400">
+                        Performance Fee: {fee.trim()}
+                      </p>
+                    </div>
+                  ))}
+                </>
+              )}
+              {clientData?.Fixed_Fee && (
+                <>
+                  {clientData.Fixed_Fee.split(',').map((fee, index) => (
+                    <div key={`fixed-${index}`} className="flex items-start space-x-2">
+                      <span className="text-gray-400 mt-0.5">•</span>
+                      <p className="text-gray-600 dark:text-gray-400">
+                        Fixed Fee: {fee.trim()}
+                      </p>
+                    </div>
+                  ))}
+                </>
+              )}
+              {clientData?.Hurdle_Rat && (
+                <div className="flex items-start space-x-2">
+                  <span className="text-gray-400 mt-0.5">•</span>
+                  <p className="text-gray-600 dark:text-gray-400">
+                    Hurdle Rate: {clientData.Hurdle_Rat}
+                  </p>
+                </div>
+              )}
+              {clientData?.GST_as_Applicable && (
+                <div className="flex items-start space-x-2">
+                  <span className="text-gray-400 mt-0.5">•</span>
+                  <p className="text-gray-600 dark:text-gray-400">
+                    GST: {clientData.GST_as_Applicable}
+                  </p>
+                </div>
+              )}
+              {!clientData?.Performance_Fee && !clientData?.Fixed_Fee && !clientData?.Hurdle_Rat && !clientData?.GST_as_Applicable && (
+                <p className="text-gray-400 italic">Not provided</p>
+              )}
             </div>
           </div>
         </div>
@@ -197,70 +269,66 @@ const router = useRouter();
     </Card>
   );
 
-  const ZerodhaDetailsCard = () => (
-    <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-      
+  const BrokerDetailsCard = () => {
+    return (
+      <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
         <CardTitle className="text-black p-3 rounded-t-sm   text-lg font-heading-bold flex items-center space-x-2">
-          <span>Zerodha Details</span>
+          <span>Broker Details</span>
         </CardTitle>
-      
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {clientData?.Zerodha_Account_ID ? (
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Account ID</label>
-              <div className="flex items-center space-x-2">
-                <Building className="h-4 w-4 text-gray-400" />
-                <p className="text-gray-600 dark:text-gray-400">{clientData.Zerodha_Account_ID}</p>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Account ID</label>
-              <p className="text-gray-400 italic">Not provided</p>
-            </div>
-          )}
 
-          {clientData?.Mobile_no_linked_to_zerodha ? (
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Linked Mobile</label>
-              <div className="flex items-center space-x-2">
-                <Phone className="h-4 w-4 text-gray-400" />
-                <p className="text-gray-600 dark:text-gray-400">{clientData.Mobile_no_linked_to_zerodha}</p>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {clientData?.Broker && (
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Broker Name</label>
+                <div className="flex items-center space-x-2">
+                  <Building className="h-4 w-4 text-gray-400" />
+                  <p className="text-gray-600 dark:text-gray-400">{clientData.Broker}</p>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Linked Mobile</label>
-              <p className="text-gray-400 italic">Not provided</p>
-            </div>
-          )}
+            )}
 
-          {clientData?.Email_linked_to_Zerodha ? (
-            <div className="space-y-2 md:col-span-2">
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Linked Email</label>
-              <div className="flex items-center space-x-2">
-                <Mail className="h-4 w-4 text-gray-400" />
-                <p className="text-gray-600 dark:text-gray-400">{clientData.Email_linked_to_Zerodha}</p>
+            {clientData?.Mobile_No_Linked_to_Zerodha ? (
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Linked Mobile</label>
+                <div className="flex items-center space-x-2">
+                  <Phone className="h-4 w-4 text-gray-400" />
+                  <p className="text-gray-600 dark:text-gray-400">{clientData.Mobile_No_Linked_to_Zerodha}</p>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="space-y-2 md:col-span-2">
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Linked Email</label>
-              <p className="text-gray-400 italic">Not provided</p>
-            </div>
-          )}
-        </div>
+            ) : (
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Linked Mobile</label>
+                <p className="text-gray-400 italic">Not provided</p>
+              </div>
+            )}
 
-        {(!clientData?.Zerodha_Account_ID && !clientData?.Mobile_no_linked_to_zerodha && !clientData?.Email_linked_to_Zerodha) && (
-          <div className="text-center py-6 border-t border-gray-100">
-            <AlertCircle className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-            <p className="text-gray-500 text-sm">No Zerodha account details available</p>
+            {clientData?.Email_Linked_to_Zerodha ? (
+              <div className="space-y-2 md:col-span-2">
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Linked Email</label>
+                <div className="flex items-center space-x-2">
+                  <Mail className="h-4 w-4 text-gray-400" />
+                  <p className="text-gray-600 dark:text-gray-400">{clientData.Email_Linked_to_Zerodha}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2 md:col-span-2">
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Linked Email</label>
+                <p className="text-gray-400 italic">Not provided</p>
+              </div>
+            )}
+
+            {(!clientData?.Broker && !clientData?.Mobile_No_Linked_to_Zerodha && !clientData?.Email_Linked_to_Zerodha) && (
+              <div className="text-center py-6 border-t border-gray-100">
+                <AlertCircle className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                <p className="text-gray-500 text-sm">No broker details available</p>
+              </div>
+            )}
           </div>
-        )}
-      </CardContent>
-    </Card>
-  );
+        </CardContent>
+      </Card>
+    );
+  };
 
   // Handle authentication states
   if (status === 'loading') {
@@ -390,7 +458,7 @@ const router = useRouter();
           <div className="space-y-6 mx-auto">
             <PersonalInformationCard />
             <AccountInformationCard />
-            <ZerodhaDetailsCard />
+            <BrokerDetailsCard />
           </div>
         </div>
       </DashboardLayout>

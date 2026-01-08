@@ -62,13 +62,13 @@ export function TrailingReturnsTable({
   const normalizedTrailingReturns = normalizeTrailingReturns(trailingReturns);
 
   const allPeriods = [
-    { key: "5d", label: "5d", duration: 5, type: "days" },
-    { key: "10d", label: "10d", duration: 10, type: "days" },
-    { key: "15d", label: "15d", duration: 15, type: "days" },
-    { key: "1m", label: "1m", duration: 1, type: "months" },
-    { key: "3m", label: "3m", duration: 3, type: "months" },
-    { key: "1y", label: "1y", duration: 1, type: "years" },
-    { key: "2y", label: "2y", duration: 2, type: "years" },
+    { key: "5d", label: "5D", duration: 5, type: "days" },
+    { key: "10d", label: "10D", duration: 10, type: "days" },
+    { key: "15d", label: "15D", duration: 15, type: "days" },
+    { key: "1m", label: "1M", duration: 1, type: "months" },
+    { key: "3m", label: "3M", duration: 3, type: "months" },
+    { key: "1y", label: "1Y", duration: 1, type: "years" },
+    { key: "2y", label: "2Y", duration: 2, type: "years" },
     { key: "sinceInception", label: "Since Inception", duration: null, type: "inception" },
     { key: "currentDD", label: "Current DD", duration: null, type: "drawdown" },
     { key: "MDD", label: "Max DD", duration: null, type: "maxDrawdown" },
@@ -430,12 +430,12 @@ const calculateBenchmarkReturns = useCallback(() => {
             <thead className="bg-lightBeige">
               <tr className="bg-black/5 border-black border-b text-sm">
                 <th className="text-start px-4 py-2 text-sm font-medium text-black uppercase tracking-wider min-w-[100px]">
-                  Name
+                  
                 </th>
                 {allPeriods.map((period) => (
                   <th
                     key={period.key}
-                    className={`text-center px-4 py-2 font-medium text-black uppercase tracking-wider min-w-[80px]
+                    className={`text-center px-4 py-2 font-medium text-black capitalise tracking-wider min-w-[80px]
                       ${period.key === "currentDD" ? "border-l border-black" : ""}`}
                   >
                     <div className=" text-sm" title={period.label}>
