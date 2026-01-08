@@ -3,6 +3,7 @@ import { useState, useMemo, useRef } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Download } from "lucide-react";
 import { StatsCards } from "@/components/stats-cards";
 import { RevenueChart } from "@/components/revenue-chart";
 import { TrailingReturnsTable } from "@/components/trailing-returns-table";
@@ -10,6 +11,7 @@ import { CashFlowTable } from "@/components/CashFlowTable";
 import { useBse500Data } from "@/hooks/useBse500Data";
 import { buildPortfolioReportHTML } from "@/components/buildPortfolioReportHTML";
 import { makeBenchmarkCurves } from "@/components/benchmarkCurves";
+import * as XLSX from "xlsx-js-style";
 import {
   normalizeToStats,
   filterEquityCurve,
@@ -432,40 +434,6 @@ export function ManagedAccounts({
       const csvData: (string | number)[][] = [];
       let filename = "managed_accounts_data.csv";
 
-      const formatPercentage = (value: any, isDrawdown = false) => {
-        if (value === null || value === undefined || value === "-" || value === "") return "N/A";
-        const numValue = typeof value === "string" ? parseFloat(value) : value;
-        if (isNaN(numValue)) return "N/A";
-        let formattedValue = numValue;
-        if (isDrawdown) {
-          formattedValue = -Math.abs(numValue);
-        }
-        return formattedValue.toFixed(2) + "%";
-      };
-
-      const formatCurrency = (value: any) => {
-        if (value === null || value === undefined || value === "" || isNaN(value)) return "N/A";
-        const numValue = typeof value === "string" ? parseFloat(value) : value;
-        if (isNaN(numValue)) return "N/A";
-        return new Intl.NumberFormat("en-IN", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        }).format(numValue);
-      };
-
-      // Helper function to format PnL values for CSV
-      const formatPnlValue = (value: string | undefined, isPercent: boolean) => {
-        if (!value || value === "-" || value === "") return "-";
-        const numValue = parseFloat(value);
-        if (isNaN(numValue)) return "-";
-        if (isPercent) {
-          return numValue.toFixed(2) + "%";
-        }
-        return new Intl.NumberFormat("en-IN", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        }).format(numValue);
-      };
 
       if (currentEntry.mode === "single") {
         // Single account export
@@ -479,11 +447,12 @@ export function ManagedAccounts({
         csvData.push(["Broker", currentAccount?.broker || "N/A"]);
         csvData.push(["Strategy", currentEntry.strategyName || "N/A"]);
         csvData.push(["Status", currentEntry.isActive ? "Active" : "Inactive"]);
-        csvData.push(["Amount Deposited", formatCurrency(currentEntry.normalized.amountDeposited)]);
-        csvData.push(["Current Exposure", formatCurrency(currentEntry.normalized.currentExposure)]);
-        csvData.push(["Total Return (%)", currentEntry.normalized.return + "%"]);
-        csvData.push(["Total Profit", formatCurrency(currentEntry.normalized.totalProfit)]);
-        csvData.push(["Max Drawdown (%)", formatPercentage(currentEntry.normalized.drawdown, true)]);
+        csvData.push(["Amount Deposited", parseFloat(currentEntry.normalized.amountDeposited) || 0]);
+        csvData.push(["Current Exposure", parseFloat(currentEntry.normalized.currentExposure) || 0]);
+        csvData.push(["Total Return (%)", parseFloat(currentEntry.normalized.return) || 0]);
+        csvData.push(["Total Profit", parseFloat(currentEntry.normalized.totalProfit) || 0]);
+        const drawdownValue = parseFloat(currentEntry.normalized.drawdown) || 0;
+        csvData.push(["Max Drawdown (%)", drawdownValue > 0 ? -drawdownValue : drawdownValue]);
         csvData.push(["", ""]);
 
         // Trailing Returns - use pre-calculated combinedTrailing values
@@ -509,13 +478,22 @@ export function ManagedAccounts({
           for (const horizon of horizons) {
             const cell = combinedTrailing[horizon.key as keyof CombinedTrailing];
             if (cell) {
-              const isDrawdown = horizon.key === "MDD" || horizon.key === "currentDD";
-              const portfolioValue = formatPercentage(cell.portfolio, isDrawdown);
-              const benchmarkValue = cell.benchmark && cell.benchmark !== "-" 
-                ? formatPercentage(cell.benchmark, isDrawdown) 
-                : "N/A";
+              let portfolioNum = parseFloat(cell.portfolio as string);
+              let benchmarkNum = cell.benchmark && cell.benchmark !== "-" ? parseFloat(cell.benchmark as string) : null;
 
-              csvData.push([horizon.label, portfolioValue, benchmarkValue]);
+              // Ensure negative values for drawdowns
+              if (horizon.key === "MDD" || horizon.key === "currentDD") {
+                portfolioNum = portfolioNum > 0 ? -portfolioNum : portfolioNum;
+                if (benchmarkNum !== null) {
+                  benchmarkNum = benchmarkNum > 0 ? -benchmarkNum : benchmarkNum;
+                }
+              }
+
+              csvData.push([
+                horizon.label,
+                isNaN(portfolioNum) ? 0 : portfolioNum,
+                benchmarkNum !== null && !isNaN(benchmarkNum) ? benchmarkNum : 0
+              ]);
             }
           }
         }
@@ -528,11 +506,11 @@ export function ManagedAccounts({
 
         csvData.push(["Consolidated Portfolio Statistics", ""]);
         csvData.push(["View Mode", "Consolidated"]);
-        csvData.push(["Number of Accounts", currentEntry.items.length.toString()]);
-        csvData.push(["Total Amount Invested", formatCurrency(reportModel.metrics.amountInvested)]);
-        csvData.push(["Total Portfolio Value", formatCurrency(reportModel.metrics.currentPortfolioValue)]);
-        csvData.push(["Total Returns", formatCurrency(reportModel.metrics.returns)]);
-        csvData.push(["Total Returns (%)", reportModel.metrics.returns_percent.toFixed(2) + "%"]);
+        csvData.push(["Number of Accounts", currentEntry.items.length]);
+        csvData.push(["Total Amount Invested", reportModel.metrics.amountInvested]);
+        csvData.push(["Total Portfolio Value", reportModel.metrics.currentPortfolioValue]);
+        csvData.push(["Total Returns", reportModel.metrics.returns]);
+        csvData.push(["Total Returns (%)", reportModel.metrics.returns_percent]);
         csvData.push(["", ""]);
 
         // Individual accounts summary
@@ -547,10 +525,10 @@ export function ManagedAccounts({
             item.metadata.broker || "N/A",
             item.metadata.strategyName || "N/A",
             item.metadata.isActive ? "Active" : "Inactive",
-            formatCurrency(normalized.amountDeposited),
-            formatCurrency(normalized.currentExposure),
-            normalized.return + "%",
-            formatCurrency(normalized.totalProfit),
+            parseFloat(normalized.amountDeposited) || 0,
+            parseFloat(normalized.currentExposure) || 0,
+            parseFloat(normalized.return) || 0,
+            parseFloat(normalized.totalProfit) || 0,
           ]);
         }
 
@@ -560,15 +538,15 @@ export function ManagedAccounts({
       // Cash flows (common for both single and multi)
       if (reportModel.transactions?.length > 0) {
         csvData.push(["Cash Flow Summary", ""]);
-        csvData.push(["Total Cash In", formatCurrency(reportModel.cashFlowTotals.totalIn)]);
-        csvData.push(["Total Cash Out", formatCurrency(reportModel.cashFlowTotals.totalOut)]);
-        csvData.push(["Net Cash Flow", formatCurrency(reportModel.cashFlowTotals.netFlow)]);
+        csvData.push(["Total Cash In", reportModel.cashFlowTotals.totalIn]);
+        csvData.push(["Total Cash Out", reportModel.cashFlowTotals.totalOut]);
+        csvData.push(["Net Cash Flow", reportModel.cashFlowTotals.netFlow]);
         csvData.push(["", ""]);
 
         csvData.push(["Cash Flows Detail", ""]);
         csvData.push(["Date", "Amount"]);
         reportModel.transactions.forEach((flow) => {
-          csvData.push([flow.date, formatCurrency(flow.amount)]);
+          csvData.push([flow.date, Number(flow.amount)]);
         });
         csvData.push(["", ""]);
       }
@@ -592,11 +570,13 @@ export function ManagedAccounts({
 
             // Only add row if there's data for this quarter
             if (percentVal && percentVal !== "-" && percentVal !== "0" && percentVal !== "") {
+              const numPercent = parseFloat(percentVal);
+              const numCash = parseFloat(cashVal);
               csvData.push([
                 year,
                 quarterLabels[i],
-                parseFloat(percentVal).toFixed(2),
-                formatPnlValue(cashVal, false),
+                isNaN(numPercent) ? 0 : numPercent,
+                isNaN(numCash) ? 0 : numCash,
               ]);
             }
           }
@@ -628,12 +608,15 @@ export function ManagedAccounts({
               const capitalInOut = monthData.capitalInOut;
 
               if (percentVal && percentVal !== "-" && percentVal !== "") {
+                const numPercent = parseFloat(percentVal);
+                const numCash = parseFloat(cashVal || "0");
+                const numCapitalInOut = parseFloat(capitalInOut || "0");
                 csvData.push([
                   year,
                   month,
-                  parseFloat(percentVal).toFixed(2),
-                  formatPnlValue(cashVal, false),
-                  formatPnlValue(capitalInOut, false),
+                  isNaN(numPercent) ? 0 : numPercent,
+                  isNaN(numCash) ? 0 : numCash,
+                  isNaN(numCapitalInOut) ? 0 : numCapitalInOut,
                 ]);
               }
             }
@@ -677,39 +660,614 @@ export function ManagedAccounts({
     }
   };
 
+  const handleDownloadExcel = () => {
+    if (!currentEntry || !reportModel) return;
+
+    try {
+      const accountName = currentAccount?.account_name || "Account";
+      const filename = currentEntry.mode === "single"
+        ? `${accountName.replace(/\s+/g, "_")}_data.xlsx`
+        : "consolidated_accounts_data.xlsx";
+      const wb = XLSX.utils.book_new();
+      const wsData: any[][] = [];
+      const headerRows: number[] = [];
+      const subHeaderRows: number[] = [];
+
+      // Add Qode symbol/logo as title and empty row (Q in column B)
+      wsData.push(["", "Q"]);
+      wsData.push([]);
+
+      // 1. Portfolio Statistics Section
+      if (currentEntry.mode === "single") {
+        headerRows.push(wsData.length);
+        wsData.push(["", "Portfolio Statistics"]);
+        wsData.push(["", "Account Name", accountName]);
+        wsData.push(["", "Account Type", currentAccount?.account_type?.toUpperCase() || "N/A"]);
+        wsData.push(["", "Broker", currentAccount?.broker?.toUpperCase() || "N/A"]);
+        wsData.push(["", "Strategy", currentEntry.strategyName || "N/A"]);
+        wsData.push(["", "Status", currentEntry.isActive ? "Active" : "Inactive"]);
+        wsData.push(["", "Amount Deposited", parseFloat(currentEntry.normalized.amountDeposited) || 0]);
+        wsData.push(["", "Current Exposure", parseFloat(currentEntry.normalized.currentExposure) || 0]);
+        wsData.push(["", "Total Profit", parseFloat(currentEntry.normalized.totalProfit) || 0]);
+        wsData.push([]);
+      } else if (currentEntry.mode === "multi") {
+        headerRows.push(wsData.length);
+        wsData.push(["", "Consolidated Portfolio Statistics"]);
+        wsData.push(["", "View Mode", "Consolidated"]);
+        wsData.push(["", "Number of Accounts", currentEntry.items.length]);
+        wsData.push(["", "Total Amount Invested", parseFloat(String(reportModel.metrics.amountInvested)) || 0]);
+        wsData.push(["", "Total Portfolio Value", parseFloat(String(reportModel.metrics.currentPortfolioValue)) || 0]);
+        wsData.push(["", "Total Returns", parseFloat(String(reportModel.metrics.returns)) || 0]);
+        wsData.push(["", "Total Returns (%)", parseFloat(String(reportModel.metrics.returns_percent)) || 0]);
+        wsData.push([]);
+        // Individual accounts summary
+        headerRows.push(wsData.length);
+        wsData.push(["", "Individual Accounts Summary"]);
+        subHeaderRows.push(wsData.length);
+        wsData.push(["", "Account Name", "Account Type", "Broker", "Strategy", "Status", "Amount Deposited", "Current Exposure", "Return (%)", "Total Profit"]);
+        for (const item of currentEntry.items) {
+          const normalized = normalizeToStats(item.stats);
+          wsData.push([
+            "",
+            item.metadata.account_name,
+            item.metadata.account_type?.toUpperCase() || "N/A",
+            item.metadata.broker?.toUpperCase() || "N/A",
+            item.metadata.strategyName || "N/A",
+            item.metadata.isActive ? "Active" : "Inactive",
+            parseFloat(normalized.amountDeposited) || 0,
+            parseFloat(normalized.currentExposure) || 0,
+            parseFloat(normalized.return) || 0,
+            parseFloat(normalized.totalProfit) || 0,
+          ]);
+        }
+        wsData.push([]);
+      }
+
+      // 2. Trailing Returns Section (for single account only)
+      if (currentEntry.mode === "single" && combinedTrailing) {
+        headerRows.push(wsData.length);
+        wsData.push(["", "Trailing Returns (Portfolio vs Benchmark)"]);
+        subHeaderRows.push(wsData.length);
+        wsData.push(["", "Period", "Portfolio Return (%)", "Benchmark Return (%)"]);
+
+        const horizons = [
+          { key: "fiveDays", label: "5 Days" },
+          { key: "tenDays", label: "10 Days" },
+          { key: "fifteenDays", label: "15 Days" },
+          { key: "oneMonth", label: "1 Month" },
+          { key: "threeMonths", label: "3 Months" },
+          { key: "sixMonths", label: "6 Months" },
+          { key: "oneYear", label: "1 Year" },
+          { key: "twoYears", label: "2 Years" },
+          { key: "fiveYears", label: "5 Years" },
+          { key: "sinceInception", label: "Since Inception" },
+          { key: "MDD", label: "Max Drawdown (%)" },
+          { key: "currentDD", label: "Current Drawdown (%)" },
+        ];
+
+        for (const horizon of horizons) {
+          const cell = combinedTrailing[horizon.key as keyof CombinedTrailing];
+          if (cell?.portfolio !== null && cell?.portfolio !== undefined) {
+            let portfolioNum = parseFloat(cell.portfolio as string);
+            let benchmarkNum = cell?.benchmark && cell.benchmark !== "-" ? parseFloat(cell.benchmark as string) : 0;
+
+            // Ensure negative values for drawdowns - they should always be negative
+            if (horizon.key === "MDD" || horizon.key === "currentDD") {
+              // If the value is positive, make it negative
+              portfolioNum = portfolioNum > 0 ? -portfolioNum : portfolioNum;
+              benchmarkNum = benchmarkNum > 0 ? -benchmarkNum : benchmarkNum;
+            }
+
+            wsData.push([
+              "",
+              horizon.label,
+              isNaN(portfolioNum) ? 0 : portfolioNum,
+              benchmarkNum !== null && !isNaN(benchmarkNum) ? benchmarkNum : 0
+            ]);
+          }
+        }
+        wsData.push([]);
+      }
+
+      // 3. Cash Flow Section
+      if (reportModel.transactions?.length > 0) {
+        headerRows.push(wsData.length);
+        wsData.push(["", "Cash Flow Summary"]);
+        wsData.push(["", "Total Cash In", parseFloat(String(reportModel.cashFlowTotals.totalIn)) || 0]);
+        wsData.push(["", "Total Cash Out", parseFloat(String(reportModel.cashFlowTotals.totalOut)) || 0]);
+        wsData.push(["", "Net Cash Flow", parseFloat(String(reportModel.cashFlowTotals.netFlow)) || 0]);
+        wsData.push([]);
+
+        headerRows.push(wsData.length);
+        wsData.push(["", "Cash Flows Detail"]);
+        subHeaderRows.push(wsData.length);
+        wsData.push(["", "Date", "Amount"]);
+        reportModel.transactions.forEach((flow) => {
+          // Convert date to DD-MM-YYYY format
+          const dateObj = new Date(flow.date);
+          const day = String(dateObj.getDate()).padStart(2, '0');
+          const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+          const year = dateObj.getFullYear();
+          const formattedDate = `${day}-${month}-${year}`;
+          wsData.push(["", formattedDate, Number(flow.amount)]);
+        });
+        wsData.push([]);
+      }
+
+      // 4. Monthly PnL Section
+      if (reportModel.monthlyPnl && Object.keys(reportModel.monthlyPnl).length > 0) {
+        headerRows.push(wsData.length);
+        wsData.push(["", "Monthly P&L"]);
+        subHeaderRows.push(wsData.length);
+        wsData.push(["", "Year", "Month", "Percent Return (%)", "Cash Return"]);
+
+        const years = Object.keys(reportModel.monthlyPnl).sort((a, b) => parseInt(a) - parseInt(b));
+        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+        years.forEach((year) => {
+          const yearData = reportModel.monthlyPnl![year];
+          monthNames.forEach((month) => {
+            if (yearData.months[month]) {
+              const monthData = yearData.months[month];
+              wsData.push([
+                "",
+                year,
+                month,
+                parseFloat(monthData.percent) || 0,
+                parseFloat(monthData.cash) || 0
+              ]);
+            }
+          });
+        });
+        wsData.push([]);
+      }
+
+      // 5. Quarterly PnL Section
+      if (reportModel.quarterlyPnl && Object.keys(reportModel.quarterlyPnl).length > 0) {
+        headerRows.push(wsData.length);
+        wsData.push(["", "Quarterly P&L"]);
+        subHeaderRows.push(wsData.length);
+        wsData.push(["", "Year", "Quarter", "Percent Return (%)", "Cash Return"]);
+
+        const years = Object.keys(reportModel.quarterlyPnl).sort((a, b) => parseInt(a) - parseInt(b));
+
+        years.forEach((year) => {
+          const yearData = reportModel.quarterlyPnl![year];
+          wsData.push(["", year, "Q1", parseFloat(yearData.percent.q1) || 0, parseFloat(yearData.cash.q1) || 0]);
+          wsData.push(["", year, "Q2", parseFloat(yearData.percent.q2) || 0, parseFloat(yearData.cash.q2) || 0]);
+          wsData.push(["", year, "Q3", parseFloat(yearData.percent.q3) || 0, parseFloat(yearData.cash.q3) || 0]);
+          wsData.push(["", year, "Q4", parseFloat(yearData.percent.q4) || 0, parseFloat(yearData.cash.q4) || 0]);
+        });
+        wsData.push([]);
+      }
+
+      // Create worksheet
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+      // Get worksheet range
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+
+      // Calculate auto-fit column widths based on content
+      const maxCols = Math.max(...wsData.map(row => row.length));
+      const colWidths: { wch: number }[] = [];
+
+      for (let C = 0; C < maxCols; C++) {
+        // Column A (index 0) should be narrow as it's empty
+        if (C === 0) {
+          colWidths.push({ wch: 2 });
+          continue;
+        }
+
+        let maxWidth = 10; // Minimum width
+        for (let R = 0; R < wsData.length; R++) {
+          const cellValue = wsData[R][C];
+          if (cellValue != null) {
+            const cellLength = String(cellValue).length;
+            maxWidth = Math.max(maxWidth, cellLength);
+          }
+        }
+        // Add some padding and cap at reasonable max
+        colWidths.push({ wch: Math.min(maxWidth + 2, 50) });
+      }
+      ws['!cols'] = colWidths;
+
+      // Define border style for tables
+      const tableBorder = {
+        top: { style: "thin", color: { rgb: "000000" } },
+        bottom: { style: "thin", color: { rgb: "000000" } },
+        left: { style: "thin", color: { rgb: "000000" } },
+        right: { style: "thin", color: { rgb: "000000" } }
+      };
+
+      // Define header style with dark green background (#02422B) and white text
+      const headerStyle = {
+        fill: {
+          patternType: "solid",
+          fgColor: { rgb: "02422B" }
+        },
+        font: {
+          name: "Aptos Narrow",
+          color: { rgb: "FFFFFF" },
+          bold: true,
+          sz: 11
+        },
+        alignment: {
+          horizontal: "center",
+          vertical: "center"
+        },
+        border: tableBorder
+      };
+
+      // Define sub-header style with #DABD38 background and #02422B text (dark green)
+      const subHeaderStyle = {
+        fill: {
+          patternType: "solid",
+          fgColor: { rgb: "DABD38" }
+        },
+        font: {
+          name: "Aptos Narrow",
+          color: { rgb: "02422B" },
+          bold: true,
+          sz: 11
+        },
+        alignment: {
+          horizontal: "center",
+          vertical: "center"
+        },
+        border: tableBorder
+      };
+
+      // Define regular cell styles with borders
+      const textStyle = {
+        font: {
+          name: "Aptos Narrow",
+          sz: 11
+        },
+        alignment: {
+          horizontal: "left",
+          vertical: "center"
+        },
+        border: tableBorder
+      };
+
+      const numberStyle = {
+        font: {
+          name: "Aptos Narrow",
+          sz: 11
+        },
+        alignment: {
+          horizontal: "right",
+          vertical: "center"
+        },
+        numFmt: "0.00", // 2 decimal places
+        border: tableBorder
+      };
+
+      const titleStyle = {
+        font: {
+          name: "Playfair Display",
+          bold: true,
+          sz: 32,
+          color: { rgb: "02422B" }
+        },
+        alignment: {
+          horizontal: "left",
+          vertical: "center"
+        }
+        // No border for title
+      };
+
+      // Helper function to check if a row is part of a table (has data in column B or later)
+      const isTableRow = (rowIdx: number) => {
+        // Skip title and empty rows
+        if (rowIdx <= 1) return false;
+
+        // Check if this row has any data in columns B onwards
+        const rowData = wsData[rowIdx];
+        if (!rowData) return false;
+
+        for (let i = 1; i < rowData.length; i++) {
+          if (rowData[i] !== undefined && rowData[i] !== null && rowData[i] !== '') {
+            return true;
+          }
+        }
+        return false;
+      };
+
+      // Apply styles to all cells
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!ws[cellAddress]) continue;
+
+          const cellValue = ws[cellAddress].v;
+
+          // Skip styling for truly empty cells
+          if (cellValue === null || cellValue === undefined || cellValue === '') {
+            continue;
+          }
+
+          // Apply title style to first row (QODE)
+          if (R === 0) {
+            ws[cellAddress].s = titleStyle;
+            continue;
+          }
+
+          // Skip styling for empty rows (row 1)
+          if (R >= 1 && R <= 1) {
+            continue;
+          }
+
+          // Ensure numbers are typed correctly and format to 2 decimal places
+          // But keep years as integers (4-digit numbers like 2024, 2025)
+          if (typeof ws[cellAddress].v === 'number') {
+            ws[cellAddress].t = 'n';
+            // Check if it's a year (4-digit integer between 1900-2100)
+            if (Number.isInteger(ws[cellAddress].v) && ws[cellAddress].v >= 1900 && ws[cellAddress].v <= 2100) {
+              ws[cellAddress].z = '0'; // Format years as integers
+            } else {
+              ws[cellAddress].z = '0.00'; // Format other numbers with 2 decimal places
+            }
+          } else if (typeof ws[cellAddress].v === 'string') {
+            // Only convert to number if the ENTIRE string is numeric
+            const trimmed = ws[cellAddress].v.trim();
+            const num = parseFloat(trimmed);
+            if (!isNaN(num) && trimmed === String(num)) {
+              ws[cellAddress].v = num;
+              ws[cellAddress].t = 'n';
+              // Check if it's a year (4-digit integer)
+              if (Number.isInteger(num) && num >= 1900 && num <= 2100) {
+                ws[cellAddress].z = '0'; // Format years as integers
+              } else {
+                ws[cellAddress].z = '0.00'; // Format other numbers with 2 decimal places
+              }
+            } else {
+              ws[cellAddress].t = 's'; // Keep as string (for text labels like "5 Days", "2024", etc.)
+            }
+          }
+
+          // Only apply styles with borders if this is a table row and cell has content
+          if (isTableRow(R)) {
+            // Skip column A (index 0) - it should remain empty with no styling
+            if (C === 0) {
+              continue;
+            } else if (headerRows.includes(R)) {
+              // Apply header style to header rows (only columns B onwards)
+              ws[cellAddress].s = headerStyle;
+            } else if (subHeaderRows.includes(R)) {
+              // Apply sub-header style with #DABD38 background (only columns B onwards)
+              ws[cellAddress].s = subHeaderStyle;
+            } else {
+              // Regular cell styling based on type and column
+              // First data column (B = column 1) contains labels, should be left-aligned
+              if (C === 1) {
+                ws[cellAddress].s = textStyle;
+              } else if (ws[cellAddress].t === 'n') {
+                // Numbers (values) should be right-aligned with 2 decimal places
+                ws[cellAddress].s = numberStyle;
+              } else {
+                // Text values in columns > 1 (column C onwards) should be right-aligned
+                // Create a right-aligned text style for non-numeric values
+                const rightAlignedTextStyle = {
+                  ...textStyle,
+                  alignment: {
+                    horizontal: "right",
+                    vertical: "center"
+                  }
+                };
+                ws[cellAddress].s = rightAlignedTextStyle;
+              }
+            }
+          } else {
+            // For any other content-filled cells outside tables (e.g., title already handled), apply a bordered text style
+            ws[cellAddress].s = textStyle;
+          }
+        }
+      }
+
+      // Merge cells for headers (merge across full table width)
+      const merges: any[] = [];
+
+      // Helper function to find the max column width for a section
+      const getTableWidth = (startRow: number) => {
+        let maxCol = 1;
+        // Look at the next few rows after the header to determine table width
+        for (let r = startRow; r < Math.min(startRow + 15, wsData.length); r++) {
+          if (wsData[r]) {
+            for (let c = 1; c < wsData[r].length; c++) {
+              if (wsData[r][c] !== undefined && wsData[r][c] !== null && wsData[r][c] !== '') {
+                maxCol = Math.max(maxCol, c);
+              }
+            }
+          }
+          // Stop at empty row (section break)
+          if (wsData[r] && wsData[r].every((cell: any, idx: number) => idx === 0 || !cell)) {
+            break;
+          }
+        }
+        return maxCol;
+      };
+
+      // Merge header rows across full table width
+      headerRows.forEach(rowIdx => {
+        const tableWidth = getTableWidth(rowIdx);
+
+        if (tableWidth > 1) {
+          merges.push({
+            s: { r: rowIdx, c: 1 },
+            e: { r: rowIdx, c: tableWidth }
+          });
+        }
+      });
+
+      if (merges.length > 0) {
+        ws['!merges'] = merges;
+      }
+
+      // Set worksheet view to hide gridlines BEFORE adding to workbook
+      (ws as any)['!views'] = [{
+        showGridLines: false
+      }];
+
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(wb, ws, "Portfolio Data");
+
+      // Write file
+      XLSX.writeFile(wb, filename);
+    } catch (error) {
+      console.error("Error generating Excel:", error);
+      alert("Failed to generate Excel file");
+    }
+  };
+
   const currentAccount = accounts.find((acc) => acc.qcode === selectedAccount);
   const showTagSelector =
     currentAccount?.account_type === "prop" && availableTags.length > 0;
 
   return (
-    <div className="sm:p-2 space-y-6" ref={pdfRef}>
-      {/* Account and Tag Selectors */}
-      <div className="flex flex-col sm:flex-row gap-4">
-        {showTagSelector && (
-          <div className="w-full sm:w-auto">
-            <Select value={selectedTag || ""} onValueChange={onTagChange}>
-              <SelectTrigger className="w-full sm:w-[300px] border-0 card-shadow text-button-text">
-                <SelectValue placeholder="Select Tag" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableTags.map((tag) => (
-                  <SelectItem key={tag} value={tag}>
-                    {tag}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-gray-600 mt-1">Filter data by mastersheet tag</p>
-          </div>
-        )}
+    <div className="space-y-6 sm:space-y-8" ref={pdfRef}>
+      {/* Header Section - Strategy Badge, Tag Selector and Export Buttons */}
+      <div className="print-hide">
+        {/* Desktop Layout */}
+        <div className="hidden sm:block">
+          <div className="flex items-center justify-between gap-6 mb-6">
+            {/* Strategy Badge - only show for single account view */}
+            {currentEntry.mode === "single" && currentEntry.strategyName && (
+              <div
+                className={`bg-logo-green text-button-text px-4 py-2 rounded-full ${
+                  !currentEntry.isActive ? "opacity-70" : ""
+                }`}
+              >
+                <p className="text-base font-heading font-medium">
+                  {currentEntry.strategyName}
+                  {!currentEntry.isActive && (
+                    <span className="ml-2 text-xs opacity-80">(Inactive)</span>
+                  )}
+                </p>
+              </div>
+            )}
 
-        <div className="flex gap-2 ml-auto">
-          <Button onClick={handleDownloadPDF} disabled={exporting} className="text-sm">
-            {exporting ? "Preparing..." : "Download PDF"}
-          </Button>
-          <Button onClick={handleDownloadCSV} disabled={exporting} className="text-sm">
-            {exporting ? "Preparing..." : "Download CSV"}
-          </Button>
+            {/* Tag Selector for Prop accounts */}
+            {showTagSelector ? (
+              <div className="flex-1 max-w-xs">
+                <Select value={selectedTag || ""} onValueChange={onTagChange}>
+                  <SelectTrigger className="h-11 border-0 card-shadow text-base font-heading">
+                    <SelectValue placeholder="Select Tag" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableTags.map((tag) => (
+                      <SelectItem key={tag} value={tag} className="text-base font-heading">
+                        {tag}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-600 mt-2">Filter data by mastersheet tag</p>
+              </div>
+            ) : (
+              <div className="flex-1" />
+            )}
+
+            {/* Export Buttons */}
+            <div className="flex gap-3">
+              <Button
+                onClick={handleDownloadPDF}
+                disabled={exporting}
+                className="h-11 px-4 text-sm font-medium"
+                variant="default"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                PDF
+              </Button>
+              <Button
+                onClick={handleDownloadExcel}
+                disabled={exporting}
+                className="h-11 px-4 text-sm font-medium"
+                variant="default"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Excel
+              </Button>
+              {/* <Button
+                onClick={handleDownloadCSV}
+                disabled={exporting}
+                className="h-11 px-4 text-sm font-medium"
+                variant="default"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                CSV
+              </Button> */}
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile Layout */}
+        <div className="sm:hidden space-y-4">
+          {/* Strategy Badge - only show for single account view */}
+          {currentEntry.mode === "single" && currentEntry.strategyName && (
+            <div
+              className={`w-fit bg-logo-green text-button-text px-4 py-2 rounded-full ${
+                !currentEntry.isActive ? "opacity-70" : ""
+              }`}
+            >
+              <p className="text-sm font-heading font-medium">
+                {currentEntry.strategyName}
+                {!currentEntry.isActive && (
+                  <span className="ml-2 text-xs opacity-80">(Inactive)</span>
+                )}
+              </p>
+            </div>
+          )}
+
+          {/* Tag Selector for Prop accounts */}
+          {showTagSelector && (
+            <div>
+              <Select value={selectedTag || ""} onValueChange={onTagChange}>
+                <SelectTrigger className="w-full h-11 border-0 card-shadow font-heading">
+                  <SelectValue placeholder="Select Tag" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableTags.map((tag) => (
+                    <SelectItem key={tag} value={tag} className="font-heading">
+                      {tag}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-600 mt-2">Filter data by mastersheet tag</p>
+            </div>
+          )}
+
+          {/* Export Buttons */}
+          <div className="grid grid-cols-3 gap-2">
+            <Button
+              onClick={handleDownloadPDF}
+              disabled={exporting}
+              className="h-10 text-xs"
+              variant="default"
+            >
+              <Download className="h-3 w-3 mr-1" />
+              PDF
+            </Button>
+            <Button
+              onClick={handleDownloadExcel}
+              disabled={exporting}
+              className="h-10 text-xs"
+              variant="default"
+            >
+              <Download className="h-3 w-3 mr-1" />
+              Excel
+            </Button>
+            <Button
+              onClick={handleDownloadCSV}
+              disabled={exporting}
+              className="h-10 text-xs"
+              variant="default"
+            >
+              <Download className="h-3 w-3 mr-1" />
+              CSV
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -732,14 +1290,18 @@ export function ManagedAccounts({
             return (
               <div key={index} className="space-y-6">
                 <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-                  <CardHeader>
-                    <CardTitle className="text-card-text text-sm sm:text-sm">
-                      {item.metadata.account_name} ({item.metadata.account_type.toUpperCase()} -{" "}
-                      {item.metadata.broker})
-                      {!item.metadata.isActive ? " (Inactive)" : ""}
+                  <CardHeader className="pb-4">
+                    <CardTitle className="text-base sm:text-lg font-semibold text-card-text">
+                      {item.metadata.account_name}
+                      <span className="ml-2 text-sm font-normal text-card-text-secondary">
+                        ({item.metadata.account_type.toUpperCase()} - {item.metadata.broker})
+                      </span>
+                      {!item.metadata.isActive && (
+                        <span className="ml-2 text-xs text-yellow-600">(Inactive)</span>
+                      )}
                     </CardTitle>
-                    <div className="text-sm text-card-text-secondary">
-                      Strategy: <strong>{item.metadata.strategyName || "Unknown Strategy"}</strong>
+                    <div className="text-sm text-card-text-secondary mt-1">
+                      Strategy: <strong className="font-medium">{item.metadata.strategyName || "Unknown Strategy"}</strong>
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -872,7 +1434,7 @@ export function ManagedAccounts({
           {/* Cash Flows */}
           <div data-pdf="split" className="avoid-break">
             <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0 p-4">
-              <CardTitle className="text-sm sm:text-lg text-black">Cash In / Out</CardTitle>
+              <CardTitle className="text-sm sm:text-lg text-black">Cash In / Out (₹)</CardTitle>
               <CardContent className="p-0 mt-4">
                 <CashFlowTable
                   transactions={reportModel.transactions}

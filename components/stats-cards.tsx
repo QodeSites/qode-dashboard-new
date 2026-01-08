@@ -78,7 +78,7 @@ export function StatsCards({
       return {
         amountDeposited: 'Deposit Amount',
         currentExposure: 'Current Exposure',
-        return: 'Return on Exposure',
+        return: 'Return',
         totalDividend: 'Total Dividend'
       };
     }
@@ -131,7 +131,7 @@ export function StatsCards({
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 overflow-visible">
       {statItems.map((stat, index) => (
-        <div key={stat.name} className="bg-white/50 rounded-md overflow-visible">
+        <div key={stat.name} className="bg-white/50 rounded-md overflow-visible card-shadow">
           <div className="pt-2 px-5 pb-2 relative flex flex-col min-h-24">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
@@ -182,8 +182,8 @@ export function StatsCards({
                 </div>
               )}
             </div>
-            
-           <p className="flex font-[500] mt-4 text-card-text-secondary text-2xl font-heading">{stat.value}</p>
+
+           <p className="flex font-[500] mt-4 text-card-text-secondary text-3xl font-heading">{stat.value}</p>
               
            
           </div>

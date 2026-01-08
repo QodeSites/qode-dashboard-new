@@ -52,14 +52,10 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
     const max = Math.max(...data);
     const range = max - min;
 
-    let bufferPercent;
-    if (range < 5) bufferPercent = 0.5;
-    else if (range < 20) bufferPercent = 0.3;
-    else if (range < 50) bufferPercent = 0.2;
-    else bufferPercent = 0.1;
+    // Use extremely small buffer to create dramatic upward trend visualization
+    const buffer = range * 0.005; // Just 0.5% buffer on each side
 
-    const buffer = range * bufferPercent;
-
+    // Set minimum extremely close to actual minimum for maximum visual impact
     return {
       min: Math.max(0, min - buffer),
       max: max + buffer,
@@ -291,7 +287,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
       }
       if (processedBenchmarkData.length > 0) {
         mergedSeries.push({
-          name: "BSE500",
+          name: "NIFTY 50",
           data: processedBenchmarkData,
           color: "#4169E1",
           zIndex: 1,
@@ -316,7 +312,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
       }
       if (benchmarkDrawdownCurve.length > 0) {
         mergedSeries.push({
-          name: "BSE500 Drawdown",
+          name: "NIFTY 50 Drawdown",
           data: benchmarkDrawdownCurve,
           color: "#FF8F00",
           zIndex: 1,
@@ -354,8 +350,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
           },
           labels: {
             format: "{value:%d-%m-%Y}", // Use DD-MM-YYYY format
-            // rotation: -45, // Rotate labels for better readability
-            // autoRotation: [-45, -90], // Allow dynamic rotation if needed
+            rotation: -45, // Rotate labels for better readability
             style: {
               color: "#2E8B57",
               fontSize: "12px",
@@ -470,9 +465,9 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
             }
 
             const portfolioSeries = chart.series.find((s: any) => s.name === "Portfolio");
-            const benchmarkSeries = chart.series.find((s: any) => s.name === "BSE500");
+            const benchmarkSeries = chart.series.find((s: any) => s.name === "NIFTY 50");
             const portfolioDrawdownSeries = chart.series.find((s: any) => s.name === "Portfolio Drawdown");
-            const benchmarkDrawdownSeries = chart.series.find((s: any) => s.name === "BSE500 Drawdown");
+            const benchmarkDrawdownSeries = chart.series.find((s: any) => s.name === "NIFTY 50 Drawdown");
 
             const portfolioPoint = portfolioSeries ? getNearestPoint(portfolioSeries, hoveredX) : null;
             const benchmarkPoint = benchmarkSeries ? getNearestPoint(benchmarkSeries, hoveredX) : null;

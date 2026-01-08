@@ -20,7 +20,7 @@ interface MonthlyPnlData {
         capitalInOut: string;
       };
     };
-    totalPercent: number;
+    totalPercent: number | string;
     totalCash: number;
     totalCapitalInOut: number;
   };
@@ -44,6 +44,8 @@ interface PnlTableProps {
   isPdfExport?: boolean; // New prop to force percent view during PDF export
   afterFees?: boolean;
   fees?: FeesData;
+  setAfterFees?: (value: boolean) => void;
+  isTotalPortfolio?: boolean;
 }
 
 export function PnlTable({
@@ -54,6 +56,8 @@ export function PnlTable({
   isPdfExport = false,
   afterFees = false,
   fees,
+  setAfterFees,
+  isTotalPortfolio = false,
 }: PnlTableProps) {
   console.log(showOnlyQuarterlyCash);
 
@@ -128,30 +132,56 @@ export function PnlTable({
 
     return (
       <Card className="bg-white/50 border-0 p-4">
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center mb-4">
           <CardTitle className="text-sm sm:text-lg text-black">
             Quarterly Profit and Loss ({displayType === "percent" ? "%" : "₹"})
           </CardTitle>
-          {!showOnlyQuarterlyCash && !showPmsQawView && !isPdfExport && (
-            <div className="space-x-2">
-              <Button
-                onClick={() => setViewType("percent")}
-                size="sm"
-                variant={viewType === "percent" ? "default" : "outline"}
-                className="border-green-700 text-xs"
-              >
-                %
-              </Button>
-              <Button
-                onClick={() => setViewType("cash")}
-                size="sm"
-                variant={viewType === "cash" ? "default" : "outline"}
-                className="border-green-700 text-xs"
-              >
-                ₹
-              </Button>
-            </div>
-          )}
+          <div className="flex gap-2 items-center">
+            {!showOnlyQuarterlyCash && !showPmsQawView && !isPdfExport && (
+              <div className="space-x-2">
+                <Button
+                  onClick={() => setViewType("percent")}
+                  size="sm"
+                  variant={viewType === "percent" ? "default" : "outline"}
+                  className="border-green-700 text-xs"
+                >
+                  %
+                </Button>
+                <Button
+                  onClick={() => setViewType("cash")}
+                  size="sm"
+                  variant={viewType === "cash" ? "default" : "outline"}
+                  className="border-green-700 text-xs"
+                >
+                  ₹
+                </Button>
+              </div>
+            )}
+            {isTotalPortfolio && setAfterFees && !isPdfExport && (
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setAfterFees(false)}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    !afterFees
+                      ? "bg-button-text text-logo-green"
+                      : "text-button-text bg-logo-green"
+                  }`}
+                >
+                  Before Fees
+                </button>
+                <button
+                  onClick={() => setAfterFees(true)}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    afterFees
+                      ? "bg-button-text text-logo-green"
+                      : "text-button-text bg-logo-green"
+                  }`}
+                >
+                  After Fees
+                </button>
+              </div>
+            )}
+          </div>
         </div>
         <CardContent className="p-0 mt-4">
           <div className="w-full overflow-x-auto">

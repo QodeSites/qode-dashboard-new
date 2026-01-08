@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
+import * as XLSX from "xlsx-js-style";
 
 interface Holding {
     symbol: string;
@@ -63,7 +64,8 @@ interface Account {
 }
 
 const formatter = new Intl.NumberFormat("en-IN", {
-    style: "decimal",
+    style: "currency",
+    currency: "INR",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
 });
@@ -74,11 +76,11 @@ const formatDate = (date: Date | string | null) => {
     const dateObj = typeof date === 'string' ? new Date(date) : date;
     if (isNaN(dateObj.getTime())) return 'N/A';
 
-    return dateObj.toLocaleString('en-IN', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-    });
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const year = dateObj.getFullYear();
+
+    return `${day}/${month}/${year}`;
 };
 
 const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
@@ -91,7 +93,7 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
     if (total === 0) {
         return (
             <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-                <CardTitle className="text-black p-3 mb-4 rounded-t-sm  text-lg font-heading-bold">
+                <CardTitle className="text-black p-3 mb-4 rounded-t-sm  text-lg ">
                     Holdings Distribution
                 </CardTitle>
                 <CardContent>
@@ -107,7 +109,7 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
 
     return (
         <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-            <CardTitle className="text-black p-3 mb-4 rounded-t-sm  text-lg font-heading-bold">
+            <CardTitle className="text-black p-3 mb-4 rounded-t-sm  text-lg ">
                 Holding Distribution
             </CardTitle>
             <CardContent>
@@ -145,7 +147,7 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
                                 <div className="text-sm">
                                     <span className="font-medium text-card-text">Equity</span>
                                     <div className="text-sm text-gray-600">
-                                        {formatter.format(equityValue)} <sub className='font-bold'>({equityPercent.toFixed(1)}%)</sub>
+                                        {formatter.format(equityValue)}
                                     </div>
                                 </div>
                             </div>
@@ -156,7 +158,7 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
                                 <div className="text-sm">
                                     <span className="font-medium text-card-text">Debt</span>
                                     <div className="text-sm text-gray-600">
-                                        {formatter.format(debtValue)} <sub className='font-bold'>({debtPercent.toFixed(1)}%)</sub>
+                                        {formatter.format(debtValue)}
                                     </div>
                                 </div>
                             </div>
@@ -166,8 +168,8 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
                                 <div className="w-4 h-4 bg-[#008455] rounded"></div>
                                 <div className="text-sm">
                                     <span className="font-medium text-card-text">Hybrid</span>
-                                    <div className="text-xs text-gray-600">
-                                        {formatter.format(hybridValue)} ({hybridPercent.toFixed(1)}%)
+                                    <div className="text-sm text-gray-600">
+                                        {formatter.format(hybridValue)}
                                     </div>
                                 </div>
                             </div>
@@ -193,7 +195,7 @@ const HoldingsTable = ({
     if (!holdings || holdings.length === 0) {
         return (
             <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-                <CardTitle className="text-black p-3 mb-4 rounded-t-sm  text-lg font-heading-bold">
+                <CardTitle className="text-black p-3 mb-4 rounded-t-sm  text-lg ">
                     {title}
                 </CardTitle>
                 <CardContent>
@@ -211,7 +213,7 @@ const HoldingsTable = ({
 
     return (
         <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-            <CardTitle className="text-black p-3 mb-4 rounded-t-sm  text-lg font-heading-bold">
+            <CardTitle className="text-black p-3 mb-4 rounded-t-sm  text-lg ">
                 {title}
             </CardTitle>
             <CardContent>
@@ -260,7 +262,7 @@ const HoldingsTable = ({
                                         </div>
                                     </TableCell>
                                     <TableCell className="py-3 text-sm text-right text-gray-600">
-                                        {holding.quantity.toLocaleString()}
+                                        {holding.quantity.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </TableCell>
                                     <TableCell className="py-3 text-sm text-right text-gray-600">
                                         {formatter.format(holding.avgPrice)}
@@ -282,7 +284,7 @@ const HoldingsTable = ({
                                     <TableCell
                                         className={`py-3 text-sm font-medium text-right ${holding.percentPnl >= 0 ? "text-green-600" : "text-red-600"}`}
                                     >
-                                        {formatter.format(holding.percentPnl)}%
+                                        {holding.percentPnl.toFixed(2)}%
                                     </TableCell>
                                     <TableCell className="py-3 text-sm text-gray-600">
                                         <div className="flex items-center space-x-1">
@@ -299,7 +301,7 @@ const HoldingsTable = ({
                                 </TableRow>
                             ))}
                             {showTotals && (
-                                <TableRow className="border-t-2 border-gray-300 bg-gray-50 font-semibold">
+                                <TableRow className="border-t-2 border-black/10  font-semibold">
                                     <TableCell colSpan={4} className="py-3 text-sm font-bold text-card-text">
                                         Total
                                     </TableCell>
@@ -479,11 +481,26 @@ const HoldingsSummaryPage = () => {
             if (holdings) {
                 setHoldingsData(holdings);
 
-                const allHoldings = [...(holdings.equityHoldings || []), ...(holdings.debtHoldings || [])];
-                if (allHoldings.length > 0 && allHoldings[0]?.date) {
-                    const lastUpdated = new Date(allHoldings[0].date);
-                    setLastUpdatedDate(lastUpdated);
-                    console.log("Holdings last updated on:", lastUpdated);
+                // Find the latest date across all holdings (equity, debt, and mutual funds)
+                const allHoldings = [
+                    ...(holdings.equityHoldings || []),
+                    ...(holdings.debtHoldings || []),
+                    ...(holdings.mutualFundHoldings || [])
+                ];
+
+                if (allHoldings.length > 0) {
+                    // Filter out invalid dates and find the maximum date
+                    const validDates = allHoldings
+                        .map(h => h.date)
+                        .filter(date => date != null)
+                        .map(date => new Date(date))
+                        .filter(date => !isNaN(date.getTime()));
+
+                    if (validDates.length > 0) {
+                        const lastUpdated = new Date(Math.max(...validDates.map(d => d.getTime())));
+                        setLastUpdatedDate(lastUpdated);
+                        console.log("Holdings last updated on:", lastUpdated);
+                    }
                 }
             }
         } catch (err) {
@@ -493,327 +510,743 @@ const HoldingsSummaryPage = () => {
         }
     };
 
+    // Updated getAssetAllocation function to correctly sum holdings
+    // Uses separateHoldings to avoid double-counting and categorizes by debtEquity field
     const getAssetAllocation = () => {
         if (!holdingsData) return { equity: 0, debt: 0, hybrid: 0 };
 
-        // Include ALL holdings: equity, debt, AND mutual fund holdings
-        const allHoldings = [
-            ...(holdingsData.equityHoldings || []),
-            ...(holdingsData.debtHoldings || []),
-            ...(holdingsData.mutualFundHoldings || []) // Add mutual fund holdings
-        ];
+        const { stocks, mutualFunds } = separateHoldings();
+        let equity = 0;
+        let debt = 0;
+        let hybrid = 0;
 
-        return allHoldings.reduce((acc, holding) => {
-            const category = holding.debtEquity.toLowerCase();
+        // Process all stock holdings
+        stocks.forEach(holding => {
+            const category = holding.debtEquity?.toLowerCase() || 'equity';
+            const val = holding.valueAsOfToday || 0;
             if (category === 'equity') {
-                acc.equity += holding.valueAsOfToday;
+                equity += val;
             } else if (category === 'debt') {
-                acc.debt += holding.valueAsOfToday;
-            } else if (category === 'hybrid') {
-                acc.hybrid += holding.valueAsOfToday;
+                debt += val;
             } else {
-                // Handle any other categories as hybrid
-                acc.hybrid += holding.valueAsOfToday;
+                hybrid += val;
             }
-            return acc;
-        }, { equity: 0, debt: 0, hybrid: 0 });
+        });
+
+        // Process all mutual fund holdings
+        mutualFunds.forEach(holding => {
+            const category = holding.debtEquity?.toLowerCase() || 'hybrid';
+            const val = holding.valueAsOfToday || 0;
+            if (category === 'equity') {
+                equity += val;
+            } else if (category === 'debt') {
+                debt += val;
+            } else {
+                hybrid += val;
+            }
+        });
+
+        return { equity, debt, hybrid };
     };
 
     const separateHoldings = () => {
-    if (!holdingsData) return { stocks: [], mutualFunds: [] };
+        if (!holdingsData) return { stocks: [], mutualFunds: [] };
 
-    const seen = new Set<string>();
-    const uniqueHoldings: Holding[] = [];
+        const seen = new Set<string>();
+        const uniqueHoldings: Holding[] = [];
 
-    const all = [
-        ...(holdingsData.equityHoldings || []),
-        ...(holdingsData.debtHoldings || []),
-        ...(holdingsData.mutualFundHoldings || [])
-    ];
+        const all = [
+            ...(holdingsData.equityHoldings || []),
+            ...(holdingsData.debtHoldings || []),
+            ...(holdingsData.mutualFundHoldings || [])
+        ];
 
-    all.forEach(holding => {
-        const isStock = holding.exchange && (holding.exchange.includes('NSE') || holding.exchange.includes('BSE'));
-        
-        const key = isStock
-            ? `${holding.symbol}-${holding.exchange}-${holding.broker}`
-            : `${holding.symbol}-${holding.isin || 'no-isin'}-${holding.broker}-${holding.avgPrice.toFixed(4)}`;
+        all.forEach(holding => {
+            const isStock = holding.exchange && (holding.exchange.includes('NSE') || holding.exchange.includes('BSE'));
 
-        if (!seen.has(key)) {
-            seen.add(key);
-            uniqueHoldings.push(holding);
-        }
-    });
+            const key = isStock
+                ? `${holding.symbol}-${holding.exchange}-${holding.broker}`
+                : `${holding.symbol}-${holding.isin || 'no-isin'}-${holding.broker}-${holding.avgPrice.toFixed(4)}`;
 
-    return {
-        stocks: uniqueHoldings.filter(h => h.exchange?.includes('NSE') || h.exchange?.includes('BSE')),
-        mutualFunds: uniqueHoldings.filter(h => !h.exchange || (!h.exchange.includes('NSE') && !h.exchange.includes('BSE')))
+            if (!seen.has(key)) {
+                seen.add(key);
+                uniqueHoldings.push(holding);
+            }
+        });
+
+        return {
+            stocks: uniqueHoldings.filter(h => h.exchange?.includes('NSE') || h.exchange?.includes('BSE')),
+            mutualFunds: uniqueHoldings.filter(h => !h.exchange || (!h.exchange.includes('NSE') && !h.exchange.includes('BSE')))
+        };
     };
-};
 
     const formatNumber = (num: number) => {
         return num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
 
     const handleDownloadCSV = () => {
-    try {
+        try {
+            if (!holdingsData) {
+                setError('No holdings data available to export');
+                return;
+            }
+
+            let csvData = [];
+            // Create filename with client name and date
+            const clientName = session?.user?.name?.replace(/\s+/g, '_') || 'client';
+            const dateStr = new Date().toISOString().split('T')[0];
+            const filename = `${clientName}_holding_summary_${dateStr}.csv`;
+
+            // Helper function to format currency values without symbol
+            const formatCurrency = (value) => {
+                if (value === null || value === undefined || value === '' || isNaN(value)) return 'N/A';
+                const numValue = typeof value === 'string' ? parseFloat(value) : value;
+                if (isNaN(numValue)) return 'N/A';
+                return new Intl.NumberFormat('en-IN', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                }).format(numValue);
+            };
+
+            // Helper function to format percentage values
+            const formatPercentage = (value) => {
+                if (value === null || value === undefined) return 'N/A';
+                const numValue = typeof value === 'string' ? parseFloat(value) : value;
+                return (numValue).toFixed(2) + '%';
+            };
+
+            // Portfolio Summary Section
+            csvData.push(['Portfolio Holdings Summary', '']);
+            csvData.push(['Generated On', new Date().toLocaleDateString('en-IN')]);
+            if (lastUpdatedDate) {
+                csvData.push(['Data As Of', formatDate(lastUpdatedDate)]);
+            }
+            csvData.push(['Account Name', session?.user?.name || 'N/A']);
+
+            // Handle special accounts (Sarla/Satidham) vs regular accounts
+            if (isSarla || isSatidham) {
+                csvData.push(['Account Type', isSarla ? 'MANAGED_ACCOUNT' : 'MANAGED_ACCOUNT']);
+            } else if (selectedAccount && accounts.length > 0) {
+                const accountData = accounts.find(acc => acc.qcode === selectedAccount);
+                csvData.push(['Account Name', accountData?.account_name || 'Unknown']);
+                csvData.push(['Account Type', accountData?.account_type?.toUpperCase() || 'Unknown']);
+                csvData.push(['Broker', accountData?.broker || 'Unknown']);
+            }
+
+            csvData.push(['', '']); // Empty row
+
+            // Portfolio Statistics
+            csvData.push(['Portfolio Statistics', '']);
+            csvData.push(['Total Investment Value', formatCurrency(holdingsData.totalBuyValue)]);
+            csvData.push(['Current Portfolio Value', formatCurrency(holdingsData.totalCurrentValue)]);
+            csvData.push(['Total Profit/Loss Amount', formatCurrency(holdingsData.totalPnl)]);
+            csvData.push(['Total Profit/Loss Percentage', formatPercentage(holdingsData.totalPnlPercent)]);
+            csvData.push(['Total Holdings Count', holdingsData.holdingsCount || 0]);
+            csvData.push(['', '']); // Empty row
+
+            // Asset Allocation
+            const assetAllocation = getAssetAllocation();
+            const total = assetAllocation.equity + assetAllocation.debt + assetAllocation.hybrid;
+
+            if (total > 0) {
+                csvData.push(['Asset Allocation', '']);
+                csvData.push(['Asset Type', 'Value', 'Percentage']);
+
+                if (assetAllocation.equity > 0) {
+                    csvData.push(['Equity', formatCurrency(assetAllocation.equity), formatPercentage((assetAllocation.equity / total) * 100)]);
+                }
+                if (assetAllocation.debt > 0) {
+                    csvData.push(['Debt', formatCurrency(assetAllocation.debt), formatPercentage((assetAllocation.debt / total) * 100)]);
+                }
+                if (assetAllocation.hybrid > 0) {
+                    csvData.push(['Hybrid', formatCurrency(assetAllocation.hybrid), formatPercentage((assetAllocation.hybrid / total) * 100)]);
+                }
+                csvData.push(['', '']); // Empty row
+            }
+
+            // Category Breakdown
+            if (holdingsData.categoryBreakdown && Object.keys(holdingsData.categoryBreakdown).length > 0) {
+                csvData.push(['Category Breakdown', '']);
+                csvData.push(['Category', 'Buy Value', 'Current Value', 'P&L', 'Holdings Count']);
+
+                Object.entries(holdingsData.categoryBreakdown).forEach(([category, data]) => {
+                    csvData.push([
+                        category,
+                        formatCurrency(data.buyValue),
+                        formatCurrency(data.currentValue),
+                        formatCurrency(data.pnl),
+                        data.count
+                    ]);
+                });
+                csvData.push(['', '']); // Empty row
+            }
+
+            // Broker Breakdown
+            if (holdingsData.brokerBreakdown && Object.keys(holdingsData.brokerBreakdown).length > 0) {
+                csvData.push(['Broker Breakdown', '']);
+                csvData.push(['Broker', 'Buy Value', 'Current Value', 'P&L', 'Holdings Count']);
+
+                Object.entries(holdingsData.brokerBreakdown).forEach(([broker, data]) => {
+                    csvData.push([
+                        broker,
+                        formatCurrency(data.buyValue),
+                        formatCurrency(data.currentValue),
+                        formatCurrency(data.pnl),
+                        data.count
+                    ]);
+                });
+                csvData.push(['', '']); // Empty row
+            }
+
+            // Stock Holdings Detail
+            const { stocks, mutualFunds } = separateHoldings();
+
+            if (stocks && stocks.length > 0) {
+                csvData.push(['Stock Holdings Detail', '']);
+                csvData.push([
+                    'Symbol',
+                    'Exchange',
+                    'Broker',
+                    'Quantity',
+                    'Average Price (₹)',
+                    'Current Price (₹)',
+                    'Invested Amount (₹)',
+                    'Current Value (₹)',
+                    'Profit & Loss Amount (₹)',
+                    'Profit & Loss (%)',
+                    'Category',
+                ]);
+
+                stocks.forEach(holding => {
+                    csvData.push([
+                        holding.symbol,
+                        holding.exchange || 'N/A',
+                        holding.broker || 'N/A',
+                        holding.quantity.toLocaleString(),
+                        formatCurrency(holding.avgPrice),
+                        formatCurrency(holding.ltp),
+                        formatCurrency(holding.buyValue),
+                        formatCurrency(holding.valueAsOfToday),
+                        formatCurrency(holding.pnlAmount),
+                        formatPercentage(holding.percentPnl),
+                        holding.debtEquity || 'N/A',
+                    ]);
+                });
+
+                // Stock Holdings Summary
+                const stockTotals = stocks.reduce((acc, holding) => ({
+                    investedAmount: acc.investedAmount + holding.buyValue,
+                    currentValue: acc.currentValue + holding.valueAsOfToday,
+                    pnl: acc.pnl + holding.pnlAmount,
+                }), { investedAmount: 0, currentValue: 0, pnl: 0 });
+
+                csvData.push([
+                    'TOTAL STOCKS',
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                    formatCurrency(stockTotals.investedAmount),
+                    formatCurrency(stockTotals.currentValue),
+                    formatCurrency(stockTotals.pnl),
+                    formatPercentage(stockTotals.investedAmount > 0 ? (stockTotals.pnl / stockTotals.investedAmount) * 100 : 0),
+                    ''
+                ]);
+                csvData.push(['', '']); // Empty row
+            }
+
+            // Mutual Fund Holdings Detail
+            if (mutualFunds && mutualFunds.length > 0) {
+                csvData.push(['Mutual Fund Holdings Detail', '']);
+                csvData.push([
+                    'Fund Name',
+                    'ISIN',
+                    'Broker',
+                    'Units',
+                    'Average Cost (₹)',
+                    'Current Price (₹)',
+                    'Invested Amount (₹)',
+                    'Current Value (₹)',
+                    'P&L Amount (₹)',
+                    'P&L Percentage (%)',
+                    'Category',
+                    'Sub Category'
+                ]);
+
+                mutualFunds.forEach(holding => {
+                    csvData.push([
+                        holding.symbol,
+                        holding.isin || 'N/A',
+                        holding.broker || 'N/A',
+                        holding.quantity.toLocaleString(),
+                        formatCurrency(holding.avgPrice),  // Fixed: was holding.ltp
+                        formatCurrency(holding.ltp),
+                        formatCurrency(holding.buyValue),
+                        formatCurrency(holding.valueAsOfToday),
+                        formatCurrency(holding.pnlAmount),
+                        formatPercentage(holding.percentPnl),
+                        holding.debtEquity || 'N/A',
+                        holding.subCategory || 'N/A'
+                    ]);
+                });
+
+                // Mutual Fund Holdings Summary
+                const mfTotals = mutualFunds.reduce((acc, holding) => ({
+                    investedAmount: acc.investedAmount + holding.buyValue,
+                    currentValue: acc.currentValue + holding.valueAsOfToday,
+                    pnl: acc.pnl + holding.pnlAmount,
+                }), { investedAmount: 0, currentValue: 0, pnl: 0 });
+
+                csvData.push([
+                    'TOTAL MUTUAL FUNDS',
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                    formatCurrency(mfTotals.investedAmount),
+                    formatCurrency(mfTotals.currentValue),
+                    formatCurrency(mfTotals.pnl),
+                    formatPercentage(mfTotals.investedAmount > 0 ? (mfTotals.pnl / mfTotals.investedAmount) * 100 : 0),
+                    '',
+                    ''
+                ]);
+                csvData.push(['', '']); // Empty row
+            }
+
+            // Convert to CSV string
+            const csvContent = csvData.map(row =>
+                row.map(field => {
+                    // Handle fields that might contain commas or quotes
+                    if (typeof field === 'string' && (field.includes(',') || field.includes('"') || field.includes('\n'))) {
+                        return `"${field.replace(/"/g, '""')}"`;
+                    }
+                    return field;
+                }).join(',')
+            ).join('\n');
+
+            // Create and download the CSV file
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+
+            if (link.download !== undefined) {
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', filename);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url); // Clean up the URL object
+            }
+
+        } catch (error) {
+            console.error('Error generating CSV:', error);
+            setError('Failed to generate CSV file');
+        }
+    };
+
+    // Excel Download Function with styled headers matching SarlaSatidham.tsx
+    const handleDownloadExcel = () => {
         if (!holdingsData) {
-            setError('No holdings data available to export');
+            setError('No holdings data available to download');
             return;
         }
 
-        let csvData = [];
-        const filename = `holdings_summary_${new Date().toISOString().split('T')[0]}.csv`;
+        try {
+            const assetAllocation = getAssetAllocation();
+            const { stocks, mutualFunds } = separateHoldings();
+            const total = assetAllocation.equity + assetAllocation.debt + assetAllocation.hybrid;
 
-        // Helper function to format currency values without symbol
-        const formatCurrency = (value) => {
-            if (value === null || value === undefined || value === '' || isNaN(value)) return 'N/A';
-            const numValue = typeof value === 'string' ? parseFloat(value) : value;
-            if (isNaN(numValue)) return 'N/A';
-            return new Intl.NumberFormat('en-IN', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-            }).format(numValue);
-        };
+            // Build comprehensive data array
+            const wsData: any[][] = [];
+            const headerRowIndices: number[] = [];
+            const subHeaderRowIndices: number[] = [];
 
-        // Helper function to format percentage values
-        const formatPercentage = (value) => {
-            if (value === null || value === undefined) return 'N/A';
-            const numValue = typeof value === 'string' ? parseFloat(value) : value;
-            return (numValue).toFixed(2) + '%';
-        };
+            // Add Qode symbol/logo as title and empty row (Q in column B)
+            wsData.push(["", "Q"]);
+            wsData.push([]);
 
-        // Portfolio Summary Section
-        csvData.push(['Portfolio Holdings Summary', '']);
-        csvData.push(['Generated On', new Date().toLocaleDateString('en-IN')]);
-        if (lastUpdatedDate) {
-            csvData.push(['Data As Of', formatDate(lastUpdatedDate)]);
-        }
-        csvData.push(['Account Name', session?.user?.name || 'N/A']);
+            // Portfolio Holdings Summary Section
+            headerRowIndices.push(wsData.length);
+            wsData.push(["", 'Portfolio Holdings Summary']);
+            wsData.push(["", 'Generated on:', new Date().toLocaleString('en-IN')]);
+            wsData.push(["", 'Account:', session?.user?.name || 'N/A']);
+            wsData.push([]);
 
-        // Handle special accounts (Sarla/Satidham) vs regular accounts
-        if (isSarla || isSatidham) {
-            csvData.push(['Account Type', isSarla ? 'Sarla Account' : 'Satidham Account']);
-        } else if (selectedAccount && accounts.length > 0) {
-            const accountData = accounts.find(acc => acc.qcode === selectedAccount);
-            csvData.push(['Account Name', accountData?.account_name || 'Unknown']);
-            csvData.push(['Account Type', accountData?.account_type?.toUpperCase() || 'Unknown']);
-            csvData.push(['Broker', accountData?.broker || 'Unknown']);
-        }
+            // Portfolio Statistics Section
+            headerRowIndices.push(wsData.length);
+            wsData.push(["", 'Portfolio Statistics']);
+            wsData.push(["", 'Total Buy Value', parseFloat(String(holdingsData.totalBuyValue)) || 0]);
+            wsData.push(["", 'Total Current Value', parseFloat(String(holdingsData.totalCurrentValue)) || 0]);
+            wsData.push(["", 'Total P&L', parseFloat(String(holdingsData.totalPnl)) || 0]);
+            wsData.push(["", 'Total P&L (%)', parseFloat(String(holdingsData.totalPnlPercent)) || 0]);
+            wsData.push(["", 'Total Holdings Count', parseFloat(String(holdingsData.holdingsCount)) || 0]);
+            wsData.push([]);
 
-        csvData.push(['', '']); // Empty row
+            // Asset Allocation Section
+            headerRowIndices.push(wsData.length);
+            wsData.push(["", 'Asset Allocation']);
+            subHeaderRowIndices.push(wsData.length);
+            wsData.push(["", 'Type', 'Value', 'Percentage (%)']);
+            wsData.push(["", 'Equity', parseFloat(String(assetAllocation.equity)) || 0, total > 0 ? (assetAllocation.equity / total) * 100 : 0]);
+            wsData.push(["", 'Debt', parseFloat(String(assetAllocation.debt)) || 0, total > 0 ? (assetAllocation.debt / total) * 100 : 0]);
+            wsData.push(["", 'Hybrid', parseFloat(String(assetAllocation.hybrid)) || 0, total > 0 ? (assetAllocation.hybrid / total) * 100 : 0]);
+            wsData.push(["", 'Total', total, 100]);
+            wsData.push([]);
 
-        // Portfolio Statistics
-        csvData.push(['Portfolio Statistics', '']);
-        csvData.push(['Total Investment Value', formatCurrency(holdingsData.totalBuyValue)]);
-        csvData.push(['Current Portfolio Value', formatCurrency(holdingsData.totalCurrentValue)]);
-        csvData.push(['Total Profit/Loss Amount', formatCurrency(holdingsData.totalPnl)]);
-        csvData.push(['Total Profit/Loss Percentage', formatPercentage(holdingsData.totalPnlPercent)]);
-        csvData.push(['Total Holdings Count', holdingsData.holdingsCount || 0]);
-        csvData.push(['', '']); // Empty row
-
-        // Asset Allocation
-        const assetAllocation = getAssetAllocation();
-        const total = assetAllocation.equity + assetAllocation.debt + assetAllocation.hybrid;
-
-        if (total > 0) {
-            csvData.push(['Asset Allocation', '']);
-            csvData.push(['Asset Type', 'Value', 'Percentage']);
-
-            if (assetAllocation.equity > 0) {
-                csvData.push(['Equity', formatCurrency(assetAllocation.equity), formatPercentage((assetAllocation.equity / total) * 100)]);
-            }
-            if (assetAllocation.debt > 0) {
-                csvData.push(['Debt', formatCurrency(assetAllocation.debt), formatPercentage((assetAllocation.debt / total) * 100)]);
-            }
-            if (assetAllocation.hybrid > 0) {
-                csvData.push(['Hybrid', formatCurrency(assetAllocation.hybrid), formatPercentage((assetAllocation.hybrid / total) * 100)]);
-            }
-            csvData.push(['', '']); // Empty row
-        }
-
-        // Category Breakdown
-        if (holdingsData.categoryBreakdown && Object.keys(holdingsData.categoryBreakdown).length > 0) {
-            csvData.push(['Category Breakdown', '']);
-            csvData.push(['Category', 'Buy Value', 'Current Value', 'P&L', 'Holdings Count']);
-
-            Object.entries(holdingsData.categoryBreakdown).forEach(([category, data]) => {
-                csvData.push([
-                    category,
-                    formatCurrency(data.buyValue),
-                    formatCurrency(data.currentValue),
-                    formatCurrency(data.pnl),
-                    data.count
-                ]);
-            });
-            csvData.push(['', '']); // Empty row
-        }
-
-        // Broker Breakdown
-        if (holdingsData.brokerBreakdown && Object.keys(holdingsData.brokerBreakdown).length > 0) {
-            csvData.push(['Broker Breakdown', '']);
-            csvData.push(['Broker', 'Buy Value', 'Current Value', 'P&L', 'Holdings Count']);
-
-            Object.entries(holdingsData.brokerBreakdown).forEach(([broker, data]) => {
-                csvData.push([
+            // Broker Breakdown Section
+            headerRowIndices.push(wsData.length);
+            wsData.push(["", 'Broker Breakdown']);
+            subHeaderRowIndices.push(wsData.length);
+            wsData.push(["", 'Broker', 'Buy Value', 'Current Value', 'P&L', 'Holdings Count']);
+            Object.entries(holdingsData.brokerBreakdown || {}).forEach(([broker, data]) => {
+                wsData.push([
+                    "",
                     broker,
-                    formatCurrency(data.buyValue),
-                    formatCurrency(data.currentValue),
-                    formatCurrency(data.pnl),
-                    data.count
+                    parseFloat(String(data.buyValue)) || 0,
+                    parseFloat(String(data.currentValue)) || 0,
+                    parseFloat(String(data.pnl)) || 0,
+                    parseFloat(String(data.count)) || 0
                 ]);
             });
-            csvData.push(['', '']); // Empty row
-        }
+            wsData.push([]);
 
-        // Stock Holdings Detail
-        const { stocks, mutualFunds } = separateHoldings();
-
-        if (stocks && stocks.length > 0) {
-            csvData.push(['Stock Holdings Detail', '']);
-            csvData.push([
+            // Stock Holdings Detail
+            headerRowIndices.push(wsData.length);
+            wsData.push(["", 'Stock Holdings Detail']);
+            subHeaderRowIndices.push(wsData.length);
+            wsData.push([
+                "",
                 'Symbol',
                 'Exchange',
-                'Broker',
                 'Quantity',
-                'Average Price (₹)',
-                'Current Price (₹)',
-                'Invested Amount (₹)',
-                'Current Value (₹)',
-                'Profit & Loss Amount (₹)',
-                'Profit & Loss (%)',
-                'Category',
+                'Avg Price',
+                'LTP',
+                'Buy Value',
+                'Current Value',
+                'P&L Amount',
+                'P&L (%)',
+                'Broker',
+                'Category'
             ]);
-
             stocks.forEach(holding => {
-                csvData.push([
+                wsData.push([
+                    "",
                     holding.symbol,
-                    holding.exchange || 'N/A',
-                    holding.broker || 'N/A',
-                    holding.quantity.toLocaleString(),
-                    formatCurrency(holding.avgPrice),
-                    formatCurrency(holding.ltp),
-                    formatCurrency(holding.buyValue),
-                    formatCurrency(holding.valueAsOfToday),
-                    formatCurrency(holding.pnlAmount),
-                    formatPercentage(holding.percentPnl),
-                    holding.debtEquity || 'N/A',
+                    holding.exchange,
+                    parseFloat(holding.quantity) || 0,
+                    parseFloat(holding.avgPrice) || 0,
+                    parseFloat(holding.ltp) || 0,
+                    parseFloat(holding.buyValue) || 0,
+                    parseFloat(holding.valueAsOfToday) || 0,
+                    parseFloat(holding.pnlAmount) || 0,
+                    parseFloat(holding.percentPnl) || 0,
+                    holding.broker,
+                    holding.debtEquity
                 ]);
             });
+            wsData.push([]);
 
-            // Stock Holdings Summary
-            const stockTotals = stocks.reduce((acc, holding) => ({
-                investedAmount: acc.investedAmount + holding.buyValue,
-                currentValue: acc.currentValue + holding.valueAsOfToday,
-                pnl: acc.pnl + holding.pnlAmount,
-            }), { investedAmount: 0, currentValue: 0, pnl: 0 });
-
-            csvData.push([
-                'TOTAL STOCKS',
-                '',
-                '',
-                '',
-                '',
-                '',
-                formatCurrency(stockTotals.investedAmount),
-                formatCurrency(stockTotals.currentValue),
-                formatCurrency(stockTotals.pnl),
-                formatPercentage(stockTotals.investedAmount > 0 ? (stockTotals.pnl / stockTotals.investedAmount) * 100 : 0),
-                ''
-            ]);
-            csvData.push(['', '']); // Empty row
-        }
-
-        // Mutual Fund Holdings Detail
-        if (mutualFunds && mutualFunds.length > 0) {
-            csvData.push(['Mutual Fund Holdings Detail', '']);
-            csvData.push([
-                'Fund Name',
+            // Mutual Fund Holdings Detail
+            headerRowIndices.push(wsData.length);
+            wsData.push(["", 'Mutual Fund Holdings Detail']);
+            subHeaderRowIndices.push(wsData.length);
+            wsData.push([
+                "",
+                'Symbol',
                 'ISIN',
+                'Quantity',
+                'Avg Price',
+                'LTP',
+                'Buy Value',
+                'Current Value',
+                'P&L Amount',
+                'P&L (%)',
                 'Broker',
-                'Units',
-                'Average Cost (₹)',
-                'Current Price (₹)',
-                'Invested Amount (₹)',
-                'Current Value (₹)',
-                'P&L Amount (₹)',
-                'P&L Percentage (%)',
-                'Category',
-                'Sub Category'
+                'Category'
             ]);
-
             mutualFunds.forEach(holding => {
-                csvData.push([
+                wsData.push([
+                    "",
                     holding.symbol,
                     holding.isin || 'N/A',
-                    holding.broker || 'N/A',
-                    holding.quantity.toLocaleString(),
-                    formatCurrency(holding.avgPrice),  // Fixed: was holding.ltp
-                    formatCurrency(holding.ltp),
-                    formatCurrency(holding.buyValue),
-                    formatCurrency(holding.valueAsOfToday),
-                    formatCurrency(holding.pnlAmount),
-                    formatPercentage(holding.percentPnl),
-                    holding.debtEquity || 'N/A',
-                    holding.subCategory || 'N/A'
+                    parseFloat(holding.quantity) || 0,
+                    parseFloat(holding.avgPrice) || 0,
+                    parseFloat(holding.ltp) || 0,
+                    parseFloat(holding.buyValue) || 0,
+                    parseFloat(holding.valueAsOfToday) || 0,
+                    parseFloat(holding.pnlAmount) || 0,
+                    parseFloat(holding.percentPnl) || 0,
+                    holding.broker,
+                    holding.debtEquity
                 ]);
             });
 
-            // Mutual Fund Holdings Summary
-            const mfTotals = mutualFunds.reduce((acc, holding) => ({
-                investedAmount: acc.investedAmount + holding.buyValue,
-                currentValue: acc.currentValue + holding.valueAsOfToday,
-                pnl: acc.pnl + holding.pnlAmount,
-            }), { investedAmount: 0, currentValue: 0, pnl: 0 });
+            // Create worksheet from data
+            const ws = XLSX.utils.aoa_to_sheet(wsData);
 
-            csvData.push([
-                'TOTAL MUTUAL FUNDS',
-                '',
-                '',
-                '',
-                '',
-                '',
-                formatCurrency(mfTotals.investedAmount),
-                formatCurrency(mfTotals.currentValue),
-                formatCurrency(mfTotals.pnl),
-                formatPercentage(mfTotals.investedAmount > 0 ? (mfTotals.pnl / mfTotals.investedAmount) * 100 : 0),
-                '',
-                ''
-            ]);
-            csvData.push(['', '']); // Empty row
-        }
+            // Get worksheet range
+            const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
 
-        // Convert to CSV string
-        const csvContent = csvData.map(row =>
-            row.map(field => {
-                // Handle fields that might contain commas or quotes
-                if (typeof field === 'string' && (field.includes(',') || field.includes('"') || field.includes('\n'))) {
-                    return `"${field.replace(/"/g, '""')}"`;
+            // Calculate auto-fit column widths based on content
+            const maxCols = Math.max(...wsData.map(row => row.length));
+            const colWidths: { wch: number }[] = [];
+
+            for (let C = 0; C < maxCols; C++) {
+                // Column A (index 0) should be narrow as it's empty
+                if (C === 0) {
+                    colWidths.push({ wch: 2 });
+                    continue;
                 }
-                return field;
-            }).join(',')
-        ).join('\n');
 
-        // Create and download the CSV file
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
+                let maxWidth = 10; // Minimum width
+                for (let R = 0; R < wsData.length; R++) {
+                    const cellValue = wsData[R][C];
+                    if (cellValue != null) {
+                        const cellLength = String(cellValue).length;
+                        maxWidth = Math.max(maxWidth, cellLength);
+                    }
+                }
+                // Add some padding and cap at reasonable max
+                colWidths.push({ wch: Math.min(maxWidth + 2, 50) });
+            }
+            ws['!cols'] = colWidths;
 
-        if (link.download !== undefined) {
-            const url = URL.createObjectURL(blob);
-            link.setAttribute('href', url);
-            link.setAttribute('download', filename);
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url); // Clean up the URL object
+            // Define border style for tables
+            const tableBorder = {
+                top: { style: "thin", color: { rgb: "000000" } },
+                bottom: { style: "thin", color: { rgb: "000000" } },
+                left: { style: "thin", color: { rgb: "000000" } },
+                right: { style: "thin", color: { rgb: "000000" } }
+            };
+
+            // Define header style with dark green background (#02422B) and white text
+            const headerStyle = {
+                fill: {
+                    patternType: "solid",
+                    fgColor: { rgb: "02422B" }
+                },
+                font: {
+                    name: "Aptos Narrow",
+                    color: { rgb: "FFFFFF" },
+                    bold: true,
+                    sz: 11
+                },
+                alignment: {
+                    horizontal: "center",
+                    vertical: "center"
+                },
+                border: tableBorder
+            };
+
+            // Define sub-header style with #DABD38 background and #02422B text (dark green)
+            const subHeaderStyle = {
+                fill: {
+                    patternType: "solid",
+                    fgColor: { rgb: "DABD38" }
+                },
+                font: {
+                    name: "Aptos Narrow",
+                    color: { rgb: "02422B" },
+                    bold: true,
+                    sz: 11
+                },
+                alignment: {
+                    horizontal: "center",
+                    vertical: "center"
+                },
+                border: tableBorder
+            };
+
+            // Define regular cell styles with borders
+            const textStyle = {
+                font: {
+                    name: "Aptos Narrow",
+                    sz: 11
+                },
+                alignment: {
+                    horizontal: "left",
+                    vertical: "center"
+                },
+                border: tableBorder
+            };
+
+            const numberStyle = {
+                font: {
+                    name: "Aptos Narrow",
+                    sz: 11
+                },
+                alignment: {
+                    horizontal: "right",
+                    vertical: "center"
+                },
+                numFmt: "0.00",
+                border: tableBorder
+            };
+
+            const titleStyle = {
+                font: {
+                    name: "Playfair Display",
+                    bold: true,
+                    sz: 32,
+                    color: { rgb: "02422B" }
+                },
+                alignment: {
+                    horizontal: "left",
+                    vertical: "center"
+                }
+            };
+
+            // Helper function to check if a row is part of a table (has data in column B or later)
+            const isTableRow = (rowIdx: number) => {
+                // Skip title and empty rows
+                if (rowIdx <= 1) return false;
+
+                // Check if this row has any data in columns B onwards
+                const rowData = wsData[rowIdx];
+                if (!rowData) return false;
+
+                for (let i = 1; i < rowData.length; i++) {
+                    if (rowData[i] !== undefined && rowData[i] !== null && rowData[i] !== '') {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            // Apply styles to all cells
+            for (let R = range.s.r; R <= range.e.r; ++R) {
+                for (let C = range.s.c; C <= range.e.c; ++C) {
+                    const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+                    if (!ws[cellAddress]) continue;
+
+                    const cellValue = ws[cellAddress].v;
+
+                    // Skip styling for truly empty cells
+                    if (cellValue === null || cellValue === undefined || cellValue === '') {
+                        continue;
+                    }
+
+                    // Apply title style to first row (QODE)
+                    if (R === 0) {
+                        ws[cellAddress].s = titleStyle;
+                        continue;
+                    }
+
+                    // Skip styling for empty rows (row 1)
+                    if (R >= 1 && R <= 1) {
+                        continue;
+                    }
+
+                    // Ensure numbers are typed correctly and format to 2 decimal places
+                    if (typeof ws[cellAddress].v === 'number') {
+                        ws[cellAddress].t = 'n';
+                        ws[cellAddress].z = '0.00';
+                    } else if (typeof ws[cellAddress].v === 'string') {
+                        const trimmed = ws[cellAddress].v.trim();
+                        const num = parseFloat(trimmed);
+                        if (!isNaN(num) && trimmed === String(num)) {
+                            ws[cellAddress].v = num;
+                            ws[cellAddress].t = 'n';
+                            ws[cellAddress].z = '0.00';
+                        } else {
+                            ws[cellAddress].t = 's';
+                        }
+                    }
+
+                    // Only apply styles with borders if this is a table row and cell has content
+                    if (isTableRow(R)) {
+                        // Skip column A (index 0) - it should remain empty with no styling
+                        if (C === 0) {
+                            continue;
+                        } else if (headerRowIndices.includes(R)) {
+                            // Apply header style to header rows (only columns B onwards)
+                            ws[cellAddress].s = headerStyle;
+                        } else if (subHeaderRowIndices.includes(R)) {
+                            // Apply sub-header style with #DABD38 background (only columns B onwards)
+                            ws[cellAddress].s = subHeaderStyle;
+                        } else {
+                            // Regular cell styling based on type and column
+                            if (C === 1) {
+                                ws[cellAddress].s = textStyle;
+                            } else if (ws[cellAddress].t === 'n') {
+                                ws[cellAddress].s = numberStyle;
+                            } else {
+                                const rightAlignedTextStyle = {
+                                    ...textStyle,
+                                    alignment: {
+                                        horizontal: "right",
+                                        vertical: "center"
+                                    }
+                                };
+                                ws[cellAddress].s = rightAlignedTextStyle;
+                            }
+                        }
+                    } else {
+                        ws[cellAddress].s = textStyle;
+                    }
+                }
+            }
+
+            // Merge cells for headers (merge across full table width)
+            const merges: any[] = [];
+
+            // Helper function to find the max column width for a section
+            const getTableWidth = (startRow: number) => {
+                let maxCol = 1;
+                for (let r = startRow; r < Math.min(startRow + 15, wsData.length); r++) {
+                    if (wsData[r]) {
+                        for (let c = 1; c < wsData[r].length; c++) {
+                            if (wsData[r][c] !== undefined && wsData[r][c] !== null && wsData[r][c] !== '') {
+                                maxCol = Math.max(maxCol, c);
+                            }
+                        }
+                    }
+                    if (wsData[r] && wsData[r].every((cell: any, idx: number) => idx === 0 || !cell)) {
+                        break;
+                    }
+                }
+                return maxCol;
+            };
+
+            // Merge header rows across full table width
+            headerRowIndices.forEach(rowIdx => {
+                const tableWidth = getTableWidth(rowIdx);
+                if (tableWidth > 1) {
+                    merges.push({
+                        s: { r: rowIdx, c: 1 },
+                        e: { r: rowIdx, c: tableWidth }
+                    });
+                }
+            });
+
+            if (merges.length > 0) {
+                ws['!merges'] = merges;
+            }
+
+            // Set worksheet view to hide gridlines
+            (ws as any)['!views'] = [{
+                showGridLines: false
+            }];
+
+            // Create workbook and add worksheet
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Holdings Summary");
+
+            // Generate filename with timestamp
+            const timestamp = new Date().toISOString().split('T')[0];
+            const filename = `Holdings_Summary_${session?.user?.name || 'User'}_${timestamp}.xlsx`;
+
+            // Write and download
+            XLSX.writeFile(wb, filename);
+
+        } catch (error) {
+            console.error('Error generating Excel:', error);
+            setError('Failed to generate Excel file');
         }
-
-    } catch (error) {
-        console.error('Error generating CSV:', error);
-        setError('Failed to generate CSV file');
-    }
-};
-
+    };
     // Dynamic Pagination PDF Download Function (fixed with proper table pagination and headers)
     const handleDownloadPDF = async () => {
         if (!holdingsData) {
@@ -1185,7 +1618,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
         <td class="text-right">${formatNumber(h.valueAsOfToday)}</td>
         <td class="text-right ${h.pnlAmount >= 0 ? 'profit' : 'loss'}">${formatNumber(h.pnlAmount)}</td>
         <td class="text-right ${h.percentPnl >= 0 ? 'profit' : 'loss'}">${formatNumber(h.percentPnl)}%</td>
-        <td><span class="category-badge ${h.debtEquity.toLowerCase() === 'equity' ? 'category-equity' : h.debtEquity.toLowerCase() === 'hybrid' ? 'category-hybrid':'category-debt'}">${h.debtEquity}</span></td>
+        <td><span class="category-badge ${h.debtEquity.toLowerCase() === 'equity' ? 'category-equity' : h.debtEquity.toLowerCase() === 'hybrid' ? 'category-hybrid' : 'category-debt'}">${h.debtEquity}</span></td>
       </tr>
     `).join('');
 
@@ -1479,29 +1912,40 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
                     </div>
 
 
-                    <div className="flex flex-col">
-                        <div className="flex gap-2">
-                            <Button
-                                onClick={handleDownloadCSV}
-                                className="text-sm"
-                                variant="outline"
-                            >
-                                <Download className="h-4 w-4 mr-2" />
-                                Download CSV
-                            </Button>
+                    <div className="flex flex-col gap-2">
+                        <div className="flex gap-3">
                             <Button
                                 onClick={handleDownloadPDF}
                                 disabled={isGeneratingPdf}
-                                className="text-sm"
+                                className="h-11 px-4 text-sm font-medium"
+                                variant="default"
                             >
                                 <Download className="h-4 w-4 mr-2" />
-                                {isGeneratingPdf ? 'Generating PDF...' : 'Download PDF'}
+                                PDF
                             </Button>
+                            <Button
+                                onClick={handleDownloadExcel}
+                                disabled={isGeneratingPdf}
+                                className="h-11 px-4 text-sm font-medium"
+                                variant="default"
+                            >
+                                <Download className="h-4 w-4 mr-2" />
+                                Excel
+                            </Button>
+                            {/* <Button
+                                onClick={handleDownloadCSV}
+                                disabled={isGeneratingPdf}
+                                className="h-11 px-4 text-sm font-medium"
+                                variant="default"
+                            >
+                                <Download className="h-4 w-4 mr-2" />
+                                CSV
+                            </Button> */}
                         </div>
                         {lastUpdatedDate && (
                             <div className="text-right">
-                                <div className="text-sm text-gray-500 font-medium">
-                                    Last Updated : {formatDate(lastUpdatedDate)}
+                                <div className="text-xs text-card-text-secondary">
+                                    Data as of: <strong>{formatDate(lastUpdatedDate)}</strong>
                                 </div>
                             </div>
                         )}
@@ -1513,7 +1957,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
                         <div className="bg-white/50 backdrop-blur-sm card-shadow border-0 rounded-md overflow-visible">
                             <div className="pt-2 px-5 pb-2 relative flex flex-col h-24">
                                 <div className="flex items-center justify-between">
-                                    <div className="text-sm font-normal text-card-text">Investments Value</div>
+                                    <div className="text-sm font-sans font-normal text-card-text">Invested Value</div>
                                 </div>
                                 <div className="mt-4" />
                                 <div className="flex items-baseline justify-between">
@@ -1527,7 +1971,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
                         <div className="bg-white/50 backdrop-blur-sm card-shadow border-0 rounded-md overflow-visible">
                             <div className="pt-2 px-5 pb-2 relative flex flex-col h-24">
                                 <div className="flex items-center justify-between">
-                                    <div className="text-sm font-normal text-card-text">Current Value</div>
+                                    <div className="text-sm font-sans font-normal text-card-text">Current Value</div>
                                 </div>
                                 <div className="mt-4" />
                                 <div className="flex items-baseline justify-between">
@@ -1541,15 +1985,15 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
                         <div className="bg-white/50 backdrop-blur-sm card-shadow border-0 rounded-md overflow-visible">
                             <div className="pt-2 px-5 pb-2 relative flex flex-col h-24">
                                 <div className="flex items-center justify-between">
-                                    <div className="text-sm font-normal text-card-text">Profit & Loss</div>
+                                    <div className="text-sm font-sans font-normal text-card-text">Unrealized Profit & Loss</div>
                                 </div>
                                 <div className="mt-4" />
                                 <div className="flex items-baseline justify-between">
                                     <div className={`flex items-baseline text-3xl font-[500] font-heading ${holdingsData.totalPnl >= 0 ? 'text-green-700' : 'text-red-700'}`}>
                                         {formatter.format(holdingsData.totalPnl)}
-                                        <sub className={`text-sm mt-1 ${holdingsData.totalPnl >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                                            ({formatter.format(holdingsData.totalPnlPercent)}%)
-                                        </sub>
+                                        <span className={`text-base ml-2 ${holdingsData.totalPnl >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                                            ({holdingsData.totalPnlPercent.toFixed(2)}%)
+                                        </span>
                                     </div>
                                 </div>
                             </div>
