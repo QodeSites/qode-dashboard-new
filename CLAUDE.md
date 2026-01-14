@@ -21,7 +21,7 @@ npx prisma studio           # Open database GUI
 
 ## Architecture Overview
 
-This is a **Next.js 15 portfolio analytics dashboard** using the App Router pattern with React 19. Focus area is **prop and managed accounts**.
+This is a **Next.js 15 portfolio analytics dashboard** using the App Router pattern with React 19. Focus area is **prop and managed accounts**. Ignore pms related code for your tasks.
 
 ### Tech Stack
 - **Framework**: Next.js 15 (App Router) with TypeScript
