@@ -281,10 +281,13 @@ export class PortfolioApi {
       return pms.totalProfit;
     }
 
-    // Everything else from master_sheet by (qcode + system_tag)
-    const systemTag = PortfolioApi.getSystemTag(scheme, qcode);
+    // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ QUS00081 uses QAC00066)
+    const effectiveQcode = this.getEffectiveQcode(scheme, qcode);
+
+    // Everything else from master_sheet by (effectiveQcode + system_tag)
+    const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
     const profitSum = await prisma.master_sheet.aggregate({
-      where: { qcode, system_tag: systemTag },
+      where: { qcode: effectiveQcode, system_tag: systemTag },
       _sum: { pnl: true },
     });
     return Number(profitSum._sum.pnl) || 0;
@@ -1227,8 +1230,37 @@ export class PortfolioApi {
     }
 
     if (scheme === "Total Portfolio") {
-      const schemes = ["Scheme B", "Scheme PMS QAW"];
       let totalDeposited = 0;
+
+      if (qcode === "QAC00046") {
+        // Satidham Total Portfolio: include Scheme QAW++ QUS00081 (from QAC00066)
+        const satidhamSchemes = ["Scheme PMS QAW", "Scheme QAW++ QUS00081"];
+
+        for (const s of satidhamSchemes) {
+          if (s === "Scheme PMS QAW") {
+            const pmsData = await this.getPMSData(qcode);
+            totalDeposited += pmsData.amountDeposited;
+          } else if (s === "Scheme QAW++ QUS00081") {
+            // Fetch from QAC00066 with "Zerodha Total Portfolio" system tag
+            const effectiveQcode = this.getEffectiveQcode(s, qcode);
+            const systemTag = this.SATIDHAM_SYSTEM_TAGS[s];
+            const depositSum = await prisma.master_sheet.aggregate({
+              where: {
+                qcode: effectiveQcode,
+                system_tag: systemTag,
+                capital_in_out: { not: null },
+              },
+              _sum: { capital_in_out: true },
+            });
+            totalDeposited += Number(depositSum._sum.capital_in_out) || 0;
+          }
+        }
+
+        return totalDeposited;
+      }
+
+      // Default logic for other accounts (e.g., Sarla)
+      const schemes = ["Scheme B", "Scheme PMS QAW"];
 
       for (const s of schemes) {
         if (s === "Scheme B") {
@@ -1269,6 +1301,21 @@ export class PortfolioApi {
       return Number(depositSum._sum.capital_in_out) || 0;
     }
 
+    // Handle Scheme QAW++ QUS00081 (uses QAC00066)
+    if (scheme === "Scheme QAW++ QUS00081") {
+      const effectiveQcode = this.getEffectiveQcode(scheme, qcode);
+      const systemTag = this.SATIDHAM_SYSTEM_TAGS[scheme];
+      const depositSum = await prisma.master_sheet.aggregate({
+        where: {
+          qcode: effectiveQcode,
+          system_tag: systemTag,
+          capital_in_out: { not: null },
+        },
+        _sum: { capital_in_out: true },
+      });
+      return Number(depositSum._sum.capital_in_out) || 0;
+    }
+
     return 0;
   }
   private static async getLatestExposure(qcode: string, scheme: string): Promise<{ portfolioValue: number; drawdown: number; nav: number; date: Date } | null> {
@@ -1283,11 +1330,51 @@ export class PortfolioApi {
       };
     }
     if (scheme === "Total Portfolio") {
-      const schemes = ["Scheme B", "Scheme PMS QAW"];
       let totalPortfolioValue = 0;
       let latestDrawdown = 0;
       let latestNav = 0;
       let latestDate: Date | null = null;
+
+      if (qcode === "QAC00046") {
+        // Satidham Total Portfolio: include Scheme QAW++ QUS00081 (from QAC00066)
+        const satidhamSchemes = ["Scheme PMS QAW", "Scheme QAW++ QUS00081"];
+
+        for (const s of satidhamSchemes) {
+          if (s === "Scheme PMS QAW") {
+            const pmsData = await this.getPMSData(qcode);
+            if (pmsData.latestData) {
+              totalPortfolioValue += pmsData.latestData.portfolioValue;
+              latestNav += pmsData.latestData.nav;
+              if (!latestDate || pmsData.latestData.date > latestDate) {
+                latestDate = pmsData.latestData.date;
+                latestDrawdown = pmsData.latestData.drawdown;
+              }
+            }
+          } else if (s === "Scheme QAW++ QUS00081") {
+            // Fetch from QAC00066 with "Zerodha Total Portfolio" system tag
+            const effectiveQcode = this.getEffectiveQcode(s, qcode);
+            const systemTag = this.SATIDHAM_SYSTEM_TAGS[s];
+            const record = await prisma.master_sheet.findFirst({
+              where: { qcode: effectiveQcode, system_tag: systemTag },
+              orderBy: { date: "desc" },
+              select: { portfolio_value: true, drawdown: true, nav: true, date: true },
+            });
+            if (record) {
+              totalPortfolioValue += Number(record.portfolio_value) || 0;
+              latestNav += Number(record.nav) || 0;
+              if (!latestDate || record.date > latestDate) {
+                latestDate = record.date;
+                latestDrawdown = Math.abs(Number(record.drawdown) || 0);
+              }
+            }
+          }
+        }
+
+        return latestDate ? { portfolioValue: totalPortfolioValue, drawdown: latestDrawdown, nav: latestNav, date: latestDate } : null;
+      }
+
+      // Default logic for other accounts (e.g., Sarla)
+      const schemes = ["Scheme B", "Scheme PMS QAW"];
 
       for (const s of schemes) {
         const systemTag = s === "Scheme B" ? "Zerodha Total Portfolio" : PortfolioApi.getSystemTag(s);
@@ -1518,7 +1605,7 @@ export class PortfolioApi {
     }
 
     // For other accounts (e.g., Satidham QAC00046) keep their own set
-    const satidhamSchemes = ["Scheme B", "Scheme PMS QAW", "Scheme A", "Scheme A (Old)"];
+    const satidhamSchemes = ["Scheme B", "Scheme PMS QAW", "Scheme A", "Scheme A (Old)", "Scheme QAW++ QUS00081"];
     for (const s of satidhamSchemes) {
       const part = await this.getSingleSchemeProfit(qcode, s);
       console.log(`[TotalProfit] ${qcode} | ${s} = ${part}`);
@@ -1542,11 +1629,13 @@ export class PortfolioApi {
       }));
     }
 
-    const systemTag = PortfolioApi.getSystemTag(scheme, qcode);
+    // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ QUS00081 uses QAC00066)
+    const effectiveQcode = this.getEffectiveQcode(scheme, qcode);
+    const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
 
     const data = await prisma.master_sheet.findMany({
       where: {
-        qcode,
+        qcode: effectiveQcode,
         system_tag: systemTag,
         nav: { not: null },
         drawdown: { not: null },
@@ -1582,13 +1671,33 @@ export class PortfolioApi {
 
     if (scheme === "Total Portfolio") {
       if (qcode === "QAC00046") {
-        // Satidham Total Portfolio: aggregate cash flows from Scheme A, Scheme B, Scheme A (Old), and Scheme PMS QAW
-        const satidhamSchemes = ["Scheme A", "Scheme B", "Scheme A (Old)", "Scheme PMS QAW"];
+        // Satidham Total Portfolio: aggregate cash flows from Scheme A, Scheme B, Scheme A (Old), Scheme PMS QAW, and Scheme QAW++ QUS00081
+        const satidhamSchemes = ["Scheme A", "Scheme B", "Scheme A (Old)", "Scheme PMS QAW", "Scheme QAW++ QUS00081"];
         let cashFlows: CashFlow[] = [];
 
-        // Use hardcoded data for Satidham schemes
+        // Use hardcoded data for Satidham schemes (except Scheme QAW++ QUS00081 which uses database)
         for (const s of satidhamSchemes) {
-          if (HC?.[s]) {
+          if (s === "Scheme QAW++ QUS00081") {
+            // Fetch cash flows from database for Scheme QAW++ QUS00081 (uses QAC00066)
+            const effectiveQcode = this.getEffectiveQcode(s, qcode);
+            const systemTag = this.SATIDHAM_SYSTEM_TAGS[s];
+            const schemeCashFlows = await prisma.master_sheet.findMany({
+              where: {
+                qcode: effectiveQcode,
+                system_tag: systemTag,
+                capital_in_out: { not: null, not: new Decimal(0) },
+              },
+              select: { date: true, capital_in_out: true },
+              orderBy: { date: "asc" },
+            });
+            cashFlows = cashFlows.concat(
+              schemeCashFlows.map(entry => ({
+                date: PortfolioApi.normalizeDate(entry.date)!,
+                amount: entry.capital_in_out!.toNumber(),
+                dividend: 0,
+              }))
+            );
+          } else if (HC?.[s]) {
             cashFlows = cashFlows.concat(
               HC[s].data.cashFlows.map(entry => ({
                 date: PortfolioApi.normalizeDate(entry.date)!,
@@ -1951,7 +2060,6 @@ export class PortfolioApi {
       return formattedMonthlyPnl;
     }
     if (scheme === "Total Portfolio") {
-      const schemes = ["Scheme B", "Scheme PMS QAW"];
       const allData: { date: string; nav: number; pnl: number; capitalInOut: number }[] = [];
 
       // Fetch data for Scheme B
@@ -1971,6 +2079,17 @@ export class PortfolioApi {
         pnl: item.pnl,
         capitalInOut: item.capitalInOut,
       })));
+
+      // For Satidham (QAC00046), also include Scheme QAW++ QUS00081 data
+      if (qcode === "QAC00046") {
+        const schemeQawPlusData = await PortfolioApi.getHistoricalData(qcode, "Scheme QAW++ QUS00081");
+        allData.push(...schemeQawPlusData.map(item => ({
+          date: PortfolioApi.normalizeDate(item.date)!,
+          nav: item.nav,
+          pnl: item.pnl,
+          capitalInOut: item.capitalInOut,
+        })));
+      }
 
       if (!allData.length) {
         return {};
@@ -2206,6 +2325,19 @@ export class PortfolioApi {
         }))
       );
 
+      // For Satidham (QAC00046), also include Scheme QAW++ QUS00081 data
+      let schemeQawPlusQuarterlyPnl: QuarterlyPnL = {};
+      if (qcode === "QAC00046") {
+        const schemeQawPlusData = await PortfolioApi.getHistoricalData(qcode, "Scheme QAW++ QUS00081");
+        schemeQawPlusQuarterlyPnl = this.calculateQuarterlyPnLFromNavData(
+          schemeQawPlusData.map(d => ({
+            date: PortfolioApi.normalizeDate(d.date)!,
+            nav: d.nav,
+            pnl: d.pnl,
+          }))
+        );
+      }
+
       // Combined result
       const combinedQuarterlyPnL: QuarterlyPnL = {};
 
@@ -2253,10 +2385,11 @@ export class PortfolioApi {
         });
       }
 
-      // 2) Ensure we cover all years present in PMS/Scheme B
+      // 2) Ensure we cover all years present in PMS/Scheme B/Scheme QAW++ QUS00081
       const allYears = new Set([
         ...Object.keys(pmsQuarterlyPnl),
         ...Object.keys(schemeBQuarterlyPnl),
+        ...Object.keys(schemeQawPlusQuarterlyPnl),
         ...Object.keys(combinedQuarterlyPnL),
       ]);
 
@@ -2275,10 +2408,11 @@ export class PortfolioApi {
 
         quarterKeys.forEach((quarter) => {
           if (isAfterQ2_2025(year, quarter)) {
-            // Dynamic: PMS + Scheme B
+            // Dynamic: PMS + Scheme B + Scheme QAW++ QUS00081 (for Satidham)
             const pmsVal = PortfolioApi.safeNum(pmsQuarterlyPnl[year]?.cash[quarter]);
             const bVal = PortfolioApi.safeNum(schemeBQuarterlyPnl[year]?.cash[quarter]);
-            const sum = pmsVal + bVal;
+            const qawPlusVal = PortfolioApi.safeNum(schemeQawPlusQuarterlyPnl[year]?.cash[quarter]);
+            const sum = pmsVal + bVal + qawPlusVal;
             combinedQuarterlyPnL[year].cash[quarter] = sum.toFixed(2);
           } else {
             // Up to Q2-2025: keep hardcoded AC5 values exactly as seeded.
