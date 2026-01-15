@@ -158,3 +158,153 @@ Portfolio APIs return:
   }
 }
 ```
+
+---
+
+## Sarla & Satidham Special Users
+
+Sarla and Satidham are special high-value clients with custom dashboard logic in `app/lib/sarla-utils.ts`. They bypass the normal Strategy pattern and have their own data processing.
+
+### Account Relationships
+
+| User | Client (icode) | Account (qcode) | PMS Custodian | Notes |
+|------|----------------|-----------------|---------------|-------|
+| **Sarla** | `QUS0007` | `QAC00041` | `QAW00041` | Uses accountCode `AC5` |
+| **Satidham (Old)** | `QUS0010` | `QAC00046` | `QAW00041` | Uses accountCode `AC8` |
+| **Satidham (New)** | `QUS00081` | `QAC00066` | - | Linked to QUS0010 via "Scheme QAW++ QUS00081" |
+
+### System Tags Mapping
+
+**Sarla (QAC00041)**:
+| Scheme | System Tag |
+|--------|------------|
+| Total Portfolio | `Sarla Performance fibers Scheme Total Portfolio` |
+| Scheme B | `Total Portfolio Value` |
+| Scheme QAW | `Zerodha Total Portfolio QAW` |
+| Scheme A | `Zerodha Total Portfolio A` |
+| Scheme PMS QAW | `PMS QAW Portfolio` |
+
+**Satidham (QAC00046)**:
+| Scheme | System Tag | Source qcode |
+|--------|------------|--------------|
+| Total Portfolio | `Total Portfolio Value A` | QAC00046 |
+| Scheme A | `Total Portfolio Value A` | QAC00046 |
+| Scheme B | `Total Portfolio Value B` | QAC00046 |
+| Scheme A (Old) | `Total Portfolio Value Old` | QAC00046 |
+| Scheme PMS QAW | `PMS QAW Portfolio` | QAC00046 |
+| Scheme QAW++ QUS00081 | `Zerodha Total Portfolio` | **QAC00066** (override) |
+
+### Cross-Account Data Fetching
+
+Some schemes fetch data from a different qcode than the user's default. This is controlled by `SCHEME_QCODE_OVERRIDE` in `sarla-utils.ts`:
+
+```typescript
+private static readonly SCHEME_QCODE_OVERRIDE: Record<string, string> = {
+  "Scheme QAW++ QUS00081": "QAC00066", // Fetches from QAC00066 instead of QAC00046
+};
+```
+
+The `getEffectiveQcode()` helper resolves the correct qcode for any scheme.
+
+---
+
+## Critical Files
+
+| File | Purpose | Size |
+|------|---------|------|
+| `app/lib/sarla-utils.ts` | Sarla/Satidham data processing, scheme logic, hardcoded data | ~3000 lines |
+| `app/lib/portfolio-utils.ts` | Strategy pattern for regular accounts (PMS, Zerodha, Jainam) | ~800 lines |
+| `app/lib/dashboard-types.ts` | TypeScript type definitions | ~200 lines |
+| `app/api/sarla-api/route.ts` | API endpoint for Sarla/Satidham data | ~50 lines |
+| `components/dashboard/SarlaSatidham.tsx` | UI component for Sarla/Satidham view | ~500 lines |
+
+---
+
+## Common Patterns
+
+### Adding a New Scheme to Sarla/Satidham
+
+1. **Add to `PORTFOLIO_MAPPING`** (in `sarla-utils.ts`):
+   ```typescript
+   "New Scheme Name": {
+     current: "System Tag Name",
+     metrics: "System Tag Name",
+     nav: "System Tag Name",
+     isActive: true,
+   },
+   ```
+
+2. **Add to System Tags Mapping** (`SARLA_SYSTEM_TAGS` or `SATIDHAM_SYSTEM_TAGS`):
+   ```typescript
+   "New Scheme Name": "Database System Tag",
+   ```
+
+3. **If cross-account**, add to `SCHEME_QCODE_OVERRIDE`:
+   ```typescript
+   "New Scheme Name": "QAC000XX", // Target qcode
+   ```
+
+4. **Update Total Portfolio aggregation** (if scheme should be included):
+   - `getAmountDeposited()` - Add to schemes array
+   - `getLatestExposure()` - Add to schemes array
+   - `getTotalProfit()` - Add to satidhamSchemes/sarlaSchemes array
+   - `getCashFlows()` - Add to schemes array
+   - `calculateMonthlyPnL()` - Add data fetching for new scheme
+   - `calculateQuarterlyPnLWithDailyPL()` - Add data fetching for new scheme
+
+5. **Add individual scheme handling** (if not using hardcoded data):
+   - Add case in `getAmountDeposited()` for the specific scheme
+   - The scheme will automatically work in other functions via `getEffectiveQcode()`
+
+### Safety Verification Checklist
+
+Before deploying any changes to `sarla-utils.ts` or `portfolio-utils.ts`:
+
+- [ ] **No write operations**: Verify no `create`, `update`, `delete`, `upsert` Prisma calls
+- [ ] **All queries are SELECT**: `findMany`, `findFirst`, `aggregate`, `count` only
+- [ ] **No raw SQL writes**: No `INSERT`, `UPDATE`, `DELETE` in `$queryRaw`
+- [ ] **Build passes**: Run `npm run build` successfully
+- [ ] **Existing schemes unaffected**: Verify other schemes still work
+- [ ] **Correct qcode used**: Verify `getEffectiveQcode()` returns expected values
+
+### Investigating Account Relationships
+
+To understand an account's data structure, query these tables:
+
+```sql
+-- 1. Find client info
+SELECT * FROM clients WHERE icode = 'QUS0010';
+
+-- 2. Find account access
+SELECT * FROM pooled_account_users WHERE icode = 'QUS0010';
+
+-- 3. Find account details
+SELECT * FROM accounts WHERE qcode = 'QAC00046';
+
+-- 4. Find available system tags
+SELECT DISTINCT system_tag FROM master_sheet WHERE qcode = 'QAC00046';
+
+-- 5. Find PMS linkage (if any)
+SELECT * FROM account_custodian_codes WHERE qcode = 'QAC00046';
+```
+
+---
+
+## Database Safety Rules
+
+**CRITICAL**: All dashboard code must be READ-ONLY. Never modify client data.
+
+### Allowed Prisma Operations
+- `findMany()` - SELECT multiple rows
+- `findFirst()` - SELECT single row
+- `findUnique()` - SELECT by unique key
+- `aggregate()` - SELECT with SUM/AVG/COUNT
+- `count()` - SELECT COUNT(*)
+- `$queryRaw` - Only for SELECT statements
+
+### Forbidden Operations
+- `create()` / `createMany()` - INSERT
+- `update()` / `updateMany()` - UPDATE
+- `delete()` / `deleteMany()` - DELETE
+- `upsert()` - INSERT or UPDATE
+- Any `$executeRaw` with INSERT/UPDATE/DELETE
