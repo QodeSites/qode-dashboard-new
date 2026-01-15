@@ -89,6 +89,10 @@ Development (`NODE_ENV === 'development'`) uses `*_test` tables:
 - `equity_holding_test` instead of `equity_holding`
 - `mutual_fund_holding_sheet_test` instead of `mutual_fund_holding_sheet`
 
+### Test vs Live Data Workflow
+
+Tables with `_test` suffix (e.g., `master_sheet_test`) are staging tables where the team makes changes. These sync to the live tables (e.g., `master_sheet`) when manually triggered by the team. Clients always see data from the live (non-test) tables. Core tables like `clients`, `accounts`, `pooled_account_users` do not have test variants.
+
 ### Key Identifiers
 
 - **qcode** - Account identifier (format: `QAC00001`)

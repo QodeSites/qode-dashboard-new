@@ -31,6 +31,10 @@ export function useBse500Data(equityCurve: EquityCurvePoint[]): UseBse500DataRes
       try {
         const portfolioStartDate = new Date(equityCurve[0].date);
         const endDate = equityCurve[equityCurve.length - 1].date;
+        const fetchStartDate = new Date(portfolioStartDate);
+        fetchStartDate.setDate(portfolioStartDate.getDate() - 30);
+        const startDate = fetchStartDate.toISOString().split('T')[0];
+
         const portfolioStartTime = new Date(startDate).getTime();
 
         // Extend the start date backwards by 30 days to get potential backfill data
@@ -38,10 +42,8 @@ export function useBse500Data(equityCurve: EquityCurvePoint[]): UseBse500DataRes
           .toISOString().split('T')[0];
 
         // Fetch data from 30 days before portfolio start to ensure we have previous trading day data
-        const fetchStartDate = new Date(portfolioStartDate);
-        fetchStartDate.setDate(portfolioStartDate.getDate() - 30);
+        
 
-        const startDate = fetchStartDate.toISOString().split('T')[0];
 
         const queryParams = new URLSearchParams({
           indices: "NIFTY 50",
@@ -56,6 +58,7 @@ export function useBse500Data(equityCurve: EquityCurvePoint[]): UseBse500DataRes
           throw new Error("Failed to fetch BSE500 data");
         }
         const result = await response.json();
+        console.log(result);
 
         let processedData: Bse500DataPoint[] = [];
         if (result.data && Array.isArray(result.data)) {
