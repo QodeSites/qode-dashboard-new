@@ -177,6 +177,13 @@ const PORTFOLIO_MAPPING = {
       nav: "PMS QAW Portfolio",
       isActive: true,
     },
+    "Scheme QAW++ QUS00081": {
+      current: "Zerodha Total Portfolio",
+      metrics: "Total Portfolio Value",
+      nav: "Total Portfolio Value",
+      isActive: true,
+      // This scheme uses QAC00066 instead of QAC00046
+    },
     "Scheme A": {
       current: "Total Portfolio Value A",
       metrics: "Total Portfolio Value A",
@@ -322,9 +329,22 @@ export class PortfolioApi {
     "Scheme B": "Total Portfolio Value B",
     "Scheme A (Old)": "Total Portfolio Value Old",
     "Scheme PMS QAW": "PMS QAW Portfolio",
+    "Scheme QAW++ QUS00081": "Zerodha Total Portfolio", // Uses QAC00066
   };
-  private static getSystemTag(scheme: string, qcode?: string): string {
-    const isSatidham = qcode === "QAC00046";
+
+  // Scheme to qcode override mapping - schemes that use a different qcode than the default
+  private static readonly SCHEME_QCODE_OVERRIDE: Record<string, string> = {
+    "Scheme QAW++ QUS00081": "QAC00066", // This scheme fetches from QAC00066 instead of the default qcode
+  };
+
+  // Helper method to get the effective qcode for a scheme (handles overrides)
+  private static getEffectiveQcode(scheme: string, defaultQcode: string): string {
+    return this.SCHEME_QCODE_OVERRIDE[scheme] || defaultQcode;
+  }
+
+  private static getSystemTag(scheme: string, qcode?: string, accountCode?: string): string {
+    // Use accountCode if provided, otherwise infer from qcode
+    const isSatidham = accountCode === "AC8" || qcode === "QAC00046" || qcode === "QAC00066";
     const map = isSatidham ? this.SATIDHAM_SYSTEM_TAGS : this.SARLA_SYSTEM_TAGS;
     return map[scheme] || `Zerodha Total Portfolio ${scheme}`;
   }
@@ -2698,8 +2718,8 @@ async getHoldings(qcode: string): Promise<Holding[]> {
       let schemes: string[] = [];
 
       if (accountCode === "AC8") {
-        // Satidham order
-        const prioritySchemes = ["Total Portfolio", "Scheme PMS QAW"];
+        // Satidham order - include Scheme QAW++ QUS00081 after Scheme PMS QAW
+        const prioritySchemes = ["Total Portfolio", "Scheme PMS QAW", "Scheme QAW++ QUS00081"];
         const remainingSchemes = allSchemes.filter(s => !prioritySchemes.includes(s));
         schemes = [...prioritySchemes, ...remainingSchemes];
       } else {
@@ -2721,7 +2741,9 @@ async getHoldings(qcode: string): Promise<Holding[]> {
           capital_in_out: Decimal | number | null;
         }> = [];
         const portfolioNames = PortfolioApi.getPortfolioNames(accountCode, scheme);
-        const systemTag = PortfolioApi.getSystemTag(scheme, qcode);
+        // Get the effective qcode for this scheme (handles overrides like QAC00066 for Scheme QAW++ QUS00081)
+        const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
+        const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode, accountCode);
 
         if (scheme === "Scheme PMS QAW") {
           cashInOutData = [];
@@ -2729,12 +2751,12 @@ async getHoldings(qcode: string): Promise<Holding[]> {
         } else {
           [cashInOutData, masterSheetData] = await Promise.all([
             prisma.master_sheet.findMany({
-              where: { qcode, system_tag: systemTag, capital_in_out: { not: null } },
+              where: { qcode: effectiveQcode, system_tag: systemTag, capital_in_out: { not: null } },
               select: { date: true, capital_in_out: true },
               orderBy: { date: "asc" },
             }),
             prisma.master_sheet.findMany({
-              where: { qcode, system_tag: systemTag },
+              where: { qcode: effectiveQcode, system_tag: systemTag },
               select: { date: true, nav: true, drawdown: true, portfolio_value: true, daily_p_l: true, pnl: true, capital_in_out: true },
               orderBy: { date: "asc" },
             }),
@@ -2751,20 +2773,20 @@ async getHoldings(qcode: string): Promise<Holding[]> {
           cashFlows,
           holdings // Add holdings to the parallel fetch
         ] = await Promise.all([
-          PortfolioApi.getAmountDeposited(qcode, scheme),
-          PortfolioApi.getLatestExposure(qcode, scheme),
-          PortfolioApi.getTotalProfit(qcode, scheme),
-          PortfolioApi.getPortfolioReturns(qcode, scheme),
-          PortfolioApi.getHistoricalData(qcode, scheme),
-          PortfolioApi.getCashFlows(qcode, scheme),
-          PortfolioApi.getHoldings(qcode) // Add this line
+          PortfolioApi.getAmountDeposited(effectiveQcode, scheme),
+          PortfolioApi.getLatestExposure(effectiveQcode, scheme),
+          PortfolioApi.getTotalProfit(effectiveQcode, scheme),
+          PortfolioApi.getPortfolioReturns(effectiveQcode, scheme),
+          PortfolioApi.getHistoricalData(effectiveQcode, scheme),
+          PortfolioApi.getCashFlows(effectiveQcode, scheme),
+          PortfolioApi.getHoldings(effectiveQcode) // Add this line
         ]);
 
         const drawdownMetrics = PortfolioApi.calculateDrawdownMetrics(historicalData.map(d => ({ date: PortfolioApi.normalizeDate(d.date)!, nav: d.nav })));
-        const trailingReturns = await PortfolioApi.calculateTrailingReturns(qcode, scheme, drawdownMetrics);
-        const monthlyPnl = await PortfolioApi.calculateMonthlyPnL(qcode, scheme);
+        const trailingReturns = await PortfolioApi.calculateTrailingReturns(effectiveQcode, scheme, drawdownMetrics);
+        const monthlyPnl = await PortfolioApi.calculateMonthlyPnL(effectiveQcode, scheme);
         const quarterlyPnl = await PortfolioApi.calculateQuarterlyPnLWithDailyPL(
-          qcode,
+          effectiveQcode,
           scheme,
           historicalData.map(d => ({
             date: PortfolioApi.normalizeDate(d.date)!,
