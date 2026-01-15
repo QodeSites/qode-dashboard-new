@@ -31,17 +31,11 @@ export function useBse500Data(equityCurve: EquityCurvePoint[]): UseBse500DataRes
       try {
         const portfolioStartDate = new Date(equityCurve[0].date);
         const endDate = equityCurve[equityCurve.length - 1].date;
-        const portfolioStartTime = new Date(startDate).getTime();
+        const portfolioStartTime = portfolioStartDate.getTime();
 
         // Extend the start date backwards by 30 days to get potential backfill data
         const extendedStartDate = new Date(portfolioStartTime - (30 * 24 * 60 * 60 * 1000))
           .toISOString().split('T')[0];
-
-        // Fetch data from 30 days before portfolio start to ensure we have previous trading day data
-        const fetchStartDate = new Date(portfolioStartDate);
-        fetchStartDate.setDate(portfolioStartDate.getDate() - 30);
-
-        const startDate = fetchStartDate.toISOString().split('T')[0];
 
         const queryParams = new URLSearchParams({
           indices: "NIFTY 50",
@@ -83,7 +77,7 @@ export function useBse500Data(equityCurve: EquityCurvePoint[]): UseBse500DataRes
 
         let finalBenchmarkData = [...benchmarkInRange];
 
-        // If no benchmark data exists for portfolio start date, backfill with most recent data
+        // If no benchmark data exists for the portfolio start date, backfill with most recent data
         if (!hasDataForStartDate && benchmarkInRange.length > 0) {
           // Find the most recent benchmark data point before portfolio start date
           const priorData = processedData.filter(
@@ -96,14 +90,14 @@ export function useBse500Data(equityCurve: EquityCurvePoint[]): UseBse500DataRes
             
             // Create a backfilled data point for portfolio start date
             const backfilledDataPoint: Bse500DataPoint = {
-              date: startDate,
+              date: equityCurve[0].date,
               nav: mostRecentPriorData.nav
             };
 
             // Add the backfilled point at the beginning
             finalBenchmarkData = [backfilledDataPoint, ...benchmarkInRange];
             
-            console.log(`Backfilled benchmark data for ${startDate} with NAV ${mostRecentPriorData.nav} from ${mostRecentPriorData.date}`);
+            console.log(`Backfilled benchmark data for ${equityCurve[0].date} with NAV ${mostRecentPriorData.nav} from ${mostRecentPriorData.date}`);
           }
         }
 
