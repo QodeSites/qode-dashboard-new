@@ -2,168 +2,155 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Development Commands
+## Build and Development Commands
 
 ```bash
-npm run dev      # Start dev server on port 2030
-npm run build    # Production build
+npm run dev      # Start development server on port 2030
+npm run build    # Build for production
 npm run start    # Start production server
 npm run lint     # Run ESLint
 ```
 
-### Prisma Commands
+## Database Commands
 
 ```bash
-npx prisma generate         # Regenerate Prisma client after schema changes
-npx prisma db push          # Push schema changes to database
-npx prisma studio           # Open database GUI
+npx prisma generate          # Generate Prisma client after schema changes
+npx prisma db push           # Push schema changes to database
+npx prisma studio            # Open Prisma Studio for database browsing
 ```
 
 ## Architecture Overview
 
-This is a **Next.js 15 portfolio analytics dashboard** using the App Router pattern with React 19. Focus area is **prop and managed accounts**. Ignore pms related code for your tasks.
-
-### Tech Stack
-- **Framework**: Next.js 15 (App Router) with TypeScript
-- **Database**: PostgreSQL with Prisma ORM
-- **Auth**: NextAuth with JWT strategy and credentials provider
-- **UI**: shadcn/ui components (Radix UI + Tailwind CSS)
-- **Charts**: Recharts, Highcharts, ApexCharts
+This is a **Next.js 15** client dashboard application for Qode, a financial portfolio management system. It uses the App Router pattern with React 19.
 
 ### Key Directories
 
-```
-app/
-├── api/
-│   ├── auth/[...nextauth]/ # NextAuth config
-│   ├── portfolio/          # Regular managed account data
-│   ├── sarla-api/          # Sarla/Satidham managed account data
-│   └── prop/               # Prop account endpoints
-├── dashboard/              # Main dashboard page
-├── lib/
-│   ├── portfolio-utils.ts  # Regular managed account calculations
-│   ├── sarla-utils.ts      # Sarla/Satidham managed account logic
-│   └── dashboard-types.ts  # Shared TypeScript types
-components/
-├── ui/                     # shadcn/ui components
-├── dashboard/
-│   ├── SarlaSatidham.tsx   # Multi-scheme managed accounts view
-│   ├── ManagedAccounts.tsx # Regular managed accounts view
-│   └── PropAccounts.tsx    # Prop accounts view
-```
+- `app/` - Next.js App Router pages and API routes
+- `app/api/` - API route handlers (all use `getServerSession` for auth)
+- `app/lib/` - Server-side utilities and data fetching logic
+- `components/` - React components (UI primitives in `components/ui/`)
+- `components/dashboard/` - Dashboard view components by account type
+- `lib/` - Shared utilities (Prisma client, Zoho SDK)
+- `hooks/` - Custom React hooks
+- `prisma/` - Database schema (PostgreSQL)
 
-## Account Types
+### Authentication
 
-### 1. Managed Accounts
+Uses **NextAuth.js** with two credential providers:
+1. Standard login (email/icode + password) for clients
+2. Internal access via JWT tokens for internal staff viewing client dashboards
 
-**Two sub-categories of managed accounts:**
+Auth configuration: `app/api/auth/[...nextauth]/route.ts`
 
-#### A. Sarla/Satidham (Multi-Scheme Managed Accounts)
-Special managed accounts with multiple investment schemes.
+Session contains: `user.icode`, `user.name`, `user.email`, `user.accessType`
 
-**Identification:**
-- Sarla: `icode: QUS0007`, `qcode: QAC00041`
-- Satidham: `icode: QUS0010`, `qcode: QAC00046`
+### Account Types and Data Strategies
 
-**Key Files:**
-- `app/lib/sarla-utils.ts` - Main logic and data
-- `components/dashboard/SarlaSatidham.tsx` - UI component
-- `app/api/sarla-api/route.ts` - API endpoint
+The system uses a **Strategy pattern** for data fetching (`app/lib/portfolio-utils.ts`). Each account type has a dedicated class implementing `DataFetchingStrategy`:
 
-**Scheme Structure:**
-Each account has multiple schemes (Scheme A, B, C, D, E, F, QAW, Total Portfolio), each mapping to different `system_tag` in `master_sheet`:
+1. **PmsStrategy** - For PMS accounts. Uses `pms_master_sheet` table, links accounts via `account_custodian_codes`
+2. **ZerodhaManagedStrategy** - For Zerodha/Radiance managed accounts. Uses `master_sheet` with system tags
+3. **JainamManagedStrategy** - For Jainam managed accounts. Similar structure with different tag mappings
 
+Strategy selection happens in `getDataFetchingStrategy()` based on `account_type` and `broker`.
+
+**System Tags** control which data series to use:
+- Deposit tags: `'Zerodha Total Portfolio'`, `'Total Portfolio Exposure'`
+- NAV tags: `'Total Portfolio Value'`
+- Radiance broker always uses `'Total Portfolio Exposure'`
+
+### Prop Accounts
+
+Prop accounts have configurable tags (unlike other account types):
+- Users select deposit/NAV/cashflow tags from available `system_tag` values
+- Default tags can be saved per account in `prop_account_default_tags` table
+- API: `/api/prop` for data, `/api/prop/default-tags` for preferences
+
+### Dashboard Components
+
+The main dashboard (`app/dashboard/page.tsx`) renders different components based on account type:
+- `Pms` - PMS account view with benchmark comparisons
+- `ManagedAccounts` - Futures/managed account view
+- `PropAccounts` - Proprietary trading view with tag selection
+- `SarlaSatidham` - Special consolidated view for specific users (QUS0007, QUS0010)
+
+### Return Calculations
+
+Returns are calculated differently based on holding period:
+- **< 365 days**: Absolute return `((finalNav / initialNav) - 1) * 100`
+- **>= 365 days**: CAGR `(Math.pow(finalNav / initialNav, 365 / days) - 1) * 100`
+
+NAV curves start at 100 (prepended if not present in data).
+
+### Environment-Based Table Selection
+
+Development (`NODE_ENV === 'development'`) uses `*_test` tables:
+- `master_sheet_test` instead of `master_sheet`
+- `equity_holding_test` instead of `equity_holding`
+- `mutual_fund_holding_sheet_test` instead of `mutual_fund_holding_sheet`
+
+### Key Identifiers
+
+- **qcode** - Account identifier (format: `QAC00001`)
+- **icode** - Client/user identifier (format: `QUS0001`)
+- **custodian_code** - Links PMS accounts to their data in `pms_master_sheet`
+
+### Type Definitions
+
+Core types in `app/lib/dashboard-types.ts`:
+- `Stats` - Normalized portfolio statistics (used for display)
+- `PmsStats` - PMS-specific format (converted to Stats via `normalizeToStats`)
+- `Account` - Account info with qcode, name, type, broker
+- `Metadata` - Response metadata with dates, filters, strategy name
+
+### External Integrations
+
+**Zoho CRM SDK** (`lib/zoho-sdk.ts`):
+- Singleton pattern for token management
+- Auto-refreshes access tokens
+- Used for syncing client data from Zoho CRM
+- Requires env vars: `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_DC`
+
+### UI Framework
+
+**Tailwind CSS** with custom theme colors (defined in `tailwind.config.ts`):
+- `primary-bg`: `#EFECD3` (cream background)
+- `logo-green`: `#02422B` (dark green)
+- `button-text`: `#DABD38` (gold)
+- `card-text`: `#002017` (dark)
+- `card-text-secondary`: `#37584F` (muted green)
+
+**Component Library**: Radix UI primitives via shadcn/ui in `components/ui/`
+
+**Fonts**: Plus Jakarta Sans (sans), Playfair Display (serif), Inria Serif (heading)
+
+### Path Aliases
+
+Uses `@/*` for root-relative imports (configured in `tsconfig.json`).
+
+### Key Database Models
+
+- `accounts` - Trading accounts with qcode identifiers
+- `clients` - Users with icode identifiers
+- `master_sheet` / `pms_master_sheet` - Daily portfolio NAV, drawdown, P&L metrics
+- `equity_holding` / `mutual_fund_holding_sheet` - Current holdings by symbol
+- `pooled_account_users` / `pooled_account_allocations` - Account access relationships
+- `capital_in_out` - Cash flow transactions
+- `pms_clients_master` - PMS client profiles with onboarding status
+
+### API Response Pattern
+
+Portfolio APIs return:
 ```typescript
-// app/lib/sarla-utils.ts - PORTFOLIO_MAPPING
-AC5 (Sarla): {
-  "Scheme B": { current: "Zerodha Total Portfolio", ... },
-  "Scheme A": { current: "Zerodha Total Portfolio A", ... },
-  "Total Portfolio": { current: "Sarla Performance fibers Scheme Total Portfolio", ... },
-}
-AC8 (Satidham): {
-  "Scheme A": { current: "Total Portfolio Value A", ... },
-  ...
+{
+  data: Stats,
+  metadata: {
+    icode: string,
+    accountCount: number,
+    inceptionDate: string | null,
+    dataAsOfDate: string | null,
+    strategyName: string,
+    filtersApplied: {...}
+  }
 }
 ```
-
-**Hardcoded Data:**
-Some historical scheme data is hardcoded in `sarla-utils.ts`:
-- `SARLA_HARDCODED_DATA` - Frozen historical returns for Sarla schemes
-- `SATIDHAM_HARDCODED_DATA` - Frozen historical returns for Satidham schemes
-- `FROZEN_RETURN_VALUES` - Fixed return percentages for inactive schemes
-- `AC5_QUARTERLY_PNL`, `AC8_QUARTERLY_PNL` - Hardcoded quarterly P&L values
-
-#### B. Regular Managed Accounts (Broker-Based)
-Standard managed accounts that use broker-based strategy pattern.
-
-**Key Files:**
-- `app/lib/portfolio-utils.ts` - Strategy classes
-- `components/dashboard/ManagedAccounts.tsx` - UI component
-- `app/api/portfolio/route.ts` - API endpoint
-
-**Broker Strategies:**
-
-| Broker | Strategy Class | System Tag Logic |
-|--------|----------------|------------------|
-| Jainam | `JainamManagedStrategy` | Uses "Total Portfolio Value" |
-| Zerodha | `ZerodhaManagedStrategy` | Varies by strategy (QAW/QTF vs QYE) |
-| Radiance | `ZerodhaManagedStrategy` | Uses "Total Portfolio Exposure" |
-
-### 2. Prop Accounts
-
-User-configurable accounts where clients select their own system tags.
-
-**Key Files:**
-- `components/dashboard/PropAccounts.tsx` - UI with tag selector
-- `app/api/prop/default-tags/route.ts` - Save/load tag preferences
-- `prop_account_default_tags` table - Storage
-
-**Configurable Tags:**
-- `depositTag` - Which column for deposit data
-- `navTag` - Which column for NAV calculations
-- `cashflowTag` - Which column for cash flows
-
-## Database Models (Key Tables)
-
-- `clients` - Users (identified by `icode`)
-- `accounts` - Trading accounts (`qcode`, includes `account_type`, `broker`)
-- `master_sheet` - Daily NAV/portfolio values with multiple `system_tag` columns
-- `equity_holding` - Current holdings
-- `capital_in_out` - Cash flow records
-- `prop_account_default_tags` - Prop account tag preferences
-
-## Client-Specific Customization Points
-
-### For Sarla/Satidham Changes
-
-1. **Add new scheme**: Update `PORTFOLIO_MAPPING` in `sarla-utils.ts`
-2. **Update frozen returns**: Modify `FROZEN_RETURN_VALUES` or `HARDCODED_SINCE_INCEPTION_RETURNS`
-3. **Update quarterly PnL**: Modify `AC5_QUARTERLY_PNL` or `AC8_QUARTERLY_PNL`
-4. **Add scheme-to-tag mapping**: Update `SARLA_SYSTEM_TAGS` or `SATIDHAM_SYSTEM_TAGS`
-
-### For Regular Managed Account Changes
-
-1. **New broker**: Add conditionals in `ZerodhaManagedStrategy.getSystemTag()` or create new strategy class
-2. **New strategy mapping**: Update strategy-to-tag conditionals in `portfolio-utils.ts`
-
-### For Prop Account Changes
-
-No code changes needed - users configure via UI.
-
-## Brand Colors (Tailwind)
-
-- `logo-green`: #02422B
-- `primary-bg`: #EFECD3
-- `button-text`: #DABD38
-- `card-text`: #002017
-
-## Environment Variables
-
-- `DATABASE_URL` - PostgreSQL connection string
-- `JWT_SECRET` - For token signing
-- `NEXTAUTH_SECRET` - NextAuth encryption
-- `NEXTAUTH_URL` - Base URL for auth
-
-## Known Issues
-
-Merge conflict markers in `app/dashboard/page.tsx` need resolution.
