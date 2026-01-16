@@ -1,15 +1,13 @@
 import { Card, CardTitle, CardContent } from "@/components/ui/card";
 import { Stats } from "@/app/lib/dashboard-types";
-
 interface FeesTableProps {
   fees: Stats["fees"];
+  title?: string;
 }
-
-export function FeesTable({ fees }: FeesTableProps) {
+export function FeesTable({ fees, title }: FeesTableProps) {
   if (!fees || Object.keys(fees).length === 0) {
     return null;
   }
-
   const formatDisplayValue = (value: string) => {
     if (value === "-" || value === "" || value === undefined || value === null) {
       return "-";
@@ -25,13 +23,11 @@ export function FeesTable({ fees }: FeesTableProps) {
     });
     return `₹${formattedValue}`;
   };
-
   const quarterlyYears = Object.keys(fees).sort((a, b) => parseInt(a) - parseInt(b));
-
   return (
     <Card className="bg-white/50 border-0 p-4">
       <CardTitle className="text-sm sm:text-lg text-black">
-        Quarterly Fees (₹)
+        {title || "Quarterly Fees (₹)"}
       </CardTitle>
       <CardContent className="p-0 mt-4">
         <div className="w-full overflow-x-auto">

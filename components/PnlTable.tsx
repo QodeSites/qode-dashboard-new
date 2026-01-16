@@ -383,7 +383,15 @@ export function PnlTable({
   return (
     <div className="flex flex-col gap-6">
       {renderQuarterlyTable()}
+      {isTotalPortfolio && (
+  <p className="text-sm text-gray-700">
+    Note: After-fee profit figures account for all Zerodha and PMS fee collections and accruals up to 31 December 2025.
+    (These amounts exclude the Performance Fee charged in PMS which is accrued at the end of the financial year)
+  </p>
+)}
+
       {!showOnlyQuarterlyCash && renderMonthlyTable()}
+
     </div>
   );
 }

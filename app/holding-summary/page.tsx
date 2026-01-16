@@ -93,7 +93,7 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
     if (total === 0) {
         return (
             <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-                <CardTitle className="text-black p-3 mb-4 rounded-t-sm  text-lg ">
+                <CardTitle className="text-2xl font-semibold text-card-text-secondary font-heading">
                     Holdings Distribution
                 </CardTitle>
                 <CardContent>
@@ -1907,7 +1907,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
             <div className="space-y-6">
                 <div className="flex justify-between items-start">
                     <div className="space-y-2">
-                        <h1 className="text-3xl font-semibold text-card-text-secondary font-heading">Holdings Summary</h1>
+                        <h1 className="text-2xl font-semibold text-card-text-secondary font-heading">Holdings Summary</h1>
                         <p className="text-gray-600 dark:text-gray-400">Overview of your current portfolio holdings</p>
                     </div>
 

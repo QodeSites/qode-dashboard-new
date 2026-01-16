@@ -21,7 +21,7 @@ const navigation = [
   { name: "Home", href: "/", icon: HomeIcon },
   { name: "Portfolio", href: "/dashboard", icon: ChartBarIcon },
   { name: "Holding Summary", href: "/holding-summary", icon: ChartCandlestickIcon },
-  { name: "Fee Schedule", href: "/quarterly-fees", icon: CurrencyDollarIcon },
+  { name: "Fee Summary", href: "/quarterly-fees", icon: CurrencyDollarIcon },
   { name: "Personal Details", href: "/personal-details", icon: UserCircleIcon },
 
 ];
@@ -103,7 +103,7 @@ function SidebarContent({ pathname }: { pathname: string }) {
   // Filter navigation based on user type
   const filteredNavigation = navigation.filter(item => {
     // Show Fee Schedule only to Sarla clients
-    if (item.name === "Fee Schedule") {
+    if (item.name === "Fee Summary") {
       return isSarla;
     }
     return true;
