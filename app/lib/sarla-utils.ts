@@ -1962,9 +1962,11 @@ export class PortfolioApi {
           const oldestEntry = normalizedNavData[0];
           if (oldestEntry) {
             const years = (new Date(currentDate).getTime() - new Date(oldestEntry.date).getTime()) / (365 * 24 * 60 * 60 * 1000);
+            // For Scheme QAW++, use 100 as baseline (first record's prev_nav is 100, but nav is EOD value)
+            const initialNav = scheme === "Scheme QAW++" && oldestEntry.nav !== 100 ? 100 : oldestEntry.nav;
             returns[period] = years < 1
-              ? ((lastNav - oldestEntry.nav) / oldestEntry.nav) * 100
-              : (Math.pow(lastNav / oldestEntry.nav, 1 / years) - 1) * 100;
+              ? ((lastNav - initialNav) / initialNav) * 100
+              : (Math.pow(lastNav / initialNav, 1 / years) - 1) * 100;
           } else {
             returns[period] = null;
           }
