@@ -1370,12 +1370,17 @@ export class PortfolioApi {
       // Satidham (QAC00046) includes different schemes than Sarla (QAC00041)
       const isSatidham = qcode === "QAC00046";
       const schemes = isSatidham
-        ? ["Scheme A", "Scheme B", "Scheme PMS QAW", "Scheme QAW++ QUS00081"]
+        ? ["Scheme A", "Scheme B", "Scheme PMS QAW", "Scheme QAW++ QUS00081", "Scheme QYE++"]
         : ["Scheme B", "Scheme PMS QAW"];
       let totalDeposited = 0;
 
       for (const s of schemes) {
-        if (s === "Scheme B" || s === "Scheme A") {
+        // Check for hardcoded data first (for inactive schemes like QYE++)
+        if (HC?.[s]) {
+          const schemeCashFlows = HC[s].data.cashFlows || [];
+          const schemeDeposited = schemeCashFlows.reduce((sum: number, cf: { amount: number }) => sum + cf.amount, 0);
+          totalDeposited += schemeDeposited;
+        } else if (s === "Scheme B" || s === "Scheme A") {
           const systemTag = s === "Scheme B" ? "Zerodha Total Portfolio" : PortfolioApi.getSystemTag(s, qcode);
           const depositSum = await prisma.master_sheet.aggregate({
             where: {
@@ -1458,7 +1463,7 @@ export class PortfolioApi {
       // Satidham (QAC00046) includes different schemes than Sarla (QAC00041)
       const isSatidham = qcode === "QAC00046";
       const schemes = isSatidham
-        ? ["Scheme A", "Scheme B", "Scheme PMS QAW", "Scheme QAW++ QUS00081"]
+        ? ["Scheme A", "Scheme B", "Scheme PMS QAW", "Scheme QAW++ QUS00081", "Scheme QYE++"]
         : ["Scheme B", "Scheme PMS QAW"];
       let totalPortfolioValue = 0;
       let latestDrawdown = 0;
@@ -1466,7 +1471,18 @@ export class PortfolioApi {
       let latestDate: Date | null = null;
 
       for (const s of schemes) {
-        if (s === "Scheme B" || s === "Scheme A") {
+        // Check for hardcoded data first (for inactive schemes like QYE++)
+        if (HC?.[s]) {
+          const schemeData = HC[s];
+          totalPortfolioValue += parseFloat(schemeData.data.currentExposure) || 0;
+          const schemeNav = schemeData.data.equityCurve.length > 0 ? schemeData.data.equityCurve.at(-1)!.nav : 0;
+          latestNav += schemeNav;
+          const schemeDate = new Date(schemeData.metadata.dataAsOfDate);
+          if (!latestDate || schemeDate > latestDate) {
+            latestDate = schemeDate;
+            latestDrawdown = Math.abs(parseFloat(schemeData.data.drawdown)) || 0;
+          }
+        } else if (s === "Scheme B" || s === "Scheme A") {
           const systemTag = s === "Scheme B" ? "Zerodha Total Portfolio" : PortfolioApi.getSystemTag(s, qcode);
           const record = await prisma.master_sheet.findFirst({
             where: { qcode, system_tag: systemTag },
@@ -1717,7 +1733,7 @@ export class PortfolioApi {
     }
 
     // For other accounts (e.g., Satidham QAC00046) keep their own set
-    const satidhamSchemes = ["Scheme B", "Scheme PMS QAW", "Scheme A", "Scheme A (Old)", "Scheme QAW++ QUS00081"];
+    const satidhamSchemes = ["Scheme B", "Scheme PMS QAW", "Scheme A", "Scheme A (Old)", "Scheme QAW++ QUS00081", "Scheme QYE++"];
     for (const s of satidhamSchemes) {
       const part = await this.getSingleSchemeProfit(qcode, s);
       console.log(`[TotalProfit] ${qcode} | ${s} = ${part}`);
@@ -1795,8 +1811,8 @@ export class PortfolioApi {
 
     if (scheme === "Total Portfolio") {
       if (qcode === "QAC00046") {
-        // Satidham Total Portfolio: aggregate cash flows from Scheme A, Scheme B, Scheme A (Old), Scheme PMS QAW, and Scheme QAW++ QUS00081
-        const satidhamSchemes = ["Scheme A", "Scheme B", "Scheme A (Old)", "Scheme PMS QAW", "Scheme QAW++ QUS00081"];
+        // Satidham Total Portfolio: aggregate cash flows from Scheme A, Scheme B, Scheme A (Old), Scheme PMS QAW, Scheme QAW++ QUS00081, and Scheme QYE++
+        const satidhamSchemes = ["Scheme A", "Scheme B", "Scheme A (Old)", "Scheme PMS QAW", "Scheme QAW++ QUS00081", "Scheme QYE++"];
         let cashFlows: CashFlow[] = [];
 
         // Use hardcoded data for Satidham schemes
@@ -2208,7 +2224,7 @@ export class PortfolioApi {
         capitalInOut: item.capitalInOut,
       })));
 
-      // For Satidham, also fetch Scheme A and Scheme QAW++ QUS00081
+      // For Satidham, also fetch Scheme A, Scheme QAW++ QUS00081, and Scheme QYE++
       if (isSatidham) {
         const schemeAData = await PortfolioApi.getHistoricalData(qcode, "Scheme A");
         allData.push(...schemeAData.map(item => ({
@@ -2220,6 +2236,14 @@ export class PortfolioApi {
 
         const schemeQAWPlusData = await PortfolioApi.getHistoricalData(qcode, "Scheme QAW++ QUS00081");
         allData.push(...schemeQAWPlusData.map(item => ({
+          date: PortfolioApi.normalizeDate(item.date)!,
+          nav: item.nav,
+          pnl: item.pnl,
+          capitalInOut: item.capitalInOut,
+        })));
+
+        const schemeQYEData = await PortfolioApi.getHistoricalData(qcode, "Scheme QYE++");
+        allData.push(...schemeQYEData.map(item => ({
           date: PortfolioApi.normalizeDate(item.date)!,
           nav: item.nav,
           pnl: item.pnl,
@@ -2464,9 +2488,10 @@ export class PortfolioApi {
         }))
       );
 
-      // For Satidham, also calculate Scheme A and Scheme QAW++ QUS00081
+      // For Satidham, also calculate Scheme A, Scheme QAW++ QUS00081, and Scheme QYE++
       let schemeAQuarterlyPnl: QuarterlyPnL = {};
       let schemeQAWPlusQuarterlyPnl: QuarterlyPnL = {};
+      let schemeQYEQuarterlyPnl: QuarterlyPnL = {};
       if (isSatidham) {
         const schemeAData = await PortfolioApi.getHistoricalData(qcode, "Scheme A");
         schemeAQuarterlyPnl = this.calculateQuarterlyPnLFromNavData(
@@ -2480,6 +2505,15 @@ export class PortfolioApi {
         const schemeQAWPlusData = await PortfolioApi.getHistoricalData(qcode, "Scheme QAW++ QUS00081");
         schemeQAWPlusQuarterlyPnl = this.calculateQuarterlyPnLFromNavData(
           schemeQAWPlusData.map(d => ({
+            date: PortfolioApi.normalizeDate(d.date)!,
+            nav: d.nav,
+            pnl: d.pnl,
+          }))
+        );
+
+        const schemeQYEData = await PortfolioApi.getHistoricalData(qcode, "Scheme QYE++");
+        schemeQYEQuarterlyPnl = this.calculateQuarterlyPnLFromNavData(
+          schemeQYEData.map(d => ({
             date: PortfolioApi.normalizeDate(d.date)!,
             nav: d.nav,
             pnl: d.pnl,
@@ -2541,6 +2575,7 @@ export class PortfolioApi {
         ...Object.keys(combinedQuarterlyPnL),
         ...(isSatidham ? Object.keys(schemeAQuarterlyPnl) : []),
         ...(isSatidham ? Object.keys(schemeQAWPlusQuarterlyPnl) : []),
+        ...(isSatidham ? Object.keys(schemeQYEQuarterlyPnl) : []),
       ]);
 
       const quarterKeys = ["q1", "q2", "q3", "q4"] as const;
@@ -2563,11 +2598,12 @@ export class PortfolioApi {
             const bVal = PortfolioApi.safeNum(schemeBQuarterlyPnl[year]?.cash[quarter]);
             let sum = pmsVal + bVal;
 
-            // For Satidham, also add Scheme A and Scheme QAW++ QUS00081
+            // For Satidham, also add Scheme A, Scheme QAW++ QUS00081, and Scheme QYE++
             if (isSatidham) {
               const aVal = PortfolioApi.safeNum(schemeAQuarterlyPnl[year]?.cash[quarter]);
               const qawPlusVal = PortfolioApi.safeNum(schemeQAWPlusQuarterlyPnl[year]?.cash[quarter]);
-              sum += aVal + qawPlusVal;
+              const qyeVal = PortfolioApi.safeNum(schemeQYEQuarterlyPnl[year]?.cash[quarter]);
+              sum += aVal + qawPlusVal + qyeVal;
             }
 
             combinedQuarterlyPnL[year].cash[quarter] = sum.toFixed(2);
