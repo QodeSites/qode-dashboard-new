@@ -132,7 +132,7 @@ const PORTFOLIO_MAPPING = {
       nav: "PMS QAW Portfolio",
       isActive: true,
     },
-    "Scheme QAW++ QUS00081": {
+    "Scheme QAW++": {
       current: "Zerodha Total Portfolio",
       metrics: "Total Portfolio Value",
       nav: "Total Portfolio Value",
@@ -243,7 +243,7 @@ export class PortfolioApi {
       return pms.totalProfit;
     }
 
-    // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ QUS00081 uses QAC00066)
+    // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ uses QAC00066)
     const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
 
     // Everything else from master_sheet by (effectiveQcode + system_tag)
@@ -294,13 +294,13 @@ export class PortfolioApi {
     "Scheme B": "Total Portfolio Value B",
     "Scheme A (Old)": "Total Portfolio Value Old",
     "Scheme PMS QAW": "PMS QAW Portfolio",
-    "Scheme QAW++ QUS00081": "Zerodha Total Portfolio", // Uses QAC00066
+    "Scheme QAW++": "Zerodha Total Portfolio", // Uses QAC00066
     "Scheme QYE++": "QYE Total Portfolio Value", // Inactive scheme - uses hardcoded data
   };
 
   // Scheme to qcode override mapping - schemes that use a different qcode than the default
   private static readonly SCHEME_QCODE_OVERRIDE: Record<string, string> = {
-    "Scheme QAW++ QUS00081": "QAC00066", // This scheme fetches from QAC00066 instead of the default qcode
+    "Scheme QAW++": "QAC00066", // This scheme fetches from QAC00066 instead of the default qcode
   };
 
   // Helper method to get the effective qcode for a scheme (handles overrides)
@@ -1347,7 +1347,7 @@ export class PortfolioApi {
       // Satidham (QAC00046) includes different schemes than Sarla (QAC00041)
       const isSatidham = qcode === "QAC00046";
       const schemes = isSatidham
-        ? ["Scheme A", "Scheme B", "Scheme PMS QAW", "Scheme QAW++ QUS00081", "Scheme QYE++"]
+        ? ["Scheme A", "Scheme B", "Scheme PMS QAW", "Scheme QAW++", "Scheme QYE++"]
         : ["Scheme B", "Scheme PMS QAW"];
       let totalDeposited = 0;
 
@@ -1368,7 +1368,7 @@ export class PortfolioApi {
             _sum: { capital_in_out: true },
           });
           totalDeposited += Number(depositSum._sum.capital_in_out) || 0;
-        } else if (s === "Scheme QAW++ QUS00081") {
+        } else if (s === "Scheme QAW++") {
           // This scheme uses QAC00066 instead of QAC00046
           const effectiveQcode = PortfolioApi.getEffectiveQcode(s, qcode);
           const systemTag = PortfolioApi.getSystemTag(s, effectiveQcode);
@@ -1408,8 +1408,8 @@ export class PortfolioApi {
       return Number(depositSum._sum.capital_in_out) || 0;
     }
 
-    // Handle Scheme QAW++ QUS00081 (uses QAC00066 instead of default qcode)
-    if (scheme === "Scheme QAW++ QUS00081") {
+    // Handle Scheme QAW++ (uses QAC00066 instead of default qcode)
+    if (scheme === "Scheme QAW++") {
       const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
       const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
       const depositSum = await prisma.master_sheet.aggregate({
@@ -1440,7 +1440,7 @@ export class PortfolioApi {
       // Satidham (QAC00046) includes different schemes than Sarla (QAC00041)
       const isSatidham = qcode === "QAC00046";
       const schemes = isSatidham
-        ? ["Scheme A", "Scheme B", "Scheme PMS QAW", "Scheme QAW++ QUS00081", "Scheme QYE++"]
+        ? ["Scheme A", "Scheme B", "Scheme PMS QAW", "Scheme QAW++", "Scheme QYE++"]
         : ["Scheme B", "Scheme PMS QAW"];
       let totalPortfolioValue = 0;
       let latestDrawdown = 0;
@@ -1474,7 +1474,7 @@ export class PortfolioApi {
               latestDrawdown = Math.abs(Number(record.drawdown) || 0);
             }
           }
-        } else if (s === "Scheme QAW++ QUS00081") {
+        } else if (s === "Scheme QAW++") {
           // This scheme uses QAC00066 instead of QAC00046
           const effectiveQcode = PortfolioApi.getEffectiveQcode(s, qcode);
           const systemTag = PortfolioApi.getSystemTag(s, effectiveQcode);
@@ -1533,7 +1533,7 @@ export class PortfolioApi {
     }
 
 
-    // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ QUS00081 uses QAC00066)
+    // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ uses QAC00066)
     const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
     const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
 
@@ -1572,8 +1572,10 @@ export class PortfolioApi {
             const lastDate = new Date(last.date);
             const years = (lastDate.getTime() - firstDate.getTime()) / (365 * 24 * 60 * 60 * 1000);
 
-            const initialNav = Number(first.nav) || 0;
+            const originalInitialNav = Number(first.nav) || 0;
             const finalNav = Number(last.nav) || 0;
+            // For Scheme QAW++, use 100 as baseline (first record's prev_nav is 100, but nav is EOD value)
+            const initialNav = scheme === "Scheme QAW++" && originalInitialNav !== 100 ? 100 : originalInitialNav;
 
             if (initialNav > 0) {
               if (years >= 1) {
@@ -1640,7 +1642,7 @@ export class PortfolioApi {
     }
 
     try {
-      // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ QUS00081 uses QAC00066)
+      // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ uses QAC00066)
       const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
       const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
 
@@ -1660,8 +1662,10 @@ export class PortfolioApi {
         return 0;
       }
 
-      const initialNav = Number(firstNavRecord.nav) || 0;
+      const originalInitialNav = Number(firstNavRecord.nav) || 0;
       const finalNav = Number(latestNavRecord.nav) || 0;
+      // For Scheme QAW++, use 100 as baseline (first record's prev_nav is 100, but nav is EOD value)
+      const initialNav = scheme === "Scheme QAW++" && originalInitialNav !== 100 ? 100 : originalInitialNav;
 
       const durationYears = (new Date(latestNavRecord.date).getTime() - new Date(firstNavRecord.date).getTime()) / (365 * 24 * 60 * 60 * 1000);
 
@@ -1685,7 +1689,7 @@ export class PortfolioApi {
         const pms = await this.getPMSData(qcode);
         return pms.totalProfit;
       }
-      // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ QUS00081 uses QAC00066)
+      // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ uses QAC00066)
       const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
       const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
       const profitSum = await prisma.master_sheet.aggregate({
@@ -1710,7 +1714,7 @@ export class PortfolioApi {
     }
 
     // For other accounts (e.g., Satidham QAC00046) keep their own set
-    const satidhamSchemes = ["Scheme B", "Scheme PMS QAW", "Scheme A", "Scheme A (Old)", "Scheme QAW++ QUS00081", "Scheme QYE++"];
+    const satidhamSchemes = ["Scheme B", "Scheme PMS QAW", "Scheme A", "Scheme A (Old)", "Scheme QAW++", "Scheme QYE++"];
     for (const s of satidhamSchemes) {
       const part = await this.getSingleSchemeProfit(qcode, s);
       console.log(`[TotalProfit] ${qcode} | ${s} = ${part}`);
@@ -1746,7 +1750,7 @@ export class PortfolioApi {
       }));
     }
 
-    // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ QUS00081 uses QAC00066)
+    // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ uses QAC00066)
     const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
     const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
 
@@ -1788,8 +1792,8 @@ export class PortfolioApi {
 
     if (scheme === "Total Portfolio") {
       if (qcode === "QAC00046") {
-        // Satidham Total Portfolio: aggregate cash flows from Scheme A, Scheme B, Scheme A (Old), Scheme PMS QAW, Scheme QAW++ QUS00081, and Scheme QYE++
-        const satidhamSchemes = ["Scheme A", "Scheme B", "Scheme A (Old)", "Scheme PMS QAW", "Scheme QAW++ QUS00081", "Scheme QYE++"];
+        // Satidham Total Portfolio: aggregate cash flows from Scheme A, Scheme B, Scheme A (Old), Scheme PMS QAW, Scheme QAW++, and Scheme QYE++
+        const satidhamSchemes = ["Scheme A", "Scheme B", "Scheme A (Old)", "Scheme PMS QAW", "Scheme QAW++", "Scheme QYE++"];
         let cashFlows: CashFlow[] = [];
 
         // Use hardcoded data for Satidham schemes
@@ -1802,7 +1806,7 @@ export class PortfolioApi {
                 dividend: entry.dividend || 0,
               }))
             );
-          } else if (s === "Scheme QAW++ QUS00081") {
+          } else if (s === "Scheme QAW++") {
             // Fetch from database using QAC00066
             const effectiveQcode = PortfolioApi.getEffectiveQcode(s, qcode);
             const systemTag = PortfolioApi.getSystemTag(s, effectiveQcode);
@@ -1861,7 +1865,7 @@ export class PortfolioApi {
       }
     }
 
-    // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ QUS00081 uses QAC00066)
+    // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ uses QAC00066)
     const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
     const systemTag = scheme === "Scheme B" ? "Zerodha Total Portfolio" : PortfolioApi.getSystemTag(scheme, effectiveQcode);
 
@@ -2201,7 +2205,7 @@ export class PortfolioApi {
         capitalInOut: item.capitalInOut,
       })));
 
-      // For Satidham, also fetch Scheme A, Scheme QAW++ QUS00081, and Scheme QYE++
+      // For Satidham, also fetch Scheme A, Scheme QAW++, and Scheme QYE++
       if (isSatidham) {
         const schemeAData = await PortfolioApi.getHistoricalData(qcode, "Scheme A");
         allData.push(...schemeAData.map(item => ({
@@ -2211,7 +2215,7 @@ export class PortfolioApi {
           capitalInOut: item.capitalInOut,
         })));
 
-        const schemeQAWPlusData = await PortfolioApi.getHistoricalData(qcode, "Scheme QAW++ QUS00081");
+        const schemeQAWPlusData = await PortfolioApi.getHistoricalData(qcode, "Scheme QAW++");
         allData.push(...schemeQAWPlusData.map(item => ({
           date: PortfolioApi.normalizeDate(item.date)!,
           nav: item.nav,
@@ -2465,7 +2469,7 @@ export class PortfolioApi {
         }))
       );
 
-      // For Satidham, also calculate Scheme A, Scheme QAW++ QUS00081, and Scheme QYE++
+      // For Satidham, also calculate Scheme A, Scheme QAW++, and Scheme QYE++
       let schemeAQuarterlyPnl: QuarterlyPnL = {};
       let schemeQAWPlusQuarterlyPnl: QuarterlyPnL = {};
       let schemeQYEQuarterlyPnl: QuarterlyPnL = {};
@@ -2479,7 +2483,7 @@ export class PortfolioApi {
           }))
         );
 
-        const schemeQAWPlusData = await PortfolioApi.getHistoricalData(qcode, "Scheme QAW++ QUS00081");
+        const schemeQAWPlusData = await PortfolioApi.getHistoricalData(qcode, "Scheme QAW++");
         schemeQAWPlusQuarterlyPnl = this.calculateQuarterlyPnLFromNavData(
           schemeQAWPlusData.map(d => ({
             date: PortfolioApi.normalizeDate(d.date)!,
@@ -2575,7 +2579,7 @@ export class PortfolioApi {
             const bVal = PortfolioApi.safeNum(schemeBQuarterlyPnl[year]?.cash[quarter]);
             let sum = pmsVal + bVal;
 
-            // For Satidham, also add Scheme A, Scheme QAW++ QUS00081, and Scheme QYE++
+            // For Satidham, also add Scheme A, Scheme QAW++, and Scheme QYE++
             if (isSatidham) {
               const aVal = PortfolioApi.safeNum(schemeAQuarterlyPnl[year]?.cash[quarter]);
               const qawPlusVal = PortfolioApi.safeNum(schemeQAWPlusQuarterlyPnl[year]?.cash[quarter]);
@@ -2627,7 +2631,7 @@ if (scheme === "Scheme PMS QAW") {
 }
 
     // Default: compute from master_sheet for the specific scheme
-    // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ QUS00081 uses QAC00066)
+    // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ uses QAC00066)
     const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
     const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
     const portfolioValues = await prisma.master_sheet.findMany({
@@ -2802,7 +2806,7 @@ if (scheme === "Scheme PMS QAW") {
           capital_in_out: Decimal | number | null;
         }> = [];
         const portfolioNames = PortfolioApi.getPortfolioNames(accountCode, scheme);
-        // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ QUS00081 uses QAC00066)
+        // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ uses QAC00066)
         const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
         const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
 
