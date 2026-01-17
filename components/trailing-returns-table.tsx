@@ -30,16 +30,18 @@ interface TrailingReturnsTableProps {
   equityCurve: EquityCurvePoint[];
   accountType?: string;
   broker?: string;
+  adjustBenchmarkStartDate?: boolean;
 }
 
 export function TrailingReturnsTable({
   trailingReturns,
   drawdown,
   equityCurve,
+  adjustBenchmarkStartDate = false,
 }: TrailingReturnsTableProps) {
 
   console.log(trailingReturns)
-  const { bse500Data, error } = useBse500Data(equityCurve);
+  const { bse500Data, error } = useBse500Data(equityCurve, adjustBenchmarkStartDate);
 
   // Normalize trailingReturns for internal use
   const normalizeTrailingReturns = (

@@ -35,9 +35,10 @@ interface RevenueChartProps {
   };
   drawdown: string;
   chart_animation:boolean;
+  adjustBenchmarkStartDate?: boolean;
 }
 
-export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, drawdown, chart_animation = true }: RevenueChartProps) {
+export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, drawdown, chart_animation = true, adjustBenchmarkStartDate = false }: RevenueChartProps) {
   
   console.log(equityCurve,"=============================equityCurve2")
   const chartRef = useRef<HTMLDivElement>(null);
@@ -574,6 +575,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
             trailingReturns={trailingReturns}
             drawdown={drawdown}
             equityCurve={equityCurve}
+            adjustBenchmarkStartDate={adjustBenchmarkStartDate}
           />
         </CardContent>
       </Card>

@@ -17,7 +17,7 @@ interface UseBse500DataResult {
   error: string | null;
 }
 
-export function useBse500Data(equityCurve: EquityCurvePoint[]): UseBse500DataResult {
+export function useBse500Data(equityCurve: EquityCurvePoint[], adjustStartDateByOneDay: boolean = false): UseBse500DataResult {
   const [bse500Data, setBse500Data] = useState<Bse500DataPoint[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,9 +32,19 @@ export function useBse500Data(equityCurve: EquityCurvePoint[]): UseBse500DataRes
         const startDate = equityCurve[0].date;
         const endDate = equityCurve[equityCurve.length - 1].date;
 
+        // Optionally fetch benchmark data from one day before the equity curve start date
+        // This ensures "Since Inception" benchmark calculation uses the pre-trading baseline
+        // (matching how scheme NAV starts at 100 before first day's trading)
+        let effectiveStartDate = startDate;
+        if (adjustStartDateByOneDay) {
+          const startDateObj = new Date(startDate);
+          startDateObj.setDate(startDateObj.getDate() - 1);
+          effectiveStartDate = startDateObj.toISOString().split('T')[0];
+        }
+
         const queryParams = new URLSearchParams({
           indices: "NIFTY 50",
-          start_date: startDate,
+          start_date: effectiveStartDate,
           end_date: endDate,
         });
 
@@ -57,7 +67,7 @@ export function useBse500Data(equityCurve: EquityCurvePoint[]): UseBse500DataRes
 
         const filteredBse500Data = processedData.filter(
           (d) =>
-            new Date(d.date) >= new Date(startDate) &&
+            new Date(d.date) >= new Date(effectiveStartDate) &&
             new Date(d.date) <= new Date(endDate)
         );
 
@@ -69,7 +79,7 @@ export function useBse500Data(equityCurve: EquityCurvePoint[]): UseBse500DataRes
     };
 
     fetchBse500Data();
-  }, [equityCurve]);
+  }, [equityCurve, adjustStartDateByOneDay]);
 
   return { bse500Data, error };
 }
