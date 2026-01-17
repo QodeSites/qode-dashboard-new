@@ -139,6 +139,12 @@ const PORTFOLIO_MAPPING = {
       isActive: true,
       // This scheme uses QAC00066 instead of QAC00046
     },
+    "Scheme QYE++": {
+      current: "QYE Total Portfolio Value",
+      metrics: "QYE Total Portfolio Value",
+      nav: "QYE Total Portfolio Value",
+      isActive: false,
+    },
     "Scheme A": {
       current: "Total Portfolio Value A",
       metrics: "Total Portfolio Value A",
@@ -162,12 +168,6 @@ const PORTFOLIO_MAPPING = {
       metrics: "Total Portfolio Value A",
       nav: "Total Portfolio Value A",
       isActive: true
-    },
-    "Scheme QYE++": {
-      current: "QYE Total Portfolio Value",
-      metrics: "QYE Total Portfolio Value",
-      nav: "QYE Total Portfolio Value",
-      isActive: false,
     },
   },
 };
