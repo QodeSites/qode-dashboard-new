@@ -2494,14 +2494,21 @@ export class PortfolioApi {
           }))
         );
 
-        const schemeQYEData = await PortfolioApi.getHistoricalData(qcode, "Scheme QYE++");
-        schemeQYEQuarterlyPnl = this.calculateQuarterlyPnLFromNavData(
-          schemeQYEData.map(d => ({
-            date: PortfolioApi.normalizeDate(d.date)!,
-            nav: d.nav,
-            pnl: d.pnl,
-          }))
-        );
+        // For QYE++, use hardcoded quarterlyPnl directly since historical data has pnl=0
+        // (pnl field is set to 0 in getHistoricalData for hardcoded schemes)
+        const qyeHC = this.getHardcoded(qcode);
+        if (qyeHC?.["Scheme QYE++"]) {
+          schemeQYEQuarterlyPnl = qyeHC["Scheme QYE++"].data.quarterlyPnl;
+        } else {
+          const schemeQYEData = await PortfolioApi.getHistoricalData(qcode, "Scheme QYE++");
+          schemeQYEQuarterlyPnl = this.calculateQuarterlyPnLFromNavData(
+            schemeQYEData.map(d => ({
+              date: PortfolioApi.normalizeDate(d.date)!,
+              nav: d.nav,
+              pnl: d.pnl,
+            }))
+          );
+        }
       }
 
       // Combined result
