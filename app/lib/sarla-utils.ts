@@ -162,7 +162,13 @@ const PORTFOLIO_MAPPING = {
       metrics: "Total Portfolio Value A",
       nav: "Total Portfolio Value A",
       isActive: true
-    }
+    },
+    "Scheme QYE++": {
+      current: "QYE Total Portfolio Value",
+      metrics: "QYE Total Portfolio Value",
+      nav: "QYE Total Portfolio Value",
+      isActive: false,
+    },
   },
 };
 const FROZEN_RETURN_VALUES = {
@@ -289,6 +295,7 @@ export class PortfolioApi {
     "Scheme A (Old)": "Total Portfolio Value Old",
     "Scheme PMS QAW": "PMS QAW Portfolio",
     "Scheme QAW++ QUS00081": "Zerodha Total Portfolio", // Uses QAC00066
+    "Scheme QYE++": "QYE Total Portfolio Value", // Inactive scheme - uses hardcoded data
   };
 
   // Scheme to qcode override mapping - schemes that use a different qcode than the default
@@ -1178,6 +1185,180 @@ export class PortfolioApi {
         isActive: false,
       },
     },
+    "Scheme QYE++": {
+      data: {
+        amountDeposited: "0.00",
+        currentExposure: "0.00",
+        return: "1.04",
+        totalProfit: "787288.79",
+        trailingReturns: {
+          "5d": 0.4,
+          "10d": 0.64,
+          "15d": 0.85,
+          "1m": 0.91,
+          "3m": null,
+          "6m": null,
+          "1y": null,
+          "2y": null,
+          "5y": null,
+          sinceInception: 1.04,
+          MDD: -0.87,
+          currentDD: 0,
+        },
+        drawdown: "0.00",
+        maxDrawdown: "-0.87",
+        equityCurve: [
+          { date: "2025-11-28", nav: 100.01 },
+          { date: "2025-12-01", nav: 99.83 },
+          { date: "2025-12-02", nav: 100.04 },
+          { date: "2025-12-03", nav: 100.18 },
+          { date: "2025-12-04", nav: 100.07 },
+          { date: "2025-12-05", nav: 100.14 },
+          { date: "2025-12-08", nav: 100.26 },
+          { date: "2025-12-09", nav: 100.88 },
+          { date: "2025-12-10", nav: 100.88 },
+          { date: "2025-12-11", nav: 100.71 },
+          { date: "2025-12-12", nav: 100.84 },
+          { date: "2025-12-15", nav: 100.76 },
+          { date: "2025-12-16", nav: 100.66 },
+          { date: "2025-12-17", nav: 100.83 },
+          { date: "2025-12-18", nav: 100.5 },
+          { date: "2025-12-19", nav: 100 },
+          { date: "2025-12-22", nav: 100.2 },
+          { date: "2025-12-23", nav: 100.21 },
+          { date: "2025-12-24", nav: 100.3 },
+          { date: "2025-12-26", nav: 100.41 },
+          { date: "2025-12-29", nav: 100.53 },
+          { date: "2025-12-30", nav: 100.72 },
+          { date: "2025-12-31", nav: 100.56 },
+          { date: "2026-01-01", nav: 100.65 },
+          { date: "2026-01-02", nav: 100.94 },
+          { date: "2026-01-05", nav: 100.92 },
+          { date: "2026-01-06", nav: 101.05 },
+        ],
+        drawdownCurve: [
+          { date: "2025-11-28", drawdown: 0 },
+          { date: "2025-12-01", drawdown: 0.18 },
+          { date: "2025-12-02", drawdown: 0 },
+          { date: "2025-12-03", drawdown: 0 },
+          { date: "2025-12-04", drawdown: 0.11 },
+          { date: "2025-12-05", drawdown: 0.04 },
+          { date: "2025-12-08", drawdown: 0 },
+          { date: "2025-12-09", drawdown: 0 },
+          { date: "2025-12-10", drawdown: 0 },
+          { date: "2025-12-11", drawdown: 0.17 },
+          { date: "2025-12-12", drawdown: 0.04 },
+          { date: "2025-12-15", drawdown: 0.12 },
+          { date: "2025-12-16", drawdown: 0.22 },
+          { date: "2025-12-17", drawdown: 0.05 },
+          { date: "2025-12-18", drawdown: 0.38 },
+          { date: "2025-12-19", drawdown: 0.87 },
+          { date: "2025-12-22", drawdown: 0.67 },
+          { date: "2025-12-23", drawdown: 0.66 },
+          { date: "2025-12-24", drawdown: 0.57 },
+          { date: "2025-12-26", drawdown: 0.47 },
+          { date: "2025-12-29", drawdown: 0.35 },
+          { date: "2025-12-30", drawdown: 0.16 },
+          { date: "2025-12-31", drawdown: 0.32 },
+          { date: "2026-01-01", drawdown: 0.23 },
+          { date: "2026-01-02", drawdown: 0 },
+          { date: "2026-01-05", drawdown: 0.02 },
+          { date: "2026-01-06", drawdown: 0 },
+        ],
+        quarterlyPnl: {
+          "2025": {
+            percent: { q1: "-", q2: "-", q3: "-", q4: "0.56", total: "0.56" },
+            cash: { q1: "-", q2: "-", q3: "-", q4: "539872.40", total: "539872.40" },
+            yearCash: "539872.40",
+          },
+          "2026": {
+            percent: { q1: "0.49", q2: "-", q3: "-", q4: "-", total: "0.49" },
+            cash: { q1: "247416.39", q2: "-", q3: "-", q4: "-", total: "247416.39" },
+            yearCash: "247416.39",
+          },
+        },
+        monthlyPnl: {
+          "2025": {
+            months: {
+              January: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+              February: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+              March: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+              April: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+              May: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+              June: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+              July: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+              August: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+              September: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+              October: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+              November: { percent: "0.01", cash: "8424.89", capitalInOut: "10000000.04" },
+              December: { percent: "0.55", cash: "531447.51", capitalInOut: "2087253.24" },
+            },
+            totalPercent: 0.56,
+            totalCash: 539872.4,
+            totalCapitalInOut: 12087253.28,
+          },
+          "2026": {
+            months: {
+              January: { percent: "0.49", cash: "247416.39", capitalInOut: "-65002.54" },
+              February: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+              March: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+              April: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+              May: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+              June: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+              July: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+              August: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+              September: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+              October: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+              November: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+              December: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
+            },
+            totalPercent: 0.49,
+            totalCash: 247416.39,
+            totalCapitalInOut: -65002.54,
+          },
+        },
+        cashFlows: [
+          { date: "2025-11-28", amount: 10000000.04, dividend: 0 },
+          { date: "2025-12-01", amount: -6395.66, dividend: 0 },
+          { date: "2025-12-02", amount: 121842.42, dividend: 0 },
+          { date: "2025-12-03", amount: -146295.38, dividend: 0 },
+          { date: "2025-12-04", amount: -94151.04, dividend: 0 },
+          { date: "2025-12-05", amount: 80481.13, dividend: 0 },
+          { date: "2025-12-08", amount: -46763.8, dividend: 0 },
+          { date: "2025-12-09", amount: -77741.48, dividend: 0 },
+          { date: "2025-12-10", amount: -440996.5, dividend: 0 },
+          { date: "2025-12-11", amount: 1298.2, dividend: 0 },
+          { date: "2025-12-12", amount: 118500.59, dividend: 0 },
+          { date: "2025-12-15", amount: 2509442.87, dividend: 0 },
+          { date: "2025-12-16", amount: 31257.29, dividend: 0 },
+          { date: "2025-12-17", amount: 51954.1, dividend: 0 },
+          { date: "2025-12-18", amount: -85472.5, dividend: 0 },
+          { date: "2025-12-19", amount: 165043.52, dividend: 0 },
+          { date: "2025-12-22", amount: 187145.16, dividend: 0 },
+          { date: "2025-12-23", amount: -77481.36, dividend: 0 },
+          { date: "2025-12-24", amount: -4138.48, dividend: 0 },
+          { date: "2025-12-26", amount: -472483.19, dividend: 0 },
+          { date: "2025-12-29", amount: -40604.14, dividend: 0 },
+          { date: "2025-12-30", amount: -49094.15, dividend: 0 },
+          { date: "2025-12-31", amount: 361905.64, dividend: 0 },
+          { date: "2026-01-01", amount: 65901.84, dividend: 0 },
+          { date: "2026-01-02", amount: -34928.84, dividend: 0 },
+          { date: "2026-01-05", amount: -84836.69, dividend: 0 },
+          { date: "2026-01-06", amount: -11138.85, dividend: 0 },
+        ],
+        strategyName: "Scheme QYE++",
+      },
+      metadata: {
+        icode: "Scheme QYE++",
+        accountCount: 1,
+        lastUpdated: "2026-01-16",
+        filtersApplied: { accountType: null, broker: null, startDate: null, endDate: null },
+        inceptionDate: "2025-11-28",
+        dataAsOfDate: "2026-01-06",
+        strategyName: "Scheme QYE++",
+        isActive: false,
+      },
+    },
   };
   private static async getAmountDeposited(qcode: string, scheme: string): Promise<number> {
     const HC = this.getHardcoded(qcode);
@@ -1546,8 +1727,20 @@ export class PortfolioApi {
     return total;
   }
   private static async getHistoricalData(qcode: string, scheme: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]> {
-
-
+    // Check for hardcoded historical data (for inactive schemes)
+    const HC = this.getHardcoded(qcode);
+    if (HC?.[scheme] && HC[scheme].data.equityCurve.length > 0) {
+      return HC[scheme].data.equityCurve.map(entry => {
+        const drawdownEntry = HC[scheme].data.drawdownCurve.find(d => d.date === entry.date);
+        return {
+          date: new Date(entry.date),
+          nav: entry.nav,
+          drawdown: drawdownEntry?.drawdown || 0,
+          pnl: 0, // PnL is handled separately via hardcoded quarterlyPnl/monthlyPnl
+          capitalInOut: 0, // Cash flows are handled separately via hardcoded cashFlows
+        };
+      });
+    }
 
     if (scheme === "Scheme PMS QAW") {
       const pmsData = await this.getPMSData(qcode);
