@@ -291,7 +291,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
       }
       if (processedBenchmarkData.length > 0) {
         mergedSeries.push({
-          name: "BSE500",
+          name: "Nifty 50",
           data: processedBenchmarkData,
           color: "#4169E1",
           zIndex: 1,
@@ -316,7 +316,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
       }
       if (benchmarkDrawdownCurve.length > 0) {
         mergedSeries.push({
-          name: "BSE500 Drawdown",
+          name: "Nifty 50 Drawdown",
           data: benchmarkDrawdownCurve,
           color: "#FF8F00",
           zIndex: 1,
@@ -470,9 +470,9 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
             }
 
             const portfolioSeries = chart.series.find((s: any) => s.name === "Portfolio");
-            const benchmarkSeries = chart.series.find((s: any) => s.name === "BSE500");
+            const benchmarkSeries = chart.series.find((s: any) => s.name === "Nifty 50");
             const portfolioDrawdownSeries = chart.series.find((s: any) => s.name === "Portfolio Drawdown");
-            const benchmarkDrawdownSeries = chart.series.find((s: any) => s.name === "BSE500 Drawdown");
+            const benchmarkDrawdownSeries = chart.series.find((s: any) => s.name === "Nifty 50 Drawdown");
 
             const portfolioPoint = portfolioSeries ? getNearestPoint(portfolioSeries, hoveredX) : null;
             const benchmarkPoint = benchmarkSeries ? getNearestPoint(benchmarkSeries, hoveredX) : null;
