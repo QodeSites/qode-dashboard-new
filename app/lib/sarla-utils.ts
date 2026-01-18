@@ -1189,7 +1189,7 @@ export class PortfolioApi {
       data: {
         amountDeposited: "0.00",
         currentExposure: "0.00",
-        return: "1.04",
+        return: "1.05",
         totalProfit: "787288.79",
         trailingReturns: {
           "5d": 0.4,
@@ -1201,7 +1201,7 @@ export class PortfolioApi {
           "1y": null,
           "2y": null,
           "5y": null,
-          sinceInception: 1.04,
+          sinceInception: 1.05,
           MDD: -0.87,
           currentDD: 0,
         },
