@@ -236,7 +236,10 @@ const calculateBenchmarkReturns = useCallback(() => {
         benchmarkReturns[period.key] = returnValue;
 
       } else if (period.type === "inception") {
-        const returnValue = calculateReturn(startDate, endDate, period.key);
+        // For "Since Inception" benchmark, use the first date from bse500Data
+        // which already accounts for adjustBenchmarkStartDate (day before inception)
+        const benchmarkStartDate = new Date(bse500Data[0].date);
+        const returnValue = calculateReturn(benchmarkStartDate, endDate, period.key);
         benchmarkReturns[period.key] = returnValue;
       }
     });
