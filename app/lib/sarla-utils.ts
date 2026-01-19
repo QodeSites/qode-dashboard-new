@@ -2865,8 +2865,30 @@ if (scheme === "Scheme PMS QAW") {
           trailingReturns,
           drawdown: drawdownMetrics.currentDD.toFixed(2),
           maxDrawdown: drawdownMetrics.mdd.toFixed(2),
-          equityCurve: historicalData.map(d => ({ date: PortfolioApi.normalizeDate(d.date)!, nav: d.nav })),
-          drawdownCurve: drawdownMetrics.ddCurve,
+          equityCurve: (() => {
+            const rawCurve = historicalData.map(d => ({ date: PortfolioApi.normalizeDate(d.date)!, nav: d.nav }));
+            // For Scheme QAW++ and QYE++, prepend a baseline point with NAV = 100 (day before inception)
+            // This ensures the chart uses 100 as the baseline, matching the trailing returns calculation
+            if ((scheme === "Scheme QAW++" || scheme === "Scheme QYE++") && rawCurve.length > 0) {
+              const firstDate = new Date(rawCurve[0].date);
+              firstDate.setDate(firstDate.getDate() - 1);
+              const baselineDate = firstDate.toISOString().split('T')[0];
+              return [{ date: baselineDate, nav: 100 }, ...rawCurve];
+            }
+            return rawCurve;
+          })(),
+          drawdownCurve: (() => {
+            const rawDDCurve = drawdownMetrics.ddCurve;
+            // For Scheme QAW++ and QYE++, prepend a baseline point with drawdown = 0 (day before inception)
+            // This aligns with the equity curve baseline prepend
+            if ((scheme === "Scheme QAW++" || scheme === "Scheme QYE++") && rawDDCurve.length > 0 && historicalData.length > 0) {
+              const firstDate = new Date(historicalData[0].date);
+              firstDate.setDate(firstDate.getDate() - 1);
+              const baselineDate = firstDate.toISOString().split('T')[0];
+              return [{ date: baselineDate, value: 0 }, ...rawDDCurve];
+            }
+            return rawDDCurve;
+          })(),
           quarterlyPnl,
           monthlyPnl,
           cashFlows,

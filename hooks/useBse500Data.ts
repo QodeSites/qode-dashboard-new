@@ -35,8 +35,12 @@ export function useBse500Data(equityCurve: EquityCurvePoint[], adjustStartDateBy
         // Optionally fetch benchmark data from one day before the equity curve start date
         // This ensures "Since Inception" benchmark calculation uses the pre-trading baseline
         // (matching how scheme NAV starts at 100 before first day's trading)
+        // Skip adjustment if equity curve already has baseline prepended (first value = 100)
         let effectiveStartDate = startDate;
-        if (adjustStartDateByOneDay) {
+        // Check both 'value' and 'nav' properties since different components use different formats
+        const firstNavValue = (equityCurve[0] as any).value ?? (equityCurve[0] as any).nav;
+        const hasBaselinePrepended = firstNavValue === 100;
+        if (adjustStartDateByOneDay && !hasBaselinePrepended) {
           const startDateObj = new Date(startDate);
           startDateObj.setDate(startDateObj.getDate() - 1);
           effectiveStartDate = startDateObj.toISOString().split('T')[0];
