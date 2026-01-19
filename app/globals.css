@@ -4,6 +4,7 @@
 
 @layer base {
   :root {
+    color-scheme: light only;
     --background: 239 236 211; /* #EFECD3 */
     --foreground: 0 32 23; /* #002017 */
     --card: 255 255 255; /* #FFFFFF */
@@ -24,6 +25,12 @@
     --input: 239 236 211;
     --ring: 2 66 43;
     --radius: 0.75rem;
+  }
+
+  /* Prevent browser dark mode from overriding colors */
+  html, body {
+    forced-color-adjust: none;
+    -webkit-text-fill-color: inherit;
   }
 }
 

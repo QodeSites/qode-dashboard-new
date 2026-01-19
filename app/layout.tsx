@@ -25,7 +25,10 @@ const inriaSerif = Inria_Serif({
 export const metadata: Metadata = {
   title: "Qode Dashboard",
   description: "Client dashboard for Qode",
-  generator: 'v0.dev'
+  generator: 'v0.dev',
+  other: {
+    'color-scheme': 'light only',
+  },
 }
 
 export default function RootLayout({

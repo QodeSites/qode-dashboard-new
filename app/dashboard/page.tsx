@@ -488,10 +488,10 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
       return (
         <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
           <CardHeader>
-            <CardTitle className="text-sm sm:text-lg text-black">Cash In / Out</CardTitle>
+            <CardTitle className="text-sm sm:text-lg text-card-text">Cash In / Out</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-center py-3 text-gray-900 dark:text-gray-100">
+            <div className="text-center py-3 text-card-text">
               No cash flow data available
             </div>
           </CardContent>
@@ -501,20 +501,20 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
     return (
       <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0 p-4">
-          <CardTitle className="text-sm sm:text-lg text-black">Cash In / Out</CardTitle>
+          <CardTitle className="text-sm sm:text-lg text-card-text">Cash In / Out</CardTitle>
         <CardContent className="p-0 mt-4">
           <div className="overflow-x-auto">
             <Table className="min-w-full">
               <TableHeader>
-                <TableRow className="bg-black/5 hover:bg-gray-200 border-b border-gray-200 dark:border-gray-700">
-                  <TableHead className="py-1 text-left text-xs font-medium text-black uppercase tracking-wider">
+                <TableRow className="bg-black/5 hover:bg-[#e5e7eb] border-b border-[#e5e7eb]">
+                  <TableHead className="py-1 text-left text-xs font-medium text-card-text uppercase tracking-wider">
                     Date
                   </TableHead>
-                  <TableHead className=" py-1 text-right text-xs font-medium text-black uppercase tracking-wider">
+                  <TableHead className="py-1 text-right text-xs font-medium text-card-text uppercase tracking-wider">
                     Amount (₹)
                   </TableHead>
                   {viewMode === "individual" && (
-                    <TableHead className="py-1 text-left text-xs font-medium text-black uppercase tracking-wider">
+                    <TableHead className="py-1 text-left text-xs font-medium text-card-text uppercase tracking-wider">
                       Account
                     </TableHead>
                   )}
@@ -526,41 +526,41 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                     ? stats.find((item) => item.stats.cashFlows?.includes(transaction))?.metadata.account_name
                     : undefined;
                   return (
-                    <TableRow key={`${transaction.date}-${index}`} className="border-b border-gray-200 dark:border-gray-700 ">
-                      <TableCell className=" py-2 text-xs text-gray-700 dark:text-gray-100">
+                    <TableRow key={`${transaction.date}-${index}`} className="border-b border-[#e5e7eb]">
+                      <TableCell className="py-2 text-xs text-card-text-secondary">
                         {dateFormatter(transaction.date)}
                       </TableCell>
                       <TableCell
-                        className={` py-2 text-xs font-medium text-right ${Number(transaction.amount) > 0 ? "text-green-600" : "text-red-600"}`}
+                        className={`py-2 text-xs font-medium text-right ${Number(transaction.amount) > 0 ? "text-[#166534]" : "text-[#dc2626]"}`}
                       >
                         {formatter.format(Number(transaction.amount))}
                       </TableCell>
                       {viewMode === "individual" && (
-                        <TableCell className="py-2 text-xs text-gray-700 dark:text-gray-100">
+                        <TableCell className="py-2 text-xs text-card-text-secondary">
                           {accountName || "Unknown"}
                         </TableCell>
                       )}
                     </TableRow>
                   );
                 })}
-                <TableRow className="border-t border-gray-200 dark:border-gray-700 font-semibold">
-                  <TableCell className="py-2 text-xs text-gray-800 dark:text-gray-100">Total In</TableCell>
-                  <TableCell className="py-2 text-xs text-right text-green-800 dark:text-green-600">
+                <TableRow className="border-t border-[#e5e7eb] font-semibold">
+                  <TableCell className="py-2 text-xs text-card-text">Total In</TableCell>
+                  <TableCell className="py-2 text-xs text-right text-[#166534]">
                     {formatter.format(cashFlowTotals.totalIn)}
                   </TableCell>
                   {viewMode === "individual" && <TableCell />}
                 </TableRow>
                 <TableRow className="font-semibold">
-                  <TableCell className="py-2 text-xs text-gray-800 dark:text-gray-100">Total Out</TableCell>
-                  <TableCell className="py-2 text-xs text-right text-red-800 dark:text-red-600">
+                  <TableCell className="py-2 text-xs text-card-text">Total Out</TableCell>
+                  <TableCell className="py-2 text-xs text-right text-[#dc2626]">
                     {formatter.format(cashFlowTotals.totalOut)}
                   </TableCell>
                   {viewMode === "individual" && <TableCell />}
                 </TableRow>
                 <TableRow className="font-semibold">
-                  <TableCell className="py-2 text-xs text-gray-800 dark:text-gray-100">Net Flow</TableCell>
+                  <TableCell className="py-2 text-xs text-card-text">Net Flow</TableCell>
                   <TableCell
-                    className={`py-2 text-xs text-right font-semibold ${cashFlowTotals.netFlow >= 0 ? "text-green-800" : "text-red-800"} dark:${cashFlowTotals.netFlow >= 0 ? "text-green-600" : "text-red-600"}`}
+                    className={`py-2 text-xs text-right font-semibold ${cashFlowTotals.netFlow >= 0 ? "text-[#166534]" : "text-[#dc2626]"}`}
                   >
                     {formatter.format(cashFlowTotals.netFlow)}
                   </TableCell>
@@ -569,9 +569,9 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
               </TableBody>
             </Table>
           </div>
-          <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
-            <div className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
-              <p><strong>Note:</strong></p>
+          <div className="mt-4 pt-3 border-t border-[#e5e7eb]">
+            <div className="text-xs text-card-text-secondary space-y-1">
+              <p><strong className="text-card-text">Note:</strong></p>
               <p>• Positive numbers represent cash inflows</p>
               <p>• Negative numbers represent cash outflows</p>
             </div>
@@ -614,8 +614,8 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
             })}
           </SelectContent>
         </Select>
-        <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
-          <p><strong>Note:</strong> Inactive strategies may have limited data updates.</p>
+        <div className="mt-2 text-xs text-card-text-secondary">
+          <p><strong className="text-card-text">Note:</strong> Inactive strategies may have limited data updates.</p>
         </div>
       </div>
     );
@@ -683,7 +683,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         />
         {renderCashFlowsTable()}
         {isSarla && !isActive && (
-          <div className="text-sm text-yellow-600 dark:text-yellow-400">
+          <div className="text-sm text-[#ca8a04]">
             <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
           </div>
         )}
@@ -749,7 +749,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         />
         {renderCashFlowsTable()}
         {isSatidham && !isActive && (
-          <div className="text-sm text-yellow-600 dark:text-yellow-400">
+          <div className="text-sm text-[#ca8a04]">
             <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
           </div>
         )}
@@ -765,7 +765,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
   if (error || !session?.user) {
     return (
-      <div className="p-6 text-center bg-red-100 rounded-lg text-red-600 dark:bg-red-900/10 dark:text-red-400">
+      <div className="p-6 text-center bg-[#fee2e2] rounded-lg text-[#dc2626]">
         {error || "Failed to load user data"}
       </div>
     );
@@ -773,7 +773,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
   if (!isSarla && !isSatidham && accounts.length === 0) {
     return (
-      <div className="p-6 text-center bg-gray-100 rounded-lg text-gray-900 dark:bg-gray-900/10 dark:text-gray-100">
+      <div className="p-6 text-center bg-[#f3f4f6] rounded-lg text-card-text">
         No accounts found for this user.
       </div>
     );
@@ -781,7 +781,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
   if ((isSarla || isSatidham) && (!sarlaData || availableStrategies.length === 0)) {
     return (
-      <div className="p-6 text-center bg-gray-100 rounded-lg text-gray-900 dark:bg-gray-900/10 dark:text-gray-100">
+      <div className="p-6 text-center bg-[#f3f4f6] rounded-lg text-card-text">
         No strategy data found for {isSarla ? "Sarla" : "Satidham"} user.
       </div>
     );
@@ -841,7 +841,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           </Button>
         )}
         {(isSarla || isSatidham) && sarlaData && availableStrategies.length > 0 && (
-          <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+          <div className="mt-2 text-xs text-card-text-secondary">
             <p><strong>Note:</strong> Inactive strategies may have limited data updates.</p>
           </div>
         )}
@@ -897,7 +897,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                           monthlyPnl={convertedStats.monthlyPnl}
                         />
                         {(isSarla || isSatidham) && !item.metadata.isActive && (
-                          <div className="text-sm text-yellow-600 dark:text-yellow-400">
+                          <div className="text-sm text-[#ca8a04]">
                             <strong>Note:</strong> This account is inactive. Data may not be updated regularly.
                           </div>
                         )}
@@ -943,7 +943,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                       />
                       {renderCashFlowsTable()}
                       {(isSarla || isSatidham) && metadata && !metadata.isActive && (
-                        <div className="text-sm text-yellow-600 dark:text-yellow-400">
+                        <div className="text-sm text-[#ca8a04]">
                           <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
                         </div>
                       )}
