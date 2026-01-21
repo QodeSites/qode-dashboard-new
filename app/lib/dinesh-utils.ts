@@ -101,7 +101,8 @@ export class PortfolioApi {
 
   // QTF final NAV for rebasing QAW++ in Total Portfolio calculations
   private static readonly QTF_FINAL_NAV = 113.57;
-  private static readonly QTF_END_DATE = "2026-01-09";
+  // QAW++ starts on Jan 12, 2026 (after QTF ended on Jan 9, 2026)
+  private static readonly QAW_START_DATE = new Date("2026-01-12");
 
   private static DINESH_HARDCODED_DATA: Record<string, PortfolioData & { metadata: Metadata }> = {
     "Scheme QTF": {
@@ -420,12 +421,13 @@ export class PortfolioApi {
       return this.getAmountDeposited(qcode, "Scheme QAW++");
     }
 
-    // QAW++: Fetch from database
+    // QAW++: Fetch from database (only from QAW start date onwards)
     const systemTag = this.getSystemTag(scheme);
     const depositSum = await prisma.master_sheet.aggregate({
       where: {
         qcode,
         system_tag: systemTag,
+        date: { gte: this.QAW_START_DATE },
         capital_in_out: { not: null },
       },
       _sum: { capital_in_out: true },
@@ -453,10 +455,10 @@ export class PortfolioApi {
       return this.getLatestExposure(qcode, "Scheme QAW++");
     }
 
-    // QAW++: Fetch from database
+    // QAW++: Fetch from database (only from QAW start date onwards)
     const systemTag = this.getSystemTag(scheme);
     const record = await prisma.master_sheet.findFirst({
-      where: { qcode, system_tag: systemTag },
+      where: { qcode, system_tag: systemTag, date: { gte: this.QAW_START_DATE } },
       orderBy: { date: "desc" },
       select: { portfolio_value: true, drawdown: true, nav: true, date: true },
     });
@@ -505,19 +507,20 @@ export class PortfolioApi {
       return [...qtfData, ...rebasedQawData];
     }
 
-    // QAW++: Fetch from database
+    // QAW++: Fetch from database (only from QAW start date onwards)
     const systemTag = this.getSystemTag(scheme);
     const data = await prisma.master_sheet.findMany({
       where: {
         qcode,
         system_tag: systemTag,
+        date: { gte: this.QAW_START_DATE },
         nav: { not: null },
       },
       select: { date: true, nav: true, drawdown: true, pnl: true, capital_in_out: true },
       orderBy: { date: "asc" },
     });
 
-    // Prepend baseline point with NAV = 100 (day before first entry)
+    // Prepend baseline point with NAV = 100 (day before first entry = Jan 11, 2026)
     const result = data.map((entry) => ({
       date: entry.date,
       nav: Number(entry.nav) || 0,
@@ -526,7 +529,7 @@ export class PortfolioApi {
       capitalInOut: Number(entry.capital_in_out) || 0,
     }));
 
-    // Add baseline point for QAW++
+    // Add baseline point for QAW++ (Jan 11, 2026 with NAV = 100)
     if (result.length > 0) {
       const firstDate = new Date(result[0].date);
       firstDate.setDate(firstDate.getDate() - 1);
@@ -555,13 +558,17 @@ export class PortfolioApi {
       return [...qtfCashFlows, ...qawCashFlows].sort((a, b) => a.date.localeCompare(b.date));
     }
 
-    // QAW++: Fetch from database
+    // QAW++: Fetch from database (only from QAW start date onwards)
     const systemTag = this.getSystemTag(scheme);
     const data = await prisma.master_sheet.findMany({
       where: {
         qcode,
         system_tag: systemTag,
-        capital_in_out: { not: null, not: new Decimal(0) },
+        date: { gte: this.QAW_START_DATE },
+        AND: [
+          { capital_in_out: { not: null } },
+          { capital_in_out: { not: new Decimal(0) } },
+        ],
       },
       select: { date: true, capital_in_out: true },
       orderBy: { date: "asc" },
@@ -587,12 +594,13 @@ export class PortfolioApi {
       return qtfProfit + qawProfit;
     }
 
-    // QAW++: Calculate from database
+    // QAW++: Calculate from database (only from QAW start date onwards)
     const systemTag = this.getSystemTag(scheme);
     const profitSum = await prisma.master_sheet.aggregate({
       where: {
         qcode,
         system_tag: systemTag,
+        date: { gte: this.QAW_START_DATE },
         pnl: { not: null },
       },
       _sum: { pnl: true },
@@ -711,7 +719,32 @@ export class PortfolioApi {
       return this.DINESH_HARDCODED_DATA["Scheme QTF"].data.monthlyPnl;
     }
 
-    // For Total Portfolio and QAW++, calculate from historical data
+    // Total Portfolio: Combine QTF hardcoded + QAW++ calculated
+    if (scheme === "Total Portfolio") {
+      const qtfMonthlyPnl = this.DINESH_HARDCODED_DATA["Scheme QTF"].data.monthlyPnl;
+      const qawMonthlyPnl = await this.calculateMonthlyPnL(qcode, "Scheme QAW++");
+
+      // Merge: QTF has 2025 data, QAW++ has 2026+ data
+      const combined: MonthlyPnL = { ...qtfMonthlyPnl };
+      for (const year of Object.keys(qawMonthlyPnl)) {
+        if (!combined[year]) {
+          combined[year] = qawMonthlyPnl[year];
+        } else {
+          // Merge months if same year exists in both (unlikely but handle it)
+          for (const month of Object.keys(qawMonthlyPnl[year].months)) {
+            if (qawMonthlyPnl[year].months[month].percent !== "-") {
+              combined[year].months[month] = qawMonthlyPnl[year].months[month];
+            }
+          }
+          combined[year].totalPercent += qawMonthlyPnl[year].totalPercent;
+          combined[year].totalCash += qawMonthlyPnl[year].totalCash;
+          combined[year].totalCapitalInOut += qawMonthlyPnl[year].totalCapitalInOut;
+        }
+      }
+      return combined;
+    }
+
+    // QAW++: Calculate from historical data
     const historicalData = await this.getHistoricalData(qcode, scheme);
     const monthlyPnl: MonthlyPnL = {};
     const monthNames = [
@@ -779,7 +812,57 @@ export class PortfolioApi {
       return this.DINESH_HARDCODED_DATA["Scheme QTF"].data.quarterlyPnl;
     }
 
-    // For Total Portfolio and QAW++, calculate from historical data
+    // Total Portfolio: Combine QTF hardcoded + QAW++ calculated
+    if (scheme === "Total Portfolio") {
+      const qtfQuarterlyPnl = this.DINESH_HARDCODED_DATA["Scheme QTF"].data.quarterlyPnl;
+      const qawQuarterlyPnl = await this.calculateQuarterlyPnL(qcode, "Scheme QAW++");
+
+      // Merge: QTF has 2025 data, QAW++ has 2026+ data
+      const combined: QuarterlyPnL = {};
+
+      // Copy QTF data
+      for (const year of Object.keys(qtfQuarterlyPnl)) {
+        combined[year] = {
+          percent: { ...qtfQuarterlyPnl[year].percent },
+          cash: { ...qtfQuarterlyPnl[year].cash },
+          yearCash: qtfQuarterlyPnl[year].yearCash,
+        };
+      }
+
+      // Merge QAW++ data
+      for (const year of Object.keys(qawQuarterlyPnl)) {
+        if (!combined[year]) {
+          combined[year] = qawQuarterlyPnl[year];
+        } else {
+          // Merge quarters if same year exists in both
+          for (const q of ["q1", "q2", "q3", "q4"] as const) {
+            const qawPercent = parseFloat(qawQuarterlyPnl[year].percent[q]) || 0;
+            const qawCash = parseFloat(qawQuarterlyPnl[year].cash[q]) || 0;
+            if (qawPercent !== 0 || qawCash !== 0) {
+              const existingPercent = parseFloat(combined[year].percent[q]) || 0;
+              const existingCash = parseFloat(combined[year].cash[q]) || 0;
+              combined[year].percent[q] = (existingPercent + qawPercent).toFixed(2);
+              combined[year].cash[q] = (existingCash + qawCash).toFixed(2);
+            }
+          }
+          // Recalculate totals
+          const totalPercent = ["q1", "q2", "q3", "q4"].reduce(
+            (sum, q) => sum + (parseFloat(combined[year].percent[q as keyof typeof combined[string]["percent"]]) || 0),
+            0
+          );
+          const totalCash = ["q1", "q2", "q3", "q4"].reduce(
+            (sum, q) => sum + (parseFloat(combined[year].cash[q as keyof typeof combined[string]["cash"]]) || 0),
+            0
+          );
+          combined[year].percent.total = totalPercent.toFixed(2);
+          combined[year].cash.total = totalCash.toFixed(2);
+          combined[year].yearCash = totalCash.toFixed(2);
+        }
+      }
+      return combined;
+    }
+
+    // QAW++: Calculate from historical data
     const historicalData = await this.getHistoricalData(qcode, scheme);
     const quarterlyPnl: QuarterlyPnL = {};
 
