@@ -88,7 +88,7 @@ export class PortfolioApi {
       data: {
         amountDeposited: "0.00",
         currentExposure: "0.00",
-        return: "13.95",
+        return: "13.57",
         totalProfit: "6805437.30",
         trailingReturns: {
           "5d": 0.36,
@@ -100,13 +100,14 @@ export class PortfolioApi {
           "1y": null,
           "2y": null,
           "5y": null,
-          sinceInception: 13.95,
+          sinceInception: 13.57,
           MDD: -2.53,
           currentDD: -0.07,
         },
         drawdown: "-0.07",
         maxDrawdown: "-2.53",
         equityCurve: [
+          { date: "2025-08-25", nav: 100 },
           { date: "2025-08-26", nav: 99.66 },
           { date: "2025-08-28", nav: 100.93 },
           { date: "2025-08-29", nav: 101.24 },
@@ -202,6 +203,7 @@ export class PortfolioApi {
           { date: "2026-01-09", nav: 113.57 },
         ],
         drawdownCurve: [
+          { date: "2025-08-25", drawdown: 0 },
           { date: "2025-08-26", drawdown: -0.34 },
           { date: "2025-08-28", drawdown: 0.00 },
           { date: "2025-08-29", drawdown: 0.00 },
@@ -298,7 +300,7 @@ export class PortfolioApi {
         ],
         quarterlyPnl: {
           "2025": {
-            percent: { q1: "0", q2: "0", q3: "6.17", q4: "5.78", total: "11.95" },
+            percent: { q1: "0", q2: "0", q3: "5.81", q4: "5.78", total: "11.93" },
             cash: { q1: "0", q2: "0", q3: "3073926.70", q4: "2887170.83", total: "5961097.53" },
             yearCash: "5961097.53",
           },
@@ -318,13 +320,13 @@ export class PortfolioApi {
               May: { percent: "-", cash: "-", capitalInOut: "-" },
               June: { percent: "-", cash: "-", capitalInOut: "-" },
               July: { percent: "-", cash: "-", capitalInOut: "-" },
-              August: { percent: "1.59", cash: "790790.73", capitalInOut: "49999904.70" },
+              August: { percent: "1.24", cash: "790790.73", capitalInOut: "49999904.70" },
               September: { percent: "4.51", cash: "2283135.97", capitalInOut: "0" },
               October: { percent: "2.91", cash: "1535912.83", capitalInOut: "0" },
               November: { percent: "2.93", cash: "1595655.95", capitalInOut: "0" },
               December: { percent: "-0.13", cash: "-61942.29", capitalInOut: "0" },
             },
-            totalPercent: 11.81,
+            totalPercent: 11.46,
             totalCash: 6143553.19,
             totalCapitalInOut: 49999904.70,
           },
