@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { Decimal } from "@prisma/client/runtime/library";
 
 interface CashFlow {
   date: string;
@@ -67,8 +69,21 @@ interface PortfolioConfig {
   isActive: boolean;
 }
 
+// Dropdown order: Total Portfolio → Scheme QAW++ → Scheme QTF
 const PORTFOLIO_MAPPING: Record<string, Record<string, PortfolioConfig>> = {
   AC9: {
+    "Total Portfolio": {
+      current: "Total Portfolio",
+      metrics: "Total Portfolio",
+      nav: "Total Portfolio",
+      isActive: true,
+    },
+    "Scheme QAW++": {
+      current: "Zerodha Total Portfolio",
+      metrics: "Zerodha Total Portfolio",
+      nav: "Zerodha Total Portfolio",
+      isActive: true,
+    },
     "Scheme QTF": {
       current: "QTF Zerodha Total Portfolio",
       metrics: "QTF Zerodha Total Portfolio",
@@ -81,7 +96,12 @@ const PORTFOLIO_MAPPING: Record<string, Record<string, PortfolioConfig>> = {
 export class PortfolioApi {
   private static readonly DINESH_SYSTEM_TAGS: Record<string, string> = {
     "Scheme QTF": "QTF Zerodha Total Portfolio",
+    "Scheme QAW++": "Zerodha Total Portfolio",
   };
+
+  // QTF final NAV for rebasing QAW++ in Total Portfolio calculations
+  private static readonly QTF_FINAL_NAV = 113.57;
+  private static readonly QTF_END_DATE = "2026-01-09";
 
   private static DINESH_HARDCODED_DATA: Record<string, PortfolioData & { metadata: Metadata }> = {
     "Scheme QTF": {
@@ -361,7 +381,7 @@ export class PortfolioApi {
         accountCount: 1,
         lastUpdated: "2026-01-09T00:00:00.000Z",
         filtersApplied: { accountType: null, broker: null, startDate: null, endDate: null },
-        inceptionDate: "2025-08-26",
+        inceptionDate: "2025-08-25",
         dataAsOfDate: "2026-01-09",
         strategyName: "Scheme QTF",
         isActive: false,
@@ -378,6 +398,445 @@ export class PortfolioApi {
     };
   }
 
+  private static getSystemTag(scheme: string): string {
+    return this.DINESH_SYSTEM_TAGS[scheme] || "Zerodha Total Portfolio";
+  }
+
+  private static normalizeDate(date: Date | string): string {
+    if (typeof date === "string") return date.split("T")[0];
+    return date.toISOString().split("T")[0];
+  }
+
+  // ==================== Database Fetching Methods (READ-ONLY) ====================
+
+  private static async getAmountDeposited(qcode: string, scheme: string): Promise<number> {
+    // QTF is hardcoded and closed (net 0 for display)
+    if (scheme === "Scheme QTF") {
+      return 0;
+    }
+
+    // Total Portfolio: Combine QAW++ deposits (QTF is closed)
+    if (scheme === "Total Portfolio") {
+      return this.getAmountDeposited(qcode, "Scheme QAW++");
+    }
+
+    // QAW++: Fetch from database
+    const systemTag = this.getSystemTag(scheme);
+    const depositSum = await prisma.master_sheet.aggregate({
+      where: {
+        qcode,
+        system_tag: systemTag,
+        capital_in_out: { not: null },
+      },
+      _sum: { capital_in_out: true },
+    });
+    return Number(depositSum._sum.capital_in_out) || 0;
+  }
+
+  private static async getLatestExposure(
+    qcode: string,
+    scheme: string
+  ): Promise<{ portfolioValue: number; drawdown: number; nav: number; date: Date } | null> {
+    // QTF is closed
+    if (scheme === "Scheme QTF") {
+      const hc = this.DINESH_HARDCODED_DATA["Scheme QTF"];
+      return {
+        portfolioValue: 0,
+        drawdown: parseFloat(hc.data.drawdown),
+        nav: hc.data.equityCurve.at(-1)?.nav || 0,
+        date: new Date(hc.metadata.dataAsOfDate),
+      };
+    }
+
+    // Total Portfolio: Use QAW++ current exposure
+    if (scheme === "Total Portfolio") {
+      return this.getLatestExposure(qcode, "Scheme QAW++");
+    }
+
+    // QAW++: Fetch from database
+    const systemTag = this.getSystemTag(scheme);
+    const record = await prisma.master_sheet.findFirst({
+      where: { qcode, system_tag: systemTag },
+      orderBy: { date: "desc" },
+      select: { portfolio_value: true, drawdown: true, nav: true, date: true },
+    });
+
+    if (!record) return null;
+    return {
+      portfolioValue: Number(record.portfolio_value) || 0,
+      drawdown: Math.abs(Number(record.drawdown) || 0),
+      nav: Number(record.nav) || 0,
+      date: record.date,
+    };
+  }
+
+  private static async getHistoricalData(
+    qcode: string,
+    scheme: string
+  ): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]> {
+    // QTF: Return hardcoded data
+    if (scheme === "Scheme QTF") {
+      const hc = this.DINESH_HARDCODED_DATA["Scheme QTF"];
+      return hc.data.equityCurve.map((entry) => {
+        const drawdownEntry = hc.data.drawdownCurve.find((d) => d.date === entry.date);
+        return {
+          date: new Date(entry.date),
+          nav: entry.nav,
+          drawdown: drawdownEntry?.drawdown || 0,
+          pnl: 0,
+          capitalInOut: 0,
+        };
+      });
+    }
+
+    // Total Portfolio: Combine QTF + QAW++ with NAV rebasing
+    if (scheme === "Total Portfolio") {
+      const qtfData = await this.getHistoricalData(qcode, "Scheme QTF");
+      const qawData = await this.getHistoricalData(qcode, "Scheme QAW++");
+
+      // Rebase QAW++ NAV to continue from QTF's final NAV
+      const rebaseMultiplier = this.QTF_FINAL_NAV / 100;
+      const rebasedQawData = qawData.map((entry) => ({
+        ...entry,
+        nav: entry.nav * rebaseMultiplier,
+      }));
+
+      // Combine: QTF data first, then QAW++ data
+      return [...qtfData, ...rebasedQawData];
+    }
+
+    // QAW++: Fetch from database
+    const systemTag = this.getSystemTag(scheme);
+    const data = await prisma.master_sheet.findMany({
+      where: {
+        qcode,
+        system_tag: systemTag,
+        nav: { not: null },
+      },
+      select: { date: true, nav: true, drawdown: true, pnl: true, capital_in_out: true },
+      orderBy: { date: "asc" },
+    });
+
+    // Prepend baseline point with NAV = 100 (day before first entry)
+    const result = data.map((entry) => ({
+      date: entry.date,
+      nav: Number(entry.nav) || 0,
+      drawdown: Math.abs(Number(entry.drawdown) || 0),
+      pnl: Number(entry.pnl) || 0,
+      capitalInOut: Number(entry.capital_in_out) || 0,
+    }));
+
+    // Add baseline point for QAW++
+    if (result.length > 0) {
+      const firstDate = new Date(result[0].date);
+      firstDate.setDate(firstDate.getDate() - 1);
+      result.unshift({
+        date: firstDate,
+        nav: 100,
+        drawdown: 0,
+        pnl: 0,
+        capitalInOut: 0,
+      });
+    }
+
+    return result;
+  }
+
+  private static async getCashFlows(qcode: string, scheme: string): Promise<CashFlow[]> {
+    // QTF: Return hardcoded cash flows
+    if (scheme === "Scheme QTF") {
+      return this.DINESH_HARDCODED_DATA["Scheme QTF"].data.cashFlows;
+    }
+
+    // Total Portfolio: Combine QTF + QAW++ cash flows
+    if (scheme === "Total Portfolio") {
+      const qtfCashFlows = await this.getCashFlows(qcode, "Scheme QTF");
+      const qawCashFlows = await this.getCashFlows(qcode, "Scheme QAW++");
+      return [...qtfCashFlows, ...qawCashFlows].sort((a, b) => a.date.localeCompare(b.date));
+    }
+
+    // QAW++: Fetch from database
+    const systemTag = this.getSystemTag(scheme);
+    const data = await prisma.master_sheet.findMany({
+      where: {
+        qcode,
+        system_tag: systemTag,
+        capital_in_out: { not: null, not: new Decimal(0) },
+      },
+      select: { date: true, capital_in_out: true },
+      orderBy: { date: "asc" },
+    });
+
+    return data.map((entry) => ({
+      date: this.normalizeDate(entry.date),
+      amount: entry.capital_in_out?.toNumber() || 0,
+      dividend: 0,
+    }));
+  }
+
+  private static async getTotalProfit(qcode: string, scheme: string): Promise<number> {
+    // QTF: Return hardcoded profit
+    if (scheme === "Scheme QTF") {
+      return parseFloat(this.DINESH_HARDCODED_DATA["Scheme QTF"].data.totalProfit);
+    }
+
+    // Total Portfolio: Combine QTF + QAW++ profits
+    if (scheme === "Total Portfolio") {
+      const qtfProfit = await this.getTotalProfit(qcode, "Scheme QTF");
+      const qawProfit = await this.getTotalProfit(qcode, "Scheme QAW++");
+      return qtfProfit + qawProfit;
+    }
+
+    // QAW++: Calculate from database
+    const systemTag = this.getSystemTag(scheme);
+    const profitSum = await prisma.master_sheet.aggregate({
+      where: {
+        qcode,
+        system_tag: systemTag,
+        pnl: { not: null },
+      },
+      _sum: { pnl: true },
+    });
+    return Number(profitSum._sum.pnl) || 0;
+  }
+
+  private static calculateDrawdownMetrics(
+    equityCurve: { date: string; nav: number }[]
+  ): { mdd: number; currentDD: number; ddCurve: { date: string; value: number }[] } {
+    if (equityCurve.length === 0) {
+      return { mdd: 0, currentDD: 0, ddCurve: [] };
+    }
+
+    let peak = equityCurve[0].nav;
+    let mdd = 0;
+    const ddCurve: { date: string; value: number }[] = [];
+
+    for (const point of equityCurve) {
+      if (point.nav > peak) {
+        peak = point.nav;
+      }
+      const drawdown = ((point.nav - peak) / peak) * 100;
+      ddCurve.push({ date: point.date, value: drawdown });
+      if (drawdown < mdd) {
+        mdd = drawdown;
+      }
+    }
+
+    const currentDD = ddCurve.length > 0 ? ddCurve[ddCurve.length - 1].value : 0;
+    return { mdd, currentDD, ddCurve };
+  }
+
+  private static async calculatePortfolioReturns(qcode: string, scheme: string): Promise<number> {
+    // QTF: Return hardcoded returns
+    if (scheme === "Scheme QTF") {
+      return parseFloat(this.DINESH_HARDCODED_DATA["Scheme QTF"].data.return);
+    }
+
+    const historicalData = await this.getHistoricalData(qcode, scheme);
+    if (historicalData.length < 2) return 0;
+
+    const firstNav = historicalData[0].nav;
+    const lastNav = historicalData[historicalData.length - 1].nav;
+    const days =
+      (historicalData[historicalData.length - 1].date.getTime() - historicalData[0].date.getTime()) /
+      (1000 * 60 * 60 * 24);
+
+    // Use absolute return for < 365 days, CAGR for >= 365 days
+    if (days < 365) {
+      return ((lastNav / firstNav) - 1) * 100;
+    } else {
+      return (Math.pow(lastNav / firstNav, 365 / days) - 1) * 100;
+    }
+  }
+
+  private static async calculateTrailingReturns(
+    qcode: string,
+    scheme: string,
+    drawdownMetrics: { mdd: number; currentDD: number }
+  ): Promise<Record<string, number | null | string>> {
+    // QTF: Return hardcoded trailing returns
+    if (scheme === "Scheme QTF") {
+      return this.DINESH_HARDCODED_DATA["Scheme QTF"].data.trailingReturns;
+    }
+
+    const historicalData = await this.getHistoricalData(qcode, scheme);
+    if (historicalData.length === 0) {
+      return {
+        "5d": null,
+        "10d": null,
+        "15d": null,
+        "1m": null,
+        "3m": null,
+        "6m": null,
+        "1y": null,
+        "2y": null,
+        "5y": null,
+        sinceInception: null,
+        MDD: drawdownMetrics.mdd,
+        currentDD: drawdownMetrics.currentDD,
+      };
+    }
+
+    const lastNav = historicalData[historicalData.length - 1].nav;
+    const firstNav = historicalData[0].nav;
+
+    const getTrailingReturn = (days: number): number | null => {
+      if (historicalData.length <= days) return null;
+      const pastNav = historicalData[historicalData.length - 1 - days]?.nav;
+      if (!pastNav) return null;
+      return ((lastNav / pastNav) - 1) * 100;
+    };
+
+    const sinceInception = ((lastNav / firstNav) - 1) * 100;
+
+    return {
+      "5d": getTrailingReturn(5),
+      "10d": getTrailingReturn(10),
+      "15d": getTrailingReturn(15),
+      "1m": getTrailingReturn(21), // ~1 month of trading days
+      "3m": getTrailingReturn(63), // ~3 months
+      "6m": getTrailingReturn(126), // ~6 months
+      "1y": getTrailingReturn(252), // ~1 year
+      "2y": getTrailingReturn(504),
+      "5y": getTrailingReturn(1260),
+      sinceInception,
+      MDD: drawdownMetrics.mdd,
+      currentDD: drawdownMetrics.currentDD,
+    };
+  }
+
+  private static async calculateMonthlyPnL(qcode: string, scheme: string): Promise<MonthlyPnL> {
+    // QTF: Return hardcoded monthly PnL
+    if (scheme === "Scheme QTF") {
+      return this.DINESH_HARDCODED_DATA["Scheme QTF"].data.monthlyPnl;
+    }
+
+    // For Total Portfolio and QAW++, calculate from historical data
+    const historicalData = await this.getHistoricalData(qcode, scheme);
+    const monthlyPnl: MonthlyPnL = {};
+    const monthNames = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December",
+    ];
+
+    // Group data by year and month
+    const grouped: Record<string, Record<string, { startNav: number; endNav: number; pnl: number; capitalInOut: number }>> = {};
+
+    for (let i = 1; i < historicalData.length; i++) {
+      const entry = historicalData[i];
+      const date = new Date(entry.date);
+      const year = date.getFullYear().toString();
+      const month = monthNames[date.getMonth()];
+
+      if (!grouped[year]) grouped[year] = {};
+      if (!grouped[year][month]) {
+        grouped[year][month] = {
+          startNav: historicalData[i - 1]?.nav || entry.nav,
+          endNav: entry.nav,
+          pnl: entry.pnl,
+          capitalInOut: entry.capitalInOut,
+        };
+      } else {
+        grouped[year][month].endNav = entry.nav;
+        grouped[year][month].pnl += entry.pnl;
+        grouped[year][month].capitalInOut += entry.capitalInOut;
+      }
+    }
+
+    // Format monthly PnL
+    for (const year of Object.keys(grouped).sort()) {
+      monthlyPnl[year] = {
+        months: {},
+        totalPercent: 0,
+        totalCash: 0,
+        totalCapitalInOut: 0,
+      };
+
+      for (const month of monthNames) {
+        if (grouped[year]?.[month]) {
+          const data = grouped[year][month];
+          const percent = ((data.endNav / data.startNav) - 1) * 100;
+          monthlyPnl[year].months[month] = {
+            percent: percent.toFixed(2),
+            cash: data.pnl.toFixed(2),
+            capitalInOut: data.capitalInOut.toFixed(2),
+          };
+          monthlyPnl[year].totalPercent += percent;
+          monthlyPnl[year].totalCash += data.pnl;
+          monthlyPnl[year].totalCapitalInOut += data.capitalInOut;
+        } else {
+          monthlyPnl[year].months[month] = { percent: "-", cash: "-", capitalInOut: "-" };
+        }
+      }
+    }
+
+    return monthlyPnl;
+  }
+
+  private static async calculateQuarterlyPnL(qcode: string, scheme: string): Promise<QuarterlyPnL> {
+    // QTF: Return hardcoded quarterly PnL
+    if (scheme === "Scheme QTF") {
+      return this.DINESH_HARDCODED_DATA["Scheme QTF"].data.quarterlyPnl;
+    }
+
+    // For Total Portfolio and QAW++, calculate from historical data
+    const historicalData = await this.getHistoricalData(qcode, scheme);
+    const quarterlyPnl: QuarterlyPnL = {};
+
+    // Group data by year and quarter
+    const grouped: Record<string, Record<string, { startNav: number; endNav: number; pnl: number }>> = {};
+
+    for (let i = 1; i < historicalData.length; i++) {
+      const entry = historicalData[i];
+      const date = new Date(entry.date);
+      const year = date.getFullYear().toString();
+      const quarter = `q${Math.floor(date.getMonth() / 3) + 1}`;
+
+      if (!grouped[year]) grouped[year] = {};
+      if (!grouped[year][quarter]) {
+        grouped[year][quarter] = {
+          startNav: historicalData[i - 1]?.nav || entry.nav,
+          endNav: entry.nav,
+          pnl: entry.pnl,
+        };
+      } else {
+        grouped[year][quarter].endNav = entry.nav;
+        grouped[year][quarter].pnl += entry.pnl;
+      }
+    }
+
+    // Format quarterly PnL
+    for (const year of Object.keys(grouped).sort()) {
+      quarterlyPnl[year] = {
+        percent: { q1: "0", q2: "0", q3: "0", q4: "0", total: "0" },
+        cash: { q1: "0", q2: "0", q3: "0", q4: "0", total: "0" },
+        yearCash: "0",
+      };
+
+      let yearTotalPercent = 0;
+      let yearTotalCash = 0;
+
+      for (const q of ["q1", "q2", "q3", "q4"]) {
+        if (grouped[year]?.[q]) {
+          const data = grouped[year][q];
+          const percent = ((data.endNav / data.startNav) - 1) * 100;
+          quarterlyPnl[year].percent[q as keyof typeof quarterlyPnl[string]["percent"]] = percent.toFixed(2);
+          quarterlyPnl[year].cash[q as keyof typeof quarterlyPnl[string]["cash"]] = data.pnl.toFixed(2);
+          yearTotalPercent += percent;
+          yearTotalCash += data.pnl;
+        }
+      }
+
+      quarterlyPnl[year].percent.total = yearTotalPercent.toFixed(2);
+      quarterlyPnl[year].cash.total = yearTotalCash.toFixed(2);
+      quarterlyPnl[year].yearCash = yearTotalCash.toFixed(2);
+    }
+
+    return quarterlyPnl;
+  }
+
+  // ==================== Main GET Handler ====================
+
   public static async GET(request: Request): Promise<NextResponse> {
     const accountCode = "AC9";
 
@@ -386,14 +845,15 @@ export class PortfolioApi {
       const url = new URL(request.url);
       const qcode = url.searchParams.get("qcode") || "QAC00053";
 
-      const allSchemes = Object.keys(PORTFOLIO_MAPPING[accountCode]);
-      const schemes = ["Scheme QTF", ...allSchemes.filter(s => s !== "Scheme QTF")];
+      // Order: Total Portfolio → Scheme QAW++ → Scheme QTF
+      const schemes = ["Total Portfolio", "Scheme QAW++", "Scheme QTF"];
 
       for (const scheme of schemes) {
         const portfolioNames = PortfolioApi.getPortfolioNames(accountCode, scheme);
-        const hardcodedData = PortfolioApi.DINESH_HARDCODED_DATA[scheme];
 
-        if (hardcodedData) {
+        // For hardcoded schemes (QTF), use cached data
+        if (scheme === "Scheme QTF") {
+          const hardcodedData = PortfolioApi.DINESH_HARDCODED_DATA[scheme];
           results[scheme] = {
             data: hardcodedData.data,
             metadata: {
@@ -401,7 +861,60 @@ export class PortfolioApi {
               isActive: portfolioNames.isActive,
             },
           };
+          continue;
         }
+
+        // For dynamic schemes (QAW++, Total Portfolio), fetch/calculate data
+        const investedAmount = await PortfolioApi.getAmountDeposited(qcode, scheme);
+        const latestExposure = await PortfolioApi.getLatestExposure(qcode, scheme);
+        const totalProfit = await PortfolioApi.getTotalProfit(qcode, scheme);
+        const returns = await PortfolioApi.calculatePortfolioReturns(qcode, scheme);
+        const historicalData = await PortfolioApi.getHistoricalData(qcode, scheme);
+        const cashFlows = await PortfolioApi.getCashFlows(qcode, scheme);
+
+        const equityCurve = historicalData.map((d) => ({
+          date: PortfolioApi.normalizeDate(d.date),
+          nav: d.nav,
+        }));
+
+        const drawdownMetrics = PortfolioApi.calculateDrawdownMetrics(equityCurve);
+        const trailingReturns = await PortfolioApi.calculateTrailingReturns(qcode, scheme, drawdownMetrics);
+        const monthlyPnl = await PortfolioApi.calculateMonthlyPnL(qcode, scheme);
+        const quarterlyPnl = await PortfolioApi.calculateQuarterlyPnL(qcode, scheme);
+
+        const portfolioData: PortfolioData = {
+          amountDeposited: investedAmount.toFixed(2),
+          currentExposure: latestExposure?.portfolioValue.toFixed(2) || "0",
+          return: returns.toFixed(2),
+          totalProfit: totalProfit.toFixed(2),
+          trailingReturns,
+          drawdown: drawdownMetrics.currentDD.toFixed(2),
+          maxDrawdown: drawdownMetrics.mdd.toFixed(2),
+          equityCurve,
+          drawdownCurve: drawdownMetrics.ddCurve.map((d) => ({ date: d.date, drawdown: d.value })),
+          quarterlyPnl,
+          monthlyPnl,
+          cashFlows,
+          strategyName: scheme,
+        };
+
+        const metadata: Metadata = {
+          icode: scheme,
+          accountCount: 1,
+          lastUpdated: new Date().toISOString(),
+          filtersApplied: {
+            accountType: null,
+            broker: null,
+            startDate: null,
+            endDate: null,
+          },
+          inceptionDate: historicalData.length > 0 ? PortfolioApi.normalizeDate(historicalData[0].date) : "2025-08-25",
+          dataAsOfDate: latestExposure?.date.toISOString().split("T")[0] || new Date().toISOString().split("T")[0],
+          strategyName: scheme,
+          isActive: portfolioNames.isActive,
+        };
+
+        results[scheme] = { data: portfolioData, metadata };
       }
 
       return NextResponse.json(results, { status: 200 });
