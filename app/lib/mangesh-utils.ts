@@ -79,9 +79,9 @@ const PORTFOLIO_MAPPING: Record<string, Record<string, PortfolioConfig>> = {
       isActive: true,
     },
     "Scheme QYE": {
-      current: "QYE Zerodha Total Portfolio",
-      metrics: "QYE Zerodha Total Portfolio",
-      nav: "QYE Zerodha Total Portfolio",
+      current: "Zerodha Total Portfolio",
+      metrics: "Zerodha Total Portfolio",
+      nav: "Zerodha Total Portfolio",
       isActive: true,
     },
     "Scheme QAW": {
@@ -96,8 +96,7 @@ const PORTFOLIO_MAPPING: Record<string, Record<string, PortfolioConfig>> = {
 export class PortfolioApi {
   private static readonly MANGESH_SYSTEM_TAGS: Record<string, string> = {
     "Scheme QAW": "QAW Zerodha Total Portfolio",
-    "Scheme QYE": "QYE Zerodha Total Portfolio",
-    "Total Portfolio": "Zerodha Total Portfolio",
+    "Scheme QYE": "Zerodha Total Portfolio",  // Same convention as Dinesh - uses base tag with date filter
   };
 
   // QAW final NAV (for reference)
@@ -300,15 +299,18 @@ export class PortfolioApi {
       return 0;
     }
 
-    // For QYE and Total Portfolio: Fetch from database
-    const systemTag = this.getSystemTag(scheme);
-    const dateFilter = scheme === "Scheme QYE" ? { gte: this.QYE_START_DATE } : undefined;
+    // Total Portfolio: Return QYE deposits only (QAW is closed)
+    if (scheme === "Total Portfolio") {
+      return this.getAmountDeposited(qcode, "Scheme QYE");
+    }
 
-    const depositSum = await prisma.master_sheet.aggregate({
+    // QYE: Fetch from database (only from QYE start date onwards)
+    const systemTag = this.getSystemTag(scheme);
+    const depositSum = await prisma.master_sheet_test.aggregate({
       where: {
         qcode,
         system_tag: systemTag,
-        ...(dateFilter && { date: dateFilter }),
+        date: { gte: this.QYE_START_DATE },
         capital_in_out: { not: null },
       },
       _sum: { capital_in_out: true },
@@ -331,15 +333,18 @@ export class PortfolioApi {
       };
     }
 
-    // For QYE and Total Portfolio: Fetch from database
-    const systemTag = this.getSystemTag(scheme);
-    const dateFilter = scheme === "Scheme QYE" ? { gte: this.QYE_START_DATE } : undefined;
+    // Total Portfolio: Use QYE current exposure
+    if (scheme === "Total Portfolio") {
+      return this.getLatestExposure(qcode, "Scheme QYE");
+    }
 
-    const record = await prisma.master_sheet.findFirst({
+    // QYE: Fetch from database (only from QYE start date onwards)
+    const systemTag = this.getSystemTag(scheme);
+    const record = await prisma.master_sheet_test.findFirst({
       where: {
         qcode,
         system_tag: systemTag,
-        ...(dateFilter && { date: dateFilter }),
+        date: { gte: this.QYE_START_DATE },
       },
       orderBy: { date: "desc" },
       select: { portfolio_value: true, drawdown: true, nav: true, date: true },
@@ -373,15 +378,29 @@ export class PortfolioApi {
       });
     }
 
-    // For QYE and Total Portfolio: Fetch from database
-    const systemTag = this.getSystemTag(scheme);
-    const dateFilter = scheme === "Scheme QYE" ? { gte: this.QYE_START_DATE } : undefined;
+    // Total Portfolio: Combine QAW + QYE with NAV rebasing
+    if (scheme === "Total Portfolio") {
+      const qawData = await this.getHistoricalData(qcode, "Scheme QAW");
+      const qyeData = await this.getHistoricalData(qcode, "Scheme QYE");
 
-    const data = await prisma.master_sheet.findMany({
+      // Rebase QYE NAV to continue from QAW's final NAV
+      const rebaseMultiplier = this.QAW_FINAL_NAV / 100;
+      const rebasedQyeData = qyeData.map((entry) => ({
+        ...entry,
+        nav: entry.nav * rebaseMultiplier,
+      }));
+
+      // Combine: QAW data first, then QYE data
+      return [...qawData, ...rebasedQyeData];
+    }
+
+    // QYE: Fetch from database (only from QYE start date onwards)
+    const systemTag = this.getSystemTag(scheme);
+    const data = await prisma.master_sheet_test.findMany({
       where: {
         qcode,
         system_tag: systemTag,
-        ...(dateFilter && { date: dateFilter }),
+        date: { gte: this.QYE_START_DATE },
         nav: { not: null },
       },
       select: { date: true, nav: true, drawdown: true, pnl: true, capital_in_out: true },
@@ -418,15 +437,20 @@ export class PortfolioApi {
       return this.MANGESH_HARDCODED_DATA["Scheme QAW"].data.cashFlows;
     }
 
-    // For QYE and Total Portfolio: Fetch from database
-    const systemTag = this.getSystemTag(scheme);
-    const dateFilter = scheme === "Scheme QYE" ? { gte: this.QYE_START_DATE } : undefined;
+    // Total Portfolio: Combine QAW + QYE cash flows
+    if (scheme === "Total Portfolio") {
+      const qawCashFlows = await this.getCashFlows(qcode, "Scheme QAW");
+      const qyeCashFlows = await this.getCashFlows(qcode, "Scheme QYE");
+      return [...qawCashFlows, ...qyeCashFlows].sort((a, b) => a.date.localeCompare(b.date));
+    }
 
-    const data = await prisma.master_sheet.findMany({
+    // QYE: Fetch from database (only from QYE start date onwards)
+    const systemTag = this.getSystemTag(scheme);
+    const data = await prisma.master_sheet_test.findMany({
       where: {
         qcode,
         system_tag: systemTag,
-        ...(dateFilter && { date: dateFilter }),
+        date: { gte: this.QYE_START_DATE },
         AND: [
           { capital_in_out: { not: null } },
           { capital_in_out: { not: new Decimal(0) } },
@@ -449,15 +473,20 @@ export class PortfolioApi {
       return parseFloat(this.MANGESH_HARDCODED_DATA["Scheme QAW"].data.totalProfit);
     }
 
-    // For QYE and Total Portfolio: Calculate from database
-    const systemTag = this.getSystemTag(scheme);
-    const dateFilter = scheme === "Scheme QYE" ? { gte: this.QYE_START_DATE } : undefined;
+    // Total Portfolio: Combine QAW + QYE profits
+    if (scheme === "Total Portfolio") {
+      const qawProfit = await this.getTotalProfit(qcode, "Scheme QAW");
+      const qyeProfit = await this.getTotalProfit(qcode, "Scheme QYE");
+      return qawProfit + qyeProfit;
+    }
 
-    const profitSum = await prisma.master_sheet.aggregate({
+    // QYE: Calculate from database (only from QYE start date onwards)
+    const systemTag = this.getSystemTag(scheme);
+    const profitSum = await prisma.master_sheet_test.aggregate({
       where: {
         qcode,
         system_tag: systemTag,
-        ...(dateFilter && { date: dateFilter }),
+        date: { gte: this.QYE_START_DATE },
         pnl: { not: null },
       },
       _sum: { pnl: true },
@@ -542,12 +571,31 @@ export class PortfolioApi {
       };
     }
 
-    const lastNav = historicalData[historicalData.length - 1].nav;
-    const firstNav = historicalData[0].nav;
+    // Sort by date ascending
+    const sorted = historicalData
+      .map((e) => ({ date: new Date(e.date), nav: e.nav }))
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
 
-    const getTrailingReturn = (days: number): number | null => {
-      if (historicalData.length <= days) return null;
-      const pastNav = historicalData[historicalData.length - 1 - days]?.nav;
+    const latestEntry = sorted[sorted.length - 1];
+    const firstEntry = sorted[0];
+    const lastNav = latestEntry.nav;
+    const firstNav = firstEntry.nav;
+
+    // Helper to find NAV entry by going back calendar days (not trading days)
+    const getNavByCalendarDaysAgo = (daysBack: number): number | null => {
+      const targetDate = new Date(latestEntry.date);
+      targetDate.setDate(targetDate.getDate() - daysBack);
+
+      // Find closest entry on or before target date
+      const candidates = sorted.filter((e) => e.date.getTime() <= targetDate.getTime());
+      if (candidates.length === 0) return null;
+
+      return candidates[candidates.length - 1].nav;
+    };
+
+    // Calendar day periods (matching portfolio-utils.ts convention)
+    const getTrailingReturn = (calendarDays: number): number | null => {
+      const pastNav = getNavByCalendarDaysAgo(calendarDays);
       if (!pastNav) return null;
       return ((lastNav / pastNav) - 1) * 100;
     };
@@ -558,12 +606,12 @@ export class PortfolioApi {
       "5d": getTrailingReturn(5),
       "10d": getTrailingReturn(10),
       "15d": getTrailingReturn(15),
-      "1m": getTrailingReturn(21),
-      "3m": getTrailingReturn(63),
-      "6m": getTrailingReturn(126),
-      "1y": getTrailingReturn(252),
-      "2y": getTrailingReturn(504),
-      "5y": getTrailingReturn(1260),
+      "1m": getTrailingReturn(30),
+      "3m": getTrailingReturn(90),
+      "6m": getTrailingReturn(180),
+      "1y": getTrailingReturn(365),
+      "2y": getTrailingReturn(730),
+      "5y": getTrailingReturn(1825),
       sinceInception,
       MDD: drawdownMetrics.mdd,
       currentDD: drawdownMetrics.currentDD,
@@ -576,7 +624,32 @@ export class PortfolioApi {
       return this.MANGESH_HARDCODED_DATA["Scheme QAW"].data.monthlyPnl;
     }
 
-    // For QYE and Total Portfolio: Calculate from historical data
+    // Total Portfolio: Combine QAW hardcoded + QYE calculated
+    if (scheme === "Total Portfolio") {
+      const qawMonthlyPnl = this.MANGESH_HARDCODED_DATA["Scheme QAW"].data.monthlyPnl;
+      const qyeMonthlyPnl = await this.calculateMonthlyPnL(qcode, "Scheme QYE");
+
+      // Merge: QAW has Nov-Dec 2025 + Jan 2026, QYE has Dec 2025+ data
+      const combined: MonthlyPnL = JSON.parse(JSON.stringify(qawMonthlyPnl)); // Deep copy
+      for (const year of Object.keys(qyeMonthlyPnl)) {
+        if (!combined[year]) {
+          combined[year] = qyeMonthlyPnl[year];
+        } else {
+          // Merge months if same year exists in both
+          for (const month of Object.keys(qyeMonthlyPnl[year].months)) {
+            if (qyeMonthlyPnl[year].months[month].percent !== "-") {
+              combined[year].months[month] = qyeMonthlyPnl[year].months[month];
+            }
+          }
+          combined[year].totalPercent += qyeMonthlyPnl[year].totalPercent;
+          combined[year].totalCash += qyeMonthlyPnl[year].totalCash;
+          combined[year].totalCapitalInOut += qyeMonthlyPnl[year].totalCapitalInOut;
+        }
+      }
+      return combined;
+    }
+
+    // QYE: Calculate from historical data
     const historicalData = await this.getHistoricalData(qcode, scheme);
     const monthlyPnl: MonthlyPnL = {};
     const monthNames = [
@@ -644,7 +717,57 @@ export class PortfolioApi {
       return this.MANGESH_HARDCODED_DATA["Scheme QAW"].data.quarterlyPnl;
     }
 
-    // For QYE and Total Portfolio: Calculate from historical data
+    // Total Portfolio: Combine QAW hardcoded + QYE calculated
+    if (scheme === "Total Portfolio") {
+      const qawQuarterlyPnl = this.MANGESH_HARDCODED_DATA["Scheme QAW"].data.quarterlyPnl;
+      const qyeQuarterlyPnl = await this.calculateQuarterlyPnL(qcode, "Scheme QYE");
+
+      // Merge: QAW has Q4 2025 + Q1 2026, QYE has Q4 2025+ data
+      const combined: QuarterlyPnL = {};
+
+      // Copy QAW data
+      for (const year of Object.keys(qawQuarterlyPnl)) {
+        combined[year] = {
+          percent: { ...qawQuarterlyPnl[year].percent },
+          cash: { ...qawQuarterlyPnl[year].cash },
+          yearCash: qawQuarterlyPnl[year].yearCash,
+        };
+      }
+
+      // Merge QYE data
+      for (const year of Object.keys(qyeQuarterlyPnl)) {
+        if (!combined[year]) {
+          combined[year] = qyeQuarterlyPnl[year];
+        } else {
+          // Merge quarters if same year exists in both
+          for (const q of ["q1", "q2", "q3", "q4"] as const) {
+            const qyePercent = parseFloat(qyeQuarterlyPnl[year].percent[q]) || 0;
+            const qyeCash = parseFloat(qyeQuarterlyPnl[year].cash[q]) || 0;
+            if (qyePercent !== 0 || qyeCash !== 0) {
+              const existingPercent = parseFloat(combined[year].percent[q]) || 0;
+              const existingCash = parseFloat(combined[year].cash[q]) || 0;
+              combined[year].percent[q] = (existingPercent + qyePercent).toFixed(2);
+              combined[year].cash[q] = (existingCash + qyeCash).toFixed(2);
+            }
+          }
+          // Recalculate totals
+          const totalPercent = ["q1", "q2", "q3", "q4"].reduce(
+            (sum, q) => sum + (parseFloat(combined[year].percent[q as keyof typeof combined[string]["percent"]]) || 0),
+            0
+          );
+          const totalCash = ["q1", "q2", "q3", "q4"].reduce(
+            (sum, q) => sum + (parseFloat(combined[year].cash[q as keyof typeof combined[string]["cash"]]) || 0),
+            0
+          );
+          combined[year].percent.total = totalPercent.toFixed(2);
+          combined[year].cash.total = totalCash.toFixed(2);
+          combined[year].yearCash = totalCash.toFixed(2);
+        }
+      }
+      return combined;
+    }
+
+    // QYE: Calculate from historical data
     const historicalData = await this.getHistoricalData(qcode, scheme);
     const quarterlyPnl: QuarterlyPnL = {};
 
@@ -739,7 +862,7 @@ export class PortfolioApi {
 
         const equityCurve = historicalData.map((d) => ({
           date: PortfolioApi.normalizeDate(d.date),
-          value: d.nav,
+          nav: d.nav,
         }));
 
         const drawdownMetrics = PortfolioApi.calculateDrawdownMetrics(equityCurve);
@@ -756,7 +879,7 @@ export class PortfolioApi {
           drawdown: drawdownMetrics.currentDD.toFixed(2),
           maxDrawdown: drawdownMetrics.mdd.toFixed(2),
           equityCurve,
-          drawdownCurve: drawdownMetrics.ddCurve.map((d) => ({ date: d.date, value: d.value })),
+          drawdownCurve: drawdownMetrics.ddCurve.map((d) => ({ date: d.date, drawdown: d.value })),
           quarterlyPnl,
           monthlyPnl,
           cashFlows,

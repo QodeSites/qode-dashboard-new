@@ -685,12 +685,31 @@ export class PortfolioApi {
       };
     }
 
-    const lastNav = historicalData[historicalData.length - 1].nav;
-    const firstNav = historicalData[0].nav;
+    // Sort by date ascending
+    const sorted = historicalData
+      .map((e) => ({ date: new Date(e.date), nav: e.nav }))
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
 
-    const getTrailingReturn = (days: number): number | null => {
-      if (historicalData.length <= days) return null;
-      const pastNav = historicalData[historicalData.length - 1 - days]?.nav;
+    const latestEntry = sorted[sorted.length - 1];
+    const firstEntry = sorted[0];
+    const lastNav = latestEntry.nav;
+    const firstNav = firstEntry.nav;
+
+    // Helper to find NAV entry by going back calendar days (not trading days)
+    const getNavByCalendarDaysAgo = (daysBack: number): number | null => {
+      const targetDate = new Date(latestEntry.date);
+      targetDate.setDate(targetDate.getDate() - daysBack);
+
+      // Find closest entry on or before target date
+      const candidates = sorted.filter((e) => e.date.getTime() <= targetDate.getTime());
+      if (candidates.length === 0) return null;
+
+      return candidates[candidates.length - 1].nav;
+    };
+
+    // Calendar day periods (matching portfolio-utils.ts convention)
+    const getTrailingReturn = (calendarDays: number): number | null => {
+      const pastNav = getNavByCalendarDaysAgo(calendarDays);
       if (!pastNav) return null;
       return ((lastNav / pastNav) - 1) * 100;
     };
@@ -701,12 +720,12 @@ export class PortfolioApi {
       "5d": getTrailingReturn(5),
       "10d": getTrailingReturn(10),
       "15d": getTrailingReturn(15),
-      "1m": getTrailingReturn(21), // ~1 month of trading days
-      "3m": getTrailingReturn(63), // ~3 months
-      "6m": getTrailingReturn(126), // ~6 months
-      "1y": getTrailingReturn(252), // ~1 year
-      "2y": getTrailingReturn(504),
-      "5y": getTrailingReturn(1260),
+      "1m": getTrailingReturn(30),
+      "3m": getTrailingReturn(90),
+      "6m": getTrailingReturn(180),
+      "1y": getTrailingReturn(365),
+      "2y": getTrailingReturn(730),
+      "5y": getTrailingReturn(1825),
       sinceInception,
       MDD: drawdownMetrics.mdd,
       currentDD: drawdownMetrics.currentDD,
