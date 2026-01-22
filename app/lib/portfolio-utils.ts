@@ -8,6 +8,13 @@ const strategyNameMap: { [key: string]: string } = {
   'QYE+': 'Qode Yield Enhancer+',
   'QYE++': 'Qode Yield Enhancer++',
 };
+
+// Account-specific inception date overrides
+// For accounts where the actual inception date differs from the first data point in the database
+const ACCOUNT_INCEPTION_OVERRIDES: { [qcode: string]: { date: Date; nav: number } } = {
+  // Arwani Research Services Pvt Ltd - Account started 14-01-2026, first trading day was 16-01-2026
+  'QAC00071': { date: new Date('2026-01-14'), nav: 100 },
+};
 interface Holding {
   symbol: string;
   exchange: string;
@@ -363,7 +370,10 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
     const finalNav = Number(latestNavRecord.nav) || 0;
     const initialNav = originalInitialNav !== 100 ? 100 : originalInitialNav;
 
-    const days = (latestNavRecord.date.getTime() - firstNavRecord.date.getTime()) / (1000 * 60 * 60 * 24);
+    // Use inception date override if configured for this account
+    const inceptionOverride = ACCOUNT_INCEPTION_OVERRIDES[qcode];
+    const inceptionDate = inceptionOverride ? inceptionOverride.date : firstNavRecord.date;
+    const days = (latestNavRecord.date.getTime() - inceptionDate.getTime()) / (1000 * 60 * 60 * 24);
 
     let portfolioReturn = 0;
 
@@ -399,13 +409,32 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
       select: { date: true, nav: true, drawdown: true, pnl: true, capital_in_out: true },
       orderBy: { date: "asc" },
     });
-    return data.map(entry => ({
+
+    const result = data.map(entry => ({
       date: entry.date,
       nav: Number(entry.nav) || 0,
       drawdown: Math.abs(Number(entry.drawdown) || 0),
       pnl: Number(entry.pnl) || 0,
       capitalInOut: Number(entry.capital_in_out) || 0,
     }));
+
+    // Apply inception date override if configured for this account
+    const inceptionOverride = ACCOUNT_INCEPTION_OVERRIDES[qcode];
+    if (inceptionOverride && result.length > 0) {
+      const firstDataDate = result[0].date;
+      // Only prepend if the override date is before the first data point
+      if (inceptionOverride.date < firstDataDate) {
+        result.unshift({
+          date: inceptionOverride.date,
+          nav: inceptionOverride.nav,
+          drawdown: 0,
+          pnl: 0,
+          capitalInOut: 0,
+        });
+      }
+    }
+
+    return result;
   }
 
   async getCashFlows(qcode: string): Promise<{ date: Date; amount: number }[]> {
@@ -426,6 +455,12 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
   }
 
   async getFirstNav(qcode: string, strategy?: string): Promise<{ nav: number; date: Date } | null> {
+    // Check for inception date override first
+    const inceptionOverride = ACCOUNT_INCEPTION_OVERRIDES[qcode];
+    if (inceptionOverride) {
+      return { nav: inceptionOverride.nav, date: inceptionOverride.date };
+    }
+
     const systemTag = this.getSystemTag(strategy);
     const record = await prisma.master_sheet.findFirst({
       where: { qcode, system_tag: systemTag, nav: { not: null } },
