@@ -423,7 +423,7 @@ export class PortfolioApi {
 
     // QAW++: Fetch from database (only from QAW start date onwards)
     const systemTag = this.getSystemTag(scheme);
-    const depositSum = await prisma.master_sheet.aggregate({
+    const depositSum = await prisma.master_sheet_test.aggregate({
       where: {
         qcode,
         system_tag: systemTag,
@@ -457,7 +457,7 @@ export class PortfolioApi {
 
     // QAW++: Fetch from database (only from QAW start date onwards)
     const systemTag = this.getSystemTag(scheme);
-    const record = await prisma.master_sheet.findFirst({
+    const record = await prisma.master_sheet_test.findFirst({
       where: { qcode, system_tag: systemTag, date: { gte: this.QAW_START_DATE } },
       orderBy: { date: "desc" },
       select: { portfolio_value: true, drawdown: true, nav: true, date: true },
@@ -509,7 +509,7 @@ export class PortfolioApi {
 
     // QAW++: Fetch from database (only from QAW start date onwards)
     const systemTag = this.getSystemTag(scheme);
-    const data = await prisma.master_sheet.findMany({
+    const data = await prisma.master_sheet_test.findMany({
       where: {
         qcode,
         system_tag: systemTag,
@@ -560,7 +560,7 @@ export class PortfolioApi {
 
     // QAW++: Fetch from database (only from QAW start date onwards)
     const systemTag = this.getSystemTag(scheme);
-    const data = await prisma.master_sheet.findMany({
+    const data = await prisma.master_sheet_test.findMany({
       where: {
         qcode,
         system_tag: systemTag,
@@ -596,7 +596,7 @@ export class PortfolioApi {
 
     // QAW++: Calculate from database (only from QAW start date onwards)
     const systemTag = this.getSystemTag(scheme);
-    const profitSum = await prisma.master_sheet.aggregate({
+    const profitSum = await prisma.master_sheet_test.aggregate({
       where: {
         qcode,
         system_tag: systemTag,
