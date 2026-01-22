@@ -949,7 +949,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     );
   }
 
-  if (!isSarla && !isSatidham && !isDinesh && accounts.length === 0) {
+  if (!isSarla && !isSatidham && !isDinesh && !isMangesh && accounts.length === 0) {
     return (
       <div className="p-6 text-center bg-[#f3f4f6] rounded-lg text-card-text">
         No accounts found for this user.
@@ -1009,7 +1009,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           )}
         </div>
 
-        {!isSarla && !isSatidham && !isDinesh && currentMetadata?.strategyName && (
+        {!isSarla && !isSatidham && !isDinesh && !isMangesh && currentMetadata?.strategyName && (
           <Button
             variant="outline"
             className={`bg-logo-green mt-4 font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${(isSarla || isSatidham || isDinesh || isMangesh) && !currentMetadata.isActive ? "opacity-70" : ""
