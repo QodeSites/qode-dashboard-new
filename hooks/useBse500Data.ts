@@ -69,10 +69,11 @@ export function useBse500Data(equityCurve: EquityCurvePoint[], adjustStartDateBy
           processedData = result;
         }
 
+        // Only filter by end date to avoid future data
+        // Don't filter by start date - we need historical data for trailing return calculations
+        // (e.g., 10D return needs data from 10 days before end date, even if scheme is younger)
         const filteredBse500Data = processedData.filter(
-          (d) =>
-            new Date(d.date) >= new Date(effectiveStartDate) &&
-            new Date(d.date) <= new Date(endDate)
+          (d) => new Date(d.date) <= new Date(endDate)
         );
 
         setBse500Data(filteredBse500Data);

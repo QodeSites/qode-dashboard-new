@@ -134,7 +134,7 @@ const calculateBenchmarkReturns = useCallback(() => {
     // console.log("Start date:", startDate.toISOString());
     // console.log("End date:", endDate.toISOString());
 
-    const findNav = (targetDate: Date) => {
+    const findNav = (targetDate: Date): number | null => {
       const exactMatch = bse500Data.find(point => {
         const pointDate = new Date(point.date);
         return pointDate.toDateString() === targetDate.toDateString();
@@ -144,39 +144,26 @@ const calculateBenchmarkReturns = useCallback(() => {
         return parseFloat(exactMatch.nav);
       }
 
-      let closestPrevious = null;
+      // Only look for data on or before the target date (no fallback to future data)
+      // This matches the behavior in portfolio-utils.ts for consistency
+      let closestPrevious: { nav: number; date: string } | null = null;
       let closestPreviousDiff = Infinity;
-      let closestFuture = null;
-      let closestFutureDiff = Infinity;
 
       bse500Data.forEach(point => {
         const pointDate = new Date(point.date);
         const timeDiff = targetDate.getTime() - pointDate.getTime();
 
-        if (timeDiff >= 0) {
-          if (timeDiff < closestPreviousDiff) {
-            closestPreviousDiff = timeDiff;
-            closestPrevious = {
-              diff: timeDiff,
-              nav: parseFloat(point.nav),
-              date: point.date
-            };
-          }
-        } else {
-          const futureDiff = Math.abs(timeDiff);
-          if (futureDiff < closestFutureDiff) {
-            closestFutureDiff = futureDiff;
-            closestFuture = {
-              diff: futureDiff,
-              nav: parseFloat(point.nav),
-              date: point.date
-            };
-          }
+        // timeDiff >= 0 means pointDate is on or before targetDate
+        if (timeDiff >= 0 && timeDiff < closestPreviousDiff) {
+          closestPreviousDiff = timeDiff;
+          closestPrevious = {
+            nav: parseFloat(point.nav),
+            date: point.date
+          };
         }
       });
 
-      const selectedPoint = closestPrevious || closestFuture;
-      return selectedPoint ? selectedPoint.nav : 0;
+      return closestPrevious ? closestPrevious.nav : null;
     };
 
     const calculateReturn = (start: Date, end: Date, periodKey: string) => {
@@ -236,21 +223,26 @@ const calculateBenchmarkReturns = useCallback(() => {
         benchmarkReturns[period.key] = returnValue;
 
       } else if (period.type === "inception") {
-        // For "Since Inception" benchmark, use the first date from bse500Data
-        // which already accounts for adjustBenchmarkStartDate (day before inception)
-        const benchmarkStartDate = new Date(bse500Data[0].date);
-        const returnValue = calculateReturn(benchmarkStartDate, endDate, period.key);
+        // For "Since Inception" benchmark, use the equity curve's start date
+        // (not bse500Data[0] since we now keep all historical data for trailing returns)
+        const returnValue = calculateReturn(startDate, endDate, period.key);
         benchmarkReturns[period.key] = returnValue;
       }
     });
 
-    // Calculate benchmark drawdowns
-    if (bse500Data.length) {
+    // Calculate benchmark drawdowns using only data within the scheme's date range
+    // (not all historical data, which would give misleading drawdown numbers)
+    const benchmarkDataInRange = bse500Data.filter(point => {
+      const pointDate = new Date(point.date);
+      return pointDate >= startDate && pointDate <= endDate;
+    });
+
+    if (benchmarkDataInRange.length) {
       let maxDrawdown = 0;
       let peakNav = -Infinity;
-      let currentNav = parseFloat(bse500Data[bse500Data.length - 1].nav);
+      let currentNav = parseFloat(benchmarkDataInRange[benchmarkDataInRange.length - 1].nav);
 
-      bse500Data.forEach(point => {
+      benchmarkDataInRange.forEach(point => {
         const nav = parseFloat(point.nav);
 
         if (nav > peakNav) {
@@ -265,7 +257,7 @@ const calculateBenchmarkReturns = useCallback(() => {
       });
 
       let allTimePeak = -Infinity;
-      bse500Data.forEach(point => {
+      benchmarkDataInRange.forEach(point => {
         const nav = parseFloat(point.nav);
         if (nav > allTimePeak) {
           allTimePeak = nav;
