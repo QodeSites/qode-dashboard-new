@@ -156,13 +156,10 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
       // Process benchmark data aligned to portfolio start
       let processedBenchmarkData: [number, number][] = [];
       if (bse500Data.length > 0) {
-        // Map and sort benchmark data by date ascending to ensure correct normalization
-        const benchmarkDataPoints = bse500Data
-          .map((item) => [
-            new Date(item.date).getTime(),
-            parseFloat(item.nav),
-          ] as [number, number])
-          .sort((a, b) => a[0] - b[0]);
+        const benchmarkDataPoints = bse500Data.map((item) => [
+          new Date(item.date).getTime(),
+          parseFloat(item.nav),
+        ]);
 
         // Find the benchmark NAV at or just before portfolio start date
         let benchmarkBaseNav = benchmarkDataPoints[0][1];
@@ -227,13 +224,10 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
 
       let benchmarkDrawdownCurve: [number, number][] = [];
       if (bse500Data.length > 0) {
-        // Map and sort benchmark data by date ascending for correct drawdown calculation
-        const benchmarkDataPoints = bse500Data
-          .map((item) => [
-            new Date(item.date).getTime(),
-            parseFloat(item.nav),
-          ] as [number, number])
-          .sort((a, b) => a[0] - b[0]);
+        const benchmarkDataPoints = bse500Data.map((item) => [
+          new Date(item.date).getTime(),
+          parseFloat(item.nav),
+        ]);
 
         // Use the same benchmarkBaseNav for drawdown initial max
         let startBenchmarkNav = benchmarkDataPoints[0][1];

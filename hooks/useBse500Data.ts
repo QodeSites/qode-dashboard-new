@@ -29,15 +29,8 @@ export function useBse500Data(equityCurve: EquityCurvePoint[]): UseBse500DataRes
       }
 
       try {
-        const portfolioStartDate = equityCurve[0].date;
+        const startDate = equityCurve[0].date;
         const endDate = equityCurve[equityCurve.length - 1].date;
-
-        // Fetch benchmark data starting 7 days before portfolio inception
-        // This ensures we have benchmark data from the last trading day before inception
-        // for proper normalization (in case inception falls on a non-trading day)
-        const fetchStartDate = new Date(portfolioStartDate);
-        fetchStartDate.setDate(fetchStartDate.getDate() - 7);
-        const startDate = fetchStartDate.toISOString().split('T')[0];
 
         const queryParams = new URLSearchParams({
           indices: "NIFTY 50",
