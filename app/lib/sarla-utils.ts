@@ -2121,7 +2121,8 @@ export class PortfolioApi {
         const totalCapitalInOut = entries.reduce((sum, entry) => sum + entry.capitalInOut, 0);
         const totalCashPnL = entries.reduce((sum, entry) => sum + entry.pnl, 0);
 
-        let startNav = entries[0].nav;
+        // For first month, use 100 as starting NAV (normalized inception point)
+        let startNav = index === 0 ? 100 : entries[0].nav;
         if (index > 0) {
           const prevYearMonth = sortedYearMonths[index - 1];
           const prevEntries = monthlyData[prevYearMonth].entries;
@@ -2270,7 +2271,8 @@ export class PortfolioApi {
         const totalCashPnL = entries.reduce((sum, entry) => sum + entry.pnl, 0);
 
         // Calculate NAV for percentage return
-        let startNav = entries[0].nav;
+        // For first month, use 100 as starting NAV (normalized inception point)
+        let startNav = index === 0 ? 100 : entries[0].nav;
         if (index > 0) {
           const prevYearMonth = sortedYearMonths[index - 1];
           const prevEntries = monthlyData[prevYearMonth].entries;
@@ -2371,7 +2373,8 @@ export class PortfolioApi {
       const totalCapitalInOut = entries.reduce((sum, entry) => sum + entry.capitalInOut, 0);
       const totalCashPnL = entries.reduce((sum, entry) => sum + entry.pnl, 0);
 
-      let startNav = entries[0].nav;
+      // For first month, use 100 as starting NAV (normalized inception point)
+      let startNav = index === 0 ? 100 : entries[0].nav;
       if (index > 0) {
         const prevYearMonth = sortedYearMonths[index - 1];
         const prevEntries = monthlyData[prevYearMonth].entries;
@@ -2719,7 +2722,9 @@ if (scheme === "Scheme PMS QAW") {
         const entries = quarterlyData[yearQuarter].entries;
 
         if (entries.length > 0) {
-          let startNav = entries[0].nav;
+          // For first quarter ever, use 100 as starting NAV (normalized inception point)
+          const isFirstQuarterEver = quarterIndex === 0 && year === sortedYearQuarters[0].split("-")[0];
+          let startNav = isFirstQuarterEver ? 100 : entries[0].nav;
 
           if (quarterIndex > 0) {
             const prevYearQuarter = yearlyQuarters[year][quarterIndex - 1];
