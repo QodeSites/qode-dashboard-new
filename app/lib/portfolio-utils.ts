@@ -311,8 +311,18 @@ class JainamManagedStrategy implements DataFetchingStrategy {
 
 // Strategy for Managed Accounts (Zerodha)
 class ZerodhaManagedStrategy implements DataFetchingStrategy {
+  private broker: string;
+
+  constructor(broker: string) {
+    this.broker = broker;
+  }
+
   // Map strategy to system_tag for Returns and NAV
   private getSystemTag(strategy?: string): string {
+    // If broker is Radiance, always use 'Total Portfolio Exposure'
+    if (this.broker.toLowerCase() === 'radiance') {
+      return 'Total Portfolio Exposure';
+    }
     const strategyMap: { [key: string]: string } = {
       'QAW+': 'Zerodha Total Portfolio',
       'QAW++': 'Zerodha Total Portfolio',
@@ -325,16 +335,18 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
   }
 
   async getAmountDeposited(qcode: string): Promise<number> {
+    const systemTag = this.broker.toLowerCase() === 'radiance' ? 'Total Portfolio Exposure' : 'Zerodha Total Portfolio';
     const depositSum = await prisma.master_sheet.aggregate({
-      where: { qcode, system_tag: "Zerodha Total Portfolio", capital_in_out: { not: null } },
+      where: { qcode, system_tag: systemTag, capital_in_out: { not: null } },
       _sum: { capital_in_out: true },
     });
     return Number(depositSum._sum.capital_in_out) || 0;
   }
 
   async getLatestExposure(qcode: string): Promise<{ portfolioValue: number; drawdown: number; nav: number; date: Date } | null> {
+    const systemTag = this.broker.toLowerCase() === 'radiance' ? 'Total Portfolio Exposure' : 'Zerodha Total Portfolio';
     const record = await prisma.master_sheet.findFirst({
-      where: { qcode, system_tag: "Zerodha Total Portfolio" },
+      where: { qcode, system_tag: systemTag },
       orderBy: { date: "desc" },
       select: { portfolio_value: true, drawdown: true, nav: true, date: true },
     });
@@ -438,11 +450,12 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
   }
 
   async getCashFlows(qcode: string): Promise<{ date: Date; amount: number }[]> {
+    const systemTag = this.broker.toLowerCase() === 'radiance' ? 'Total Portfolio Exposure' : 'Zerodha Total Portfolio';
     const cashFlows = await prisma.master_sheet.findMany({
       where: {
         qcode,
-        system_tag: "Zerodha Total Portfolio",
-        capital_in_out: { not: null, not: new Decimal(0) },
+        system_tag: systemTag,
+        capital_in_out: { not: new Decimal(0) },
       },
       select: { date: true, capital_in_out: true },
       orderBy: { date: "asc" },
@@ -831,8 +844,8 @@ function getDataFetchingStrategy(account: { account_type: string; broker: string
     return new PmsStrategy();
   } else if (account.account_type === 'managed_account' && account.broker === 'jainam') {
     return new JainamManagedStrategy();
-  } else if (account.account_type === 'managed_account' && account.broker === 'zerodha') {
-    return new ZerodhaManagedStrategy();
+  } else if (account.account_type === 'managed_account' && (account.broker === 'zerodha' || account.broker === 'radiance')) {
+    return new ZerodhaManagedStrategy(account.broker);
   }
   throw new Error(`Unsupported account type: ${account.account_type} or broker: ${account.broker}`);
 }
