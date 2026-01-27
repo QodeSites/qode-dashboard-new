@@ -685,32 +685,115 @@ export class PortfolioApi {
       };
     }
 
-    const lastNav = historicalData[historicalData.length - 1].nav;
-    const firstNav = historicalData[0].nav;
+    const normalizedData = historicalData
+      .map((entry) => ({
+        date: this.normalizeDate(entry.date),
+        nav: entry.nav,
+      }))
+      .filter((entry) => entry.date)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    const getTrailingReturn = (days: number): number | null => {
-      if (historicalData.length <= days) return null;
-      const pastNav = historicalData[historicalData.length - 1 - days]?.nav;
-      if (!pastNav) return null;
-      return ((lastNav / pastNav) - 1) * 100;
+    if (normalizedData.length === 0) {
+      return {
+        "5d": null,
+        "10d": null,
+        "15d": null,
+        "1m": null,
+        "3m": null,
+        "6m": null,
+        "1y": null,
+        "2y": null,
+        "5y": null,
+        sinceInception: null,
+        MDD: drawdownMetrics.mdd,
+        currentDD: drawdownMetrics.currentDD,
+      };
+    }
+
+    const lastEntry = normalizedData[normalizedData.length - 1];
+    const lastNav = lastEntry.nav;
+    const currentDate = lastEntry.date;
+    const oldestDate = normalizedData[0].date;
+
+    const dataRangeDays =
+      (new Date(currentDate).getTime() - new Date(oldestDate).getTime()) / (1000 * 60 * 60 * 24);
+    const periods: Record<string, number | null> = {
+      "5d": 5,
+      "10d": 10,
+      "15d": 15,
+      "1m": 30,
+      "3m": 90,
+      "6m": 180,
+      "1y": 365,
+      "2y": 730,
+      "5y": 1825,
+      sinceInception: null,
     };
 
-    const sinceInception = ((lastNav / firstNav) - 1) * 100;
+    const returns: Record<string, number | null | string> = {};
 
-    return {
-      "5d": getTrailingReturn(5),
-      "10d": getTrailingReturn(10),
-      "15d": getTrailingReturn(15),
-      "1m": getTrailingReturn(21), // ~1 month of trading days
-      "3m": getTrailingReturn(63), // ~3 months
-      "6m": getTrailingReturn(126), // ~6 months
-      "1y": getTrailingReturn(252), // ~1 year
-      "2y": getTrailingReturn(504),
-      "5y": getTrailingReturn(1260),
-      sinceInception,
-      MDD: drawdownMetrics.mdd,
-      currentDD: drawdownMetrics.currentDD,
-    };
+    for (const [period, targetCount] of Object.entries(periods)) {
+      if (period === "sinceInception") {
+        const firstNav = normalizedData[0]?.nav;
+        returns[period] = firstNav ? ((lastNav / firstNav) - 1) * 100 : null;
+        continue;
+      }
+
+      const requiredDays = targetCount as number;
+      if (requiredDays > dataRangeDays) {
+        returns[period] = null;
+        continue;
+      }
+
+      const targetDate = new Date(currentDate);
+      targetDate.setDate(targetDate.getDate() - requiredDays);
+
+      if (targetDate < new Date(oldestDate)) {
+        returns[period] = null;
+        continue;
+      }
+
+      const targetTime = targetDate.getTime();
+      let candidate: { date: string; nav: number } | null = null;
+
+      for (const dataPoint of normalizedData) {
+        const dataTime = new Date(dataPoint.date).getTime();
+        if (dataTime <= targetTime) {
+          candidate = dataPoint;
+        } else {
+          break;
+        }
+      }
+
+      if (!candidate) {
+        for (const dataPoint of normalizedData) {
+          const dataTime = new Date(dataPoint.date).getTime();
+          if (dataTime >= targetTime) {
+            candidate = dataPoint;
+            break;
+          }
+        }
+      }
+
+      if (!candidate) {
+        returns[period] = null;
+        continue;
+      }
+
+      const candidateTime = new Date(candidate.date).getTime();
+      const daysDiff = Math.abs(candidateTime - targetTime) / (1000 * 60 * 60 * 24);
+      const maxAllowedDiff = requiredDays <= 30 ? 7 : 30;
+      if (daysDiff > maxAllowedDiff) {
+        returns[period] = null;
+        continue;
+      }
+
+      returns[period] = ((lastNav / candidate.nav) - 1) * 100;
+    }
+
+    returns["MDD"] = drawdownMetrics.mdd;
+    returns["currentDD"] = drawdownMetrics.currentDD;
+    return returns;
   }
 
   private static async calculateMonthlyPnL(qcode: string, scheme: string): Promise<MonthlyPnL> {
