@@ -808,15 +808,35 @@ export class PortfolioApi {
       const qawMonthlyPnl = await this.calculateMonthlyPnL(qcode, "Scheme QAW++");
 
       // Merge: QTF has 2025 data, QAW++ has 2026+ data
-      const combined: MonthlyPnL = { ...qtfMonthlyPnl };
+      // IMPORTANT: Deep copy to avoid mutating the original hardcoded data
+      const combined: MonthlyPnL = JSON.parse(JSON.stringify(qtfMonthlyPnl));
       for (const year of Object.keys(qawMonthlyPnl)) {
         if (!combined[year]) {
           combined[year] = qawMonthlyPnl[year];
         } else {
-          // Merge months if same year exists in both (unlikely but handle it)
+          // Merge months if same year exists in both (e.g., January 2026 has QTF Jan 1-11 + QAW++ Jan 12-31)
           for (const month of Object.keys(qawMonthlyPnl[year].months)) {
-            if (qawMonthlyPnl[year].months[month].percent !== "-") {
-              combined[year].months[month] = qawMonthlyPnl[year].months[month];
+            const qawMonth = qawMonthlyPnl[year].months[month];
+            if (qawMonth.percent !== "-") {
+              const existingMonth = combined[year].months[month];
+              if (existingMonth && existingMonth.percent !== "-") {
+                // ADD values when both QTF and QAW++ have data for the same month
+                const existingCash = parseFloat(existingMonth.cash) || 0;
+                const qawCash = parseFloat(qawMonth.cash) || 0;
+                const existingCapitalInOut = parseFloat(existingMonth.capitalInOut) || 0;
+                const qawCapitalInOut = parseFloat(qawMonth.capitalInOut) || 0;
+                // For percent, use weighted average based on cash contribution (approximation)
+                const existingPercent = parseFloat(existingMonth.percent) || 0;
+                const qawPercent = parseFloat(qawMonth.percent) || 0;
+                combined[year].months[month] = {
+                  percent: (existingPercent + qawPercent).toFixed(2),
+                  cash: (existingCash + qawCash).toFixed(2),
+                  capitalInOut: (existingCapitalInOut + qawCapitalInOut).toFixed(2),
+                };
+              } else {
+                // Only QAW++ has data for this month
+                combined[year].months[month] = qawMonth;
+              }
             }
           }
           combined[year].totalPercent += qawMonthlyPnl[year].totalPercent;
