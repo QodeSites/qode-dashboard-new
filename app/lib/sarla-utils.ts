@@ -330,7 +330,7 @@ export class PortfolioApi {
     amountDeposited: number;
     currentExposure: number;
     totalProfit: number;
-    historicalData: { date: string; nav: number; drawdown: number; pnl: number; capitalInOut: number }[];
+    historicalData: { date: string; nav: number; prevNav: number | null; drawdown: number; pnl: number; capitalInOut: number }[];
     cashFlows: CashFlow[];
     latestData: { portfolioValue: number; drawdown: number; nav: number; date: Date } | null;
   }> {
@@ -345,6 +345,7 @@ export class PortfolioApi {
         portfolio_value: true,
         cash_in_out: true,
         nav: true,
+        prev_nav: true,
         pnl: true,
         drawdown_percent: true,
       },
@@ -380,6 +381,7 @@ export class PortfolioApi {
     const historicalData = pmsData.map(record => ({
       date: this.normalizeDate(record.report_date)!,
       nav: Number(record.nav) || 0,
+      prevNav: record.prev_nav ? Number(record.prev_nav) : null,
       drawdown: Math.abs(Number(record.drawdown_percent) || 0),
       pnl: Number(record.pnl) || 0,
       capitalInOut: Number(record.cash_in_out) || 0,
@@ -1724,7 +1726,7 @@ export class PortfolioApi {
     console.log(`[TotalProfit] ${qcode} | TOTAL = ${total}`);
     return total;
   }
-  private static async getHistoricalData(qcode: string, scheme: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]> {
+  private static async getHistoricalData(qcode: string, scheme: string): Promise<{ date: Date; nav: number; prevNav: number | null; drawdown: number; pnl: number; capitalInOut: number }[]> {
     // Check for hardcoded historical data (for inactive schemes)
     const HC = this.getHardcoded(qcode);
     if (HC?.[scheme] && HC[scheme].data.equityCurve.length > 0) {
@@ -1733,6 +1735,7 @@ export class PortfolioApi {
         return {
           date: new Date(entry.date),
           nav: entry.nav,
+          prevNav: null, // Hardcoded data doesn't have prevNav, will fall back to nav
           drawdown: drawdownEntry?.drawdown || 0,
           pnl: 0, // PnL is handled separately via hardcoded quarterlyPnl/monthlyPnl
           capitalInOut: 0, // Cash flows are handled separately via hardcoded cashFlows
@@ -1745,6 +1748,7 @@ export class PortfolioApi {
       return pmsData.historicalData.map(item => ({
         date: new Date(item.date),
         nav: item.nav,
+        prevNav: item.prevNav,
         drawdown: item.drawdown,
         pnl: item.pnl,
         capitalInOut: item.capitalInOut,
@@ -1762,7 +1766,7 @@ export class PortfolioApi {
         nav: { not: null },
         drawdown: { not: null },
       },
-      select: { date: true, nav: true, drawdown: true, pnl: true, capital_in_out: true },
+      select: { date: true, nav: true, prev_nav: true, drawdown: true, pnl: true, capital_in_out: true },
       orderBy: { date: "asc" },
     });
 
@@ -1770,6 +1774,7 @@ export class PortfolioApi {
     return data.map(entry => ({
       date: entry.date,
       nav: Number(entry.nav) || 0,
+      prevNav: entry.prev_nav ? Number(entry.prev_nav) : null,
       drawdown: Math.abs(Number(entry.drawdown) || 0),
       pnl: Number(entry.pnl) || 0,
       capitalInOut: Number(entry.capital_in_out) || 0,
@@ -2085,6 +2090,7 @@ export class PortfolioApi {
       const navData = pmsData.historicalData.map(item => ({
         date: item.date,
         nav: item.nav,
+        prevNav: item.prevNav,
         pnl: item.pnl,
         capitalInOut: item.capitalInOut,
       }));
@@ -2097,7 +2103,7 @@ export class PortfolioApi {
         .filter(entry => entry.date)
         .sort((a, b) => a.date.localeCompare(b.date));
 
-      const monthlyData: { [yearMonth: string]: { entries: { date: string; nav: number; pnl: number; capitalInOut: number }[] } } = {};
+      const monthlyData: { [yearMonth: string]: { entries: { date: string; nav: number; prevNav: number | null; pnl: number; capitalInOut: number }[] } } = {};
 
       sortedNavData.forEach(entry => {
         const [year, month] = entry.date.split("-").map(Number);
@@ -2121,8 +2127,9 @@ export class PortfolioApi {
         const totalCapitalInOut = entries.reduce((sum, entry) => sum + entry.capitalInOut, 0);
         const totalCashPnL = entries.reduce((sum, entry) => sum + entry.pnl, 0);
 
-        // For first month, use 100 as starting NAV (normalized inception point)
-        let startNav = index === 0 ? 100 : entries[0].nav;
+        // For first month, use prev_nav as starting NAV (the baseline before first trade)
+        // Fall back to nav if prev_nav is not available
+        let startNav = index === 0 ? (entries[0].prevNav ?? entries[0].nav) : entries[0].nav;
         if (index > 0) {
           const prevYearMonth = sortedYearMonths[index - 1];
           const prevEntries = monthlyData[prevYearMonth].entries;
@@ -2189,13 +2196,14 @@ export class PortfolioApi {
     if (scheme === "Total Portfolio") {
       // Satidham (QAC00046) includes different schemes than Sarla (QAC00041)
       const isSatidham = qcode === "QAC00046";
-      const allData: { date: string; nav: number; pnl: number; capitalInOut: number }[] = [];
+      const allData: { date: string; nav: number; prevNav: number | null; pnl: number; capitalInOut: number }[] = [];
 
       // Fetch data for Scheme B
       const schemeBData = await PortfolioApi.getHistoricalData(qcode, "Scheme B");
       allData.push(...schemeBData.map(item => ({
         date: PortfolioApi.normalizeDate(item.date)!,
         nav: item.nav,
+        prevNav: item.prevNav,
         pnl: item.pnl,
         capitalInOut: item.capitalInOut,
       })));
@@ -2205,6 +2213,7 @@ export class PortfolioApi {
       allData.push(...pmsData.historicalData.map(item => ({
         date: item.date,
         nav: item.nav,
+        prevNav: item.prevNav,
         pnl: item.pnl,
         capitalInOut: item.capitalInOut,
       })));
@@ -2215,6 +2224,7 @@ export class PortfolioApi {
         allData.push(...schemeAData.map(item => ({
           date: PortfolioApi.normalizeDate(item.date)!,
           nav: item.nav,
+          prevNav: item.prevNav,
           pnl: item.pnl,
           capitalInOut: item.capitalInOut,
         })));
@@ -2223,6 +2233,7 @@ export class PortfolioApi {
         allData.push(...schemeQAWPlusData.map(item => ({
           date: PortfolioApi.normalizeDate(item.date)!,
           nav: item.nav,
+          prevNav: item.prevNav,
           pnl: item.pnl,
           capitalInOut: item.capitalInOut,
         })));
@@ -2231,6 +2242,7 @@ export class PortfolioApi {
         allData.push(...schemeQYEData.map(item => ({
           date: PortfolioApi.normalizeDate(item.date)!,
           nav: item.nav,
+          prevNav: item.prevNav,
           pnl: item.pnl,
           capitalInOut: item.capitalInOut,
         })));
@@ -2245,7 +2257,7 @@ export class PortfolioApi {
         .filter(entry => entry.date)
         .sort((a, b) => a.date.localeCompare(b.date));
 
-      const monthlyData: { [yearMonth: string]: { entries: { date: string; nav: number; pnl: number; capitalInOut: number }[] } } = {};
+      const monthlyData: { [yearMonth: string]: { entries: { date: string; nav: number; prevNav: number | null; pnl: number; capitalInOut: number }[] } } = {};
 
       sortedNavData.forEach(entry => {
         const [year, month] = entry.date.split("-").map(Number);
@@ -2271,8 +2283,9 @@ export class PortfolioApi {
         const totalCashPnL = entries.reduce((sum, entry) => sum + entry.pnl, 0);
 
         // Calculate NAV for percentage return
-        // For first month, use 100 as starting NAV (normalized inception point)
-        let startNav = index === 0 ? 100 : entries[0].nav;
+        // For first month, use prev_nav as starting NAV (the baseline before first trade)
+        // Fall back to nav if prev_nav is not available
+        let startNav = index === 0 ? (entries[0].prevNav ?? entries[0].nav) : entries[0].nav;
         if (index > 0) {
           const prevYearMonth = sortedYearMonths[index - 1];
           const prevEntries = monthlyData[prevYearMonth].entries;
@@ -2349,7 +2362,7 @@ export class PortfolioApi {
       .filter(entry => entry.date)
       .sort((a, b) => a.date!.localeCompare(b.date!));
 
-    const monthlyData: { [yearMonth: string]: { entries: { date: string; nav: number; pnl: number; capitalInOut: number }[] } } = {};
+    const monthlyData: { [yearMonth: string]: { entries: { date: string | null; nav: number; prevNav: number | null; pnl: number; capitalInOut: number }[] } } = {};
 
     sortedNavData.forEach(entry => {
       const [year, month] = entry.date!.split("-").map(Number);
@@ -2373,8 +2386,9 @@ export class PortfolioApi {
       const totalCapitalInOut = entries.reduce((sum, entry) => sum + entry.capitalInOut, 0);
       const totalCashPnL = entries.reduce((sum, entry) => sum + entry.pnl, 0);
 
-      // For first month, use 100 as starting NAV (normalized inception point)
-      let startNav = index === 0 ? 100 : entries[0].nav;
+      // For first month, use prev_nav as starting NAV (the baseline before first trade)
+      // Fall back to nav if prev_nav is not available
+      let startNav = index === 0 ? (entries[0].prevNav ?? entries[0].nav) : entries[0].nav;
       if (index > 0) {
         const prevYearMonth = sortedYearMonths[index - 1];
         const prevEntries = monthlyData[prevYearMonth].entries;
@@ -2443,7 +2457,7 @@ export class PortfolioApi {
   private static async calculateQuarterlyPnLWithDailyPL(
     qcode: string,
     scheme: string,
-    navData: { date: string; nav: number; pnl: number }[]
+    navData: { date: string; nav: number; prevNav?: number | null; pnl: number }[]
   ): Promise<QuarterlyPnL> {
     // If hardcoded exists for this qcode/scheme, return it directly
     const HC = this.getHardcoded(qcode);
@@ -2461,6 +2475,7 @@ export class PortfolioApi {
         pmsData.historicalData.map(d => ({
           date: d.date,
           nav: d.nav,
+          prevNav: d.prevNav,
           pnl: d.pnl,
         }))
       );
@@ -2471,6 +2486,7 @@ export class PortfolioApi {
         schemeBData.map(d => ({
           date: PortfolioApi.normalizeDate(d.date)!,
           nav: d.nav,
+          prevNav: d.prevNav,
           pnl: d.pnl,
         }))
       );
@@ -2485,6 +2501,7 @@ export class PortfolioApi {
           schemeAData.map(d => ({
             date: PortfolioApi.normalizeDate(d.date)!,
             nav: d.nav,
+            prevNav: d.prevNav,
             pnl: d.pnl,
           }))
         );
@@ -2494,6 +2511,7 @@ export class PortfolioApi {
           schemeQAWPlusData.map(d => ({
             date: PortfolioApi.normalizeDate(d.date)!,
             nav: d.nav,
+            prevNav: d.prevNav,
             pnl: d.pnl,
           }))
         );
@@ -2509,6 +2527,7 @@ export class PortfolioApi {
             schemeQYEData.map(d => ({
               date: PortfolioApi.normalizeDate(d.date)!,
               nav: d.nav,
+              prevNav: d.prevNav,
               pnl: d.pnl,
             }))
           );
@@ -2662,7 +2681,7 @@ if (scheme === "Scheme PMS QAW") {
     const quarterlyPnl = this.calculateQuarterlyPnLFromNavData(sortedNavData);
     return quarterlyPnl;
   }
-  private static calculateQuarterlyPnLFromNavData(navData: { date: string; nav: number; pnl: number }[]): QuarterlyPnL {
+  private static calculateQuarterlyPnLFromNavData(navData: { date: string; nav: number; prevNav?: number | null; pnl: number }[]): QuarterlyPnL {
     const getQuarter = (month: number): string => {
       if (month < 3) return "q1";
       if (month < 6) return "q2";
@@ -2675,7 +2694,7 @@ if (scheme === "Scheme PMS QAW") {
       return quarterMap[quarter];
     };
 
-    const quarterlyData: { [yearQuarter: string]: { cash: number; entries: { date: string; nav: number; pnl: number }[] } } = {};
+    const quarterlyData: { [yearQuarter: string]: { cash: number; entries: { date: string; nav: number; prevNav?: number | null; pnl: number }[] } } = {};
     navData.forEach(entry => {
       const date = new Date(entry.date);
       const year = date.getUTCFullYear();
@@ -2722,9 +2741,10 @@ if (scheme === "Scheme PMS QAW") {
         const entries = quarterlyData[yearQuarter].entries;
 
         if (entries.length > 0) {
-          // For first quarter ever, use 100 as starting NAV (normalized inception point)
+          // For first quarter ever, use prev_nav as starting NAV (the baseline before first trade)
+          // Fall back to nav if prev_nav is not available
           const isFirstQuarterEver = quarterIndex === 0 && year === sortedYearQuarters[0].split("-")[0];
-          let startNav = isFirstQuarterEver ? 100 : entries[0].nav;
+          let startNav = isFirstQuarterEver ? (entries[0].prevNav ?? entries[0].nav) : entries[0].nav;
 
           if (quarterIndex > 0) {
             const prevYearQuarter = yearlyQuarters[year][quarterIndex - 1];
@@ -2858,6 +2878,7 @@ if (scheme === "Scheme PMS QAW") {
           historicalData.map(d => ({
             date: PortfolioApi.normalizeDate(d.date)!,
             nav: d.nav,
+            prevNav: d.prevNav,
             pnl: d.pnl,
           }))
         );
