@@ -327,8 +327,8 @@ export class PortfolioApi {
           },
           "2026": {
             percent: { q1: "1.47", q2: "0", q3: "0", q4: "0", total: "1.47" },
-            cash: { q1: "844339.77", q2: "0", q3: "0", q4: "0", total: "844339.77" },
-            yearCash: "844339.77",
+            cash: { q1: "831056.37", q2: "0", q3: "0", q4: "0", total: "831056.37" },
+            yearCash: "831056.37",
           },
         },
         monthlyPnl: {
@@ -353,7 +353,7 @@ export class PortfolioApi {
           },
           "2026": {
             months: {
-              January: { percent: "1.47", cash: "844339.77", capitalInOut: "-56805342.00" },
+              January: { percent: "1.47", cash: "831056.37", capitalInOut: "-56805342.00" },
               February: { percent: "-", cash: "-", capitalInOut: "-" },
               March: { percent: "-", cash: "-", capitalInOut: "-" },
               April: { percent: "-", cash: "-", capitalInOut: "-" },
@@ -367,7 +367,7 @@ export class PortfolioApi {
               December: { percent: "-", cash: "-", capitalInOut: "-" },
             },
             totalPercent: 1.47,
-            totalCash: 844339.77,
+            totalCash: 831056.37,
             totalCapitalInOut: -56805342.00,
           },
         },
