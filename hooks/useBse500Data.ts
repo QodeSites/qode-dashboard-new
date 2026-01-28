@@ -17,7 +17,7 @@ interface UseBse500DataResult {
   error: string | null;
 }
 
-export function useBse500Data(equityCurve: EquityCurvePoint[], adjustStartDateByOneDay: boolean = false): UseBse500DataResult {
+export function useBse500Data(equityCurve: EquityCurvePoint[]): UseBse500DataResult {
   const [bse500Data, setBse500Data] = useState<Bse500DataPoint[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,26 +29,17 @@ export function useBse500Data(equityCurve: EquityCurvePoint[], adjustStartDateBy
       }
 
       try {
-        const startDate = equityCurve[0].date;
+        const portfolioStartDate = new Date(equityCurve[0].date);
         const endDate = equityCurve[equityCurve.length - 1].date;
+        const portfolioStartTime = portfolioStartDate.getTime();
 
-        // Optionally fetch benchmark data from one day before the equity curve start date
-        // This ensures "Since Inception" benchmark calculation uses the pre-trading baseline
-        // (matching how scheme NAV starts at 100 before first day's trading)
-        // Skip adjustment if equity curve already has baseline prepended (first value = 100)
-        let effectiveStartDate = startDate;
-        // Check both 'value' and 'nav' properties since different components use different formats
-        const firstNavValue = (equityCurve[0] as any).value ?? (equityCurve[0] as any).nav;
-        const hasBaselinePrepended = firstNavValue === 100;
-        if (adjustStartDateByOneDay && !hasBaselinePrepended) {
-          const startDateObj = new Date(startDate);
-          startDateObj.setDate(startDateObj.getDate() - 1);
-          effectiveStartDate = startDateObj.toISOString().split('T')[0];
-        }
+        // Extend the start date backwards by 30 days to get potential backfill data
+        const extendedStartDate = new Date(portfolioStartTime - (30 * 24 * 60 * 60 * 1000))
+          .toISOString().split('T')[0];
 
         const queryParams = new URLSearchParams({
           indices: "NIFTY 50",
-          start_date: effectiveStartDate,
+          start_date: extendedStartDate,
           end_date: endDate,
         });
 
@@ -72,13 +63,43 @@ export function useBse500Data(equityCurve: EquityCurvePoint[], adjustStartDateBy
         // Sort data by date to ensure chronological order
         processedData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-        const filteredBse500Data = processedData.filter(
+        // Find benchmark data that falls within the portfolio date range
+        const benchmarkInRange = processedData.filter(
           (d) =>
-            new Date(d.date) >= new Date(effectiveStartDate) &&
-            new Date(d.date) <= new Date(endDate)
+            new Date(d.date).getTime() >= portfolioStartTime &&
+            new Date(d.date).getTime() <= new Date(endDate).getTime()
         );
 
-        setBse500Data(filteredBse500Data);
+        // Check if we have benchmark data for the portfolio start date
+        const hasDataForStartDate = benchmarkInRange.some(
+          (d) => new Date(d.date).getTime() === portfolioStartTime
+        );
+
+        let finalBenchmarkData = [...benchmarkInRange];
+
+        // If no benchmark data exists for portfolio start date, backfill with most recent data
+        if (!hasDataForStartDate && benchmarkInRange.length > 0) {
+          // Find the most recent benchmark data point before portfolio start date
+          const priorData = processedData.filter(
+            (d) => new Date(d.date).getTime() < portfolioStartTime
+          );
+
+          if (priorData.length > 0) {
+            // Get the most recent data point before portfolio start
+            const mostRecentPriorData = priorData[priorData.length - 1];
+
+            // Create a backfilled data point for portfolio start date
+            const backfilledDataPoint: Bse500DataPoint = {
+              date: equityCurve[0].date,
+              nav: mostRecentPriorData.nav
+            };
+
+            // Add the backfilled point at the beginning
+            finalBenchmarkData = [backfilledDataPoint, ...benchmarkInRange];
+          }
+        }
+
+        setBse500Data(finalBenchmarkData);
       } catch (err) {
         console.error("Error fetching BSE500 data:", err);
         setError(err instanceof Error ? err.message : "An unexpected error occurred");
@@ -86,7 +107,7 @@ export function useBse500Data(equityCurve: EquityCurvePoint[], adjustStartDateBy
     };
 
     fetchBse500Data();
-  }, [equityCurve, adjustStartDateByOneDay]);
+  }, [equityCurve]);
 
   return { bse500Data, error };
 }

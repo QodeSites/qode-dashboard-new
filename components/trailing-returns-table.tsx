@@ -41,7 +41,7 @@ export function TrailingReturnsTable({
 }: TrailingReturnsTableProps) {
 
   console.log(trailingReturns)
-  const { bse500Data, error } = useBse500Data(equityCurve, adjustBenchmarkStartDate);
+  const { bse500Data, error } = useBse500Data(equityCurve);
 
   // Normalize trailingReturns for internal use
   const normalizeTrailingReturns = (
