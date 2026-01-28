@@ -69,6 +69,9 @@ export function useBse500Data(equityCurve: EquityCurvePoint[], adjustStartDateBy
           processedData = result;
         }
 
+        // Sort data by date to ensure chronological order
+        processedData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
         const filteredBse500Data = processedData.filter(
           (d) =>
             new Date(d.date) >= new Date(effectiveStartDate) &&
