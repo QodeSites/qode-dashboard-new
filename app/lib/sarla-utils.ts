@@ -1812,6 +1812,10 @@ export class PortfolioApi {
                 dividend: entry.dividend || 0,
               }))
             );
+          } else if (s === "Scheme PMS QAW") {
+            // Fetch from pms_master_sheet using getPMSData
+            const pmsData = await this.getPMSData(qcode);
+            cashFlows = cashFlows.concat(pmsData.cashFlows);
           } else if (s === "Scheme QAW++") {
             // Fetch from database using QAC00066
             const effectiveQcode = PortfolioApi.getEffectiveQcode(s, qcode);
