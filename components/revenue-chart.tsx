@@ -54,10 +54,10 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
     const range = max - min;
 
     let bufferPercent;
-    if (range < 5) bufferPercent = 0.5;
-    else if (range < 20) bufferPercent = 0.3;
-    else if (range < 50) bufferPercent = 0.2;
-    else bufferPercent = 0.1;
+    if (range < 5) bufferPercent = 0.25;
+    else if (range < 20) bufferPercent = 0.15;
+    else if (range < 50) bufferPercent = 0.1;
+    else bufferPercent = 0.05;
 
     const buffer = range * bufferPercent;
 
@@ -81,8 +81,8 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
     const buffer = Math.max(range * 0.1, 1);
 
     return {
-      min: Math.min(minDrawdown - buffer, -2),
-      max: Math.max(maxDrawdown + buffer / 2, 1)
+      min: minDrawdown - buffer,
+      max: 0
     };
   }, []);
 
@@ -392,6 +392,8 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
             },
             min: navScaling.min,
             max: navScaling.max,
+            startOnTick: false,
+            endOnTick: false,
             tickAmount: navTickAmount,
             lineColor: "#2E8B57",
             tickColor: "#2E8B57",
@@ -421,6 +423,8 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
             offset: 0,
             min: drawdownScaling.min,
             max: 0,
+            startOnTick: false,
+            endOnTick: false,
             tickAmount: drawdownTickAmount,
             labels: {
               formatter: function () {
