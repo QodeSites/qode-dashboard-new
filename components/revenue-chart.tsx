@@ -264,11 +264,12 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
       const benchmarkDrawdownValues = benchmarkDrawdownCurve.map(d => d[1]);
       const drawdownScaling = calculateDrawdownScaling(portfolioDrawdownValues, benchmarkDrawdownValues);
 
+      // Calculate tick intervals based on data range (instead of tickAmount which extends the axis)
       const navRange = navScaling.max - navScaling.min;
-      const navTickAmount = Math.max(5, Math.min(12, Math.ceil(navRange / 10)));
+      const navTickInterval = navRange <= 10 ? 2 : navRange <= 30 ? 5 : navRange <= 60 ? 10 : 15;
 
       const drawdownRange = Math.abs(drawdownScaling.max - drawdownScaling.min);
-      const drawdownTickAmount = Math.max(3, Math.min(4, Math.ceil(drawdownRange / 2)));
+      const drawdownTickInterval = drawdownRange <= 5 ? 1 : drawdownRange <= 10 ? 2 : 2.5;
 
       // Calculate dynamic tick interval based on data range
       const dateRange = equityCurve.length > 1
@@ -394,7 +395,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
             max: navScaling.max,
             startOnTick: false,
             endOnTick: false,
-            tickAmount: navTickAmount,
+            tickInterval: navTickInterval,
             lineColor: "#2E8B57",
             tickColor: "#2E8B57",
             tickWidth: 1,
@@ -425,7 +426,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
             max: 0,
             startOnTick: false,
             endOnTick: false,
-            tickAmount: drawdownTickAmount,
+            tickInterval: drawdownTickInterval,
             labels: {
               formatter: function () {
                 return (Math.round(this.value * 100) / 100) + "%";
