@@ -45,45 +45,74 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
   const chart = useRef<any>(null);
   const { bse500Data, error } = useBse500Data(equityCurve);
 
-  // Calculate dynamic scaling parameters
-  const calculateScalingParams = useCallback((data: number[]) => {
-    if (!data.length) return { min: 0, max: 100, buffer: 10 };
+  // Calculate tick positions for NAV/Performance axis (ensures minimum 5 ticks)
+  const calculateNavTickPositions = useCallback((data: number[], minTickCount = 5) => {
+    if (!data.length) return { positions: [80, 90, 100, 110, 120], min: 80, max: 120 };
 
-    const min = Math.min(...data);
-    const max = Math.max(...data);
-    const range = max - min;
+    const minData = Math.min(...data);
+    const maxData = Math.max(...data);
+    const dataRange = maxData - minData;
 
-    let bufferPercent;
-    if (range < 5) bufferPercent = 0.25;
-    else if (range < 20) bufferPercent = 0.15;
-    else if (range < 50) bufferPercent = 0.1;
-    else bufferPercent = 0.05;
+    // Determine nice interval based on data range
+    let interval: number;
+    if (dataRange < 3) interval = 0.5;
+    else if (dataRange < 8) interval = 1;
+    else if (dataRange < 15) interval = 2;
+    else if (dataRange < 30) interval = 5;
+    else if (dataRange < 60) interval = 10;
+    else interval = 15;
 
-    const buffer = range * bufferPercent;
+    // Round min DOWN and max UP to nearest interval (ensures ticks beyond data)
+    const axisMin = Math.floor(minData / interval) * interval;
+    const axisMax = Math.ceil(maxData / interval) * interval;
 
-    return {
-      min: Math.max(0, min - buffer),
-      max: max + buffer,
-      buffer: buffer
-    };
+    // Generate tick positions
+    const ticks: number[] = [];
+    for (let t = axisMin; t <= axisMax + 0.001; t += interval) {
+      ticks.push(Math.round(t * 100) / 100);
+    }
+
+    // Ensure minimum tick count by extending range downward
+    while (ticks.length < minTickCount) {
+      ticks.unshift(ticks[0] - interval);
+    }
+
+    return { positions: ticks, min: ticks[0], max: ticks[ticks.length - 1] };
   }, []);
 
-  const calculateDrawdownScaling = useCallback((portfolioDD: number[], benchmarkDD: number[]) => {
+  // Calculate tick positions for Drawdown axis (ensures minimum 4 ticks, max at 0)
+  const calculateDrawdownTickPositions = useCallback((portfolioDD: number[], benchmarkDD: number[], minTickCount = 4) => {
     const allDrawdowns = [...portfolioDD, ...benchmarkDD]
       .filter(val => typeof val === 'number' && !isNaN(val) && isFinite(val));
 
-    if (!allDrawdowns.length) return { min: -10, max: 0 };
+    if (!allDrawdowns.length) return { positions: [0, -2, -4, -6, -8], min: -8, max: 0 };
 
     const minDrawdown = Math.min(...allDrawdowns, 0);
-    const maxDrawdown = Math.max(...allDrawdowns, 0);
+    const dataRange = Math.abs(minDrawdown);
 
-    const range = Math.abs(minDrawdown - maxDrawdown);
-    const buffer = Math.max(range * 0.1, 1);
+    // Determine nice interval based on data range
+    let interval: number;
+    if (dataRange < 2) interval = 0.5;
+    else if (dataRange < 5) interval = 1;
+    else if (dataRange < 10) interval = 2;
+    else interval = 2.5;
 
-    return {
-      min: minDrawdown - buffer,
-      max: 0
-    };
+    // Round min DOWN to nearest interval (more negative)
+    const axisMin = Math.floor(minDrawdown / interval) * interval;
+    const axisMax = 0;
+
+    // Generate tick positions (from 0 down to axisMin)
+    const ticks: number[] = [];
+    for (let t = axisMax; t >= axisMin - 0.001; t -= interval) {
+      ticks.push(Math.round(t * 100) / 100);
+    }
+
+    // Ensure minimum tick count by extending range downward
+    while (ticks.length < minTickCount) {
+      ticks.push(ticks[ticks.length - 1] - interval);
+    }
+
+    return { positions: ticks, min: ticks[ticks.length - 1], max: ticks[0] };
   }, []);
 
   const processDataSeries = useCallback(
@@ -258,18 +287,12 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         ...processedBenchmarkData.map(d => d[1]),
       ].filter(val => !isNaN(val));
 
-      const navScaling = calculateScalingParams(allNavValues);
+      // Calculate tick positions (ensures minimum 5 ticks with proper spacing)
+      const navTicks = calculateNavTickPositions(allNavValues, 5);
 
       const portfolioDrawdownValues = portfolioDrawdownData.map(d => d[1]);
       const benchmarkDrawdownValues = benchmarkDrawdownCurve.map(d => d[1]);
-      const drawdownScaling = calculateDrawdownScaling(portfolioDrawdownValues, benchmarkDrawdownValues);
-
-      // Calculate tick intervals based on data range (instead of tickAmount which extends the axis)
-      const navRange = navScaling.max - navScaling.min;
-      const navTickInterval = navRange <= 10 ? 2 : navRange <= 30 ? 5 : navRange <= 60 ? 10 : 15;
-
-      const drawdownRange = Math.abs(drawdownScaling.max - drawdownScaling.min);
-      const drawdownTickInterval = drawdownRange <= 5 ? 1 : drawdownRange <= 10 ? 2 : 2.5;
+      const drawdownTicks = calculateDrawdownTickPositions(portfolioDrawdownValues, benchmarkDrawdownValues, 4);
 
       // Calculate dynamic tick interval based on data range
       const dateRange = equityCurve.length > 1
@@ -391,11 +414,9 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
                 fontFamily: "Plus Jakarta Sans",
               },
             },
-            min: navScaling.min,
-            max: navScaling.max,
-            startOnTick: false,
-            endOnTick: false,
-            tickInterval: navTickInterval,
+            min: navTicks.min,
+            max: navTicks.max,
+            tickPositions: navTicks.positions,
             lineColor: "#2E8B57",
             tickColor: "#2E8B57",
             tickWidth: 1,
@@ -422,11 +443,9 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
             height: "30%",
             top: "65%",
             offset: 0,
-            min: drawdownScaling.min,
-            max: 0,
-            startOnTick: false,
-            endOnTick: false,
-            tickInterval: drawdownTickInterval,
+            min: drawdownTicks.min,
+            max: drawdownTicks.max,
+            tickPositions: drawdownTicks.positions,
             labels: {
               formatter: function () {
                 return (Math.round(this.value * 100) / 100) + "%";
@@ -558,7 +577,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         chart.current = null;
       }
     };
-  }, [equityCurve, drawdownCurve, bse500Data, processDataSeries, calculateScalingParams, calculateDrawdownScaling]);
+  }, [equityCurve, drawdownCurve, bse500Data, processDataSeries, calculateNavTickPositions, calculateDrawdownTickPositions]);
 
   if (!equityCurve?.length || error) {
     return (
