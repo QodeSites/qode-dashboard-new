@@ -520,7 +520,7 @@ export class PortfolioApi {
       orderBy: { date: "asc" },
     });
 
-    // Prepend baseline point with NAV = 100 (day before first entry = Jan 11, 2026)
+    // Return raw data without synthetic baseline (baseline prepending happens in GET handler for display only)
     const result = data.map((entry) => ({
       date: entry.date,
       nav: Number(entry.nav) || 0,
@@ -528,19 +528,6 @@ export class PortfolioApi {
       pnl: Number(entry.pnl) || 0,
       capitalInOut: Number(entry.capital_in_out) || 0,
     }));
-
-    // Add baseline point for QAW++ (Jan 11, 2026 with NAV = 100)
-    if (result.length > 0) {
-      const firstDate = new Date(result[0].date);
-      firstDate.setDate(firstDate.getDate() - 1);
-      result.unshift({
-        date: firstDate,
-        nav: 100,
-        drawdown: 0,
-        pnl: 0,
-        capitalInOut: 0,
-      });
-    }
 
     return result;
   }
@@ -643,11 +630,14 @@ export class PortfolioApi {
     const historicalData = await this.getHistoricalData(qcode, scheme);
     if (historicalData.length < 2) return 0;
 
-    const firstNav = historicalData[0].nav;
+    const originalFirstNav = historicalData[0].nav;
     const lastNav = historicalData[historicalData.length - 1].nav;
     const days =
       (historicalData[historicalData.length - 1].date.getTime() - historicalData[0].date.getTime()) /
       (1000 * 60 * 60 * 24);
+
+    // For Scheme QAW++, use 100 as baseline (matching Satidham's approach)
+    const firstNav = scheme === "Scheme QAW++" && originalFirstNav !== 100 ? 100 : originalFirstNav;
 
     // Use absolute return for < 365 days, CAGR for >= 365 days
     if (days < 365) {
@@ -734,7 +724,9 @@ export class PortfolioApi {
 
     for (const [period, targetCount] of Object.entries(periods)) {
       if (period === "sinceInception") {
-        const firstNav = normalizedData[0]?.nav;
+        const originalFirstNav = normalizedData[0]?.nav;
+        // For Scheme QAW++, use 100 as baseline (matching Satidham's approach)
+        const firstNav = scheme === "Scheme QAW++" && originalFirstNav && originalFirstNav !== 100 ? 100 : originalFirstNav;
         returns[period] = firstNav ? ((lastNav / firstNav) - 1) * 100 : null;
         continue;
       }
@@ -858,7 +850,10 @@ export class PortfolioApi {
     // Group data by year and month
     const grouped: Record<string, Record<string, { startNav: number; endNav: number; pnl: number; capitalInOut: number }>> = {};
 
-    for (let i = 1; i < historicalData.length; i++) {
+    // Track if we've set the first month's startNav (for QAW++ baseline handling)
+    let isFirstMonthSet = false;
+
+    for (let i = 0; i < historicalData.length; i++) {
       const entry = historicalData[i];
       const date = new Date(entry.date);
       const year = date.getFullYear().toString();
@@ -866,8 +861,20 @@ export class PortfolioApi {
 
       if (!grouped[year]) grouped[year] = {};
       if (!grouped[year][month]) {
+        // For QAW++ first month, use 100 as baseline (matching Satidham's prevNav approach)
+        // For subsequent months, use previous data point's NAV
+        let startNav: number;
+        if (!isFirstMonthSet && scheme === "Scheme QAW++") {
+          startNav = 100; // Baseline for first month
+          isFirstMonthSet = true;
+        } else if (i > 0) {
+          startNav = historicalData[i - 1]?.nav || entry.nav;
+        } else {
+          startNav = entry.nav;
+        }
+
         grouped[year][month] = {
-          startNav: historicalData[i - 1]?.nav || entry.nav,
+          startNav,
           endNav: entry.nav,
           pnl: entry.pnl,
           capitalInOut: entry.capitalInOut,
@@ -1070,12 +1077,12 @@ export class PortfolioApi {
         const historicalData = await PortfolioApi.getHistoricalData(qcode, scheme);
         const cashFlows = await PortfolioApi.getCashFlows(qcode, scheme);
 
-        const equityCurve = historicalData.map((d) => ({
+        const rawEquityCurve = historicalData.map((d) => ({
           date: PortfolioApi.normalizeDate(d.date),
           nav: d.nav,
         }));
 
-        const drawdownMetrics = PortfolioApi.calculateDrawdownMetrics(equityCurve);
+        const drawdownMetrics = PortfolioApi.calculateDrawdownMetrics(rawEquityCurve);
         const trailingReturns = await PortfolioApi.calculateTrailingReturns(qcode, scheme, drawdownMetrics);
         const monthlyPnl = await PortfolioApi.calculateMonthlyPnL(qcode, scheme);
         const quarterlyPnl = await PortfolioApi.calculateQuarterlyPnL(qcode, scheme);
@@ -1088,8 +1095,27 @@ export class PortfolioApi {
           trailingReturns,
           drawdown: drawdownMetrics.currentDD.toFixed(2),
           maxDrawdown: drawdownMetrics.mdd.toFixed(2),
-          equityCurve,
-          drawdownCurve: drawdownMetrics.ddCurve.map((d) => ({ date: d.date, drawdown: d.value })),
+          // For Scheme QAW++, prepend baseline point with NAV = 100 for display (matching Satidham's approach)
+          equityCurve: (() => {
+            if (scheme === "Scheme QAW++" && rawEquityCurve.length > 0) {
+              const firstDate = new Date(rawEquityCurve[0].date);
+              firstDate.setDate(firstDate.getDate() - 1);
+              const baselineDate = firstDate.toISOString().split('T')[0];
+              return [{ date: baselineDate, nav: 100 }, ...rawEquityCurve];
+            }
+            return rawEquityCurve;
+          })(),
+          // For Scheme QAW++, prepend baseline point with drawdown = 0 for display (matching Satidham's approach)
+          drawdownCurve: (() => {
+            const rawDDCurve = drawdownMetrics.ddCurve.map((d) => ({ date: d.date, drawdown: d.value }));
+            if (scheme === "Scheme QAW++" && rawDDCurve.length > 0 && historicalData.length > 0) {
+              const firstDate = new Date(historicalData[0].date);
+              firstDate.setDate(firstDate.getDate() - 1);
+              const baselineDate = firstDate.toISOString().split('T')[0];
+              return [{ date: baselineDate, drawdown: 0 }, ...rawDDCurve];
+            }
+            return rawDDCurve;
+          })(),
           quarterlyPnl,
           monthlyPnl,
           cashFlows,
