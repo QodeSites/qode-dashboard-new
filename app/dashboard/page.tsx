@@ -12,8 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import StockTable from "@/components/StockTable";
 import { Download } from "lucide-react";
-import * as XLSX from "xlsx-js-style";
 import { buildPortfolioReportHTML } from "@/components/buildPortfolioReportHTML";
+import { generateExcelReport } from "@/components/generateExcelReport";
 
 // Interfaces for stats
 interface Stats {
@@ -466,160 +466,59 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   const handleDownloadExcel = async (convertedStats: Stats, strategyName: string, isTotalPortfolio: boolean) => {
     try {
       setExporting(true);
-      const filename = `${strategyName.replace(/\s+/g, "_")}_data.xlsx`;
-      const wb = XLSX.utils.book_new();
-      const wsData: any[][] = [];
-      const headerRows: number[] = [];
-      const subHeaderRows: number[] = [];
 
-      // Fetch benchmark returns for Excel export
+      // Fetch benchmark returns
       const benchmarkReturns = await fetchBenchmarkReturns(convertedStats.equityCurve);
 
-      // Title
-      wsData.push(["", "Q"]);
-      wsData.push([]);
-
-      // Portfolio Statistics
-      headerRows.push(wsData.length);
-      wsData.push(["", "Portfolio Statistics"]);
-      wsData.push(["", "Strategy", strategyName]);
-      wsData.push(["", "Amount Deposited", parseFloat(convertedStats.amountDeposited) || 0]);
-      wsData.push(["", "Current Exposure", parseFloat(convertedStats.currentExposure) || 0]);
-      wsData.push(["", "Total Profit", parseFloat(convertedStats.totalProfit) || 0]);
-      if (!isTotalPortfolio) {
-        wsData.push(["", "Total Return (%)", parseFloat(convertedStats.return) || 0]);
-      }
-      wsData.push([]);
-
-      // Trailing Returns (skip for Total Portfolio)
-      if (!isTotalPortfolio && convertedStats.trailingReturns) {
-        headerRows.push(wsData.length);
-        wsData.push(["", "Trailing Returns"]);
-        subHeaderRows.push(wsData.length);
-        wsData.push(["", "Period", "Scheme (%)", "Benchmark (%)"]);
-
-        // Handle both property name formats (e.g., "fiveDays" and "5d")
-        const trExcel = convertedStats.trailingReturns as Record<string, unknown>;
-        const horizons = [
-          { longKey: "fiveDays", shortKey: "5d", label: "5 Days" },
-          { longKey: "tenDays", shortKey: "10d", label: "10 Days" },
-          { longKey: "fifteenDays", shortKey: "15d", label: "15 Days" },
-          { longKey: "oneMonth", shortKey: "1m", label: "1 Month" },
-          { longKey: "threeMonths", shortKey: "3m", label: "3 Months" },
-          { longKey: "oneYear", shortKey: "1y", label: "1 Year" },
-          { longKey: "twoYears", shortKey: "2y", label: "2 Years" },
-          { longKey: "sinceInception", shortKey: "sinceInception", label: "Since Inception" },
-          { longKey: "MDD", shortKey: "MDD", label: "Max Drawdown" },
-          { longKey: "currentDD", shortKey: "currentDD", label: "Current Drawdown" },
-        ];
-
-        horizons.forEach(({ longKey, shortKey, label }) => {
-          const schemeValue = trExcel[longKey] ?? trExcel[shortKey];
-          const benchmarkValue = benchmarkReturns[shortKey];
-          wsData.push([
-            "",
-            label,
-            schemeValue !== null && schemeValue !== undefined ? parseFloat(String(schemeValue)) || 0 : "-",
-            benchmarkValue !== "-" ? parseFloat(benchmarkValue) || 0 : "-",
-          ]);
-        });
-        wsData.push([]);
-      }
-
-      // Cash Flows
-      if (convertedStats.cashFlows?.length > 0) {
-        const cashFlowTotals = convertedStats.cashFlows.reduce(
-          (acc, tx) => {
-            const amount = Number(tx.amount);
-            if (amount > 0) acc.totalIn += amount;
-            else if (amount < 0) acc.totalOut += amount;
-            acc.netFlow += amount;
-            return acc;
-          },
-          { totalIn: 0, totalOut: 0, netFlow: 0 }
-        );
-
-        headerRows.push(wsData.length);
-        wsData.push(["", "Cash Flow Summary"]);
-        wsData.push(["", "Total Cash In", cashFlowTotals.totalIn]);
-        wsData.push(["", "Total Cash Out", cashFlowTotals.totalOut]);
-        wsData.push(["", "Net Cash Flow", cashFlowTotals.netFlow]);
-        wsData.push([]);
-
-        headerRows.push(wsData.length);
-        wsData.push(["", "Cash Flows Detail"]);
-        subHeaderRows.push(wsData.length);
-        wsData.push(["", "Date", "Amount"]);
-        convertedStats.cashFlows.forEach((flow) => {
-          wsData.push(["", dateFormatter(flow.date), Number(flow.amount)]);
-        });
-        wsData.push([]);
-      }
-
-      // Quarterly PnL
-      if (convertedStats.quarterlyPnl && Object.keys(convertedStats.quarterlyPnl).length > 0) {
-        headerRows.push(wsData.length);
-        wsData.push(["", "Quarterly P&L"]);
-        subHeaderRows.push(wsData.length);
-        if (isTotalPortfolio) {
-          wsData.push(["", "Year", "Quarter", "Cash Return"]);
-        } else {
-          wsData.push(["", "Year", "Quarter", "Percent Return (%)", "Cash Return"]);
-        }
-
-        Object.keys(convertedStats.quarterlyPnl).sort().forEach((year) => {
-          const yearData = convertedStats.quarterlyPnl[year];
-          ["q1", "q2", "q3", "q4"].forEach((q) => {
-            if (isTotalPortfolio) {
-              wsData.push(["", year, q.toUpperCase(), parseFloat(yearData.cash[q as keyof typeof yearData.cash]) || 0]);
-            } else {
-              wsData.push([
-                "",
-                year,
-                q.toUpperCase(),
-                parseFloat(yearData.percent[q as keyof typeof yearData.percent]) || 0,
-                parseFloat(yearData.cash[q as keyof typeof yearData.cash]) || 0,
-              ]);
-            }
-          });
-        });
-        wsData.push([]);
-      }
-
-      // Create worksheet with styling
-      const ws = XLSX.utils.aoa_to_sheet(wsData);
-      const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
-
-      // Set column widths
-      ws["!cols"] = [{ wch: 5 }, { wch: 25 }, { wch: 20 }, { wch: 20 }, { wch: 20 }];
-
-      // Apply styles
-      const headerStyle = {
-        fill: { patternType: "solid", fgColor: { rgb: "02422B" } },
-        font: { color: { rgb: "FFFFFF" }, bold: true },
-        alignment: { horizontal: "center" },
-      };
-      const subHeaderStyle = {
-        fill: { patternType: "solid", fgColor: { rgb: "DABD38" } },
-        font: { color: { rgb: "02422B" }, bold: true },
-        alignment: { horizontal: "center" },
+      // Helper to get trailing return value (handles both property name formats)
+      const tr = convertedStats.trailingReturns as Record<string, unknown>;
+      const getTrailingValue = (longKey: string, shortKey: string): string | number | null => {
+        const val = tr[longKey] ?? tr[shortKey];
+        return val !== null && val !== undefined ? val as string | number : null;
       };
 
-      for (let R = range.s.r; R <= range.e.r; R++) {
-        for (let C = range.s.c; C <= range.e.c; C++) {
-          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-          if (!ws[cellAddress]) continue;
+      // Build combined trailing returns with portfolio and benchmark
+      const combinedTrailing = {
+        fiveDays: { portfolio: getTrailingValue("fiveDays", "5d"), benchmark: benchmarkReturns["5d"] },
+        tenDays: { portfolio: getTrailingValue("tenDays", "10d"), benchmark: benchmarkReturns["10d"] },
+        fifteenDays: { portfolio: getTrailingValue("fifteenDays", "15d"), benchmark: benchmarkReturns["15d"] },
+        oneMonth: { portfolio: getTrailingValue("oneMonth", "1m"), benchmark: benchmarkReturns["1m"] },
+        threeMonths: { portfolio: getTrailingValue("threeMonths", "3m"), benchmark: benchmarkReturns["3m"] },
+        sixMonths: { portfolio: getTrailingValue("sixMonths", "6m"), benchmark: benchmarkReturns["6m"] },
+        oneYear: { portfolio: getTrailingValue("oneYear", "1y"), benchmark: benchmarkReturns["1y"] },
+        twoYears: { portfolio: getTrailingValue("twoYears", "2y"), benchmark: benchmarkReturns["2y"] },
+        fiveYears: { portfolio: getTrailingValue("fiveYears", "5y"), benchmark: benchmarkReturns["5y"] || null },
+        sinceInception: { portfolio: getTrailingValue("sinceInception", "sinceInception"), benchmark: benchmarkReturns["sinceInception"] },
+        MDD: { portfolio: getTrailingValue("MDD", "MDD"), benchmark: benchmarkReturns["MDD"] },
+        currentDD: { portfolio: getTrailingValue("currentDD", "currentDD"), benchmark: benchmarkReturns["currentDD"] },
+      };
 
-          if (headerRows.includes(R)) {
-            ws[cellAddress].s = headerStyle;
-          } else if (subHeaderRows.includes(R)) {
-            ws[cellAddress].s = subHeaderStyle;
-          }
-        }
-      }
+      // Get account info if available
+      const currentAccount = accounts.find((acc) => acc.qcode === selectedAccount);
 
-      XLSX.utils.book_append_sheet(wb, ws, "Strategy Data");
-      XLSX.writeFile(wb, filename);
+      // Call the Excel report generator
+      generateExcelReport({
+        strategyName,
+        isTotalPortfolio,
+        isActive: metadata?.isActive ?? true,
+        sessionUserName: session?.user?.name || "User",
+        accountInfo: currentAccount ? {
+          accountName: currentAccount.account_name,
+          accountType: currentAccount.account_type,
+          broker: currentAccount.broker,
+        } : undefined,
+        metrics: {
+          amountDeposited: parseFloat(convertedStats.amountDeposited) || 0,
+          currentExposure: parseFloat(convertedStats.currentExposure) || 0,
+          totalProfit: parseFloat(convertedStats.totalProfit) || 0,
+          totalReturn: parseFloat(convertedStats.return) || 0,
+        },
+        combinedTrailing,
+        cashFlows: convertedStats.cashFlows || [],
+        monthlyPnl: convertedStats.monthlyPnl || null,
+        quarterlyPnl: convertedStats.quarterlyPnl || null,
+      });
+
     } catch (error) {
       console.error("Error generating Excel:", error);
       alert("Failed to generate Excel file");
