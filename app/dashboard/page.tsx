@@ -1294,16 +1294,41 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                   item.metadata.lastUpdated
                 );
                 const lastDate = getLastDate(filteredEquityCurve, item.metadata.lastUpdated);
+                const itemStrategyName = item.metadata.strategyName || "Unknown Strategy";
                 return (
                   <div key={index} className="space-y-6">
                     <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
                       <CardHeader>
-                        <CardTitle className="text-card-text text-sm sm:text-sm">
-                          {item.metadata.account_name} ({item.metadata.account_type.toUpperCase()} - {item.metadata.broker})
-                          {(isSarla || isSatidham) && !item.metadata.isActive ? " (Inactive)" : ""}
-                        </CardTitle>
-                        <div className="text-sm text-card-text-secondary">
-                          Strategy: <strong>{item.metadata.strategyName || "Unknown Strategy"}</strong>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <CardTitle className="text-card-text text-sm sm:text-sm">
+                              {item.metadata.account_name} ({item.metadata.account_type.toUpperCase()} - {item.metadata.broker})
+                              {(isSarla || isSatidham) && !item.metadata.isActive ? " (Inactive)" : ""}
+                            </CardTitle>
+                            <div className="text-sm text-card-text-secondary mt-1">
+                              Strategy: <strong>{itemStrategyName}</strong>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={() => handleDownloadPDF(convertedStats, itemStrategyName, false)}
+                              disabled={exporting}
+                              className="h-8 px-2 text-xs font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+                              variant="default"
+                            >
+                              <Download className="h-3 w-3 mr-1" />
+                              PDF
+                            </Button>
+                            <Button
+                              onClick={() => handleDownloadExcel(convertedStats, itemStrategyName, false)}
+                              disabled={exporting}
+                              className="h-8 px-2 text-xs font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+                              variant="default"
+                            >
+                              <Download className="h-3 w-3 mr-1" />
+                              Excel
+                            </Button>
+                          </div>
                         </div>
                       </CardHeader>
                       <CardContent>
@@ -1347,8 +1372,29 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                     metadata?.lastUpdated
                   );
                   const lastDate = getLastDate(filteredEquityCurve, metadata?.lastUpdated);
+                  const strategyName = metadata?.strategyName || "Portfolio";
                   return (
                     <>
+                      <div className="flex justify-end gap-2 mb-4">
+                        <Button
+                          onClick={() => handleDownloadPDF(convertedStats, strategyName, false)}
+                          disabled={exporting}
+                          className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+                          variant="default"
+                        >
+                          <Download className="h-4 w-4 mr-2" />
+                          PDF
+                        </Button>
+                        <Button
+                          onClick={() => handleDownloadExcel(convertedStats, strategyName, false)}
+                          disabled={exporting}
+                          className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+                          variant="default"
+                        >
+                          <Download className="h-4 w-4 mr-2" />
+                          Excel
+                        </Button>
+                      </div>
                       <StatsCards
                         stats={convertedStats}
                         accountType={accounts.find((acc) => acc.qcode === selectedAccount)?.account_type || "unknown"}
