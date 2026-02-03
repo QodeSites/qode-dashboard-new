@@ -115,11 +115,6 @@ export function generateExcelReport(input: ExcelReportInput): void {
     wsData.push(["", "Amount Deposited", metrics.amountDeposited || 0]);
     wsData.push(["", "Current Exposure", metrics.currentExposure || 0]);
     wsData.push(["", "Total Profit", metrics.totalProfit || 0]);
-
-    // Add Total Return % for non-Total Portfolio strategies
-    if (!isTotalPortfolio) {
-      wsData.push(["", "Total Return (%)", metrics.totalReturn || 0]);
-    }
     wsData.push([]);
 
     // ========================================================================
