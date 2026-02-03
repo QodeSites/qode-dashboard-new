@@ -226,6 +226,150 @@ const getGreeting = () => {
   }
 };
 
+// Helper function to fetch and calculate benchmark returns for PDF export
+async function fetchBenchmarkReturns(
+  equityCurve: { date: string; value: number }[]
+): Promise<{ [key: string]: string }> {
+  const benchmarkReturns: { [key: string]: string } = {
+    "5d": "-", "10d": "-", "15d": "-", "1m": "-", "3m": "-", "6m": "-",
+    "1y": "-", "2y": "-", "sinceInception": "-", "MDD": "-", "currentDD": "-"
+  };
+
+  if (!equityCurve?.length) return benchmarkReturns;
+
+  try {
+    const startDate = equityCurve[0].date;
+    const endDate = equityCurve[equityCurve.length - 1].date;
+
+    // Fetch NIFTY 50 data
+    const queryParams = new URLSearchParams({
+      indices: "NIFTY 50",
+      start_date: startDate,
+      end_date: endDate,
+    });
+
+    const response = await fetch(
+      `https://research.qodeinvest.com/api/getIndices?${queryParams.toString()}`
+    );
+    if (!response.ok) return benchmarkReturns;
+
+    const result = await response.json();
+    let bse500Data: { date: string; nav: string }[] = [];
+
+    if (result.data && Array.isArray(result.data)) {
+      bse500Data = result.data;
+    } else if (result["BSE500"] && Array.isArray(result["BSE500"])) {
+      bse500Data = result["BSE500"];
+    } else if (Array.isArray(result)) {
+      bse500Data = result;
+    }
+
+    // Filter to date range
+    bse500Data = bse500Data.filter(
+      (d) => new Date(d.date) >= new Date(startDate) && new Date(d.date) <= new Date(endDate)
+    );
+
+    if (!bse500Data.length) return benchmarkReturns;
+
+    const endDateObj = new Date(endDate);
+
+    // Helper to find NAV for a target date
+    const findNav = (targetDate: Date): number => {
+      const exactMatch = bse500Data.find(
+        (point) => new Date(point.date).toDateString() === targetDate.toDateString()
+      );
+      if (exactMatch) return parseFloat(exactMatch.nav);
+
+      // Find closest previous date
+      let closestPrevious: { nav: number } | null = null;
+      let closestPreviousDiff = Infinity;
+
+      bse500Data.forEach((point) => {
+        const pointDate = new Date(point.date);
+        const timeDiff = targetDate.getTime() - pointDate.getTime();
+        if (timeDiff >= 0 && timeDiff < closestPreviousDiff) {
+          closestPreviousDiff = timeDiff;
+          closestPrevious = { nav: parseFloat(point.nav) };
+        }
+      });
+
+      return closestPrevious?.nav || 0;
+    };
+
+    // Calculate return for a period
+    const calculateReturn = (start: Date, end: Date): string => {
+      const startNav = findNav(start);
+      const endNav = findNav(end);
+
+      if (startNav && endNav && startNav !== 0) {
+        const durationYears = (end.getTime() - start.getTime()) / (365 * 24 * 60 * 60 * 1000);
+        let returnValue: number;
+
+        if (durationYears >= 1) {
+          // CAGR for periods >= 1 year
+          returnValue = (Math.pow(endNav / startNav, 1 / durationYears) - 1) * 100;
+        } else {
+          // Absolute return for shorter periods
+          returnValue = ((endNav - startNav) / startNav) * 100;
+        }
+        return returnValue.toFixed(2);
+      }
+      return "-";
+    };
+
+    // Define periods with days to subtract
+    const periods = [
+      { key: "5d", days: 5 },
+      { key: "10d", days: 10 },
+      { key: "15d", days: 15 },
+      { key: "1m", days: 30 },
+      { key: "3m", days: 90 },
+      { key: "6m", days: 180 },
+      { key: "1y", days: 365 },
+      { key: "2y", days: 730 },
+    ];
+
+    // Calculate returns for each period
+    periods.forEach(({ key, days }) => {
+      const start = new Date(endDateObj);
+      start.setDate(endDateObj.getDate() - days);
+      benchmarkReturns[key] = calculateReturn(start, endDateObj);
+    });
+
+    // Since Inception
+    const inceptionStart = new Date(bse500Data[0].date);
+    benchmarkReturns["sinceInception"] = calculateReturn(inceptionStart, endDateObj);
+
+    // Calculate drawdowns
+    let maxDrawdown = 0;
+    let peakNav = -Infinity;
+    const currentNav = parseFloat(bse500Data[bse500Data.length - 1].nav);
+
+    bse500Data.forEach((point) => {
+      const nav = parseFloat(point.nav);
+      if (nav > peakNav) peakNav = nav;
+      const drawdownValue = ((nav - peakNav) / peakNav) * 100;
+      if (drawdownValue < maxDrawdown) maxDrawdown = drawdownValue;
+    });
+
+    let allTimePeak = -Infinity;
+    bse500Data.forEach((point) => {
+      const nav = parseFloat(point.nav);
+      if (nav > allTimePeak) allTimePeak = nav;
+    });
+
+    const currentDrawdown = allTimePeak > 0 ? ((currentNav - allTimePeak) / allTimePeak) * 100 : 0;
+
+    benchmarkReturns["MDD"] = (-Math.abs(maxDrawdown)).toFixed(2);
+    benchmarkReturns["currentDD"] = (-Math.abs(currentDrawdown)).toFixed(2);
+
+  } catch (err) {
+    console.error("Error fetching benchmark data for PDF:", err);
+  }
+
+  return benchmarkReturns;
+}
+
 export default function Portfolio() {
   const { data: session, status } = useSession();
   const isSarla = session?.user?.icode === "QUS0007";
@@ -267,6 +411,9 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
       const getTrailingValue = (longKey: string, shortKey: string) =>
         tr[longKey] ?? tr[shortKey] ?? null;
 
+      // Fetch benchmark returns for PDF export
+      const benchmarkReturns = await fetchBenchmarkReturns(convertedStats.equityCurve);
+
       const html = buildPortfolioReportHTML({
         transactions: cashFlows,
         cashFlowTotals,
@@ -279,17 +426,17 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         equityCurve: convertedStats.equityCurve,
         drawdownCurve: convertedStats.drawdownCurve,
         combinedTrailing: {
-          fiveDays: { portfolio: getTrailingValue("fiveDays", "5d") },
-          tenDays: { portfolio: getTrailingValue("tenDays", "10d") },
-          fifteenDays: { portfolio: getTrailingValue("fifteenDays", "15d") },
-          oneMonth: { portfolio: getTrailingValue("oneMonth", "1m") },
-          threeMonths: { portfolio: getTrailingValue("threeMonths", "3m") },
-          sixMonths: { portfolio: getTrailingValue("sixMonths", "6m") },
-          oneYear: { portfolio: getTrailingValue("oneYear", "1y") },
-          twoYears: { portfolio: getTrailingValue("twoYears", "2y") },
-          sinceInception: { portfolio: getTrailingValue("sinceInception", "sinceInception") },
-          MDD: { portfolio: getTrailingValue("MDD", "MDD") },
-          currentDD: { portfolio: getTrailingValue("currentDD", "currentDD") },
+          fiveDays: { portfolio: getTrailingValue("fiveDays", "5d"), benchmark: benchmarkReturns["5d"] },
+          tenDays: { portfolio: getTrailingValue("tenDays", "10d"), benchmark: benchmarkReturns["10d"] },
+          fifteenDays: { portfolio: getTrailingValue("fifteenDays", "15d"), benchmark: benchmarkReturns["15d"] },
+          oneMonth: { portfolio: getTrailingValue("oneMonth", "1m"), benchmark: benchmarkReturns["1m"] },
+          threeMonths: { portfolio: getTrailingValue("threeMonths", "3m"), benchmark: benchmarkReturns["3m"] },
+          sixMonths: { portfolio: getTrailingValue("sixMonths", "6m"), benchmark: benchmarkReturns["6m"] },
+          oneYear: { portfolio: getTrailingValue("oneYear", "1y"), benchmark: benchmarkReturns["1y"] },
+          twoYears: { portfolio: getTrailingValue("twoYears", "2y"), benchmark: benchmarkReturns["2y"] },
+          sinceInception: { portfolio: getTrailingValue("sinceInception", "sinceInception"), benchmark: benchmarkReturns["sinceInception"] },
+          MDD: { portfolio: getTrailingValue("MDD", "MDD"), benchmark: benchmarkReturns["MDD"] },
+          currentDD: { portfolio: getTrailingValue("currentDD", "currentDD"), benchmark: benchmarkReturns["currentDD"] },
         },
         drawdown: convertedStats.drawdown,
         monthlyPnl: convertedStats.monthlyPnl,
@@ -316,7 +463,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     }
   };
 
-  const handleDownloadExcel = (convertedStats: Stats, strategyName: string, isTotalPortfolio: boolean) => {
+  const handleDownloadExcel = async (convertedStats: Stats, strategyName: string, isTotalPortfolio: boolean) => {
     try {
       setExporting(true);
       const filename = `${strategyName.replace(/\s+/g, "_")}_data.xlsx`;
@@ -324,6 +471,9 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
       const wsData: any[][] = [];
       const headerRows: number[] = [];
       const subHeaderRows: number[] = [];
+
+      // Fetch benchmark returns for Excel export
+      const benchmarkReturns = await fetchBenchmarkReturns(convertedStats.equityCurve);
 
       // Title
       wsData.push(["", "Q"]);
@@ -346,7 +496,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         headerRows.push(wsData.length);
         wsData.push(["", "Trailing Returns"]);
         subHeaderRows.push(wsData.length);
-        wsData.push(["", "Period", "Return (%)"]);
+        wsData.push(["", "Period", "Scheme (%)", "Benchmark (%)"]);
 
         // Handle both property name formats (e.g., "fiveDays" and "5d")
         const trExcel = convertedStats.trailingReturns as Record<string, unknown>;
@@ -364,10 +514,14 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         ];
 
         horizons.forEach(({ longKey, shortKey, label }) => {
-          const value = trExcel[longKey] ?? trExcel[shortKey];
-          if (value !== null && value !== undefined) {
-            wsData.push(["", label, parseFloat(String(value)) || 0]);
-          }
+          const schemeValue = trExcel[longKey] ?? trExcel[shortKey];
+          const benchmarkValue = benchmarkReturns[shortKey];
+          wsData.push([
+            "",
+            label,
+            schemeValue !== null && schemeValue !== undefined ? parseFloat(String(schemeValue)) || 0 : "-",
+            benchmarkValue !== "-" ? parseFloat(benchmarkValue) || 0 : "-",
+          ]);
         });
         wsData.push([]);
       }
