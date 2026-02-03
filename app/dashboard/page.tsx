@@ -11,6 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import StockTable from "@/components/StockTable";
+import { Download } from "lucide-react";
+import * as XLSX from "xlsx-js-style";
+import { buildPortfolioReportHTML } from "@/components/buildPortfolioReportHTML";
 
 // Interfaces for stats
 interface Stats {
@@ -241,6 +244,236 @@ export default function Portfolio() {
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
   const [availableStrategies, setAvailableStrategies] = useState<string[]>([]);
 const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percent");
+  const [exporting, setExporting] = useState(false);
+
+  // Export handler functions
+  const handleDownloadPDF = async (convertedStats: Stats, strategyName: string, isTotalPortfolio: boolean) => {
+    try {
+      setExporting(true);
+      const cashFlows = convertedStats.cashFlows || [];
+      const cashFlowTotals = cashFlows.reduce(
+        (acc, tx) => {
+          const amount = Number(tx.amount);
+          if (amount > 0) acc.totalIn += amount;
+          else if (amount < 0) acc.totalOut += amount;
+          acc.netFlow += amount;
+          return acc;
+        },
+        { totalIn: 0, totalOut: 0, netFlow: 0 }
+      );
+
+      // Normalize trailing returns - handle both property name formats (e.g., "fiveDays" and "5d")
+      const tr = convertedStats.trailingReturns as Record<string, unknown>;
+      const getTrailingValue = (longKey: string, shortKey: string) =>
+        tr[longKey] ?? tr[shortKey] ?? null;
+
+      const html = buildPortfolioReportHTML({
+        transactions: cashFlows,
+        cashFlowTotals,
+        metrics: {
+          amountInvested: parseFloat(convertedStats.amountDeposited) || 0,
+          currentPortfolioValue: parseFloat(convertedStats.currentExposure) || 0,
+          returns: parseFloat(convertedStats.totalProfit) || 0,
+          returns_percent: parseFloat(convertedStats.return) || 0,
+        },
+        equityCurve: convertedStats.equityCurve,
+        drawdownCurve: convertedStats.drawdownCurve,
+        combinedTrailing: {
+          fiveDays: { portfolio: getTrailingValue("fiveDays", "5d") },
+          tenDays: { portfolio: getTrailingValue("tenDays", "10d") },
+          fifteenDays: { portfolio: getTrailingValue("fifteenDays", "15d") },
+          oneMonth: { portfolio: getTrailingValue("oneMonth", "1m") },
+          threeMonths: { portfolio: getTrailingValue("threeMonths", "3m") },
+          sixMonths: { portfolio: getTrailingValue("sixMonths", "6m") },
+          oneYear: { portfolio: getTrailingValue("oneYear", "1y") },
+          twoYears: { portfolio: getTrailingValue("twoYears", "2y") },
+          sinceInception: { portfolio: getTrailingValue("sinceInception", "sinceInception") },
+          MDD: { portfolio: getTrailingValue("MDD", "MDD") },
+          currentDD: { portfolio: getTrailingValue("currentDD", "currentDD") },
+        },
+        drawdown: convertedStats.drawdown,
+        monthlyPnl: convertedStats.monthlyPnl,
+        quarterlyPnl: convertedStats.quarterlyPnl,
+        strategyName,
+        isTotalPortfolio,
+        isActive: true,
+        dateFormatter: (d) => new Date(d).toLocaleDateString("en-IN"),
+        formatter: (v) => formatter.format(v),
+        sessionUserName: session?.user?.name || "User",
+      });
+
+      const w = window.open("", "_blank", "width=1200,height=900");
+      if (w) {
+        w.document.open();
+        w.document.write(html);
+        w.document.close();
+      }
+    } catch (err) {
+      console.error(err);
+      alert("PDF export failed. See console for details.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleDownloadExcel = (convertedStats: Stats, strategyName: string, isTotalPortfolio: boolean) => {
+    try {
+      setExporting(true);
+      const filename = `${strategyName.replace(/\s+/g, "_")}_data.xlsx`;
+      const wb = XLSX.utils.book_new();
+      const wsData: any[][] = [];
+      const headerRows: number[] = [];
+      const subHeaderRows: number[] = [];
+
+      // Title
+      wsData.push(["", "Q"]);
+      wsData.push([]);
+
+      // Portfolio Statistics
+      headerRows.push(wsData.length);
+      wsData.push(["", "Portfolio Statistics"]);
+      wsData.push(["", "Strategy", strategyName]);
+      wsData.push(["", "Amount Deposited", parseFloat(convertedStats.amountDeposited) || 0]);
+      wsData.push(["", "Current Exposure", parseFloat(convertedStats.currentExposure) || 0]);
+      wsData.push(["", "Total Profit", parseFloat(convertedStats.totalProfit) || 0]);
+      if (!isTotalPortfolio) {
+        wsData.push(["", "Total Return (%)", parseFloat(convertedStats.return) || 0]);
+      }
+      wsData.push([]);
+
+      // Trailing Returns (skip for Total Portfolio)
+      if (!isTotalPortfolio && convertedStats.trailingReturns) {
+        headerRows.push(wsData.length);
+        wsData.push(["", "Trailing Returns"]);
+        subHeaderRows.push(wsData.length);
+        wsData.push(["", "Period", "Return (%)"]);
+
+        // Handle both property name formats (e.g., "fiveDays" and "5d")
+        const trExcel = convertedStats.trailingReturns as Record<string, unknown>;
+        const horizons = [
+          { longKey: "fiveDays", shortKey: "5d", label: "5 Days" },
+          { longKey: "tenDays", shortKey: "10d", label: "10 Days" },
+          { longKey: "fifteenDays", shortKey: "15d", label: "15 Days" },
+          { longKey: "oneMonth", shortKey: "1m", label: "1 Month" },
+          { longKey: "threeMonths", shortKey: "3m", label: "3 Months" },
+          { longKey: "oneYear", shortKey: "1y", label: "1 Year" },
+          { longKey: "twoYears", shortKey: "2y", label: "2 Years" },
+          { longKey: "sinceInception", shortKey: "sinceInception", label: "Since Inception" },
+          { longKey: "MDD", shortKey: "MDD", label: "Max Drawdown" },
+          { longKey: "currentDD", shortKey: "currentDD", label: "Current Drawdown" },
+        ];
+
+        horizons.forEach(({ longKey, shortKey, label }) => {
+          const value = trExcel[longKey] ?? trExcel[shortKey];
+          if (value !== null && value !== undefined) {
+            wsData.push(["", label, parseFloat(String(value)) || 0]);
+          }
+        });
+        wsData.push([]);
+      }
+
+      // Cash Flows
+      if (convertedStats.cashFlows?.length > 0) {
+        const cashFlowTotals = convertedStats.cashFlows.reduce(
+          (acc, tx) => {
+            const amount = Number(tx.amount);
+            if (amount > 0) acc.totalIn += amount;
+            else if (amount < 0) acc.totalOut += amount;
+            acc.netFlow += amount;
+            return acc;
+          },
+          { totalIn: 0, totalOut: 0, netFlow: 0 }
+        );
+
+        headerRows.push(wsData.length);
+        wsData.push(["", "Cash Flow Summary"]);
+        wsData.push(["", "Total Cash In", cashFlowTotals.totalIn]);
+        wsData.push(["", "Total Cash Out", cashFlowTotals.totalOut]);
+        wsData.push(["", "Net Cash Flow", cashFlowTotals.netFlow]);
+        wsData.push([]);
+
+        headerRows.push(wsData.length);
+        wsData.push(["", "Cash Flows Detail"]);
+        subHeaderRows.push(wsData.length);
+        wsData.push(["", "Date", "Amount"]);
+        convertedStats.cashFlows.forEach((flow) => {
+          wsData.push(["", dateFormatter(flow.date), Number(flow.amount)]);
+        });
+        wsData.push([]);
+      }
+
+      // Quarterly PnL
+      if (convertedStats.quarterlyPnl && Object.keys(convertedStats.quarterlyPnl).length > 0) {
+        headerRows.push(wsData.length);
+        wsData.push(["", "Quarterly P&L"]);
+        subHeaderRows.push(wsData.length);
+        if (isTotalPortfolio) {
+          wsData.push(["", "Year", "Quarter", "Cash Return"]);
+        } else {
+          wsData.push(["", "Year", "Quarter", "Percent Return (%)", "Cash Return"]);
+        }
+
+        Object.keys(convertedStats.quarterlyPnl).sort().forEach((year) => {
+          const yearData = convertedStats.quarterlyPnl[year];
+          ["q1", "q2", "q3", "q4"].forEach((q) => {
+            if (isTotalPortfolio) {
+              wsData.push(["", year, q.toUpperCase(), parseFloat(yearData.cash[q as keyof typeof yearData.cash]) || 0]);
+            } else {
+              wsData.push([
+                "",
+                year,
+                q.toUpperCase(),
+                parseFloat(yearData.percent[q as keyof typeof yearData.percent]) || 0,
+                parseFloat(yearData.cash[q as keyof typeof yearData.cash]) || 0,
+              ]);
+            }
+          });
+        });
+        wsData.push([]);
+      }
+
+      // Create worksheet with styling
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+      const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
+
+      // Set column widths
+      ws["!cols"] = [{ wch: 5 }, { wch: 25 }, { wch: 20 }, { wch: 20 }, { wch: 20 }];
+
+      // Apply styles
+      const headerStyle = {
+        fill: { patternType: "solid", fgColor: { rgb: "02422B" } },
+        font: { color: { rgb: "FFFFFF" }, bold: true },
+        alignment: { horizontal: "center" },
+      };
+      const subHeaderStyle = {
+        fill: { patternType: "solid", fgColor: { rgb: "DABD38" } },
+        font: { color: { rgb: "02422B" }, bold: true },
+        alignment: { horizontal: "center" },
+      };
+
+      for (let R = range.s.r; R <= range.e.r; R++) {
+        for (let C = range.s.c; C <= range.e.c; C++) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!ws[cellAddress]) continue;
+
+          if (headerRows.includes(R)) {
+            ws[cellAddress].s = headerStyle;
+          } else if (subHeaderRows.includes(R)) {
+            ws[cellAddress].s = subHeaderStyle;
+          }
+        }
+      }
+
+      XLSX.utils.book_append_sheet(wb, ws, "Strategy Data");
+      XLSX.writeFile(wb, filename);
+    } catch (error) {
+      console.error("Error generating Excel:", error);
+      alert("Failed to generate Excel file");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push("/");
@@ -647,12 +880,34 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
     return (
       <div className="space-y-6">
-        <Button
-          variant="outline"
-          className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
-        >
-          {selectedStrategy} {!isActive ? "(Inactive)" : ""}
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
+          >
+            {selectedStrategy} {!isActive ? "(Inactive)" : ""}
+          </Button>
+          <div className="flex gap-2 ml-auto">
+            <Button
+              onClick={() => handleDownloadPDF(convertedStats, selectedStrategy, isTotalPortfolio)}
+              disabled={exporting}
+              className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+              variant="default"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              PDF
+            </Button>
+            <Button
+              onClick={() => handleDownloadExcel(convertedStats, selectedStrategy, isTotalPortfolio)}
+              disabled={exporting}
+              className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+              variant="default"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Excel
+            </Button>
+          </div>
+        </div>
         <StatsCards
   stats={convertedStats}
   accountType="sarla"
@@ -712,12 +967,34 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
     return (
       <div className="space-y-6">
-        <Button
-          variant="outline"
-          className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
-        >
-          {selectedStrategy} {!isActive ? "(Inactive)" : ""}
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
+          >
+            {selectedStrategy} {!isActive ? "(Inactive)" : ""}
+          </Button>
+          <div className="flex gap-2 ml-auto">
+            <Button
+              onClick={() => handleDownloadPDF(convertedStats, selectedStrategy, isTotalPortfolio)}
+              disabled={exporting}
+              className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+              variant="default"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              PDF
+            </Button>
+            <Button
+              onClick={() => handleDownloadExcel(convertedStats, selectedStrategy, isTotalPortfolio)}
+              disabled={exporting}
+              className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+              variant="default"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Excel
+            </Button>
+          </div>
+        </div>
         <StatsCards
   stats={convertedStats}
   accountType="sarla"
