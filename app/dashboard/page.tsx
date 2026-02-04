@@ -227,6 +227,7 @@ const getGreeting = () => {
 };
 
 // Helper function to fetch and calculate benchmark returns for PDF export
+// Uses the same adjustBenchmarkStartDate logic as the frontend UI (useBse500Data hook)
 async function fetchBenchmarkReturns(
   equityCurve: { date: string; value: number }[]
 ): Promise<{ [key: string]: string }> {
@@ -241,10 +242,17 @@ async function fetchBenchmarkReturns(
     const startDate = equityCurve[0].date;
     const endDate = equityCurve[equityCurve.length - 1].date;
 
-    // Fetch NIFTY 50 data
+    // Fetch benchmark data starting 10 days before the equity curve start date
+    // This matches the frontend useBse500Data hook behavior (adjustBenchmarkStartDate=true)
+    // to handle weekends and holidays when inception falls on a non-trading day
+    const fetchStartDateObj = new Date(startDate);
+    fetchStartDateObj.setDate(fetchStartDateObj.getDate() - 10);
+    const fetchStartDate = fetchStartDateObj.toISOString().split('T')[0];
+
+    // Fetch NIFTY 50 data with the extended date range
     const queryParams = new URLSearchParams({
       indices: "NIFTY 50",
-      start_date: startDate,
+      start_date: fetchStartDate,
       end_date: endDate,
     });
 
@@ -254,19 +262,45 @@ async function fetchBenchmarkReturns(
     if (!response.ok) return benchmarkReturns;
 
     const result = await response.json();
-    let bse500Data: { date: string; nav: string }[] = [];
+    let rawBenchmarkData: { date: string; nav: string }[] = [];
 
     if (result.data && Array.isArray(result.data)) {
-      bse500Data = result.data;
+      rawBenchmarkData = result.data;
     } else if (result["BSE500"] && Array.isArray(result["BSE500"])) {
-      bse500Data = result["BSE500"];
+      rawBenchmarkData = result["BSE500"];
     } else if (Array.isArray(result)) {
-      bse500Data = result;
+      rawBenchmarkData = result;
     }
 
-    // Filter to date range
-    bse500Data = bse500Data.filter(
-      (d) => new Date(d.date) >= new Date(startDate) && new Date(d.date) <= new Date(endDate)
+    if (!rawBenchmarkData.length) return benchmarkReturns;
+
+    // Determine the effective start date for filtering
+    // This matches the frontend useBse500Data hook logic:
+    // - If startDate is a trading day, use it directly
+    // - If startDate is not a trading day (weekend/holiday), find the previous trading day
+    let effectiveStartDate = startDate;
+    const startDateTime = new Date(startDate).getTime();
+
+    // Check if startDate exists in benchmark data
+    const startDateExists = rawBenchmarkData.some(
+      (d) => new Date(d.date).getTime() === startDateTime
+    );
+
+    if (!startDateExists) {
+      // startDate is not a trading day (weekend/holiday)
+      // Find the last trading day strictly BEFORE the start date
+      const previousTradingDays = rawBenchmarkData
+        .filter((d) => new Date(d.date).getTime() < startDateTime)
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+      if (previousTradingDays.length > 0) {
+        effectiveStartDate = previousTradingDays[0].date;
+      }
+    }
+
+    // Filter benchmark data using the effective start date
+    const bse500Data = rawBenchmarkData.filter(
+      (d) => new Date(d.date) >= new Date(effectiveStartDate) && new Date(d.date) <= new Date(endDate)
     );
 
     if (!bse500Data.length) return benchmarkReturns;
@@ -336,7 +370,7 @@ async function fetchBenchmarkReturns(
       benchmarkReturns[key] = calculateReturn(start, endDateObj);
     });
 
-    // Since Inception
+    // Since Inception - uses the effective start date (which accounts for non-trading days)
     const inceptionStart = new Date(bse500Data[0].date);
     benchmarkReturns["sinceInception"] = calculateReturn(inceptionStart, endDateObj);
 
