@@ -45,45 +45,89 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
   const chart = useRef<any>(null);
   const { bse500Data, error } = useBse500Data(equityCurve);
 
-  // Calculate dynamic scaling parameters
-  const calculateScalingParams = useCallback((data: number[]) => {
-    if (!data.length) return { min: 0, max: 100, buffer: 10 };
+  // Calculate tick positions for NAV/Performance axis (ensures minimum 5 ticks)
+  const calculateNavTickPositions = useCallback((data: number[], minTickCount = 5) => {
+    if (!data.length) return { positions: [80, 90, 100, 110, 120], min: 80, max: 120 };
 
-    const min = Math.min(...data);
-    const max = Math.max(...data);
-    const range = max - min;
+    const minData = Math.min(...data);
+    const maxData = Math.max(...data);
+    const dataRange = maxData - minData;
 
-    let bufferPercent;
-    if (range < 5) bufferPercent = 0.5;
-    else if (range < 20) bufferPercent = 0.3;
-    else if (range < 50) bufferPercent = 0.2;
-    else bufferPercent = 0.1;
+    // Determine nice interval based on data range
+    let interval: number;
+    if (dataRange < 3) interval = 0.5;
+    else if (dataRange < 8) interval = 1;
+    else if (dataRange < 15) interval = 2;
+    else if (dataRange < 30) interval = 5;
+    else if (dataRange < 60) interval = 10;
+    else interval = 15;
 
-    const buffer = range * bufferPercent;
+    // Round min DOWN and max UP to nearest interval (ensures ticks beyond data)
+    const axisMin = Math.floor(minData / interval) * interval;
+    const axisMax = Math.ceil(maxData / interval) * interval;
 
-    return {
-      min: Math.max(0, min - buffer),
-      max: max + buffer,
-      buffer: buffer
-    };
+    // Generate tick positions
+    const ticks: number[] = [];
+    for (let t = axisMin; t <= axisMax + 0.001; t += interval) {
+      ticks.push(Math.round(t * 100) / 100);
+    }
+
+    // Ensure minimum tick count by extending range downward
+    while (ticks.length < minTickCount) {
+      ticks.unshift(ticks[0] - interval);
+    }
+
+    return { positions: ticks, min: ticks[0], max: ticks[ticks.length - 1] };
   }, []);
 
-  const calculateDrawdownScaling = useCallback((portfolioDD: number[], benchmarkDD: number[]) => {
+  // Calculate tick positions for Drawdown axis with target tick count
+  // IMPORTANT: Ticks must be in ASCENDING order (most negative to 0) for Highcharts
+  // to render the axis correctly with 0 at top and negative values below
+  // Option B: Calculate interval from target tick count for precise control
+  const calculateDrawdownTickPositions = useCallback((portfolioDD: number[], benchmarkDD: number[], targetTickCount = 3) => {
     const allDrawdowns = [...portfolioDD, ...benchmarkDD]
       .filter(val => typeof val === 'number' && !isNaN(val) && isFinite(val));
 
-    if (!allDrawdowns.length) return { min: -10, max: 0 };
+    if (!allDrawdowns.length) return { positions: [-5, -2.5, 0], min: -5, max: 0 };
 
     const minDrawdown = Math.min(...allDrawdowns, 0);
-    const maxDrawdown = Math.max(...allDrawdowns, 0);
+    const dataRange = Math.abs(minDrawdown);
 
-    const range = Math.abs(minDrawdown - maxDrawdown);
-    const buffer = Math.max(range * 0.1, 1);
+    // Handle edge case of no drawdown
+    if (dataRange === 0) return { positions: [-2, -1, 0], min: -2, max: 0 };
 
-    return {
-      min: Math.min(minDrawdown - buffer, -2),
-      max: Math.max(maxDrawdown + buffer / 2, 1)
+    // Calculate raw interval to achieve target tick count
+    const rawInterval = dataRange / (targetTickCount - 1);
+
+    // Round to a "nice" interval (0.5, 1, 2, 2.5, 5, 10, etc.)
+    const getNiceInterval = (raw: number): number => {
+      if (raw <= 0.5) return 0.5;
+      const magnitude = Math.pow(10, Math.floor(Math.log10(raw)));
+      const normalized = raw / magnitude;
+
+      let niceNormalized: number;
+      if (normalized <= 1) niceNormalized = 1;
+      else if (normalized <= 2) niceNormalized = 2;
+      else if (normalized <= 2.5) niceNormalized = 2.5;
+      else if (normalized <= 5) niceNormalized = 5;
+      else niceNormalized = 10;
+
+      return niceNormalized * magnitude;
     };
+
+    const interval = getNiceInterval(rawInterval);
+
+    // Round min DOWN to nearest interval (more negative)
+    const axisMin = Math.floor(minDrawdown / interval) * interval;
+    const axisMax = 0;
+
+    // Generate tick positions in ASCENDING order (from axisMin up to 0)
+    const ticks: number[] = [];
+    for (let t = axisMin; t <= axisMax + 0.001; t += interval) {
+      ticks.push(Math.round(t * 100) / 100);
+    }
+
+    return { positions: ticks, min: ticks[0], max: ticks[ticks.length - 1] };
   }, []);
 
   const processDataSeries = useCallback(
@@ -258,17 +302,12 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         ...processedBenchmarkData.map(d => d[1]),
       ].filter(val => !isNaN(val));
 
-      const navScaling = calculateScalingParams(allNavValues);
+      // Calculate tick positions (ensures minimum 5 ticks with proper spacing)
+      const navTicks = calculateNavTickPositions(allNavValues, 5);
 
       const portfolioDrawdownValues = portfolioDrawdownData.map(d => d[1]);
       const benchmarkDrawdownValues = benchmarkDrawdownCurve.map(d => d[1]);
-      const drawdownScaling = calculateDrawdownScaling(portfolioDrawdownValues, benchmarkDrawdownValues);
-
-      const navRange = navScaling.max - navScaling.min;
-      const navTickAmount = Math.max(5, Math.min(12, Math.ceil(navRange / 10)));
-
-      const drawdownRange = Math.abs(drawdownScaling.max - drawdownScaling.min);
-      const drawdownTickAmount = Math.max(3, Math.min(4, Math.ceil(drawdownRange / 2)));
+      const drawdownTicks = calculateDrawdownTickPositions(portfolioDrawdownValues, benchmarkDrawdownValues, 3);
 
       // Calculate dynamic tick interval based on data range
       const dateRange = equityCurve.length > 1
@@ -378,7 +417,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
                 fontFamily: "Plus Jakarta Sans",
               },
             },
-            height: "50%",
+            height: "60%",
             top: "0%",
             labels: {
               formatter: function () {
@@ -390,9 +429,9 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
                 fontFamily: "Plus Jakarta Sans",
               },
             },
-            min: navScaling.min,
-            max: navScaling.max,
-            tickAmount: navTickAmount,
+            min: navTicks.min,
+            max: navTicks.max,
+            tickPositions: navTicks.positions,
             lineColor: "#2E8B57",
             tickColor: "#2E8B57",
             tickWidth: 1,
@@ -416,12 +455,12 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
                 fontFamily: "Plus Jakarta Sans",
               },
             },
-            height: "30%",
-            top: "65%",
+            height: "20%",
+            top: "75%",
             offset: 0,
-            min: drawdownScaling.min,
-            max: 0,
-            tickAmount: drawdownTickAmount,
+            min: drawdownTicks.min,
+            max: drawdownTicks.max,
+            tickPositions: drawdownTicks.positions,
             labels: {
               formatter: function () {
                 return (Math.round(this.value * 100) / 100) + "%";
@@ -553,7 +592,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
         chart.current = null;
       }
     };
-  }, [equityCurve, drawdownCurve, bse500Data, processDataSeries, calculateScalingParams, calculateDrawdownScaling]);
+  }, [equityCurve, drawdownCurve, bse500Data, processDataSeries, calculateNavTickPositions, calculateDrawdownTickPositions]);
 
   if (!equityCurve?.length || error) {
     return (
