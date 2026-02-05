@@ -32,23 +32,22 @@ export function useBse500Data(equityCurve: EquityCurvePoint[], adjustStartDateBy
         const startDate = equityCurve[0].date;
         const endDate = equityCurve[equityCurve.length - 1].date;
 
-        // Optionally fetch benchmark data from one day before the equity curve start date
-        // This ensures "Since Inception" benchmark calculation uses the pre-trading baseline
-        // (matching how scheme NAV starts at 100 before first day's trading)
-        // Skip adjustment if equity curve already has baseline prepended (first value = 100)
-        let effectiveStartDate = startDate;
-        // Check both 'value' and 'nav' properties since different components use different formats
-        const firstNavValue = (equityCurve[0] as any).value ?? (equityCurve[0] as any).nav;
-        const hasBaselinePrepended = firstNavValue === 100;
-        if (adjustStartDateByOneDay && !hasBaselinePrepended) {
+        // Determine the fetch start date
+        // When adjustStartDateByOneDay is true, we need to find the last trading day
+        // BEFORE the equity curve starts. We fetch extra days (10) to handle weekends
+        // and holidays (e.g., if inception falls on a Monday after a long weekend).
+        // This is needed regardless of whether baseline is prepended, because the
+        // baseline date itself might be a non-trading day (weekend/holiday).
+        let fetchStartDate = startDate;
+        if (adjustStartDateByOneDay) {
           const startDateObj = new Date(startDate);
-          startDateObj.setDate(startDateObj.getDate() - 1);
-          effectiveStartDate = startDateObj.toISOString().split('T')[0];
+          startDateObj.setDate(startDateObj.getDate() - 10);
+          fetchStartDate = startDateObj.toISOString().split('T')[0];
         }
 
         const queryParams = new URLSearchParams({
           indices: "NIFTY 50",
-          start_date: effectiveStartDate,
+          start_date: fetchStartDate,
           end_date: endDate,
         });
 
@@ -67,6 +66,45 @@ export function useBse500Data(equityCurve: EquityCurvePoint[], adjustStartDateBy
           processedData = result["BSE500"];
         } else if (Array.isArray(result)) {
           processedData = result;
+        }
+
+        // Determine the effective start date for filtering
+        let effectiveStartDate = startDate;
+
+        if (adjustStartDateByOneDay) {
+          // We need to find the appropriate benchmark start date.
+          // The goal is to use the last trading day ON OR BEFORE the equity curve start date.
+          //
+          // Case 1: startDate IS a trading day (exists in benchmark data)
+          //         → Use startDate directly
+          // Case 2: startDate is NOT a trading day (weekend/holiday)
+          //         → Find the previous trading day
+          //
+          // This ensures clients with weekday inception dates are unaffected,
+          // while fixing the issue for weekend/holiday inception dates.
+
+          const startDateTime = new Date(startDate).getTime();
+
+          // Check if startDate exists in benchmark data
+          const startDateExists = processedData.some(
+            d => new Date(d.date).getTime() === startDateTime
+          );
+
+          if (startDateExists) {
+            // startDate is a trading day, use it directly
+            effectiveStartDate = startDate;
+          } else {
+            // startDate is not a trading day (weekend/holiday)
+            // Find the last trading day strictly BEFORE the start date
+            const previousTradingDays = processedData
+              .filter(d => new Date(d.date).getTime() < startDateTime)
+              .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+            if (previousTradingDays.length > 0) {
+              effectiveStartDate = previousTradingDays[0].date;
+            }
+            // If no previous trading day found, fall back to startDate
+          }
         }
 
         const filteredBse500Data = processedData.filter(
