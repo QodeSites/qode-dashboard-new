@@ -81,11 +81,13 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
   }, []);
 
   // Calculate tick positions for Drawdown axis (ensures minimum 4 ticks, max at 0)
+  // IMPORTANT: Ticks must be in ASCENDING order (most negative to 0) for Highcharts
+  // to render the axis correctly with 0 at top and negative values below
   const calculateDrawdownTickPositions = useCallback((portfolioDD: number[], benchmarkDD: number[], minTickCount = 4) => {
     const allDrawdowns = [...portfolioDD, ...benchmarkDD]
       .filter(val => typeof val === 'number' && !isNaN(val) && isFinite(val));
 
-    if (!allDrawdowns.length) return { positions: [0, -2, -4, -6, -8], min: -8, max: 0 };
+    if (!allDrawdowns.length) return { positions: [-8, -6, -4, -2, 0], min: -8, max: 0 };
 
     const minDrawdown = Math.min(...allDrawdowns, 0);
     const dataRange = Math.abs(minDrawdown);
@@ -101,18 +103,18 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
     const axisMin = Math.floor(minDrawdown / interval) * interval;
     const axisMax = 0;
 
-    // Generate tick positions (from 0 down to axisMin)
+    // Generate tick positions in ASCENDING order (from axisMin up to 0)
     const ticks: number[] = [];
-    for (let t = axisMax; t >= axisMin - 0.001; t -= interval) {
+    for (let t = axisMin; t <= axisMax + 0.001; t += interval) {
       ticks.push(Math.round(t * 100) / 100);
     }
 
-    // Ensure minimum tick count by extending range downward
+    // Ensure minimum tick count by extending range downward (prepend to maintain ascending order)
     while (ticks.length < minTickCount) {
-      ticks.push(ticks[ticks.length - 1] - interval);
+      ticks.unshift(Math.round((ticks[0] - interval) * 100) / 100);
     }
 
-    return { positions: ticks, min: ticks[ticks.length - 1], max: ticks[0] };
+    return { positions: ticks, min: ticks[0], max: ticks[ticks.length - 1] };
   }, []);
 
   const processDataSeries = useCallback(
