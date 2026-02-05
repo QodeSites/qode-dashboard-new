@@ -417,7 +417,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
                 fontFamily: "Plus Jakarta Sans",
               },
             },
-            height: "50%",
+            height: "60%",
             top: "0%",
             labels: {
               formatter: function () {
@@ -455,8 +455,8 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
                 fontFamily: "Plus Jakarta Sans",
               },
             },
-            height: "30%",
-            top: "65%",
+            height: "20%",
+            top: "75%",
             offset: 0,
             min: drawdownTicks.min,
             max: drawdownTicks.max,
