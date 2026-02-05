@@ -80,24 +80,42 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
     return { positions: ticks, min: ticks[0], max: ticks[ticks.length - 1] };
   }, []);
 
-  // Calculate tick positions for Drawdown axis (ensures minimum 4 ticks, max at 0)
+  // Calculate tick positions for Drawdown axis with target tick count
   // IMPORTANT: Ticks must be in ASCENDING order (most negative to 0) for Highcharts
   // to render the axis correctly with 0 at top and negative values below
-  const calculateDrawdownTickPositions = useCallback((portfolioDD: number[], benchmarkDD: number[], minTickCount = 4) => {
+  // Option B: Calculate interval from target tick count for precise control
+  const calculateDrawdownTickPositions = useCallback((portfolioDD: number[], benchmarkDD: number[], targetTickCount = 3) => {
     const allDrawdowns = [...portfolioDD, ...benchmarkDD]
       .filter(val => typeof val === 'number' && !isNaN(val) && isFinite(val));
 
-    if (!allDrawdowns.length) return { positions: [-8, -6, -4, -2, 0], min: -8, max: 0 };
+    if (!allDrawdowns.length) return { positions: [-5, -2.5, 0], min: -5, max: 0 };
 
     const minDrawdown = Math.min(...allDrawdowns, 0);
     const dataRange = Math.abs(minDrawdown);
 
-    // Determine nice interval based on data range
-    let interval: number;
-    if (dataRange < 2) interval = 0.5;
-    else if (dataRange < 5) interval = 1;
-    else if (dataRange < 10) interval = 2;
-    else interval = 2.5;
+    // Handle edge case of no drawdown
+    if (dataRange === 0) return { positions: [-2, -1, 0], min: -2, max: 0 };
+
+    // Calculate raw interval to achieve target tick count
+    const rawInterval = dataRange / (targetTickCount - 1);
+
+    // Round to a "nice" interval (0.5, 1, 2, 2.5, 5, 10, etc.)
+    const getNiceInterval = (raw: number): number => {
+      if (raw <= 0.5) return 0.5;
+      const magnitude = Math.pow(10, Math.floor(Math.log10(raw)));
+      const normalized = raw / magnitude;
+
+      let niceNormalized: number;
+      if (normalized <= 1) niceNormalized = 1;
+      else if (normalized <= 2) niceNormalized = 2;
+      else if (normalized <= 2.5) niceNormalized = 2.5;
+      else if (normalized <= 5) niceNormalized = 5;
+      else niceNormalized = 10;
+
+      return niceNormalized * magnitude;
+    };
+
+    const interval = getNiceInterval(rawInterval);
 
     // Round min DOWN to nearest interval (more negative)
     const axisMin = Math.floor(minDrawdown / interval) * interval;
@@ -107,11 +125,6 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
     const ticks: number[] = [];
     for (let t = axisMin; t <= axisMax + 0.001; t += interval) {
       ticks.push(Math.round(t * 100) / 100);
-    }
-
-    // Ensure minimum tick count by extending range downward (prepend to maintain ascending order)
-    while (ticks.length < minTickCount) {
-      ticks.unshift(Math.round((ticks[0] - interval) * 100) / 100);
     }
 
     return { positions: ticks, min: ticks[0], max: ticks[ticks.length - 1] };
@@ -294,7 +307,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
 
       const portfolioDrawdownValues = portfolioDrawdownData.map(d => d[1]);
       const benchmarkDrawdownValues = benchmarkDrawdownCurve.map(d => d[1]);
-      const drawdownTicks = calculateDrawdownTickPositions(portfolioDrawdownValues, benchmarkDrawdownValues, 4);
+      const drawdownTicks = calculateDrawdownTickPositions(portfolioDrawdownValues, benchmarkDrawdownValues, 3);
 
       // Calculate dynamic tick interval based on data range
       const dateRange = equityCurve.length > 1
