@@ -802,53 +802,57 @@ export class PortfolioApi {
       return this.DINESH_HARDCODED_DATA["Scheme QTF"].data.monthlyPnl;
     }
 
-    // Total Portfolio: Combine QTF hardcoded + QAW++ calculated
+    // Total Portfolio: Use unified rebased NAV series for percentages,
+    // overlay per-scheme cash/capitalInOut (since QTF historical data has pnl=0)
     if (scheme === "Total Portfolio") {
+      // 1. Get NAV-based percentages from the unified rebased series
+      const unifiedHistoricalData = await this.getHistoricalData(qcode, "Total Portfolio");
+      const navBasedResult = this.computeMonthlyPnLFromHistoricalData(unifiedHistoricalData, false);
+
+      // 2. Get per-scheme cash data
       const qtfMonthlyPnl = this.DINESH_HARDCODED_DATA["Scheme QTF"].data.monthlyPnl;
       const qawMonthlyPnl = await this.calculateMonthlyPnL(qcode, "Scheme QAW++");
 
-      // Merge: QTF has 2025 data, QAW++ has 2026+ data
-      // IMPORTANT: Deep copy to avoid mutating the original hardcoded data
-      const combined: MonthlyPnL = JSON.parse(JSON.stringify(qtfMonthlyPnl));
-      for (const year of Object.keys(qawMonthlyPnl)) {
-        if (!combined[year]) {
-          combined[year] = qawMonthlyPnl[year];
-        } else {
-          // Merge months if same year exists in both (e.g., January 2026 has QTF Jan 1-11 + QAW++ Jan 12-31)
-          for (const month of Object.keys(qawMonthlyPnl[year].months)) {
-            const qawMonth = qawMonthlyPnl[year].months[month];
-            if (qawMonth.percent !== "-") {
-              const existingMonth = combined[year].months[month];
-              if (existingMonth && existingMonth.percent !== "-") {
-                // ADD values when both QTF and QAW++ have data for the same month
-                const existingCash = parseFloat(existingMonth.cash) || 0;
-                const qawCash = parseFloat(qawMonth.cash) || 0;
-                const existingCapitalInOut = parseFloat(existingMonth.capitalInOut) || 0;
-                const qawCapitalInOut = parseFloat(qawMonth.capitalInOut) || 0;
-                // For percent, use weighted average based on cash contribution (approximation)
-                const existingPercent = parseFloat(existingMonth.percent) || 0;
-                const qawPercent = parseFloat(qawMonth.percent) || 0;
-                combined[year].months[month] = {
-                  percent: (existingPercent + qawPercent).toFixed(2),
-                  cash: (existingCash + qawCash).toFixed(2),
-                  capitalInOut: (existingCapitalInOut + qawCapitalInOut).toFixed(2),
-                };
-              } else {
-                // Only QAW++ has data for this month
-                combined[year].months[month] = qawMonth;
-              }
-            }
-          }
-          combined[year].totalPercent += qawMonthlyPnl[year].totalPercent;
-          combined[year].totalCash += qawMonthlyPnl[year].totalCash;
-          combined[year].totalCapitalInOut += qawMonthlyPnl[year].totalCapitalInOut;
+      // 3. Overlay cash/capitalInOut from per-scheme data into the NAV-based result
+      for (const year of Object.keys(navBasedResult)) {
+        let yearTotalCash = 0;
+        let yearTotalCapitalInOut = 0;
+
+        for (const month of Object.keys(navBasedResult[year].months)) {
+          if (navBasedResult[year].months[month].percent === "-") continue;
+
+          const qtfMonth = qtfMonthlyPnl[year]?.months[month];
+          const qawMonth = qawMonthlyPnl[year]?.months[month];
+          const qtfCash = (qtfMonth && qtfMonth.cash !== "-") ? parseFloat(qtfMonth.cash) : 0;
+          const qawCash = (qawMonth && qawMonth.cash !== "-") ? parseFloat(qawMonth.cash) : 0;
+          const qtfCapitalInOut = (qtfMonth && qtfMonth.capitalInOut !== "-") ? parseFloat(qtfMonth.capitalInOut) : 0;
+          const qawCapitalInOut = (qawMonth && qawMonth.capitalInOut !== "-") ? parseFloat(qawMonth.capitalInOut) : 0;
+
+          const totalCash = qtfCash + qawCash;
+          const totalCapitalInOut = qtfCapitalInOut + qawCapitalInOut;
+
+          navBasedResult[year].months[month].cash = totalCash.toFixed(2);
+          navBasedResult[year].months[month].capitalInOut = totalCapitalInOut.toFixed(2);
+          yearTotalCash += totalCash;
+          yearTotalCapitalInOut += totalCapitalInOut;
         }
+
+        navBasedResult[year].totalCash = yearTotalCash;
+        navBasedResult[year].totalCapitalInOut = yearTotalCapitalInOut;
       }
-      return combined;
+
+      return navBasedResult;
     }
 
     // QAW++: Calculate from historical data
     const historicalData = await this.getHistoricalData(qcode, scheme);
+    return this.computeMonthlyPnLFromHistoricalData(historicalData, scheme === "Scheme QAW++");
+  }
+
+  private static computeMonthlyPnLFromHistoricalData(
+    historicalData: { date: Date; nav: number; prevNav: number | null; pnl: number; capitalInOut: number }[],
+    useFirstPrevNav: boolean
+  ): MonthlyPnL {
     const monthlyPnl: MonthlyPnL = {};
     const monthNames = [
       "January", "February", "March", "April", "May", "June",
@@ -858,7 +862,6 @@ export class PortfolioApi {
     // Group data by year and month
     const grouped: Record<string, Record<string, { startNav: number; endNav: number; pnl: number; capitalInOut: number }>> = {};
 
-    // Track if we've set the first month's startNav (for QAW++ baseline handling)
     let isFirstMonthSet = false;
 
     for (let i = 0; i < historicalData.length; i++) {
@@ -869,11 +872,11 @@ export class PortfolioApi {
 
       if (!grouped[year]) grouped[year] = {};
       if (!grouped[year][month]) {
-        // For QAW++ first month, use prevNav as baseline (matching Satidham's approach)
+        // For first month with useFirstPrevNav, use prevNav as baseline (matching Satidham's approach)
         // For subsequent months, use previous data point's NAV
         let startNav: number;
-        if (!isFirstMonthSet && scheme === "Scheme QAW++") {
-          startNav = historicalData[0]?.prevNav ?? 100; // Use prevNav as baseline, fallback to 100
+        if (!isFirstMonthSet && useFirstPrevNav) {
+          startNav = historicalData[0]?.prevNav ?? 100;
           isFirstMonthSet = true;
         } else if (i > 0) {
           startNav = historicalData[i - 1]?.nav || entry.nav;
@@ -942,64 +945,53 @@ export class PortfolioApi {
       return this.DINESH_HARDCODED_DATA["Scheme QTF"].data.quarterlyPnl;
     }
 
-    // Total Portfolio: Combine QTF hardcoded + QAW++ calculated
+    // Total Portfolio: Use unified rebased NAV series for percentages,
+    // overlay per-scheme cash (since QTF historical data has pnl=0)
     if (scheme === "Total Portfolio") {
+      // 1. Get NAV-based percentages from the unified rebased series
+      const unifiedHistoricalData = await this.getHistoricalData(qcode, "Total Portfolio");
+      const navBasedResult = this.computeQuarterlyPnLFromHistoricalData(unifiedHistoricalData, false);
+
+      // 2. Get per-scheme cash data
       const qtfQuarterlyPnl = this.DINESH_HARDCODED_DATA["Scheme QTF"].data.quarterlyPnl;
       const qawQuarterlyPnl = await this.calculateQuarterlyPnL(qcode, "Scheme QAW++");
 
-      // Merge: QTF has 2025 data, QAW++ has 2026+ data
-      const combined: QuarterlyPnL = {};
+      // 3. Overlay cash from per-scheme data into the NAV-based result
+      for (const year of Object.keys(navBasedResult)) {
+        let yearTotalCash = 0;
 
-      // Copy QTF data
-      for (const year of Object.keys(qtfQuarterlyPnl)) {
-        combined[year] = {
-          percent: { ...qtfQuarterlyPnl[year].percent },
-          cash: { ...qtfQuarterlyPnl[year].cash },
-          yearCash: qtfQuarterlyPnl[year].yearCash,
-        };
-      }
+        for (const q of ["q1", "q2", "q3", "q4"] as const) {
+          if (navBasedResult[year].percent[q] === "0" && !qtfQuarterlyPnl[year]?.cash[q] && !qawQuarterlyPnl[year]?.cash[q]) continue;
 
-      // Merge QAW++ data
-      for (const year of Object.keys(qawQuarterlyPnl)) {
-        if (!combined[year]) {
-          combined[year] = qawQuarterlyPnl[year];
-        } else {
-          // Merge quarters if same year exists in both
-          for (const q of ["q1", "q2", "q3", "q4"] as const) {
-            const qawPercent = parseFloat(qawQuarterlyPnl[year].percent[q]) || 0;
-            const qawCash = parseFloat(qawQuarterlyPnl[year].cash[q]) || 0;
-            if (qawPercent !== 0 || qawCash !== 0) {
-              const existingPercent = parseFloat(combined[year].percent[q]) || 0;
-              const existingCash = parseFloat(combined[year].cash[q]) || 0;
-              combined[year].percent[q] = (existingPercent + qawPercent).toFixed(2);
-              combined[year].cash[q] = (existingCash + qawCash).toFixed(2);
-            }
-          }
-          // Recalculate totals
-          const totalPercent = ["q1", "q2", "q3", "q4"].reduce(
-            (sum, q) => sum + (parseFloat(combined[year].percent[q as keyof typeof combined[string]["percent"]]) || 0),
-            0
-          );
-          const totalCash = ["q1", "q2", "q3", "q4"].reduce(
-            (sum, q) => sum + (parseFloat(combined[year].cash[q as keyof typeof combined[string]["cash"]]) || 0),
-            0
-          );
-          combined[year].percent.total = totalPercent.toFixed(2);
-          combined[year].cash.total = totalCash.toFixed(2);
-          combined[year].yearCash = totalCash.toFixed(2);
+          const qtfCash = parseFloat(qtfQuarterlyPnl[year]?.cash[q] || "0") || 0;
+          const qawCash = parseFloat(qawQuarterlyPnl[year]?.cash[q] || "0") || 0;
+          const totalCash = qtfCash + qawCash;
+
+          navBasedResult[year].cash[q] = totalCash.toFixed(2);
+          yearTotalCash += totalCash;
         }
+
+        navBasedResult[year].cash.total = yearTotalCash.toFixed(2);
+        navBasedResult[year].yearCash = yearTotalCash.toFixed(2);
       }
-      return combined;
+
+      return navBasedResult;
     }
 
     // QAW++: Calculate from historical data
     const historicalData = await this.getHistoricalData(qcode, scheme);
+    return this.computeQuarterlyPnLFromHistoricalData(historicalData, scheme === "Scheme QAW++");
+  }
+
+  private static computeQuarterlyPnLFromHistoricalData(
+    historicalData: { date: Date; nav: number; prevNav: number | null; pnl: number; capitalInOut: number }[],
+    useFirstPrevNav: boolean
+  ): QuarterlyPnL {
     const quarterlyPnl: QuarterlyPnL = {};
 
     // Group data by year and quarter
     const grouped: Record<string, Record<string, { startNav: number; endNav: number; pnl: number }>> = {};
 
-    // Track if we've set the first quarter's startNav (for QAW++ baseline handling)
     let isFirstQuarterSet = false;
 
     for (let i = 0; i < historicalData.length; i++) {
@@ -1010,11 +1002,11 @@ export class PortfolioApi {
 
       if (!grouped[year]) grouped[year] = {};
       if (!grouped[year][quarter]) {
-        // For QAW++ first quarter, use prevNav as baseline (matching Satidham's approach)
+        // For first quarter with useFirstPrevNav, use prevNav as baseline (matching Satidham's approach)
         // For subsequent quarters, use previous data point's NAV
         let startNav: number;
-        if (!isFirstQuarterSet && scheme === "Scheme QAW++") {
-          startNav = historicalData[0]?.prevNav ?? 100; // Use prevNav as baseline, fallback to 100
+        if (!isFirstQuarterSet && useFirstPrevNav) {
+          startNav = historicalData[0]?.prevNav ?? 100;
           isFirstQuarterSet = true;
         } else if (i > 0) {
           startNav = historicalData[i - 1]?.nav || entry.nav;
