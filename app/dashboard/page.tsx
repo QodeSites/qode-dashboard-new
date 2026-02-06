@@ -826,6 +826,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                 trailingReturns={convertedStats.trailingReturns}
                 drawdown={convertedStats.drawdown}
                 lastDate={lastDate}
+                adjustBenchmarkStartDate={true}
               />
             </div>
           </div>
