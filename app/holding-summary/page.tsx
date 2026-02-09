@@ -600,7 +600,7 @@ const HoldingsSummaryPage = () => {
             const filename = `${clientName}_holding_summary_${dateStr}.csv`;
 
             csvData.push(['Portfolio Holdings Summary', '']);
-            csvData.push(['Generated On', new Date().toLocaleDateString('en-IN')]);
+            csvData.push(['Generated On', formatDate(new Date())]);
             if (lastUpdatedDate) {
                 csvData.push(['Data As Of', formatDate(lastUpdatedDate)]);
             }
@@ -1318,7 +1318,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
         </div>
         <div class="header-right">
           <div class="date">
-            Generated: ${new Date().toLocaleDateString('en-IN')}${lastUpdatedDate ? ` | Data as of: ${formatDate(lastUpdatedDate)}` : ''}
+            Generated: ${formatDate(new Date())}${lastUpdatedDate ? ` | Data as of: ${formatDate(lastUpdatedDate)}` : ''}
           </div>
         </div>
       </div>
