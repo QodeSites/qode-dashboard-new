@@ -618,9 +618,9 @@ const HoldingsSummaryPage = () => {
             csvData.push(['', '']);
 
             csvData.push(['Portfolio Statistics', '']);
-            csvData.push(['Total Investment Value', formatCurrency(holdingsData.totalBuyValue)]);
-            csvData.push(['Current Portfolio Value', formatCurrency(holdingsData.totalCurrentValue)]);
-            csvData.push(['Total Profit/Loss Amount', formatCurrency(holdingsData.totalPnl)]);
+            csvData.push(['Total Investment Value (₹)', formatCurrency(holdingsData.totalBuyValue)]);
+            csvData.push(['Current Portfolio Value (₹)', formatCurrency(holdingsData.totalCurrentValue)]);
+            csvData.push(['Total Profit/Loss Amount (₹)', formatCurrency(holdingsData.totalPnl)]);
             csvData.push(['Total Profit/Loss Percentage', formatPercentage(holdingsData.totalPnlPercent)]);
             csvData.push(['Total Holdings Count', holdingsData.holdingsCount || 0]);
             csvData.push(['', '']);
@@ -630,7 +630,7 @@ const HoldingsSummaryPage = () => {
 
             if (total > 0) {
                 csvData.push(['Asset Allocation', '']);
-                csvData.push(['Asset Type', 'Value', 'Percentage']);
+                csvData.push(['Asset Type', 'Value (₹)', 'Percentage']);
 
                 if (assetAllocation.equity > 0) {
                     csvData.push(['Equity', formatCurrency(assetAllocation.equity), formatPercentage((assetAllocation.equity / total) * 100)]);
@@ -646,7 +646,7 @@ const HoldingsSummaryPage = () => {
 
             if (holdingsData.categoryBreakdown && Object.keys(holdingsData.categoryBreakdown).length > 0) {
                 csvData.push(['Category Breakdown', '']);
-                csvData.push(['Category', 'Buy Value', 'Current Value', 'P&L', 'Holdings Count']);
+                csvData.push(['Category', 'Buy Value (₹)', 'Current Value (₹)', 'P&L (₹)', 'Holdings Count']);
 
                 Object.entries(holdingsData.categoryBreakdown).forEach(([category, data]) => {
                     csvData.push([
@@ -662,7 +662,7 @@ const HoldingsSummaryPage = () => {
 
             if (holdingsData.brokerBreakdown && Object.keys(holdingsData.brokerBreakdown).length > 0) {
                 csvData.push(['Broker Breakdown', '']);
-                csvData.push(['Broker', 'Buy Value', 'Current Value', 'P&L', 'Holdings Count']);
+                csvData.push(['Broker', 'Buy Value (₹)', 'Current Value (₹)', 'P&L (₹)', 'Holdings Count']);
 
                 Object.entries(holdingsData.brokerBreakdown).forEach(([broker, data]) => {
                     csvData.push([
@@ -811,9 +811,9 @@ const HoldingsSummaryPage = () => {
 
             headerRowIndices.push(wsData.length);
             wsData.push(["", 'Portfolio Statistics']);
-            wsData.push(["", 'Total Buy Value', parseFloat(String(holdingsData.totalBuyValue)) || 0]);
-            wsData.push(["", 'Total Current Value', parseFloat(String(holdingsData.totalCurrentValue)) || 0]);
-            wsData.push(["", 'Total P&L', parseFloat(String(holdingsData.totalPnl)) || 0]);
+            wsData.push(["", 'Total Buy Value (₹)', parseFloat(String(holdingsData.totalBuyValue)) || 0]);
+            wsData.push(["", 'Total Current Value (₹)', parseFloat(String(holdingsData.totalCurrentValue)) || 0]);
+            wsData.push(["", 'Total P&L (₹)', parseFloat(String(holdingsData.totalPnl)) || 0]);
             wsData.push(["", 'Total P&L (%)', parseFloat(String(holdingsData.totalPnlPercent)) || 0]);
             wsData.push(["", 'Total Holdings Count', parseFloat(String(holdingsData.holdingsCount)) || 0]);
             wsData.push([]);
@@ -821,7 +821,7 @@ const HoldingsSummaryPage = () => {
             headerRowIndices.push(wsData.length);
             wsData.push(["", 'Asset Allocation']);
             subHeaderRowIndices.push(wsData.length);
-            wsData.push(["", 'Type', 'Value', 'Percentage (%)']);
+            wsData.push(["", 'Type', 'Value (₹)', 'Percentage (%)']);
             wsData.push(["", 'Equity', parseFloat(String(assetAllocation.equity)) || 0, total > 0 ? (assetAllocation.equity / total) * 100 : 0]);
             wsData.push(["", 'Debt', parseFloat(String(assetAllocation.debt)) || 0, total > 0 ? (assetAllocation.debt / total) * 100 : 0]);
             wsData.push(["", 'Hybrid', parseFloat(String(assetAllocation.hybrid)) || 0, total > 0 ? (assetAllocation.hybrid / total) * 100 : 0]);
@@ -831,7 +831,7 @@ const HoldingsSummaryPage = () => {
             headerRowIndices.push(wsData.length);
             wsData.push(["", 'Broker Breakdown']);
             subHeaderRowIndices.push(wsData.length);
-            wsData.push(["", 'Broker', 'Buy Value', 'Current Value', 'P&L', 'Holdings Count']);
+            wsData.push(["", 'Broker', 'Buy Value (₹)', 'Current Value (₹)', 'P&L (₹)', 'Holdings Count']);
             Object.entries(holdingsData.brokerBreakdown || {}).forEach(([broker, data]) => {
                 wsData.push([
                     "", broker,
@@ -847,8 +847,8 @@ const HoldingsSummaryPage = () => {
             wsData.push(["", 'Stock Holdings Detail']);
             subHeaderRowIndices.push(wsData.length);
             wsData.push([
-                "", 'Symbol', 'Exchange', 'Quantity', 'Avg Price', 'LTP',
-                'Buy Value', 'Current Value', 'P&L Amount', 'P&L (%)', 'Broker', 'Category'
+                "", 'Symbol', 'Exchange', 'Quantity', 'Avg Price (₹)', 'LTP (₹)',
+                'Buy Value (₹)', 'Current Value (₹)', 'P&L Amount (₹)', 'P&L (%)', 'Broker', 'Category'
             ]);
             stocks.forEach(holding => {
                 wsData.push([
@@ -869,8 +869,8 @@ const HoldingsSummaryPage = () => {
             wsData.push(["", 'Mutual Fund Holdings Detail']);
             subHeaderRowIndices.push(wsData.length);
             wsData.push([
-                "", 'Symbol', 'ISIN', 'Quantity', 'Avg Price', 'LTP',
-                'Buy Value', 'Current Value', 'P&L Amount', 'P&L (%)', 'Broker', 'Category'
+                "", 'Symbol', 'ISIN', 'Quantity', 'Avg Price (₹)', 'LTP (₹)',
+                'Buy Value (₹)', 'Current Value (₹)', 'P&L Amount (₹)', 'P&L (%)', 'Broker', 'Category'
             ]);
             mutualFunds.forEach(holding => {
                 wsData.push([
@@ -1332,11 +1332,11 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
         <div class="summary-grid">
           <div class="summary-item stat-card">
             <div class="label">Total Investment</div>
-            <div class="value">${fmtNum(holdingsData.totalBuyValue)}</div>
+            <div class="value">₹${fmtNum(holdingsData.totalBuyValue)}</div>
           </div>
           <div class="summary-item stat-card">
             <div class="label">Current Value</div>
-            <div class="value">${fmtNum(holdingsData.totalCurrentValue)}</div>
+            <div class="value">₹${fmtNum(holdingsData.totalCurrentValue)}</div>
           </div>
           <div class="summary-item stat-card">
             <div class="label">Return (%)</div>
@@ -1345,9 +1345,9 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
             </div>
           </div>
           <div class="summary-item stat-card">
-            <div class="label">Return (INR)</div>
+            <div class="label">Return (₹)</div>
             <div class="value ${holdingsData.totalPnl >= 0 ? 'positive' : 'negative'}">
-              ${holdingsData.totalPnl >= 0 ? '' : '-'} ${fmtNum(Math.abs(holdingsData.totalPnl))}
+              ${holdingsData.totalPnl >= 0 ? '' : '-'}₹${fmtNum(Math.abs(holdingsData.totalPnl))}
             </div>
           </div>
         </div>
@@ -1371,7 +1371,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
                         <div class="legend-color equity"></div>
                         <div class="legend-text">Equity Holdings</div>
                     </div>
-                    <div class="legend-value">${fmtNum(assetAllocation.equity)}</div>
+                    <div class="legend-value">₹${fmtNum(assetAllocation.equity)}</div>
                     </div>` : ''}
                 ${assetAllocation.debt > 0 ? `
                     <div class="legend-item">
@@ -1379,7 +1379,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
                         <div class="legend-color debt"></div>
                         <div class="legend-text">Debt Holdings</div>
                     </div>
-                    <div class="legend-value">${fmtNum(assetAllocation.debt)}</div>
+                    <div class="legend-value">₹${fmtNum(assetAllocation.debt)}</div>
                     </div>` : ''}
                 ${assetAllocation.hybrid > 0 ? `
                     <div class="legend-item">
@@ -1387,7 +1387,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
                         <div class="legend-color hybrid"></div>
                         <div class="legend-text">Hybrid Holdings</div>
                     </div>
-                    <div class="legend-value">${fmtNum(assetAllocation.hybrid)}</div>
+                    <div class="legend-value">₹${fmtNum(assetAllocation.hybrid)}</div>
                     </div>` : ''}
                 </div>
             `
@@ -1401,11 +1401,11 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
         <tr>
           <th class="text-left">Fund Name</th>
           <th class="text-right">Quantity</th>
-          <th class="text-right">Average Cost</th>
-          <th class="text-right">Latest Trade Price</th>
-          <th class="text-right">Invested Amount</th>
-          <th class="text-right">Current Value</th>
-          <th class="text-right">Profit & Loss</th>
+          <th class="text-right">Average Cost (₹)</th>
+          <th class="text-right">Latest Trade Price (₹)</th>
+          <th class="text-right">Invested Amount (₹)</th>
+          <th class="text-right">Current Value (₹)</th>
+          <th class="text-right">Profit & Loss (₹)</th>
           <th class="text-right">Profit & Loss (%)</th>
           <th>Category</th>
         </tr>
