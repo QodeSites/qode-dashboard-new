@@ -64,8 +64,6 @@ interface Account {
 }
 
 const formatter = new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
 });
@@ -257,7 +255,7 @@ const HoldingsTable = ({
                                         <div>
                                             <div className="font-medium text-card-text">{holding.symbol}</div>
                                             <div className="text-gray-500 text-xs">
-                                                {isMutualFund ? holding.broker : `${holding.exchange} • ${holding.broker}`}
+                                                {isMutualFund ? holding.broker : (holding.exchange && holding.exchange !== 'NaN' ? `${holding.exchange} • ${holding.broker}` : holding.broker)}
                                             </div>
                                         </div>
                                     </TableCell>
@@ -548,11 +546,11 @@ const HoldingsSummaryPage = () => {
         ];
 
         all.forEach(holding => {
-            const isStock = holding.exchange && (holding.exchange.includes('NSE') || holding.exchange.includes('BSE'));
+            const isMutualFund = holding.type === 'mutual_fund';
 
-            const key = isStock
-                ? `${holding.symbol}-${holding.exchange}-${holding.broker}`
-                : `${holding.symbol}-${holding.isin || 'no-isin'}-${holding.broker}-${holding.avgPrice.toFixed(4)}`;
+            const key = isMutualFund
+                ? `${holding.symbol}-${holding.isin || 'no-isin'}-${holding.broker}-${holding.avgPrice.toFixed(4)}`
+                : `${holding.symbol}-${holding.exchange}-${holding.broker}`;
 
             if (!seen.has(key)) {
                 seen.add(key);
@@ -562,8 +560,8 @@ const HoldingsSummaryPage = () => {
 
         const sortAlpha = (a: Holding, b: Holding) => a.symbol.localeCompare(b.symbol);
         return {
-            stocks: uniqueHoldings.filter(h => h.exchange?.includes('NSE') || h.exchange?.includes('BSE')).sort(sortAlpha),
-            mutualFunds: uniqueHoldings.filter(h => !h.exchange || (!h.exchange.includes('NSE') && !h.exchange.includes('BSE'))).sort(sortAlpha)
+            stocks: uniqueHoldings.filter(h => h.type !== 'mutual_fund').sort(sortAlpha),
+            mutualFunds: uniqueHoldings.filter(h => h.type === 'mutual_fund').sort(sortAlpha)
         };
     };
 
