@@ -316,7 +316,11 @@ const HoldingsTable = ({
                                     >
                                         {formatter.format(totals.pnl)}
                                     </TableCell>
-                                    <TableCell></TableCell>
+                                    <TableCell
+                                        className={`py-3 text-sm font-bold text-right ${totals.pnl >= 0 ? "text-green-600" : "text-red-600"}`}
+                                    >
+                                        {totals.investedAmount > 0 ? `${(totals.pnl / totals.investedAmount * 100).toFixed(2)}%` : '0.00%'}
+                                    </TableCell>
                                     <TableCell></TableCell>
                                 </TableRow>
                             )}
@@ -556,9 +560,10 @@ const HoldingsSummaryPage = () => {
             }
         });
 
+        const sortAlpha = (a: Holding, b: Holding) => a.symbol.localeCompare(b.symbol);
         return {
-            stocks: uniqueHoldings.filter(h => h.exchange?.includes('NSE') || h.exchange?.includes('BSE')),
-            mutualFunds: uniqueHoldings.filter(h => !h.exchange || (!h.exchange.includes('NSE') && !h.exchange.includes('BSE')))
+            stocks: uniqueHoldings.filter(h => h.exchange?.includes('NSE') || h.exchange?.includes('BSE')).sort(sortAlpha),
+            mutualFunds: uniqueHoldings.filter(h => !h.exchange || (!h.exchange.includes('NSE') && !h.exchange.includes('BSE'))).sort(sortAlpha)
         };
     };
 
@@ -704,7 +709,7 @@ const HoldingsSummaryPage = () => {
                     formatCurrency(stockTotals.investedAmount),
                     formatCurrency(stockTotals.currentValue),
                     formatCurrency(stockTotals.pnl),
-                    '',
+                    formatPercentage(stockTotals.investedAmount > 0 ? (stockTotals.pnl / stockTotals.investedAmount) * 100 : 0),
                     ''
                 ]);
                 csvData.push(['', '']);
@@ -742,7 +747,7 @@ const HoldingsSummaryPage = () => {
                     formatCurrency(mfTotals.investedAmount),
                     formatCurrency(mfTotals.currentValue),
                     formatCurrency(mfTotals.pnl),
-                    '',
+                    formatPercentage(mfTotals.investedAmount > 0 ? (mfTotals.pnl / mfTotals.investedAmount) * 100 : 0),
                     '', ''
                 ]);
                 csvData.push(['', '']);
@@ -1425,6 +1430,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
                 const invested = arr.reduce((s, h) => s + h.buyValue, 0);
                 const current = arr.reduce((s, h) => s + h.valueAsOfToday, 0);
                 const pnl = arr.reduce((s, h) => s + h.pnlAmount, 0);
+                const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
                 const pnlCls = pnl >= 0 ? 'profit' : 'loss';
                 return `
         <tr class="total-row">
@@ -1432,7 +1438,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
           <td class="text-right"><strong>${fmtNum(invested)}</strong></td>
           <td class="text-right"><strong>${fmtNum(current)}</strong></td>
           <td class="text-right ${pnlCls}"><strong>${fmtNum(pnl)}</strong></td>
-          <td></td>
+          <td class="text-right ${pnlCls}"><strong>${fmtNum(pnlPct)}%</strong></td>
           <td></td>
         </tr>
       `;
