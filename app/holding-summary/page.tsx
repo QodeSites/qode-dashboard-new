@@ -802,7 +802,10 @@ const HoldingsSummaryPage = () => {
 
             headerRowIndices.push(wsData.length);
             wsData.push(["", 'Portfolio Holdings Summary']);
-            wsData.push(["", 'Generated on:', new Date().toLocaleString('en-IN')]);
+            wsData.push(["", 'Generated on:', formatDate(new Date())]);
+            if (lastUpdatedDate) {
+                wsData.push(["", 'Data as of:', formatDate(lastUpdatedDate)]);
+            }
             wsData.push(["", 'Account:', session?.user?.name || 'N/A']);
             wsData.push([]);
 
