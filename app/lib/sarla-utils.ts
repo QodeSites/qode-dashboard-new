@@ -2920,7 +2920,10 @@ if (scheme === "Scheme PMS QAW") {
         const returns = await PortfolioApi.getPortfolioReturns(qcode, scheme);
         const historicalData = await PortfolioApi.getHistoricalData(qcode, scheme);
         const cashFlows = await PortfolioApi.getCashFlows(qcode, scheme);
-        const holdings = await PortfolioApi.getHoldings(qcode);
+        const holdingsBase = await PortfolioApi.getHoldings(qcode);
+        const holdings = qcode === "QAC00046"
+          ? [...holdingsBase, ...(await PortfolioApi.getHoldings("QAC00066"))]
+          : holdingsBase;
         const holdingsSummary = PortfolioApi.processHoldingsSummary(holdings);
         const drawdownMetrics = PortfolioApi.calculateDrawdownMetrics(historicalData.map(d => ({ date: PortfolioApi.normalizeDate(d.date)!, nav: d.nav })));
         const trailingReturns = await PortfolioApi.calculateTrailingReturns(qcode, scheme, drawdownMetrics);
