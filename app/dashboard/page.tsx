@@ -1166,12 +1166,34 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
     return (
       <div className="space-y-6">
-        <Button
-          variant="outline"
-          className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
-        >
-          {selectedStrategy} {!isActive ? "(Inactive)" : ""}
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
+          >
+            {selectedStrategy} {!isActive ? "(Inactive)" : ""}
+          </Button>
+          <div className="flex gap-2 ml-auto">
+            <Button
+              onClick={() => handleDownloadPDF(convertedStats, selectedStrategy, isTotalPortfolio)}
+              disabled={exporting}
+              className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+              variant="default"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              PDF
+            </Button>
+            <Button
+              onClick={() => handleDownloadExcel(convertedStats, selectedStrategy, isTotalPortfolio)}
+              disabled={exporting}
+              className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+              variant="default"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Excel
+            </Button>
+          </div>
+        </div>
         <StatsCards
           stats={convertedStats}
           accountType="sarla"
