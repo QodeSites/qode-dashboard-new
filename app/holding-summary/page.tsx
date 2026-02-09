@@ -938,7 +938,7 @@ const HoldingsSummaryPage = () => {
             const numberStyle = {
                 font: { name: "Aptos Narrow", sz: 11 },
                 alignment: { horizontal: "right", vertical: "center" },
-                numFmt: "0.00",
+                numFmt: "#,##,##0.00",
                 border: tableBorder
             };
 
@@ -981,14 +981,14 @@ const HoldingsSummaryPage = () => {
 
                     if (typeof ws[cellAddress].v === 'number') {
                         ws[cellAddress].t = 'n';
-                        ws[cellAddress].z = '0.00';
+                        ws[cellAddress].z = '#,##,##0.00';
                     } else if (typeof ws[cellAddress].v === 'string') {
                         const trimmed = ws[cellAddress].v.trim();
                         const num = parseFloat(trimmed);
                         if (!isNaN(num) && trimmed === String(num)) {
                             ws[cellAddress].v = num;
                             ws[cellAddress].t = 'n';
-                            ws[cellAddress].z = '0.00';
+                            ws[cellAddress].z = '#,##,##0.00';
                         } else {
                             ws[cellAddress].t = 's';
                         }
