@@ -704,7 +704,7 @@ const HoldingsSummaryPage = () => {
                     formatCurrency(stockTotals.investedAmount),
                     formatCurrency(stockTotals.currentValue),
                     formatCurrency(stockTotals.pnl),
-                    formatPercentage(stockTotals.investedAmount > 0 ? (stockTotals.pnl / stockTotals.investedAmount) * 100 : 0),
+                    '',
                     ''
                 ]);
                 csvData.push(['', '']);
@@ -742,7 +742,7 @@ const HoldingsSummaryPage = () => {
                     formatCurrency(mfTotals.investedAmount),
                     formatCurrency(mfTotals.currentValue),
                     formatCurrency(mfTotals.pnl),
-                    formatPercentage(mfTotals.investedAmount > 0 ? (mfTotals.pnl / mfTotals.investedAmount) * 100 : 0),
+                    '',
                     '', ''
                 ]);
                 csvData.push(['', '']);
