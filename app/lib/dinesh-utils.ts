@@ -416,9 +416,10 @@ export class PortfolioApi {
       return 0;
     }
 
-    // Total Portfolio: Combine QAW++ deposits (QTF is closed)
+    // Total Portfolio: Net flow from all cash flows (QTF + QAW++)
     if (scheme === "Total Portfolio") {
-      return this.getAmountDeposited(qcode, "Scheme QAW++");
+      const cashFlows = await this.getCashFlows(qcode, "Total Portfolio");
+      return cashFlows.reduce((sum, flow) => sum + flow.amount, 0);
     }
 
     // QAW++: Fetch from database (only from QAW start date onwards)
@@ -1033,7 +1034,8 @@ export class PortfolioApi {
         yearCash: "0",
       };
 
-      let yearTotalPercent = 0;
+      let compoundedReturn = 1;
+      let hasValidData = false;
       let yearTotalCash = 0;
 
       for (const q of ["q1", "q2", "q3", "q4"]) {
@@ -1042,12 +1044,13 @@ export class PortfolioApi {
           const percent = ((data.endNav / data.startNav) - 1) * 100;
           quarterlyPnl[year].percent[q as keyof typeof quarterlyPnl[string]["percent"]] = percent.toFixed(2);
           quarterlyPnl[year].cash[q as keyof typeof quarterlyPnl[string]["cash"]] = data.pnl.toFixed(2);
-          yearTotalPercent += percent;
+          compoundedReturn *= (1 + percent / 100);
+          hasValidData = true;
           yearTotalCash += data.pnl;
         }
       }
 
-      quarterlyPnl[year].percent.total = yearTotalPercent.toFixed(2);
+      quarterlyPnl[year].percent.total = hasValidData ? ((compoundedReturn - 1) * 100).toFixed(2) : "0";
       quarterlyPnl[year].cash.total = yearTotalCash.toFixed(2);
       quarterlyPnl[year].yearCash = yearTotalCash.toFixed(2);
     }
