@@ -1425,7 +1425,6 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
                 const invested = arr.reduce((s, h) => s + h.buyValue, 0);
                 const current = arr.reduce((s, h) => s + h.valueAsOfToday, 0);
                 const pnl = arr.reduce((s, h) => s + h.pnlAmount, 0);
-                const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
                 const pnlCls = pnl >= 0 ? 'profit' : 'loss';
                 return `
         <tr class="total-row">
@@ -1433,7 +1432,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
           <td class="text-right"><strong>${fmtNum(invested)}</strong></td>
           <td class="text-right"><strong>${fmtNum(current)}</strong></td>
           <td class="text-right ${pnlCls}"><strong>${fmtNum(pnl)}</strong></td>
-          <td class="text-right ${pnlCls}"><strong>${fmtNum(pnlPct)}%</strong></td>
+          <td></td>
           <td></td>
         </tr>
       `;
