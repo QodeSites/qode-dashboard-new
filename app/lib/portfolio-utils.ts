@@ -268,7 +268,7 @@ class JainamManagedStrategy implements DataFetchingStrategy {
 
 
   async getHoldings(qcode: string): Promise<Holding[]> {
-    const holdings = await prisma.equity_holding.findMany({
+    const holdings = await (prisma.equity_holding_test as any).findMany({
       where: {
         qcode,
         // Get the latest holdings for each symbol
@@ -515,7 +515,7 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
   }
 
   async getHoldings(qcode: string): Promise<Holding[]> {
-    const holdings = await prisma.equity_holding.findMany({
+    const holdings = await (prisma.equity_holding_test as any).findMany({
       where: {
         qcode,
       },
@@ -732,7 +732,7 @@ class PmsStrategy implements DataFetchingStrategy {
     });
     const codes = custodianCodes.map(c => c.custodian_code);
 
-    const holdings = await prisma.equity_holding.findMany({
+    const holdings = await (prisma.equity_holding_test as any).findMany({
       where: {
         qcode: { in: codes }, // or however you map PMS holdings
       },

@@ -31,6 +31,51 @@ interface DrawdownMetrics {
   ddCurve: { date: string; drawdown: number }[];
 }
 
+interface Holding {
+  symbol: string;
+  exchange: string;
+  quantity: number;
+  avgPrice: number;
+  ltp: number;
+  buyValue: number;
+  valueAsOfToday: number;
+  pnlAmount: number;
+  percentPnl: number;
+  broker: string;
+  debtEquity: string;
+  subCategory: string;
+  date: Date;
+  type?: 'equity' | 'mutual_fund';
+  isin?: string;
+}
+
+interface HoldingsSummary {
+  totalBuyValue: number;
+  totalCurrentValue: number;
+  totalPnl: number;
+  totalPnlPercent: number;
+  holdingsCount: number;
+  equityHoldings: Holding[];
+  debtHoldings: Holding[];
+  mutualFundHoldings: Holding[];
+  categoryBreakdown: {
+    [category: string]: {
+      buyValue: number;
+      currentValue: number;
+      pnl: number;
+      count: number;
+    };
+  };
+  brokerBreakdown: {
+    [broker: string]: {
+      buyValue: number;
+      currentValue: number;
+      pnl: number;
+      count: number;
+    };
+  };
+}
+
 interface PortfolioData {
   amountDeposited: string;
   currentExposure: string;
@@ -45,6 +90,8 @@ interface PortfolioData {
   monthlyPnl: MonthlyPnL;
   cashFlows: CashFlow[];
   strategyName: string;
+  holdings: Holding[];
+  holdingsSummary: HoldingsSummary;
 }
 
 interface Metadata {
@@ -2873,6 +2920,8 @@ if (scheme === "Scheme PMS QAW") {
         const returns = await PortfolioApi.getPortfolioReturns(qcode, scheme);
         const historicalData = await PortfolioApi.getHistoricalData(qcode, scheme);
         const cashFlows = await PortfolioApi.getCashFlows(qcode, scheme);
+        const holdings = await PortfolioApi.getHoldings(qcode);
+        const holdingsSummary = PortfolioApi.processHoldingsSummary(holdings);
         const drawdownMetrics = PortfolioApi.calculateDrawdownMetrics(historicalData.map(d => ({ date: PortfolioApi.normalizeDate(d.date)!, nav: d.nav })));
         const trailingReturns = await PortfolioApi.calculateTrailingReturns(qcode, scheme, drawdownMetrics);
         const monthlyPnl = await PortfolioApi.calculateMonthlyPnL(qcode, scheme);
@@ -2923,6 +2972,8 @@ if (scheme === "Scheme PMS QAW") {
           monthlyPnl,
           cashFlows,
           strategyName: scheme,
+          holdings,
+          holdingsSummary,
         };
 
         const metadata: Metadata = {
@@ -2958,5 +3009,187 @@ if (scheme === "Scheme PMS QAW") {
         { status: 500 }
       );
     }
+  }
+
+  static async getHoldings(qcode: string): Promise<Holding[]> {
+    // Fetch equity holdings for the latest date only
+    const equityHoldings = await prisma.$queryRaw<{
+      symbol: string;
+      exchange: string;
+      quantity: number;
+      avg_price: number;
+      ltp: number;
+      buy_value: number;
+      value_as_of_today: number;
+      pnl_amount: number;
+      percent_pnl: number;
+      broker: string;
+      debt_equity: string;
+      sub_category: string;
+      date: Date;
+    }[]>`
+      SELECT e.*
+      FROM equity_holding_test e
+      WHERE e.qcode = ${qcode}
+        AND e.quantity > 0
+        AND e.date = (
+          SELECT MAX(date)
+          FROM equity_holding_test
+          WHERE qcode = ${qcode} AND date IS NOT NULL
+        )
+    `;
+
+    // Fetch mutual fund holdings deduplicated by ISIN for the latest date
+    const mutualFundHoldings = await prisma.$queryRaw<{
+      isin: string;
+      symbol: string;
+      scheme_code: string;
+      quantity: number;
+      avg_price: number;
+      nav: number;
+      buy_value: number;
+      value_as_of_today: number;
+      pnl_amount: number;
+      percent_pnl: number;
+      broker: string;
+      debt_equity: string;
+      sub_category: string;
+      as_of_date: Date;
+      mastersheet_tag: string;
+    }[]>`
+      WITH latest_date AS (
+        SELECT MAX(as_of_date) as max_date
+        FROM mutual_fund_holding_sheet_test
+        WHERE qcode = ${qcode} AND as_of_date IS NOT NULL
+      ),
+      ranked_holdings AS (
+        SELECT
+          m.*,
+          ROW_NUMBER() OVER (
+            PARTITION BY m.isin
+            ORDER BY m.quantity DESC, m.buy_value DESC
+          ) as rn
+        FROM mutual_fund_holding_sheet_test m
+        CROSS JOIN latest_date ld
+        WHERE m.qcode = ${qcode}
+          AND m.quantity > 0
+          AND m.isin IS NOT NULL
+          AND m.isin != ''
+          AND m.as_of_date = ld.max_date
+      )
+      SELECT
+        isin,
+        MAX(symbol) as symbol,
+        MAX(scheme_code) as scheme_code,
+        SUM(quantity) as quantity,
+        SUM(buy_value) / NULLIF(SUM(quantity), 0) as avg_price,
+        MAX(nav) as nav,
+        SUM(buy_value) as buy_value,
+        SUM(value_as_of_today) as value_as_of_today,
+        SUM(pnl_amount) as pnl_amount,
+        (SUM(pnl_amount) / NULLIF(SUM(buy_value), 0) * 100) as percent_pnl,
+        MAX(broker) as broker,
+        MAX(debt_equity) as debt_equity,
+        MAX(sub_category) as sub_category,
+        MAX(as_of_date) as as_of_date,
+        MAX(mastersheet_tag) as mastersheet_tag
+      FROM ranked_holdings
+      WHERE rn = 1
+      GROUP BY isin
+    `;
+
+    const processedEquityHoldings: Holding[] = equityHoldings.map(holding => ({
+      symbol: holding.symbol || '',
+      exchange: holding.exchange || '',
+      quantity: Number(holding.quantity) || 0,
+      avgPrice: Number(holding.avg_price) || 0,
+      ltp: Number(holding.ltp) || 0,
+      buyValue: Number(holding.buy_value) || 0,
+      valueAsOfToday: Number(holding.value_as_of_today) || 0,
+      pnlAmount: Number(holding.pnl_amount) || 0,
+      percentPnl: Number(holding.percent_pnl) || 0,
+      broker: holding.broker || '',
+      debtEquity: holding.debt_equity || '',
+      subCategory: holding.sub_category || '',
+      date: holding.date || new Date(),
+      type: 'equity' as const,
+    }));
+
+    const isinMap = new Map<string, Holding>();
+
+    mutualFundHoldings.forEach(holding => {
+      const isin = holding.isin || '';
+      if (isin && !isinMap.has(isin)) {
+        isinMap.set(isin, {
+          symbol: holding.symbol || '',
+          exchange: 'MUTUAL_FUND',
+          quantity: Number(holding.quantity) || 0,
+          avgPrice: Number(holding.avg_price) || 0,
+          ltp: Number(holding.nav) || 0,
+          buyValue: Number(holding.buy_value) || 0,
+          valueAsOfToday: Number(holding.value_as_of_today) || 0,
+          pnlAmount: Number(holding.pnl_amount) || 0,
+          percentPnl: Number(holding.percent_pnl) || 0,
+          broker: holding.broker || '',
+          debtEquity: holding.debt_equity || '',
+          subCategory: holding.sub_category || '',
+          date: holding.as_of_date ? new Date(holding.as_of_date) : new Date(),
+          type: 'mutual_fund' as const,
+          isin: isin,
+        });
+      }
+    });
+
+    const processedMutualFundHoldings = Array.from(isinMap.values());
+
+    return [...processedEquityHoldings, ...processedMutualFundHoldings];
+  }
+
+  static processHoldingsSummary(holdings: Holding[]): HoldingsSummary {
+    const equityHoldings = holdings.filter(h => h.type === 'equity');
+    const debtHoldings = holdings.filter(h => h.debtEquity?.toLowerCase() === 'debt');
+    const mutualFundHoldings = holdings.filter(h => h.type === 'mutual_fund');
+
+    const totalBuyValue = holdings.reduce((sum, h) => sum + h.buyValue, 0);
+    const totalCurrentValue = holdings.reduce((sum, h) => sum + h.valueAsOfToday, 0);
+    const totalPnl = holdings.reduce((sum, h) => sum + h.pnlAmount, 0);
+    const totalPnlPercent = totalBuyValue > 0 ? (totalPnl / totalBuyValue) * 100 : 0;
+
+    const categoryBreakdown: { [category: string]: { buyValue: number; currentValue: number; pnl: number; count: number } } = {};
+    holdings.forEach(holding => {
+      const category = holding.subCategory || 'Other';
+      if (!categoryBreakdown[category]) {
+        categoryBreakdown[category] = { buyValue: 0, currentValue: 0, pnl: 0, count: 0 };
+      }
+      categoryBreakdown[category].buyValue += holding.buyValue;
+      categoryBreakdown[category].currentValue += holding.valueAsOfToday;
+      categoryBreakdown[category].pnl += holding.pnlAmount;
+      categoryBreakdown[category].count += 1;
+    });
+
+    const brokerBreakdown: { [broker: string]: { buyValue: number; currentValue: number; pnl: number; count: number } } = {};
+    holdings.forEach(holding => {
+      const broker = holding.broker || 'Unknown';
+      if (!brokerBreakdown[broker]) {
+        brokerBreakdown[broker] = { buyValue: 0, currentValue: 0, pnl: 0, count: 0 };
+      }
+      brokerBreakdown[broker].buyValue += holding.buyValue;
+      brokerBreakdown[broker].currentValue += holding.valueAsOfToday;
+      brokerBreakdown[broker].pnl += holding.pnlAmount;
+      brokerBreakdown[broker].count += 1;
+    });
+
+    return {
+      totalBuyValue,
+      totalCurrentValue,
+      totalPnl,
+      totalPnlPercent,
+      holdingsCount: holdings.length,
+      equityHoldings,
+      debtHoldings,
+      mutualFundHoldings,
+      categoryBreakdown,
+      brokerBreakdown,
+    };
   }
 }
