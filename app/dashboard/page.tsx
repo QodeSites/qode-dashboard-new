@@ -408,6 +408,7 @@ export default function Portfolio() {
   const { data: session, status } = useSession();
   const isSarla = session?.user?.icode === "QUS0007";
   const isSatidham = session?.user?.icode === "QUS0010";
+  const isDinesh = session?.user?.icode === "QUS00072";
   const router = useRouter();
   const searchParams = useSearchParams();
   const accountCode = searchParams.get("accountCode") || "AC5";
@@ -621,6 +622,32 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         };
 
         fetchSatidhamData();
+      } else if (isDinesh) {
+        const fetchDineshData = async () => {
+          try {
+            const res = await fetch(`/api/dinesh-api?qcode=QAC00053&accountCode=AC9`, { credentials: "include" });
+            if (!res.ok) {
+              const errorData = await res.json();
+              throw new Error(errorData.error || `Failed to load Dinesh data`);
+            }
+            const data: SarlaApiResponse = await res.json();
+            setSarlaData(data);
+
+            const strategies = Object.keys(data);
+            setAvailableStrategies(strategies);
+
+            if (strategies.length > 0) {
+              setSelectedStrategy(strategies[0]);
+            }
+
+            setIsLoading(false);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : `An unexpected error occurred`);
+            setIsLoading(false);
+          }
+        };
+
+        fetchDineshData();
       } else {
         const fetchAccounts = async () => {
           try {
@@ -644,10 +671,10 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         fetchAccounts();
       }
     }
-  }, [status, router, isSarla, isSatidham, accountCode]);
+  }, [status, router, isSarla, isSatidham, isDinesh, accountCode]);
 
   useEffect(() => {
-    if (selectedAccount && status === "authenticated" && !isSarla && !isSatidham) {
+    if (selectedAccount && status === "authenticated" && !isSarla && !isSatidham && !isDinesh) {
       const fetchAccountData = async () => {
         setIsLoading(true);
         setError(null);
@@ -782,7 +809,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   const renderCashFlowsTable = () => {
     let transactions: { date: string; amount: number }[] = [];
 
-    if ((isSarla || isSatidham) && sarlaData && selectedStrategy) {
+    if ((isSarla || isSatidham || isDinesh) && sarlaData && selectedStrategy) {
       transactions = sarlaData[selectedStrategy]?.data?.cashFlows || [];
     } else if (Array.isArray(stats)) {
       transactions = stats.flatMap((item) => item.stats.cashFlows || []);
@@ -915,7 +942,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   };
 
   const renderSarlaStrategyTabs = () => {
-    if (!(isSarla || isSatidham) || !sarlaData || availableStrategies.length === 0) return null;
+    if (!(isSarla || isSatidham || isDinesh) || !sarlaData || availableStrategies.length === 0) return null;
 
     return (
       <div className="mb-4 block sm:hidden">
@@ -1121,6 +1148,69 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     );
   };
 
+  const renderDineshContent = () => {
+    if (!isDinesh || !sarlaData || !selectedStrategy || !sarlaData[selectedStrategy]) {
+      return null;
+    }
+
+    const strategyData = sarlaData[selectedStrategy];
+    const convertedStats = isPmsStats(strategyData.data) ? convertPmsStatsToStats(strategyData.data) : strategyData.data;
+    const filteredEquityCurve = filterEquityCurve(
+      strategyData.data.equityCurve,
+      strategyData.metadata?.filtersApplied?.startDate,
+      strategyData.metadata?.lastUpdated
+    );
+    const lastDate = getLastDate(filteredEquityCurve, strategyData.metadata?.lastUpdated);
+    const isTotalPortfolio = selectedStrategy === "Total Portfolio";
+    const isActive = strategyData.metadata.isActive;
+
+    return (
+      <div className="space-y-6">
+        <Button
+          variant="outline"
+          className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
+        >
+          {selectedStrategy} {!isActive ? "(Inactive)" : ""}
+        </Button>
+        <StatsCards
+          stats={convertedStats}
+          accountType="sarla"
+          broker="Dinesh"
+          isTotalPortfolio={isTotalPortfolio}
+          isActive={isActive}
+          returnViewType={returnViewType}
+          setReturnViewType={setReturnViewType}
+        />
+        {!isTotalPortfolio && (
+          <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
+            <div className="flex-1 min-w-0 sm:w-5/6">
+              <RevenueChart
+                equityCurve={filteredEquityCurve}
+                drawdownCurve={strategyData.data.drawdownCurve}
+                trailingReturns={convertedStats.trailingReturns}
+                drawdown={convertedStats.drawdown}
+                lastDate={lastDate}
+                adjustBenchmarkStartDate={true}
+              />
+            </div>
+          </div>
+        )}
+        <PnlTable
+          quarterlyPnl={convertedStats.quarterlyPnl}
+          monthlyPnl={convertedStats.monthlyPnl}
+          showOnlyQuarterlyCash={false}
+          showPmsQawView={false}
+        />
+        {renderCashFlowsTable()}
+        {isDinesh && !isActive && (
+          <div className="text-sm text-[#ca8a04]">
+            <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
+          </div>
+        )}
+      </div>
+    );
+  };
+
   if (status === "loading" || isLoading) {
     return (
       <div className="flex items-center justify-center h-screen">Loading...</div>
@@ -1135,7 +1225,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     );
   }
 
-  if (!isSarla && !isSatidham && accounts.length === 0) {
+  if (!isSarla && !isSatidham && !isDinesh && accounts.length === 0) {
     return (
       <div className="p-6 text-center bg-[#f3f4f6] rounded-lg text-card-text">
         No accounts found for this user.
@@ -1143,15 +1233,15 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     );
   }
 
-  if ((isSarla || isSatidham) && (!sarlaData || availableStrategies.length === 0)) {
+  if ((isSarla || isSatidham || isDinesh) && (!sarlaData || availableStrategies.length === 0)) {
     return (
       <div className="p-6 text-center bg-[#f3f4f6] rounded-lg text-card-text">
-        No strategy data found for {isSarla ? "Sarla" : "Satidham"} user.
+        No strategy data found for {isSarla ? "Sarla" : isSatidham ? "Satidham" : "Dinesh"} user.
       </div>
     );
   }
 
-  const currentMetadata = (isSarla || isSatidham) && sarlaData && selectedStrategy
+  const currentMetadata = (isSarla || isSatidham || isDinesh) && sarlaData && selectedStrategy
     ? sarlaData[selectedStrategy].metadata
     : metadata;
 
@@ -1174,7 +1264,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           </div>
 
           {/* Dropdown */}
-          {(isSarla || isSatidham) && sarlaData && availableStrategies.length > 0 && (
+          {(isSarla || isSatidham || isDinesh) && sarlaData && availableStrategies.length > 0 && (
             <div className="hidden sm:block">
               <Select value={selectedStrategy || ""} onValueChange={setSelectedStrategy}>
                 <SelectTrigger className="w-[400px] border-0 card-shadow text-button-text">
@@ -1195,16 +1285,16 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           )}
         </div>
 
-        {!isSarla && !isSatidham && currentMetadata?.strategyName && (
+        {!isSarla && !isSatidham && !isDinesh && currentMetadata?.strategyName && (
           <Button
             variant="outline"
-            className={`bg-logo-green mt-4 font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${(isSarla || isSatidham) && !currentMetadata.isActive ? "opacity-70" : ""
+            className={`bg-logo-green mt-4 font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${(isSarla || isSatidham || isDinesh) && !currentMetadata.isActive ? "opacity-70" : ""
               }`}
           >
-            {currentMetadata.strategyName} {(isSarla || isSatidham) && !currentMetadata.isActive ? "(Inactive)" : ""}
+            {currentMetadata.strategyName} {(isSarla || isSatidham || isDinesh) && !currentMetadata.isActive ? "(Inactive)" : ""}
           </Button>
         )}
-        {(isSarla || isSatidham) && sarlaData && availableStrategies.length > 0 && (
+        {(isSarla || isSatidham || isDinesh) && sarlaData && availableStrategies.length > 0 && (
           <div className="mt-2 text-xs text-card-text-secondary">
             <p><strong>Note:</strong> Inactive strategies may have limited data updates.</p>
           </div>
@@ -1213,8 +1303,8 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
       {renderSarlaStrategyTabs()}
 
-      {(isSarla || isSatidham) ? (
-        isSarla ? renderSarlaContent() : renderSatidhamContent()
+      {(isSarla || isSatidham || isDinesh) ? (
+        isSarla ? renderSarlaContent() : isSatidham ? renderSatidhamContent() : renderDineshContent()
       ) : (
         stats && (
           <div className="space-y-6">
@@ -1236,7 +1326,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                           <div>
                             <CardTitle className="text-card-text text-sm sm:text-sm">
                               {item.metadata.account_name} ({item.metadata.account_type.toUpperCase()} - {item.metadata.broker})
-                              {(isSarla || isSatidham) && !item.metadata.isActive ? " (Inactive)" : ""}
+                              {(isSarla || isSatidham || isDinesh) && !item.metadata.isActive ? " (Inactive)" : ""}
                             </CardTitle>
                             <div className="text-sm text-card-text-secondary mt-1">
                               Strategy: <strong>{itemStrategyName}</strong>
@@ -1285,7 +1375,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                           quarterlyPnl={convertedStats.quarterlyPnl}
                           monthlyPnl={convertedStats.monthlyPnl}
                         />
-                        {(isSarla || isSatidham) && !item.metadata.isActive && (
+                        {(isSarla || isSatidham || isDinesh) && !item.metadata.isActive && (
                           <div className="text-sm text-[#ca8a04]">
                             <strong>Note:</strong> This account is inactive. Data may not be updated regularly.
                           </div>
@@ -1353,7 +1443,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                         monthlyPnl={convertedStats.monthlyPnl}
                       />
                       {renderCashFlowsTable()}
-                      {(isSarla || isSatidham) && metadata && !metadata.isActive && (
+                      {(isSarla || isSatidham || isDinesh) && metadata && !metadata.isActive && (
                         <div className="text-sm text-[#ca8a04]">
                           <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
                         </div>
