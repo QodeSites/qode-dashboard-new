@@ -1515,7 +1515,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
         const table = document.getElementById(tableId);
         if (!table) return;
 
-        const currentPage = table.closest('.page');
+        let currentPage = table.closest('.page');
         if (!currentPage) return;
 
         const tbody = table.querySelector('tbody');
@@ -1576,6 +1576,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
             const newPage = tempDiv.firstElementChild;
 
             currentPage.parentNode.insertBefore(newPage, currentPage.nextSibling);
+            currentPage = newPage;
 
             const newTbody = newPage.querySelector('tbody');
             const pageRows = remainingRows.slice(0, rowsPerPage);
