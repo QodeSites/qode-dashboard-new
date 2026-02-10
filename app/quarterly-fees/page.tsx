@@ -93,7 +93,7 @@ export default function QuarterlyFeesPage() {
         headerRowIndices.push(wsData.length);
         wsData.push(["", title]);
         subHeaderRowIndices.push(wsData.length);
-        wsData.push(["", "Year", "Q1", "Q2", "Q3", "Q4", "Total"]);
+        wsData.push(["", "Year", "Q1 (₹)", "Q2 (₹)", "Q3 (₹)", "Q4 (₹)", "Total (₹)"]);
         Object.keys(fees)
           .sort((a, b) => parseInt(a) - parseInt(b))
           .forEach((year) => {
