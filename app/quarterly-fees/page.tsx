@@ -1,0 +1,385 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import DashboardLayout from "../dashboard/layout";
+import { FeesTable } from "@/components/FeesTable";
+import type { FeesData } from "@/components/FeesTable";
+import * as XLSX from "xlsx";
+import { Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
+
+export default function QuarterlyFeesPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+
+  // User type detection - only Sarla users
+  const isSarla = session?.user?.icode === "QUS0007";
+
+  // Authentication check
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.push("/");
+      return;
+    }
+    if (status === "authenticated" && !isSarla) {
+      setError("Quarterly fees are only available for Sarla users");
+    }
+  }, [status, router, isSarla]);
+
+  // Loading state
+  if (status === "loading") {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-screen">
+          <div className="text-card-text-secondary">Loading...</div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  // Error state
+  if (error || !session?.user) {
+    return (
+      <DashboardLayout>
+        <div className="p-6 text-center bg-red-100 rounded-lg text-red-600 dark:bg-red-900/10 dark:text-red-400">
+          {error || "Failed to load user data"}
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  // Hardcoded fee data
+  const totalFees: FeesData = {
+    "2022": { q1: "-", q2: "-", q3: "41651.49", q4: "225408.07", total: "267059.56" },
+    "2023": { q1: "220507.89", q2: "222957.98", q3: "510644.45", q4: "1769040.29", total: "2723150.61" },
+    "2024": { q1: "2090884.88", q2: "4034529.06", q3: "5497173.86", q4: "6711290.47", total: "18333878.27" },
+    "2025": { q1: "9207339.89", q2: "9124544.94", q3: "6251175.31", q4: "6587813.20", total: "31170873.33" },
+  };
+
+  const zerodhaFees: FeesData = {
+    "2022": { q1: "-", q2: "-", q3: "41651.49", q4: "225408.07", total: "267059.56" },
+    "2023": { q1: "220507.89", q2: "222957.98", q3: "510644.45", q4: "1769040.29", total: "2723150.61" },
+    "2024": { q1: "2090884.88", q2: "4034529.06", q3: "5497173.86", q4: "6711290.47", total: "18333878.27" },
+    "2025": { q1: "9207339.89", q2: "8306490.30", q3: "4991373.79", q4: "5163861.74", total: "27669065.72" },
+  };
+
+  const pmsFees: FeesData = {
+    "2025": { q1: "818054.64", q2: "1259801.52", q3: "1423951.46", q4: "-", total: "3501807.62" },
+  };
+
+  // Excel Download Function with styled headers
+  const handleDownloadExcel = () => {
+    try {
+      const wsData: any[][] = [];
+      const headerRowIndices: number[] = [];
+      const subHeaderRowIndices: number[] = [];
+
+      // Add Qode symbol/logo as title and empty row
+      wsData.push(["", "Q"]);
+      wsData.push([]);
+
+      // Fee Schedule Summary Section
+      headerRowIndices.push(wsData.length);
+      wsData.push(["", "Fee Schedule Summary"]);
+      wsData.push(["", "Generated on:", new Date().toLocaleString("en-IN")]);
+      wsData.push(["", "Account:", session?.user?.name || "N/A"]);
+      wsData.push([]);
+
+      // Helper to add a fee section
+      const addFeeSection = (title: string, fees: FeesData) => {
+        headerRowIndices.push(wsData.length);
+        wsData.push(["", title]);
+        subHeaderRowIndices.push(wsData.length);
+        wsData.push(["", "Year", "Q1", "Q2", "Q3", "Q4", "Total"]);
+        Object.keys(fees)
+          .sort((a, b) => parseInt(a) - parseInt(b))
+          .forEach((year) => {
+            const data = fees[year];
+            wsData.push([
+              "",
+              year,
+              data.q1 === "-" ? "-" : parseFloat(data.q1) || 0,
+              data.q2 === "-" ? "-" : parseFloat(data.q2) || 0,
+              data.q3 === "-" ? "-" : parseFloat(data.q3) || 0,
+              data.q4 === "-" ? "-" : parseFloat(data.q4) || 0,
+              data.total === "-" ? "-" : parseFloat(data.total) || 0,
+            ]);
+          });
+      };
+
+      // Total Fees Section
+      addFeeSection("Total Fees", totalFees);
+      wsData.push([]);
+
+      // Zerodha Fees Section
+      addFeeSection("Zerodha Fees", zerodhaFees);
+      wsData.push([
+        "",
+        "Note: Zerodha fee figures are as of 31 December 2025 and include both collections and accruals.",
+      ]);
+      wsData.push([]);
+
+      // PMS Fees Section
+      addFeeSection("PMS Fees", pmsFees);
+      wsData.push([
+        "",
+        "Note: PMS fee figures are as of 31 December 2025 and include both collections and accruals.",
+      ]);
+      wsData.push([
+        "",
+        "Disclaimer: The fees listed for PMS represent the agreed-upon quarterly Management Fee only. This amount excludes the Performance Fee, which is calculated separately and charged at the end of the respective financial year.",
+      ]);
+      wsData.push([]);
+
+      // Common Note
+      wsData.push(["", "*Fee figures are inclusive of GST@18%"]);
+
+      // Create worksheet from data
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+      // Get worksheet range
+      const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
+
+      // Calculate auto-fit column widths based on content
+      const maxCols = Math.max(...wsData.map((row) => row.length));
+      const colWidths: { wch: number }[] = [];
+
+      for (let C = 0; C < maxCols; C++) {
+        if (C === 0) {
+          colWidths.push({ wch: 2 });
+          continue;
+        }
+
+        let maxWidth = 10;
+        for (let R = 0; R < wsData.length; R++) {
+          const cellValue = wsData[R][C];
+          if (cellValue != null) {
+            const cellLength = String(cellValue).length;
+            maxWidth = Math.max(maxWidth, cellLength);
+          }
+        }
+        colWidths.push({ wch: Math.min(maxWidth + 2, 50) });
+      }
+      ws["!cols"] = colWidths;
+
+      // Define border style for tables
+      const tableBorder = {
+        top: { style: "thin", color: { rgb: "000000" } },
+        bottom: { style: "thin", color: { rgb: "000000" } },
+        left: { style: "thin", color: { rgb: "000000" } },
+        right: { style: "thin", color: { rgb: "000000" } },
+      };
+
+      const headerStyle = {
+        fill: { patternType: "solid", fgColor: { rgb: "02422B" } },
+        font: { name: "Aptos Narrow", color: { rgb: "FFFFFF" }, bold: true, sz: 11 },
+        alignment: { horizontal: "center", vertical: "center" },
+        border: tableBorder,
+      };
+
+      const subHeaderStyle = {
+        fill: { patternType: "solid", fgColor: { rgb: "DABD38" } },
+        font: { name: "Aptos Narrow", color: { rgb: "02422B" }, bold: true, sz: 11 },
+        alignment: { horizontal: "center", vertical: "center" },
+        border: tableBorder,
+      };
+
+      const textStyle = {
+        font: { name: "Aptos Narrow", sz: 11 },
+        alignment: { horizontal: "left", vertical: "center" },
+        border: tableBorder,
+      };
+
+      const numberStyle = {
+        font: { name: "Aptos Narrow", sz: 11 },
+        alignment: { horizontal: "right", vertical: "center" },
+        numFmt: "0.00",
+        border: tableBorder,
+      };
+
+      const titleStyle = {
+        font: { name: "Playfair Display", bold: true, sz: 32, color: { rgb: "02422B" } },
+        alignment: { horizontal: "left", vertical: "center" },
+      };
+
+      const isTableRow = (rowIdx: number) => {
+        if (rowIdx <= 1) return false;
+        const rowData = wsData[rowIdx];
+        if (!rowData) return false;
+        for (let i = 1; i < rowData.length; i++) {
+          if (rowData[i] !== undefined && rowData[i] !== null && rowData[i] !== "") {
+            return true;
+          }
+        }
+        return false;
+      };
+
+      // Apply styles to all cells
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!ws[cellAddress]) continue;
+
+          const cellValue = ws[cellAddress].v;
+          if (cellValue === null || cellValue === undefined || cellValue === "") continue;
+
+          if (R === 0) {
+            ws[cellAddress].s = titleStyle;
+            continue;
+          }
+
+          if (R >= 1 && R <= 1) continue;
+
+          // Ensure numbers are typed correctly
+          if (typeof ws[cellAddress].v === "number") {
+            ws[cellAddress].t = "n";
+            ws[cellAddress].z = "0.00";
+          } else if (typeof ws[cellAddress].v === "string") {
+            if (ws[cellAddress].v === "-") {
+              ws[cellAddress].t = "s";
+            } else {
+              const trimmed = ws[cellAddress].v.trim();
+              const num = parseFloat(trimmed);
+              if (!isNaN(num) && trimmed === String(num)) {
+                ws[cellAddress].v = num;
+                ws[cellAddress].t = "n";
+                ws[cellAddress].z = "0.00";
+              } else {
+                ws[cellAddress].t = "s";
+              }
+            }
+          }
+
+          if (isTableRow(R)) {
+            if (C === 0) {
+              continue;
+            } else if (headerRowIndices.includes(R)) {
+              ws[cellAddress].s = headerStyle;
+            } else if (subHeaderRowIndices.includes(R)) {
+              ws[cellAddress].s = subHeaderStyle;
+            } else {
+              if (C === 1) {
+                ws[cellAddress].s = textStyle;
+              } else if (ws[cellAddress].t === "n") {
+                ws[cellAddress].s = numberStyle;
+              } else {
+                ws[cellAddress].s = {
+                  ...textStyle,
+                  alignment: { horizontal: "right", vertical: "center" },
+                };
+              }
+            }
+          } else {
+            ws[cellAddress].s = textStyle;
+          }
+        }
+      }
+
+      // Merge cells for headers
+      const merges: any[] = [];
+
+      const getTableWidth = (startRow: number) => {
+        let maxCol = 1;
+        for (let r = startRow; r < Math.min(startRow + 15, wsData.length); r++) {
+          if (wsData[r]) {
+            for (let c = 1; c < wsData[r].length; c++) {
+              if (wsData[r][c] !== undefined && wsData[r][c] !== null && wsData[r][c] !== "") {
+                maxCol = Math.max(maxCol, c);
+              }
+            }
+          }
+          if (wsData[r] && wsData[r].every((cell: any, idx: number) => idx === 0 || !cell)) {
+            break;
+          }
+        }
+        return maxCol;
+      };
+
+      headerRowIndices.forEach((rowIdx) => {
+        const tableWidth = getTableWidth(rowIdx);
+        if (tableWidth > 1) {
+          merges.push({
+            s: { r: rowIdx, c: 1 },
+            e: { r: rowIdx, c: tableWidth },
+          });
+        }
+      });
+
+      if (merges.length > 0) {
+        ws["!merges"] = merges;
+      }
+
+      // Hide gridlines
+      (ws as any)["!views"] = [{ showGridLines: false }];
+
+      // Create workbook and download
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Fee Schedule");
+
+      const timestamp = new Date().toISOString().split("T")[0];
+      const filename = `Fee_Schedule_${session?.user?.name || "User"}_${timestamp}.xlsx`;
+
+      XLSX.writeFile(wb, filename);
+    } catch (err) {
+      console.error("Error generating Excel:", err);
+      setError("Failed to generate Excel file");
+    }
+  };
+
+  return (
+    <DashboardLayout>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex justify-between items-start">
+          <div className="flex flex-col gap-2">
+            <h1 className="text-2xl font-semibold text-card-text-secondary font-heading">
+              Fee Summary
+            </h1>
+            <p className="text-sm text-card-text-secondary/70">
+              View your quarterly fee breakdown
+            </p>
+          </div>
+          <Button
+            onClick={handleDownloadExcel}
+            className="h-11 px-4 text-sm font-medium"
+            variant="default"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Excel
+          </Button>
+        </div>
+
+        {/* Total Fees Table */}
+        <FeesTable fees={totalFees} title="Total Fees (₹)" />
+
+        {/* Zerodha Fees Table */}
+        <FeesTable fees={zerodhaFees} title="Zerodha Fees (₹)" />
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Note: Zerodha fee figures are as of 31 December 2025 and include both
+          collections and accruals.
+        </p>
+
+        {/* PMS Fees Table */}
+        <FeesTable fees={pmsFees} title="PMS Fees (₹)" />
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Note: PMS fee figures are as of 31 December 2025 and include both
+          collections and accruals.
+        </p>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Disclaimer: The fees listed for PMS represent the agreed-upon
+          quarterly Management Fee only. This amount excludes the Performance
+          Fee, which is calculated separately and charged at the end of the
+          respective financial year.
+        </p>
+
+        {/* Common GST Note */}
+        <p className="text-sm text-gray-500 dark:text-gray-500">
+          *Fee figures are inclusive of GST@18%
+        </p>
+      </div>
+    </DashboardLayout>
+  );
+}
