@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import DashboardLayout from "../dashboard/layout";
 import { FeesTable } from "@/components/FeesTable";
 import type { FeesData } from "@/components/FeesTable";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -196,7 +196,7 @@ export default function QuarterlyFeesPage() {
       const numberStyle = {
         font: { name: "Aptos Narrow", sz: 11 },
         alignment: { horizontal: "right", vertical: "center" },
-        numFmt: "0.00",
+        numFmt: "#,##,##0.00",
         border: tableBorder,
       };
 
@@ -233,10 +233,12 @@ export default function QuarterlyFeesPage() {
 
           if (R >= 1 && R <= 1) continue;
 
-          // Ensure numbers are typed correctly
-          if (typeof ws[cellAddress].v === "number") {
+          // Ensure numbers are typed correctly, but skip year column (C === 1)
+          if (C === 1) {
+            ws[cellAddress].t = "s";
+          } else if (typeof ws[cellAddress].v === "number") {
             ws[cellAddress].t = "n";
-            ws[cellAddress].z = "0.00";
+            ws[cellAddress].z = "#,##,##0.00";
           } else if (typeof ws[cellAddress].v === "string") {
             if (ws[cellAddress].v === "-") {
               ws[cellAddress].t = "s";
@@ -246,7 +248,7 @@ export default function QuarterlyFeesPage() {
               if (!isNaN(num) && trimmed === String(num)) {
                 ws[cellAddress].v = num;
                 ws[cellAddress].t = "n";
-                ws[cellAddress].z = "0.00";
+                ws[cellAddress].z = "#,##,##0.00";
               } else {
                 ws[cellAddress].t = "s";
               }
