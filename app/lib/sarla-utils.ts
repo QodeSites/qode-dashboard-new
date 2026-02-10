@@ -3032,12 +3032,12 @@ if (scheme === "Scheme PMS QAW") {
       date: Date;
     }[]>`
       SELECT e.*
-      FROM equity_holding_test e
+      FROM equity_holding e
       WHERE e.qcode = ${qcode}
         AND e.quantity > 0
         AND e.date = (
           SELECT MAX(date)
-          FROM equity_holding_test
+          FROM equity_holding
           WHERE qcode = ${qcode} AND date IS NOT NULL
         )
     `;
@@ -3062,7 +3062,7 @@ if (scheme === "Scheme PMS QAW") {
     }[]>`
       WITH latest_date AS (
         SELECT MAX(as_of_date) as max_date
-        FROM mutual_fund_holding_sheet_test
+        FROM mutual_fund_holding_sheet
         WHERE qcode = ${qcode} AND as_of_date IS NOT NULL
       ),
       ranked_holdings AS (
@@ -3072,7 +3072,7 @@ if (scheme === "Scheme PMS QAW") {
             PARTITION BY m.isin
             ORDER BY m.quantity DESC, m.buy_value DESC
           ) as rn
-        FROM mutual_fund_holding_sheet_test m
+        FROM mutual_fund_holding_sheet m
         CROSS JOIN latest_date ld
         WHERE m.qcode = ${qcode}
           AND m.quantity > 0
