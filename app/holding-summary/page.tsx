@@ -259,7 +259,7 @@ const HoldingsTable = ({
                 {/* Top bar: count + page size selector */}
                 <div className="flex items-center justify-between mb-3">
                     <div className="text-sm text-card-text-secondary">
-                        {holdings.length} {isMutualFund ? 'fund' : 'stock'}{holdings.length !== 1 ? 's' : ''} total
+                        {holdings.length} {isMutualFund ? 'mutual fund' : 'stock'}{holdings.length !== 1 ? 's' : ''} total
                     </div>
                     <div className="flex items-center gap-2">
                         <span className="text-sm text-card-text-secondary">Show</span>
@@ -284,31 +284,31 @@ const HoldingsTable = ({
                     <Table className="min-w-full">
                         <TableHeader className="sticky top-0 z-10">
                             <TableRow className="bg-black/5 hover:bg-black/5 border-b border-gray-200">
-                                <TableHead className="py-3 text-left text-xs font-medium text-card-text tracking-wider">
+                                <TableHead className="py-3 text-left text-sm font-medium text-card-text tracking-wider">
                                     Symbol
                                 </TableHead>
-                                <TableHead className="py-3 text-right text-xs font-medium text-card-text tracking-wider">
+                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
                                     Quantity
                                 </TableHead>
-                                <TableHead className="py-3 text-right text-xs font-medium text-card-text tracking-wider">
+                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
                                     Average Cost (₹)
                                 </TableHead>
-                                <TableHead className="py-3 text-right text-xs font-medium text-card-text tracking-wider">
+                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
                                     Last Traded Price (₹)
                                 </TableHead>
-                                <TableHead className="py-3 text-right text-xs font-medium text-card-text tracking-wider">
+                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
                                     Invested Amount (₹)
                                 </TableHead>
-                                <TableHead className="py-3 text-right text-xs font-medium text-card-text tracking-wider">
+                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
                                     Current Value (₹)
                                 </TableHead>
-                                <TableHead className="py-3 text-right text-xs font-medium text-card-text tracking-wider">
+                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
                                     Profit & Loss (₹)
                                 </TableHead>
-                                <TableHead className="py-3 text-right text-xs font-medium text-card-text tracking-wider">
+                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
                                     Profit & Loss (%)
                                 </TableHead>
-                                <TableHead className="py-3 text-left text-xs font-medium text-card-text tracking-wider">
+                                <TableHead className="py-3 text-left text-sm font-medium text-card-text tracking-wider">
                                     Category
                                 </TableHead>
                             </TableRow>
@@ -364,15 +364,10 @@ const HoldingsTable = ({
                                 </TableRow>
                             ))}
                         </TableBody>
-                    </Table>
-                </div>
-
-                {/* Totals row — always visible, always reflects ALL holdings */}
-                {showTotals && (
-                    <div className="overflow-x-auto">
-                        <Table className="min-w-full">
-                            <TableBody>
-                                <TableRow className="border-t-2 border-black/10 font-semibold">
+                        {/* Totals row — sticky bottom, always visible, always reflects ALL holdings */}
+                        {showTotals && (
+                            <tfoot className="sticky bottom-0 z-10 bg-[#f7f5e8]">
+                                <TableRow className="border-t border-gray-200 font-semibold">
                                     <TableCell colSpan={4} className="py-3 text-sm font-bold text-card-text">
                                         Total
                                     </TableCell>
@@ -394,10 +389,10 @@ const HoldingsTable = ({
                                     </TableCell>
                                     <TableCell></TableCell>
                                 </TableRow>
-                            </TableBody>
-                        </Table>
-                    </div>
-                )}
+                            </tfoot>
+                        )}
+                    </Table>
+                </div>
 
                 {/* Bottom bar: showing info + pagination controls */}
                 {holdings.length > 0 && pageSize !== 0 && (
