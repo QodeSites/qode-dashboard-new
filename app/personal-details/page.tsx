@@ -98,9 +98,16 @@ const router = useRouter();
       }
 
       // Find the specific client data based on session.user.icode
-      const clientInfo = result.data.find(
-        client => client.iQode=== session.user.icode
+      let clientInfo = result.data.find(
+        client => client.iQode === session.user.icode
       );
+
+      // Satidham (QUS0010) fallback: also check linked account QUS00081
+      if (!clientInfo && session.user.icode === "QUS0010") {
+        clientInfo = result.data.find(
+          client => client.iQode === "QUS00081"
+        );
+      }
 
       if (clientInfo) {
         console.log('Client data found:', clientInfo);
