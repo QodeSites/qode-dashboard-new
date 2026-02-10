@@ -1415,7 +1415,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
         <td class="text-left">
           <div class="symbol-cell">${h.symbol}</div>
         </td>
-        <td class="text-right">${h.quantity.toFixed(2)}</td>
+        <td class="text-right">${fmtNum(h.quantity)}</td>
         <td class="text-right">${fmtNum(h.avgPrice)}</td>
         <td class="text-right">${fmtNum(h.ltp)}</td>
         <td class="text-right">${fmtNum(h.buyValue)}</td>
