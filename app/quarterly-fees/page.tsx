@@ -134,8 +134,6 @@ export default function QuarterlyFeesPage() {
       ]);
       wsData.push([]);
 
-      // Common Note
-      wsData.push(["", "*Fee figures are inclusive of GST@18%"]);
 
       // Create worksheet from data
       const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -375,11 +373,6 @@ export default function QuarterlyFeesPage() {
           quarterly Management Fee only. This amount excludes the Performance
           Fee, which is calculated separately and charged at the end of the
           respective financial year.
-        </p>
-
-        {/* Common GST Note */}
-        <p className="text-sm text-gray-500 dark:text-gray-500">
-          *Fee figures are inclusive of GST@18%
         </p>
       </div>
     </DashboardLayout>
