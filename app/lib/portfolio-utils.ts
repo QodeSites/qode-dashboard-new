@@ -29,6 +29,8 @@ interface Holding {
   debtEquity: string;
   subCategory: string;
   date: Date;
+  type?: 'equity' | 'mutual_fund';
+  isin?: string;
 }
 
 // Interface for holdings summary
@@ -40,6 +42,7 @@ interface HoldingsSummary {
   holdingsCount: number;
   equityHoldings: Holding[];
   debtHoldings: Holding[];
+  mutualFundHoldings: Holding[];
   categoryBreakdown: {
     [category: string]: {
       buyValue: number;
@@ -268,44 +271,47 @@ class JainamManagedStrategy implements DataFetchingStrategy {
 
 
   async getHoldings(qcode: string): Promise<Holding[]> {
-    const holdings = await prisma.equity_holding.findMany({
+    // Step 1: Find the latest date for this qcode
+    const latestDateRecord = await (prisma.equity_holding_test as any).findFirst({
+      where: { qcode },
+      orderBy: { date: 'desc' },
+      select: { date: true },
+    });
+
+    if (!latestDateRecord?.date) {
+      const mutualFundHoldings = await getMutualFundHoldings(qcode);
+      return mutualFundHoldings;
+    }
+
+    // Step 2: Fetch all holdings on that single date with quantity > 0
+    const holdings = await (prisma.equity_holding_test as any).findMany({
       where: {
         qcode,
-        // Get the latest holdings for each symbol
+        date: latestDateRecord.date,
+        quantity: { gt: 0 },
       },
-      orderBy: [
-        { symbol: 'asc' },
-        { date: 'desc' }
-      ],
     });
 
-    // Group by symbol and take the latest entry for each
-    const latestHoldings = new Map<string, any>();
-    holdings.forEach(holding => {
-      const key = `${holding.symbol}-${holding.exchange}`;
-      if (!latestHoldings.has(key) ||
-        (holding.date && latestHoldings.get(key).date && holding.date > latestHoldings.get(key).date)) {
-        latestHoldings.set(key, holding);
-      }
-    });
+    const equityHoldings = holdings.map((holding: any) => ({
+      symbol: holding.symbol || '',
+      exchange: holding.exchange || '',
+      quantity: Number(holding.quantity) || 0,
+      avgPrice: Number(holding.avg_price) || 0,
+      ltp: Number(holding.ltp) || 0,
+      buyValue: Number(holding.buy_value) || 0,
+      valueAsOfToday: Number(holding.value_as_of_today) || 0,
+      pnlAmount: Number(holding.pnl_amount) || 0,
+      percentPnl: Number(holding.percent_pnl) || 0,
+      broker: holding.broker || '',
+      debtEquity: holding.debt_equity || '',
+      subCategory: holding.sub_category || '',
+      date: holding.date || new Date(),
+      type: 'equity' as const,
+    }));
 
-    return Array.from(latestHoldings.values())
-      .filter(h => h.quantity && h.quantity > 0) // Only active holdings
-      .map(holding => ({
-        symbol: holding.symbol || '',
-        exchange: holding.exchange || '',
-        quantity: Number(holding.quantity) || 0,
-        avgPrice: Number(holding.avg_price) || 0,
-        ltp: Number(holding.ltp) || 0,
-        buyValue: Number(holding.buy_value) || 0,
-        valueAsOfToday: Number(holding.value_as_of_today) || 0,
-        pnlAmount: Number(holding.pnl_amount) || 0,
-        percentPnl: Number(holding.percent_pnl) || 0,
-        broker: holding.broker || '',
-        debtEquity: holding.debt_equity || '',
-        subCategory: holding.sub_category || '',
-        date: holding.date || new Date(),
-      }));
+    const mutualFundHoldings = await getMutualFundHoldings(qcode);
+
+    return [...equityHoldings, ...mutualFundHoldings];
   }
 }
 
@@ -515,43 +521,47 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
   }
 
   async getHoldings(qcode: string): Promise<Holding[]> {
-    const holdings = await prisma.equity_holding.findMany({
+    // Step 1: Find the latest date for this qcode
+    const latestDateRecord = await (prisma.equity_holding_test as any).findFirst({
+      where: { qcode },
+      orderBy: { date: 'desc' },
+      select: { date: true },
+    });
+
+    if (!latestDateRecord?.date) {
+      const mutualFundHoldings = await getMutualFundHoldings(qcode);
+      return mutualFundHoldings;
+    }
+
+    // Step 2: Fetch all holdings on that single date with quantity > 0
+    const holdings = await (prisma.equity_holding_test as any).findMany({
       where: {
         qcode,
+        date: latestDateRecord.date,
+        quantity: { gt: 0 },
       },
-      orderBy: [
-        { symbol: 'asc' },
-        { date: 'desc' }
-      ],
     });
 
-    // Group by symbol and take the latest entry for each
-    const latestHoldings = new Map<string, any>();
-    holdings.forEach(holding => {
-      const key = `${holding.symbol}-${holding.exchange}`;
-      if (!latestHoldings.has(key) ||
-        (holding.date && latestHoldings.get(key).date && holding.date > latestHoldings.get(key).date)) {
-        latestHoldings.set(key, holding);
-      }
-    });
+    const equityHoldings = holdings.map((holding: any) => ({
+      symbol: holding.symbol || '',
+      exchange: holding.exchange || '',
+      quantity: Number(holding.quantity) || 0,
+      avgPrice: Number(holding.avg_price) || 0,
+      ltp: Number(holding.ltp) || 0,
+      buyValue: Number(holding.buy_value) || 0,
+      valueAsOfToday: Number(holding.value_as_of_today) || 0,
+      pnlAmount: Number(holding.pnl_amount) || 0,
+      percentPnl: Number(holding.percent_pnl) || 0,
+      broker: holding.broker || '',
+      debtEquity: holding.debt_equity || '',
+      subCategory: holding.sub_category || '',
+      date: holding.date || new Date(),
+      type: 'equity' as const,
+    }));
 
-    return Array.from(latestHoldings.values())
-      .filter(h => h.quantity && h.quantity > 0) // Only active holdings
-      .map(holding => ({
-        symbol: holding.symbol || '',
-        exchange: holding.exchange || '',
-        quantity: Number(holding.quantity) || 0,
-        avgPrice: Number(holding.avg_price) || 0,
-        ltp: Number(holding.ltp) || 0,
-        buyValue: Number(holding.buy_value) || 0,
-        valueAsOfToday: Number(holding.value_as_of_today) || 0,
-        pnlAmount: Number(holding.pnl_amount) || 0,
-        percentPnl: Number(holding.percent_pnl) || 0,
-        broker: holding.broker || '',
-        debtEquity: holding.debt_equity || '',
-        subCategory: holding.sub_category || '',
-        date: holding.date || new Date(),
-      }));
+    const mutualFundHoldings = await getMutualFundHoldings(qcode);
+
+    return [...equityHoldings, ...mutualFundHoldings];
   }
 
   getStrategyName(strategy?: string): string {
@@ -725,50 +735,55 @@ class PmsStrategy implements DataFetchingStrategy {
   }
 
   async getHoldings(qcode: string): Promise<Holding[]> {
-    // For PMS, you might need to get custodian codes first
+    // For PMS, get custodian codes for equity holdings
     const custodianCodes = await prisma.account_custodian_codes.findMany({
       where: { qcode },
       select: { custodian_code: true },
     });
     const codes = custodianCodes.map(c => c.custodian_code);
 
-    const holdings = await prisma.equity_holding.findMany({
+    // Step 1: Find the latest date across all custodian codes
+    const latestDateRecord = await (prisma.equity_holding_test as any).findFirst({
+      where: { qcode: { in: codes } },
+      orderBy: { date: 'desc' },
+      select: { date: true },
+    });
+
+    if (!latestDateRecord?.date) {
+      const mutualFundHoldings = await getMutualFundHoldings(qcode);
+      return mutualFundHoldings;
+    }
+
+    // Step 2: Fetch all holdings on that single date with quantity > 0
+    const holdings = await (prisma.equity_holding_test as any).findMany({
       where: {
-        qcode: { in: codes }, // or however you map PMS holdings
+        qcode: { in: codes },
+        date: latestDateRecord.date,
+        quantity: { gt: 0 },
       },
-      orderBy: [
-        { symbol: 'asc' },
-        { date: 'desc' }
-      ],
     });
 
-    // Group by symbol and take the latest entry for each
-    const latestHoldings = new Map<string, any>();
-    holdings.forEach(holding => {
-      const key = `${holding.symbol}-${holding.exchange}`;
-      if (!latestHoldings.has(key) ||
-        (holding.date && latestHoldings.get(key).date && holding.date > latestHoldings.get(key).date)) {
-        latestHoldings.set(key, holding);
-      }
-    });
+    const equityHoldings = holdings.map((holding: any) => ({
+      symbol: holding.symbol || '',
+      exchange: holding.exchange || '',
+      quantity: Number(holding.quantity) || 0,
+      avgPrice: Number(holding.avg_price) || 0,
+      ltp: Number(holding.ltp) || 0,
+      buyValue: Number(holding.buy_value) || 0,
+      valueAsOfToday: Number(holding.value_as_of_today) || 0,
+      pnlAmount: Number(holding.pnl_amount) || 0,
+      percentPnl: Number(holding.percent_pnl) || 0,
+      broker: holding.broker || '',
+      debtEquity: holding.debt_equity || '',
+      subCategory: holding.sub_category || '',
+      date: holding.date || new Date(),
+      type: 'equity' as const,
+    }));
 
-    return Array.from(latestHoldings.values())
-      .filter(h => h.quantity && h.quantity > 0) // Only active holdings
-      .map(holding => ({
-        symbol: holding.symbol || '',
-        exchange: holding.exchange || '',
-        quantity: Number(holding.quantity) || 0,
-        avgPrice: Number(holding.avg_price) || 0,
-        ltp: Number(holding.ltp) || 0,
-        buyValue: Number(holding.buy_value) || 0,
-        valueAsOfToday: Number(holding.value_as_of_today) || 0,
-        pnlAmount: Number(holding.pnl_amount) || 0,
-        percentPnl: Number(holding.percent_pnl) || 0,
-        broker: holding.broker || '',
-        debtEquity: holding.debt_equity || '',
-        subCategory: holding.sub_category || '',
-        date: holding.date || new Date(),
-      }));
+    // Fetch mutual fund holdings using original qcode
+    const mutualFundHoldings = await getMutualFundHoldings(qcode);
+
+    return [...equityHoldings, ...mutualFundHoldings];
   }
 
   getStrategyName(strategy?: string): string {
@@ -777,11 +792,99 @@ class PmsStrategy implements DataFetchingStrategy {
   }
 }
 
+// Helper function to fetch mutual fund holdings for a given qcode
+async function getMutualFundHoldings(qcode: string): Promise<Holding[]> {
+  const mutualFundHoldings = await prisma.$queryRaw<{
+    isin: string;
+    symbol: string;
+    scheme_code: string;
+    quantity: number;
+    avg_price: number;
+    nav: number;
+    buy_value: number;
+    value_as_of_today: number;
+    pnl_amount: number;
+    percent_pnl: number;
+    broker: string;
+    debt_equity: string;
+    sub_category: string;
+    as_of_date: Date;
+    mastersheet_tag: string;
+  }[]>`
+    WITH latest_date AS (
+      SELECT MAX(as_of_date) as max_date
+      FROM mutual_fund_holding_sheet_test
+      WHERE qcode = ${qcode} AND as_of_date IS NOT NULL
+    ),
+    ranked_holdings AS (
+      SELECT
+        m.*,
+        ROW_NUMBER() OVER (
+          PARTITION BY m.isin
+          ORDER BY m.quantity DESC, m.buy_value DESC
+        ) as rn
+      FROM mutual_fund_holding_sheet_test m
+      CROSS JOIN latest_date ld
+      WHERE m.qcode = ${qcode}
+        AND m.quantity > 0
+        AND m.isin IS NOT NULL
+        AND m.isin != ''
+        AND m.as_of_date = ld.max_date
+    )
+    SELECT
+      isin,
+      MAX(symbol) as symbol,
+      MAX(scheme_code) as scheme_code,
+      SUM(quantity) as quantity,
+      SUM(buy_value) / NULLIF(SUM(quantity), 0) as avg_price,
+      MAX(nav) as nav,
+      SUM(buy_value) as buy_value,
+      SUM(value_as_of_today) as value_as_of_today,
+      SUM(pnl_amount) as pnl_amount,
+      (SUM(pnl_amount) / NULLIF(SUM(buy_value), 0) * 100) as percent_pnl,
+      MAX(broker) as broker,
+      MAX(debt_equity) as debt_equity,
+      MAX(sub_category) as sub_category,
+      MAX(as_of_date) as as_of_date,
+      MAX(mastersheet_tag) as mastersheet_tag
+    FROM ranked_holdings
+    WHERE rn = 1
+    GROUP BY isin
+  `;
+
+  const isinMap = new Map<string, Holding>();
+
+  mutualFundHoldings.forEach(holding => {
+    const isin = holding.isin || '';
+    if (isin && !isinMap.has(isin)) {
+      isinMap.set(isin, {
+        symbol: holding.symbol || '',
+        exchange: 'MUTUAL_FUND',
+        quantity: Number(holding.quantity) || 0,
+        avgPrice: Number(holding.avg_price) || 0,
+        ltp: Number(holding.nav) || 0,
+        buyValue: Number(holding.buy_value) || 0,
+        valueAsOfToday: Number(holding.value_as_of_today) || 0,
+        pnlAmount: Number(holding.pnl_amount) || 0,
+        percentPnl: Number(holding.percent_pnl) || 0,
+        broker: holding.broker || '',
+        debtEquity: holding.debt_equity || '',
+        subCategory: holding.sub_category || '',
+        date: holding.as_of_date ? new Date(holding.as_of_date) : new Date(),
+        type: 'mutual_fund' as const,
+        isin: isin,
+      });
+    }
+  });
+
+  return Array.from(isinMap.values());
+}
 
 // Helper function to calculate holdings summary
 function calculateHoldingsSummary(holdings: Holding[]): HoldingsSummary {
-  const equityHoldings = holdings.filter(h => h.debtEquity.toLowerCase() === 'equity');
-  const debtHoldings = holdings.filter(h => h.debtEquity.toLowerCase() === 'debt');
+  const equityHoldings = holdings.filter(h => h.type === 'equity');
+  const debtHoldings = holdings.filter(h => h.debtEquity?.toLowerCase() === 'debt');
+  const mutualFundHoldings = holdings.filter(h => h.type === 'mutual_fund');
 
   const totalBuyValue = holdings.reduce((sum, h) => sum + h.buyValue, 0);
   const totalCurrentValue = holdings.reduce((sum, h) => sum + h.valueAsOfToday, 0);
@@ -832,6 +935,7 @@ function calculateHoldingsSummary(holdings: Holding[]): HoldingsSummary {
     holdingsCount: holdings.length,
     equityHoldings,
     debtHoldings,
+    mutualFundHoldings,
     categoryBreakdown,
     brokerBreakdown
   };
@@ -1530,6 +1634,7 @@ export function formatPortfolioStats(metrics: any): Stats {
       holdingsCount: 0,
       equityHoldings: [],
       debtHoldings: [],
+      mutualFundHoldings: [],
       categoryBreakdown: {},
       brokerBreakdown: {}
     },
