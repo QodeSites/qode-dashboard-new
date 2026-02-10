@@ -1712,7 +1712,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
                                 <div className="mt-4" />
                                 <div className="flex items-baseline justify-between">
                                     <div className="flex items-baseline text-3xl font-[500] text-card-text-secondary font-heading">
-                                        {formatter.format(holdingsData.totalBuyValue)}
+                                        ₹{formatter.format(holdingsData.totalBuyValue)}
                                     </div>
                                 </div>
                             </div>
@@ -1726,7 +1726,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
                                 <div className="mt-4" />
                                 <div className="flex items-baseline justify-between">
                                     <div className="flex items-baseline text-3xl font-[500] text-card-text-secondary font-heading">
-                                        {formatter.format(holdingsData.totalCurrentValue)}
+                                        ₹{formatter.format(holdingsData.totalCurrentValue)}
                                     </div>
                                 </div>
                             </div>
@@ -1740,7 +1740,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
                                 <div className="mt-4" />
                                 <div className="flex items-baseline justify-between">
                                     <div className={`flex items-baseline text-3xl font-[500] font-heading ${holdingsData.totalPnl >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                                        {formatter.format(holdingsData.totalPnl)}
+                                        ₹{formatter.format(holdingsData.totalPnl)}
                                         <span className={`text-base ml-2 ${holdingsData.totalPnl >= 0 ? 'text-green-700' : 'text-red-700'}`}>
                                             ({holdingsData.totalPnlPercent.toFixed(2)}%)
                                         </span>
