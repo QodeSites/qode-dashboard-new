@@ -90,7 +90,8 @@ export function generateExcelReport(input: ExcelReportInput): void {
   } = input;
 
   try {
-    const filename = `${strategyName.replace(/\s+/g, "_")}_data.xlsx`;
+    const nameForFile = accountInfo?.accountName || strategyName;
+    const filename = `${nameForFile.replace(/\s+/g, "_")}_data.xlsx`;
     const wb = XLSX.utils.book_new();
     const wsData: any[][] = [];
     const headerRows: number[] = [];

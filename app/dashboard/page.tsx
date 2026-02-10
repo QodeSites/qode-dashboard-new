@@ -498,7 +498,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     }
   };
 
-  const handleDownloadExcel = async (convertedStats: Stats, strategyName: string, isTotalPortfolio: boolean) => {
+  const handleDownloadExcel = async (convertedStats: Stats, strategyName: string, isTotalPortfolio: boolean, overrideAccountInfo?: { accountName: string; accountType: string; broker: string }) => {
     try {
       setExporting(true);
 
@@ -530,6 +530,11 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
       // Get account info if available
       const currentAccount = accounts.find((acc) => acc.qcode === selectedAccount);
+      const accountInfo = overrideAccountInfo || (currentAccount ? {
+        accountName: currentAccount.account_name,
+        accountType: currentAccount.account_type,
+        broker: currentAccount.broker,
+      } : undefined);
 
       // Call the Excel report generator
       generateExcelReport({
@@ -537,11 +542,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         isTotalPortfolio,
         isActive: metadata?.isActive ?? true,
         sessionUserName: session?.user?.name || "User",
-        accountInfo: currentAccount ? {
-          accountName: currentAccount.account_name,
-          accountType: currentAccount.account_type,
-          broker: currentAccount.broker,
-        } : undefined,
+        accountInfo,
         metrics: {
           amountDeposited: parseFloat(convertedStats.amountDeposited) || 0,
           currentExposure: parseFloat(convertedStats.currentExposure) || 0,
@@ -1365,7 +1366,11 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                               PDF
                             </Button>
                             <Button
-                              onClick={() => handleDownloadExcel(convertedStats, itemStrategyName, false)}
+                              onClick={() => handleDownloadExcel(convertedStats, itemStrategyName, false, {
+                                accountName: item.metadata.account_name,
+                                accountType: item.metadata.account_type,
+                                broker: item.metadata.broker,
+                              })}
                               disabled={exporting}
                               className="h-8 px-2 text-xs font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
                               variant="default"
