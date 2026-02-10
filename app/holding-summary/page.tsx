@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import DashboardLayout from '../dashboard/layout';
@@ -8,7 +8,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Download } from "lucide-react";
+import { Download, ChevronLeft, ChevronRight } from "lucide-react";
 import * as XLSX from "xlsx-js-style";
 
 interface Holding {
@@ -80,6 +80,22 @@ const formatDate = (date: Date | string | null) => {
 
     return `${day}/${month}/${year}`;
 };
+
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 0];
+
+function getPageNumbers(currentPage: number, totalPages: number): (number | '...')[] {
+    if (totalPages <= 7) {
+        return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    const pages: (number | '...')[] = [1];
+    if (currentPage > 3) pages.push('...');
+    const start = Math.max(2, currentPage - 1);
+    const end = Math.min(totalPages - 1, currentPage + 1);
+    for (let i = start; i <= end; i++) pages.push(i);
+    if (currentPage < totalPages - 2) pages.push('...');
+    if (totalPages > 1) pages.push(totalPages);
+    return pages;
+}
 
 const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
     equityValue: number;
@@ -190,10 +206,35 @@ const HoldingsTable = ({
     showTotals?: boolean;
     isMutualFund?: boolean;
 }) => {
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState<number>(10);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [holdings]);
+
+    const effectivePageSize = pageSize === 0 ? holdings.length : pageSize;
+    const totalPages = Math.max(1, Math.ceil(holdings.length / (effectivePageSize || 1)));
+    const safePage = Math.min(currentPage, totalPages);
+
+    const paginatedHoldings = useMemo(() => {
+        if (pageSize === 0 || holdings.length === 0) return holdings;
+        const start = (safePage - 1) * effectivePageSize;
+        return holdings.slice(start, start + effectivePageSize);
+    }, [holdings, safePage, effectivePageSize, pageSize]);
+
+    const startEntry = holdings.length === 0 ? 0 : (safePage - 1) * effectivePageSize + 1;
+    const endEntry = Math.min(safePage * effectivePageSize, holdings.length);
+
+    const handlePageSizeChange = (value: string) => {
+        setPageSize(Number(value));
+        setCurrentPage(1);
+    };
+
     if (!holdings || holdings.length === 0) {
         return (
             <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-                <CardTitle className="text-black p-3 mb-4 rounded-t-sm  text-lg ">
+                <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg">
                     {title}
                 </CardTitle>
                 <CardContent>
@@ -211,14 +252,38 @@ const HoldingsTable = ({
 
     return (
         <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-            <CardTitle className="text-black p-3 mb-4 rounded-t-sm  text-lg ">
+            <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg">
                 {title}
             </CardTitle>
             <CardContent>
-                <div className="overflow-x-auto">
+                {/* Top bar: count + page size selector */}
+                <div className="flex items-center justify-between mb-3">
+                    <div className="text-sm text-card-text-secondary">
+                        {holdings.length} {isMutualFund ? 'fund' : 'stock'}{holdings.length !== 1 ? 's' : ''} total
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm text-card-text-secondary">Show</span>
+                        <Select value={String(pageSize)} onValueChange={handlePageSizeChange}>
+                            <SelectTrigger className="w-[72px] h-8 text-sm bg-transparent text-card-text border border-black/10">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {PAGE_SIZE_OPTIONS.map((size) => (
+                                    <SelectItem key={size} value={String(size)} className="text-sm">
+                                        {size === 0 ? 'All' : String(size)}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <span className="text-sm text-card-text-secondary">entries</span>
+                    </div>
+                </div>
+
+                {/* Scrollable table area */}
+                <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
                     <Table className="min-w-full">
-                        <TableHeader>
-                            <TableRow className="bg-black/5 hover:bg-gray-200 border-b border-gray-200">
+                        <TableHeader className="sticky top-0 z-10">
+                            <TableRow className="bg-black/5 hover:bg-black/5 border-b border-gray-200">
                                 <TableHead className="py-3 text-left text-xs font-medium text-card-text tracking-wider">
                                     Symbol
                                 </TableHead>
@@ -249,7 +314,7 @@ const HoldingsTable = ({
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {holdings.map((holding, index) => (
+                            {paginatedHoldings.map((holding, index) => (
                                 <TableRow key={`${holding.symbol}-${holding.exchange}-${index}`} className="border-b border-gray-200">
                                     <TableCell className="py-3 text-sm">
                                         <div>
@@ -298,8 +363,16 @@ const HoldingsTable = ({
                                     </TableCell>
                                 </TableRow>
                             ))}
-                            {showTotals && (
-                                <TableRow className="border-t-2 border-black/10  font-semibold">
+                        </TableBody>
+                    </Table>
+                </div>
+
+                {/* Totals row — always visible, always reflects ALL holdings */}
+                {showTotals && (
+                    <div className="overflow-x-auto">
+                        <Table className="min-w-full">
+                            <TableBody>
+                                <TableRow className="border-t-2 border-black/10 font-semibold">
                                     <TableCell colSpan={4} className="py-3 text-sm font-bold text-card-text">
                                         Total
                                     </TableCell>
@@ -321,10 +394,62 @@ const HoldingsTable = ({
                                     </TableCell>
                                     <TableCell></TableCell>
                                 </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </div>
+                            </TableBody>
+                        </Table>
+                    </div>
+                )}
+
+                {/* Bottom bar: showing info + pagination controls */}
+                {holdings.length > 0 && pageSize !== 0 && (
+                    <div className="flex items-center justify-between mt-4 flex-wrap gap-2">
+                        <div className="text-sm text-card-text-secondary">
+                            Showing {startEntry} to {endEntry} of {holdings.length} entries
+                        </div>
+                        {totalPages > 1 && (
+                            <div className="flex items-center gap-1">
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={safePage <= 1}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-card-text-secondary hover:text-card-text disabled:opacity-40 disabled:cursor-default cursor-pointer rounded-md hover:bg-black/5 transition-colors"
+                                >
+                                    <ChevronLeft className="h-4 w-4" />
+                                    Prev
+                                </button>
+                                {getPageNumbers(safePage, totalPages).map((pageNum, idx) => (
+                                    pageNum === '...' ? (
+                                        <span key={idx} className="w-8 text-center text-card-text-secondary">...</span>
+                                    ) : (
+                                        <button
+                                            key={idx}
+                                            onClick={() => setCurrentPage(pageNum as number)}
+                                            className={`w-8 h-8 text-sm rounded-md cursor-pointer transition-colors ${
+                                                pageNum === safePage
+                                                    ? 'bg-logo-green text-white font-medium'
+                                                    : 'text-card-text-secondary hover:bg-black/5 hover:text-card-text'
+                                            }`}
+                                        >
+                                            {pageNum}
+                                        </button>
+                                    )
+                                ))}
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={safePage >= totalPages}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-card-text-secondary hover:text-card-text disabled:opacity-40 disabled:cursor-default cursor-pointer rounded-md hover:bg-black/5 transition-colors"
+                                >
+                                    Next
+                                    <ChevronRight className="h-4 w-4" />
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {holdings.length > 0 && pageSize === 0 && (
+                    <div className="mt-3 text-sm text-card-text-secondary">
+                        Showing all {holdings.length} entries
+                    </div>
+                )}
             </CardContent>
         </Card>
     );
