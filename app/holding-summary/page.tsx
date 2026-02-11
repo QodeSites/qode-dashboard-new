@@ -1215,7 +1215,7 @@ const HoldingsSummaryPage = () => {
 
 html, body {
   background: #EFECD3 !important;
-  font-family: 'Lato', sans-serif;
+  font-family: 'Plus Jakarta Sans', sans-serif;
   color: #333;
   line-height: 1.5;
   font-size: 12px;
@@ -1395,7 +1395,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
 .text-right { text-align: right; }
 .text-left { text-align: left; }
 .symbol-cell {
-  font-weight: 700;
+  font-weight: 500;
   color: #2F5233;
   font-size: 13px;
 }
@@ -1404,8 +1404,9 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
   color: #718096;
   margin-top: 2px;
 }
-.profit { color: #38a169 !important; font-weight: 700; }
-.loss { color: #e53e3e !important; font-weight: 700; }
+.profit { color: #38a169 !important; }
+.loss { color: #e53e3e !important; }
+.total-row .profit, .total-row .loss { font-weight: 700; }
 .category-badge {
   padding: 3px 7px;
   border-radius: 4px;
@@ -1629,7 +1630,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Lato:wght@300;400;500;600&family=Inria+Serif:wght@300;400;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Inria+Serif:wght@300;400;700&display=swap" rel="stylesheet">
   <title>Portfolio Holdings Report</title>
   <style>${commonStyles}</style>
 </head>
