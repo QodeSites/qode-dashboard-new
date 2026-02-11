@@ -1638,21 +1638,21 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
   font-style: normal;
   font-weight: 200 800;
   font-display: swap;
-  src: url(/_next/static/media/636a5ac981f94f8b-s.p.woff2) format('woff2');
+  src: url(/fonts/plus-jakarta-sans-latin.woff2) format('woff2');
 }
 @font-face {
   font-family: 'Playfair Display';
   font-style: normal;
   font-weight: 400 900;
   font-display: swap;
-  src: url(/_next/static/media/eaead17c7dbfcd5d-s.p.woff2) format('woff2');
+  src: url(/fonts/playfair-display-latin.woff2) format('woff2');
 }
 @font-face {
   font-family: 'Inria Serif';
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url(/_next/static/media/30c134ea4c0bf720-s.p.woff2) format('woff2');
+  src: url(/fonts/inria-serif-latin.woff2) format('woff2');
 }
 ${commonStyles}
   </style>
