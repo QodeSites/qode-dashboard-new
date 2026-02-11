@@ -272,7 +272,7 @@ class JainamManagedStrategy implements DataFetchingStrategy {
 
   async getHoldings(qcode: string): Promise<Holding[]> {
     // Step 1: Find the latest date for this qcode
-    const latestDateRecord = await (prisma.equity_holding_test as any).findFirst({
+    const latestDateRecord = await (prisma.equity_holding as any).findFirst({
       where: { qcode },
       orderBy: { date: 'desc' },
       select: { date: true },
@@ -284,7 +284,7 @@ class JainamManagedStrategy implements DataFetchingStrategy {
     }
 
     // Step 2: Fetch all holdings on that single date with quantity > 0
-    const holdings = await (prisma.equity_holding_test as any).findMany({
+    const holdings = await (prisma.equity_holding as any).findMany({
       where: {
         qcode,
         date: latestDateRecord.date,
@@ -522,7 +522,7 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
 
   async getHoldings(qcode: string): Promise<Holding[]> {
     // Step 1: Find the latest date for this qcode
-    const latestDateRecord = await (prisma.equity_holding_test as any).findFirst({
+    const latestDateRecord = await (prisma.equity_holding as any).findFirst({
       where: { qcode },
       orderBy: { date: 'desc' },
       select: { date: true },
@@ -534,7 +534,7 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
     }
 
     // Step 2: Fetch all holdings on that single date with quantity > 0
-    const holdings = await (prisma.equity_holding_test as any).findMany({
+    const holdings = await (prisma.equity_holding as any).findMany({
       where: {
         qcode,
         date: latestDateRecord.date,
@@ -743,7 +743,7 @@ class PmsStrategy implements DataFetchingStrategy {
     const codes = custodianCodes.map(c => c.custodian_code);
 
     // Step 1: Find the latest date across all custodian codes
-    const latestDateRecord = await (prisma.equity_holding_test as any).findFirst({
+    const latestDateRecord = await (prisma.equity_holding as any).findFirst({
       where: { qcode: { in: codes } },
       orderBy: { date: 'desc' },
       select: { date: true },
@@ -755,7 +755,7 @@ class PmsStrategy implements DataFetchingStrategy {
     }
 
     // Step 2: Fetch all holdings on that single date with quantity > 0
-    const holdings = await (prisma.equity_holding_test as any).findMany({
+    const holdings = await (prisma.equity_holding as any).findMany({
       where: {
         qcode: { in: codes },
         date: latestDateRecord.date,
@@ -813,7 +813,7 @@ async function getMutualFundHoldings(qcode: string): Promise<Holding[]> {
   }[]>`
     WITH latest_date AS (
       SELECT MAX(as_of_date) as max_date
-      FROM mutual_fund_holding_sheet_test
+      FROM mutual_fund_holding_sheet
       WHERE qcode = ${qcode} AND as_of_date IS NOT NULL
     ),
     ranked_holdings AS (
@@ -823,7 +823,7 @@ async function getMutualFundHoldings(qcode: string): Promise<Holding[]> {
           PARTITION BY m.isin
           ORDER BY m.quantity DESC, m.buy_value DESC
         ) as rn
-      FROM mutual_fund_holding_sheet_test m
+      FROM mutual_fund_holding_sheet m
       CROSS JOIN latest_date ld
       WHERE m.qcode = ${qcode}
         AND m.quantity > 0

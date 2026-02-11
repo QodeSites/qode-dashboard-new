@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import DashboardLayout from '../dashboard/layout';
@@ -8,7 +8,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Download } from "lucide-react";
+import { Download, ChevronLeft, ChevronRight } from "lucide-react";
 import * as XLSX from "xlsx-js-style";
 
 interface Holding {
@@ -81,6 +81,22 @@ const formatDate = (date: Date | string | null) => {
     return `${day}/${month}/${year}`;
 };
 
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 0];
+
+function getPageNumbers(currentPage: number, totalPages: number): (number | '...')[] {
+    if (totalPages <= 7) {
+        return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    const pages: (number | '...')[] = [1];
+    if (currentPage > 3) pages.push('...');
+    const start = Math.max(2, currentPage - 1);
+    const end = Math.min(totalPages - 1, currentPage + 1);
+    for (let i = start; i <= end; i++) pages.push(i);
+    if (currentPage < totalPages - 2) pages.push('...');
+    if (totalPages > 1) pages.push(totalPages);
+    return pages;
+}
+
 const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
     equityValue: number;
     debtValue: number;
@@ -118,7 +134,7 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
                                 className="bg-logo-green h-full flex items-center justify-center text-white text-xs font-medium"
                                 style={{ width: `${equityPercent}%` }}
                             >
-                                {equityPercent > 10 ? `${equityPercent.toFixed(1)}%` : ''}
+                                {equityPercent > 10 ? `${equityPercent.toFixed(2)}%` : ''}
                             </div>
                         )}
                         {debtPercent > 0 && (
@@ -126,7 +142,7 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
                                 className="bg-[#DABD38] h-full flex items-center justify-center text-white text-xs font-medium"
                                 style={{ width: `${debtPercent}%` }}
                             >
-                                {debtPercent > 10 ? `${debtPercent.toFixed(1)}%` : ''}
+                                {debtPercent > 10 ? `${debtPercent.toFixed(2)}%` : ''}
                             </div>
                         )}
                         {hybridPercent > 0 && (
@@ -134,7 +150,7 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
                                 className="bg-[#008455] h-full flex items-center justify-center text-white text-xs font-medium"
                                 style={{ width: `${hybridPercent}%` }}
                             >
-                                {hybridPercent > 10 ? `${hybridPercent.toFixed(1)}%` : ''}
+                                {hybridPercent > 10 ? `${hybridPercent.toFixed(2)}%` : ''}
                             </div>
                         )}
                     </div>
@@ -190,10 +206,35 @@ const HoldingsTable = ({
     showTotals?: boolean;
     isMutualFund?: boolean;
 }) => {
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState<number>(10);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [holdings]);
+
+    const effectivePageSize = pageSize === 0 ? holdings.length : pageSize;
+    const totalPages = Math.max(1, Math.ceil(holdings.length / (effectivePageSize || 1)));
+    const safePage = Math.min(currentPage, totalPages);
+
+    const paginatedHoldings = useMemo(() => {
+        if (pageSize === 0 || holdings.length === 0) return holdings;
+        const start = (safePage - 1) * effectivePageSize;
+        return holdings.slice(start, start + effectivePageSize);
+    }, [holdings, safePage, effectivePageSize, pageSize]);
+
+    const startEntry = holdings.length === 0 ? 0 : (safePage - 1) * effectivePageSize + 1;
+    const endEntry = Math.min(safePage * effectivePageSize, holdings.length);
+
+    const handlePageSizeChange = (value: string) => {
+        setPageSize(Number(value));
+        setCurrentPage(1);
+    };
+
     if (!holdings || holdings.length === 0) {
         return (
             <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-                <CardTitle className="text-black p-3 mb-4 rounded-t-sm  text-lg ">
+                <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg">
                     {title}
                 </CardTitle>
                 <CardContent>
@@ -211,45 +252,69 @@ const HoldingsTable = ({
 
     return (
         <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-            <CardTitle className="text-black p-3 mb-4 rounded-t-sm  text-lg ">
+            <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg">
                 {title}
             </CardTitle>
             <CardContent>
-                <div className="overflow-x-auto">
+                {/* Top bar: count + page size selector */}
+                <div className="flex items-center justify-between mb-3">
+                    <div className="text-sm text-card-text-secondary">
+                        {holdings.length} {isMutualFund ? 'mutual fund' : 'stock'}{holdings.length !== 1 ? 's' : ''} total
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm text-card-text-secondary">Show</span>
+                        <Select value={String(pageSize)} onValueChange={handlePageSizeChange}>
+                            <SelectTrigger className="w-[72px] h-8 text-sm bg-transparent text-card-text border border-black/10">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {PAGE_SIZE_OPTIONS.map((size) => (
+                                    <SelectItem key={size} value={String(size)} className="text-sm">
+                                        {size === 0 ? 'All' : String(size)}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <span className="text-sm text-card-text-secondary">entries</span>
+                    </div>
+                </div>
+
+                {/* Scrollable table area */}
+                <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
                     <Table className="min-w-full">
-                        <TableHeader>
-                            <TableRow className="bg-black/5 hover:bg-gray-200 border-b border-gray-200">
-                                <TableHead className="py-3 text-left text-xs font-medium text-card-text tracking-wider">
+                        <TableHeader className="sticky top-0 z-10">
+                            <TableRow className="bg-black/5 hover:bg-black/5 border-b border-gray-200">
+                                <TableHead className="py-3 text-left text-sm font-medium text-card-text tracking-wider">
                                     Symbol
                                 </TableHead>
-                                <TableHead className="py-3 text-right text-xs font-medium text-card-text tracking-wider">
+                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
                                     Quantity
                                 </TableHead>
-                                <TableHead className="py-3 text-right text-xs font-medium text-card-text tracking-wider">
+                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
                                     Average Cost (₹)
                                 </TableHead>
-                                <TableHead className="py-3 text-right text-xs font-medium text-card-text tracking-wider">
+                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
                                     Last Traded Price (₹)
                                 </TableHead>
-                                <TableHead className="py-3 text-right text-xs font-medium text-card-text tracking-wider">
+                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
                                     Invested Amount (₹)
                                 </TableHead>
-                                <TableHead className="py-3 text-right text-xs font-medium text-card-text tracking-wider">
+                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
                                     Current Value (₹)
                                 </TableHead>
-                                <TableHead className="py-3 text-right text-xs font-medium text-card-text tracking-wider">
+                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
                                     Profit & Loss (₹)
                                 </TableHead>
-                                <TableHead className="py-3 text-right text-xs font-medium text-card-text tracking-wider">
+                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
                                     Profit & Loss (%)
                                 </TableHead>
-                                <TableHead className="py-3 text-left text-xs font-medium text-card-text tracking-wider">
+                                <TableHead className="py-3 text-left text-sm font-medium text-card-text tracking-wider">
                                     Category
                                 </TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {holdings.map((holding, index) => (
+                            {paginatedHoldings.map((holding, index) => (
                                 <TableRow key={`${holding.symbol}-${holding.exchange}-${index}`} className="border-b border-gray-200">
                                     <TableCell className="py-3 text-sm">
                                         <div>
@@ -298,8 +363,11 @@ const HoldingsTable = ({
                                     </TableCell>
                                 </TableRow>
                             ))}
-                            {showTotals && (
-                                <TableRow className="border-t-2 border-black/10  font-semibold">
+                        </TableBody>
+                        {/* Totals row — sticky bottom, always visible, always reflects ALL holdings */}
+                        {showTotals && (
+                            <tfoot className="sticky bottom-0 z-10 bg-[#f7f5e8]">
+                                <TableRow className="border-t border-gray-200 font-semibold">
                                     <TableCell colSpan={4} className="py-3 text-sm font-bold text-card-text">
                                         Total
                                     </TableCell>
@@ -321,10 +389,62 @@ const HoldingsTable = ({
                                     </TableCell>
                                     <TableCell></TableCell>
                                 </TableRow>
-                            )}
-                        </TableBody>
+                            </tfoot>
+                        )}
                     </Table>
                 </div>
+
+                {/* Bottom bar: showing info + pagination controls */}
+                {holdings.length > 0 && pageSize !== 0 && (
+                    <div className="flex items-center justify-between mt-4 flex-wrap gap-2">
+                        <div className="text-sm text-card-text-secondary">
+                            Showing {startEntry} to {endEntry} of {holdings.length} entries
+                        </div>
+                        {totalPages > 1 && (
+                            <div className="flex items-center gap-1">
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={safePage <= 1}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-card-text-secondary hover:text-card-text disabled:opacity-40 disabled:cursor-default cursor-pointer rounded-md hover:bg-black/5 transition-colors"
+                                >
+                                    <ChevronLeft className="h-4 w-4" />
+                                    Prev
+                                </button>
+                                {getPageNumbers(safePage, totalPages).map((pageNum, idx) => (
+                                    pageNum === '...' ? (
+                                        <span key={idx} className="w-8 text-center text-card-text-secondary">...</span>
+                                    ) : (
+                                        <button
+                                            key={idx}
+                                            onClick={() => setCurrentPage(pageNum as number)}
+                                            className={`w-8 h-8 text-sm rounded-md cursor-pointer transition-colors ${
+                                                pageNum === safePage
+                                                    ? 'bg-logo-green text-white font-medium'
+                                                    : 'text-card-text-secondary hover:bg-black/5 hover:text-card-text'
+                                            }`}
+                                        >
+                                            {pageNum}
+                                        </button>
+                                    )
+                                ))}
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={safePage >= totalPages}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-card-text-secondary hover:text-card-text disabled:opacity-40 disabled:cursor-default cursor-pointer rounded-md hover:bg-black/5 transition-colors"
+                                >
+                                    Next
+                                    <ChevronRight className="h-4 w-4" />
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {holdings.length > 0 && pageSize === 0 && (
+                    <div className="mt-3 text-sm text-card-text-secondary">
+                        Showing all {holdings.length} entries
+                    </div>
+                )}
             </CardContent>
         </Card>
     );
@@ -1095,7 +1215,7 @@ const HoldingsSummaryPage = () => {
 
 html, body {
   background: #EFECD3 !important;
-  font-family: 'Lato', sans-serif;
+  font-family: 'Plus Jakarta Sans', sans-serif;
   color: #333;
   line-height: 1.5;
   font-size: 12px;
@@ -1258,9 +1378,9 @@ h1, h2, h3 { margin: 0; }
 .table-container {
   flex: 1;
 }
-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-th { background-color: #02422B; color: white; padding: 10px 8px; text-align: center; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
-td { padding: 8px; text-align: center; border-bottom: 1px solid #eee; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { background-color: #02422B; color: white; padding: 10px 8px; text-align: center; font-weight: 600; font-size: 10px; letter-spacing: 0.5px; }
+td { padding: 8px; text-align: center; border-bottom: 1px solid #eee; font-weight: 400; }
 thead { display: table-header-group; }
 tbody { display: table-row-group; }
 tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
@@ -1275,23 +1395,25 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
 .text-right { text-align: right; }
 .text-left { text-align: left; }
 .symbol-cell {
-  font-weight: 700;
+  font-weight: 600;
   color: #2F5233;
-  font-size: 13px;
+  font-size: 14px;
 }
 .exchange-text {
   font-size: 10px;
   color: #718096;
   margin-top: 2px;
 }
-.profit { color: #38a169 !important; font-weight: 700; }
-.loss { color: #e53e3e !important; font-weight: 700; }
+.text-gray { color: #4B5563; }
+.value-col { font-weight: 500; }
+.profit { color: #38a169 !important; }
+.loss { color: #e53e3e !important; }
+.total-row .profit, .total-row .loss { font-weight: 700; }
 .category-badge {
   padding: 3px 7px;
   border-radius: 4px;
   font-size: 9px;
   font-weight: 700;
-  text-transform: uppercase;
 }
 .category-equity {
   background: #2F5233 !important;
@@ -1330,22 +1452,22 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
         <div class="summary-grid">
           <div class="summary-item stat-card">
             <div class="label">Total Investment</div>
-            <div class="value">₹${fmtNum(holdingsData.totalBuyValue)}</div>
+            <div class="value">₹ ${fmtNum(holdingsData.totalBuyValue)}</div>
           </div>
           <div class="summary-item stat-card">
             <div class="label">Current Value</div>
-            <div class="value">₹${fmtNum(holdingsData.totalCurrentValue)}</div>
+            <div class="value">₹ ${fmtNum(holdingsData.totalCurrentValue)}</div>
+          </div>
+          <div class="summary-item stat-card">
+            <div class="label">Return (₹)</div>
+            <div class="value ${holdingsData.totalPnl >= 0 ? 'positive' : 'negative'}">
+              ${holdingsData.totalPnl >= 0 ? '' : '-'}₹ ${fmtNum(Math.abs(holdingsData.totalPnl))}
+            </div>
           </div>
           <div class="summary-item stat-card">
             <div class="label">Return (%)</div>
             <div class="value ${holdingsData.totalPnlPercent >= 0 ? 'positive' : 'negative'}">
               ${fmtNum(holdingsData.totalPnlPercent)}%
-            </div>
-          </div>
-          <div class="summary-item stat-card">
-            <div class="label">Return (₹)</div>
-            <div class="value ${holdingsData.totalPnl >= 0 ? 'positive' : 'negative'}">
-              ${holdingsData.totalPnl >= 0 ? '' : '-'}₹${fmtNum(Math.abs(holdingsData.totalPnl))}
             </div>
           </div>
         </div>
@@ -1358,9 +1480,9 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
             ${total > 0
                     ? `
                 <div class="chart-bar">
-                ${assetAllocation.equity > 0 ? `<div class="equity-bar" style="width:${((assetAllocation.equity / total) * 100).toFixed(1)}%;">Equity ${((assetAllocation.equity / total) * 100).toFixed(1)}%</div>` : ''}
-                ${assetAllocation.debt > 0 ? `<div class="debt-bar"   style="width:${((assetAllocation.debt / total) * 100).toFixed(1)}%;">Debt ${((assetAllocation.debt / total) * 100).toFixed(1)}%</div>` : ''}
-                ${assetAllocation.hybrid > 0 ? `<div class="hybrid-bar"   style="width:${((assetAllocation.hybrid / total) * 100).toFixed(1)}%;">Hybrid ${((assetAllocation.hybrid / total) * 100).toFixed(1)}%</div>` : ''}
+                ${assetAllocation.equity > 0 ? `<div class="equity-bar" style="width:${((assetAllocation.equity / total) * 100).toFixed(2)}%;">Equity&nbsp;&nbsp;${((assetAllocation.equity / total) * 100).toFixed(2)}%</div>` : ''}
+                ${assetAllocation.debt > 0 ? `<div class="debt-bar"   style="width:${((assetAllocation.debt / total) * 100).toFixed(2)}%;">Debt&nbsp;&nbsp;${((assetAllocation.debt / total) * 100).toFixed(2)}%</div>` : ''}
+                ${assetAllocation.hybrid > 0 ? `<div class="hybrid-bar"   style="width:${((assetAllocation.hybrid / total) * 100).toFixed(2)}%;">Hybrid&nbsp;&nbsp;${((assetAllocation.hybrid / total) * 100).toFixed(2)}%</div>` : ''}
                 </div>
                 <div class="legend">
                 ${assetAllocation.equity > 0 ? `
@@ -1397,10 +1519,10 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
             const tableHeader = () => `
       <thead>
         <tr>
-          <th class="text-left">Fund Name</th>
+          <th class="text-left">Symbol</th>
           <th class="text-right">Quantity</th>
           <th class="text-right">Average Cost (₹)</th>
-          <th class="text-right">Latest Trade Price (₹)</th>
+          <th class="text-right">Last Traded Price (₹)</th>
           <th class="text-right">Invested Amount (₹)</th>
           <th class="text-right">Current Value (₹)</th>
           <th class="text-right">Profit & Loss (₹)</th>
@@ -1415,13 +1537,13 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
         <td class="text-left">
           <div class="symbol-cell">${h.symbol}</div>
         </td>
-        <td class="text-right">${h.quantity.toFixed(2)}</td>
-        <td class="text-right">${fmtNum(h.avgPrice)}</td>
-        <td class="text-right">${fmtNum(h.ltp)}</td>
-        <td class="text-right">${fmtNum(h.buyValue)}</td>
-        <td class="text-right">${fmtNum(h.valueAsOfToday)}</td>
-        <td class="text-right ${h.pnlAmount >= 0 ? 'profit' : 'loss'}">${fmtNum(h.pnlAmount)}</td>
-        <td class="text-right ${h.percentPnl >= 0 ? 'profit' : 'loss'}">${fmtNum(h.percentPnl)}%</td>
+        <td class="text-right text-gray">${fmtNum(h.quantity)}</td>
+        <td class="text-right text-gray">${fmtNum(h.avgPrice)}</td>
+        <td class="text-right text-gray">${fmtNum(h.ltp)}</td>
+        <td class="text-right text-gray value-col">${fmtNum(h.buyValue)}</td>
+        <td class="text-right text-gray value-col">${fmtNum(h.valueAsOfToday)}</td>
+        <td class="text-right value-col ${h.pnlAmount >= 0 ? 'profit' : 'loss'}">${fmtNum(h.pnlAmount)}</td>
+        <td class="text-right value-col ${h.percentPnl >= 0 ? 'profit' : 'loss'}">${fmtNum(h.percentPnl)}%</td>
         <td><span class="category-badge ${h.debtEquity.toLowerCase() === 'equity' ? 'category-equity' : h.debtEquity.toLowerCase() === 'hybrid' ? 'category-hybrid' : 'category-debt'}">${h.debtEquity}</span></td>
       </tr>
     `).join('');
@@ -1509,7 +1631,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Lato:wght@300;400;500;600&family=Inria+Serif:wght@300;400;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Inria+Serif:wght@300;400;700&display=swap" rel="stylesheet">
   <title>Portfolio Holdings Report</title>
   <style>${commonStyles}</style>
 </head>
@@ -1712,7 +1834,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
                                 <div className="mt-4" />
                                 <div className="flex items-baseline justify-between">
                                     <div className="flex items-baseline text-3xl font-[500] text-card-text-secondary font-heading">
-                                        ₹{formatter.format(holdingsData.totalBuyValue)}
+                                        ₹ {formatter.format(holdingsData.totalBuyValue)}
                                     </div>
                                 </div>
                             </div>
@@ -1726,7 +1848,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
                                 <div className="mt-4" />
                                 <div className="flex items-baseline justify-between">
                                     <div className="flex items-baseline text-3xl font-[500] text-card-text-secondary font-heading">
-                                        ₹{formatter.format(holdingsData.totalCurrentValue)}
+                                        ₹ {formatter.format(holdingsData.totalCurrentValue)}
                                     </div>
                                 </div>
                             </div>
@@ -1740,7 +1862,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
                                 <div className="mt-4" />
                                 <div className="flex items-baseline justify-between">
                                     <div className={`flex items-baseline text-3xl font-[500] font-heading ${holdingsData.totalPnl >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                                        ₹{formatter.format(holdingsData.totalPnl)}
+                                        ₹ {formatter.format(holdingsData.totalPnl)}
                                         <span className={`text-base ml-2 ${holdingsData.totalPnl >= 0 ? 'text-green-700' : 'text-red-700'}`}>
                                             ({holdingsData.totalPnlPercent.toFixed(2)}%)
                                         </span>

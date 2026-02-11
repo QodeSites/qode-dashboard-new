@@ -10,6 +10,7 @@ import {
   XMarkIcon,
   ArrowRightOnRectangleIcon,
   CurrencyDollarIcon,
+  UserCircleIcon,
 } from "@heroicons/react/24/outline"
 import { cn } from "@/lib/utils"
 import { signOut, useSession } from "next-auth/react"
@@ -21,6 +22,7 @@ const navigation = [
   { name: "Portfolio", href: "/dashboard", icon: ChartBarIcon },
   { name: "Holding Summary", href: "/holding-summary", icon: ChartCandlestickIcon },
   { name: "Fee Summary", href: "/quarterly-fees", icon: CurrencyDollarIcon },
+  { name: "Personal Details", href: "/personal-details", icon: UserCircleIcon },
 ];
 
 interface SidebarProps {
