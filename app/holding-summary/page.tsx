@@ -1631,9 +1631,31 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link id="google-fonts" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Inria+Serif:wght@300;400;700&display=swap" rel="stylesheet">
   <title>Portfolio Holdings Report</title>
-  <style>${commonStyles}</style>
+  <style>
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url(/_next/static/media/636a5ac981f94f8b-s.p.woff2) format('woff2');
+}
+@font-face {
+  font-family: 'Playfair Display';
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url(/_next/static/media/eaead17c7dbfcd5d-s.p.woff2) format('woff2');
+}
+@font-face {
+  font-family: 'Inria Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/_next/static/media/30c134ea4c0bf720-s.p.woff2) format('woff2');
+}
+${commonStyles}
+  </style>
 </head>
 <body>
   ${contentHTML}
@@ -1732,10 +1754,6 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
 
     document.addEventListener('DOMContentLoaded', function() {
         runPagination();
-        // Signal parent that content is ready for font loading
-        if (window.parent && window.parent.__pdfContentReady) {
-            window.parent.__pdfContentReady();
-        }
     });
   </script>
 </body>
@@ -1767,37 +1785,22 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
 
             const cleanup = () => {
                 iframe.remove();
-                delete (window as any).__pdfContentReady;
                 setIsGeneratingPdf(false);
-            };
-
-            // Set up the ready callback before writing content
-            (window as any).__pdfContentReady = () => {
-                const link = iframeDoc.getElementById('google-fonts');
-
-                const onFontsReady = () => {
-                    iframeDoc.fonts.ready.then(() => {
-                        try {
-                            iframeWin.print();
-                        } catch (e) {
-                            console.error('Print error:', e);
-                        }
-                        // print() is blocking — cleanup runs after dialog closes
-                        cleanup();
-                    });
-                };
-
-                if (link && !(link as HTMLLinkElement).sheet) {
-                    link.addEventListener('load', onFontsReady);
-                    link.addEventListener('error', onFontsReady);
-                } else {
-                    onFontsReady();
-                }
             };
 
             iframeDoc.open();
             iframeDoc.write(fullHTML);
             iframeDoc.close();
+
+            // Fonts are self-hosted @font-face — wait for them to load, then print
+            iframeDoc.fonts.ready.then(() => {
+                try {
+                    iframeWin.print();
+                } catch (e) {
+                    console.error('Print error:', e);
+                }
+                cleanup();
+            });
         } catch (e) {
             console.error(e);
             setError('Failed to open print preview');
