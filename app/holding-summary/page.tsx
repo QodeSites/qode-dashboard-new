@@ -1450,11 +1450,11 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
         <div class="summary-grid">
           <div class="summary-item stat-card">
             <div class="label">Total Investment</div>
-            <div class="value">₹${fmtNum(holdingsData.totalBuyValue)}</div>
+            <div class="value">₹ ${fmtNum(holdingsData.totalBuyValue)}</div>
           </div>
           <div class="summary-item stat-card">
             <div class="label">Current Value</div>
-            <div class="value">₹${fmtNum(holdingsData.totalCurrentValue)}</div>
+            <div class="value">₹ ${fmtNum(holdingsData.totalCurrentValue)}</div>
           </div>
           <div class="summary-item stat-card">
             <div class="label">Return (%)</div>
@@ -1465,7 +1465,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
           <div class="summary-item stat-card">
             <div class="label">Return (₹)</div>
             <div class="value ${holdingsData.totalPnl >= 0 ? 'positive' : 'negative'}">
-              ${holdingsData.totalPnl >= 0 ? '' : '-'}₹${fmtNum(Math.abs(holdingsData.totalPnl))}
+              ${holdingsData.totalPnl >= 0 ? '' : '-'}₹ ${fmtNum(Math.abs(holdingsData.totalPnl))}
             </div>
           </div>
         </div>
@@ -1520,7 +1520,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
           <th class="text-left">Symbol</th>
           <th class="text-right">Quantity</th>
           <th class="text-right">Average Cost (₹)</th>
-          <th class="text-right">Latest Trade Price (₹)</th>
+          <th class="text-right">Last Traded Price (₹)</th>
           <th class="text-right">Invested Amount (₹)</th>
           <th class="text-right">Current Value (₹)</th>
           <th class="text-right">Profit & Loss (₹)</th>
