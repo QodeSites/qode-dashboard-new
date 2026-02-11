@@ -134,7 +134,7 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
                                 className="bg-logo-green h-full flex items-center justify-center text-white text-xs font-medium"
                                 style={{ width: `${equityPercent}%` }}
                             >
-                                {equityPercent > 10 ? `${equityPercent.toFixed(1)}%` : ''}
+                                {equityPercent > 10 ? `${equityPercent.toFixed(2)}%` : ''}
                             </div>
                         )}
                         {debtPercent > 0 && (
@@ -142,7 +142,7 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
                                 className="bg-[#DABD38] h-full flex items-center justify-center text-white text-xs font-medium"
                                 style={{ width: `${debtPercent}%` }}
                             >
-                                {debtPercent > 10 ? `${debtPercent.toFixed(1)}%` : ''}
+                                {debtPercent > 10 ? `${debtPercent.toFixed(2)}%` : ''}
                             </div>
                         )}
                         {hybridPercent > 0 && (
@@ -150,7 +150,7 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
                                 className="bg-[#008455] h-full flex items-center justify-center text-white text-xs font-medium"
                                 style={{ width: `${hybridPercent}%` }}
                             >
-                                {hybridPercent > 10 ? `${hybridPercent.toFixed(1)}%` : ''}
+                                {hybridPercent > 10 ? `${hybridPercent.toFixed(2)}%` : ''}
                             </div>
                         )}
                     </div>
@@ -1215,7 +1215,7 @@ const HoldingsSummaryPage = () => {
 
 html, body {
   background: #EFECD3 !important;
-  font-family: 'Lato', sans-serif;
+  font-family: 'Plus Jakarta Sans', sans-serif;
   color: #333;
   line-height: 1.5;
   font-size: 12px;
@@ -1378,9 +1378,9 @@ h1, h2, h3 { margin: 0; }
 .table-container {
   flex: 1;
 }
-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-th { background-color: #02422B; color: white; padding: 10px 8px; text-align: center; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
-td { padding: 8px; text-align: center; border-bottom: 1px solid #eee; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { background-color: #02422B; color: white; padding: 10px 8px; text-align: center; font-weight: 600; font-size: 10px; letter-spacing: 0.5px; }
+td { padding: 8px; text-align: center; border-bottom: 1px solid #eee; font-weight: 400; }
 thead { display: table-header-group; }
 tbody { display: table-row-group; }
 tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
@@ -1395,23 +1395,25 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
 .text-right { text-align: right; }
 .text-left { text-align: left; }
 .symbol-cell {
-  font-weight: 700;
+  font-weight: 600;
   color: #2F5233;
-  font-size: 13px;
+  font-size: 14px;
 }
 .exchange-text {
   font-size: 10px;
   color: #718096;
   margin-top: 2px;
 }
-.profit { color: #38a169 !important; font-weight: 700; }
-.loss { color: #e53e3e !important; font-weight: 700; }
+.text-gray { color: #4B5563; }
+.value-col { font-weight: 500; }
+.profit { color: #38a169 !important; }
+.loss { color: #e53e3e !important; }
+.total-row .profit, .total-row .loss { font-weight: 700; }
 .category-badge {
   padding: 3px 7px;
   border-radius: 4px;
   font-size: 9px;
   font-weight: 700;
-  text-transform: uppercase;
 }
 .category-equity {
   background: #2F5233 !important;
@@ -1450,11 +1452,11 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
         <div class="summary-grid">
           <div class="summary-item stat-card">
             <div class="label">Total Investment</div>
-            <div class="value">₹${fmtNum(holdingsData.totalBuyValue)}</div>
+            <div class="value">₹ ${fmtNum(holdingsData.totalBuyValue)}</div>
           </div>
           <div class="summary-item stat-card">
             <div class="label">Current Value</div>
-            <div class="value">₹${fmtNum(holdingsData.totalCurrentValue)}</div>
+            <div class="value">₹ ${fmtNum(holdingsData.totalCurrentValue)}</div>
           </div>
           <div class="summary-item stat-card">
             <div class="label">Return (%)</div>
@@ -1465,7 +1467,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
           <div class="summary-item stat-card">
             <div class="label">Return (₹)</div>
             <div class="value ${holdingsData.totalPnl >= 0 ? 'positive' : 'negative'}">
-              ${holdingsData.totalPnl >= 0 ? '' : '-'}₹${fmtNum(Math.abs(holdingsData.totalPnl))}
+              ${holdingsData.totalPnl >= 0 ? '' : '-'}₹ ${fmtNum(Math.abs(holdingsData.totalPnl))}
             </div>
           </div>
         </div>
@@ -1478,9 +1480,9 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
             ${total > 0
                     ? `
                 <div class="chart-bar">
-                ${assetAllocation.equity > 0 ? `<div class="equity-bar" style="width:${((assetAllocation.equity / total) * 100).toFixed(1)}%;">Equity ${((assetAllocation.equity / total) * 100).toFixed(1)}%</div>` : ''}
-                ${assetAllocation.debt > 0 ? `<div class="debt-bar"   style="width:${((assetAllocation.debt / total) * 100).toFixed(1)}%;">Debt ${((assetAllocation.debt / total) * 100).toFixed(1)}%</div>` : ''}
-                ${assetAllocation.hybrid > 0 ? `<div class="hybrid-bar"   style="width:${((assetAllocation.hybrid / total) * 100).toFixed(1)}%;">Hybrid ${((assetAllocation.hybrid / total) * 100).toFixed(1)}%</div>` : ''}
+                ${assetAllocation.equity > 0 ? `<div class="equity-bar" style="width:${((assetAllocation.equity / total) * 100).toFixed(2)}%;">Equity&nbsp;&nbsp;${((assetAllocation.equity / total) * 100).toFixed(2)}%</div>` : ''}
+                ${assetAllocation.debt > 0 ? `<div class="debt-bar"   style="width:${((assetAllocation.debt / total) * 100).toFixed(2)}%;">Debt&nbsp;&nbsp;${((assetAllocation.debt / total) * 100).toFixed(2)}%</div>` : ''}
+                ${assetAllocation.hybrid > 0 ? `<div class="hybrid-bar"   style="width:${((assetAllocation.hybrid / total) * 100).toFixed(2)}%;">Hybrid&nbsp;&nbsp;${((assetAllocation.hybrid / total) * 100).toFixed(2)}%</div>` : ''}
                 </div>
                 <div class="legend">
                 ${assetAllocation.equity > 0 ? `
@@ -1517,10 +1519,10 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
             const tableHeader = () => `
       <thead>
         <tr>
-          <th class="text-left">Fund Name</th>
+          <th class="text-left">Symbol</th>
           <th class="text-right">Quantity</th>
           <th class="text-right">Average Cost (₹)</th>
-          <th class="text-right">Latest Trade Price (₹)</th>
+          <th class="text-right">Last Traded Price (₹)</th>
           <th class="text-right">Invested Amount (₹)</th>
           <th class="text-right">Current Value (₹)</th>
           <th class="text-right">Profit & Loss (₹)</th>
@@ -1535,13 +1537,13 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
         <td class="text-left">
           <div class="symbol-cell">${h.symbol}</div>
         </td>
-        <td class="text-right">${fmtNum(h.quantity)}</td>
-        <td class="text-right">${fmtNum(h.avgPrice)}</td>
-        <td class="text-right">${fmtNum(h.ltp)}</td>
-        <td class="text-right">${fmtNum(h.buyValue)}</td>
-        <td class="text-right">${fmtNum(h.valueAsOfToday)}</td>
-        <td class="text-right ${h.pnlAmount >= 0 ? 'profit' : 'loss'}">${fmtNum(h.pnlAmount)}</td>
-        <td class="text-right ${h.percentPnl >= 0 ? 'profit' : 'loss'}">${fmtNum(h.percentPnl)}%</td>
+        <td class="text-right text-gray">${fmtNum(h.quantity)}</td>
+        <td class="text-right text-gray">${fmtNum(h.avgPrice)}</td>
+        <td class="text-right text-gray">${fmtNum(h.ltp)}</td>
+        <td class="text-right text-gray value-col">${fmtNum(h.buyValue)}</td>
+        <td class="text-right text-gray value-col">${fmtNum(h.valueAsOfToday)}</td>
+        <td class="text-right value-col ${h.pnlAmount >= 0 ? 'profit' : 'loss'}">${fmtNum(h.pnlAmount)}</td>
+        <td class="text-right value-col ${h.percentPnl >= 0 ? 'profit' : 'loss'}">${fmtNum(h.percentPnl)}%</td>
         <td><span class="category-badge ${h.debtEquity.toLowerCase() === 'equity' ? 'category-equity' : h.debtEquity.toLowerCase() === 'hybrid' ? 'category-hybrid' : 'category-debt'}">${h.debtEquity}</span></td>
       </tr>
     `).join('');
@@ -1629,7 +1631,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Lato:wght@300;400;500;600&family=Inria+Serif:wght@300;400;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Inria+Serif:wght@300;400;700&display=swap" rel="stylesheet">
   <title>Portfolio Holdings Report</title>
   <style>${commonStyles}</style>
 </head>
