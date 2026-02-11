@@ -1378,9 +1378,9 @@ h1, h2, h3 { margin: 0; }
 .table-container {
   flex: 1;
 }
-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th { background-color: #02422B; color: white; padding: 10px 8px; text-align: center; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
-td { padding: 8px; text-align: center; border-bottom: 1px solid #eee; }
+td { padding: 8px; text-align: center; border-bottom: 1px solid #eee; font-weight: 400; }
 thead { display: table-header-group; }
 tbody { display: table-row-group; }
 tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
@@ -1395,9 +1395,9 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
 .text-right { text-align: right; }
 .text-left { text-align: left; }
 .symbol-cell {
-  font-weight: 500;
+  font-weight: 600;
   color: #2F5233;
-  font-size: 13px;
+  font-size: 14px;
 }
 .exchange-text {
   font-size: 10px;
