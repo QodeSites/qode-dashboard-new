@@ -1459,15 +1459,15 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
             <div class="value">₹ ${fmtNum(holdingsData.totalCurrentValue)}</div>
           </div>
           <div class="summary-item stat-card">
-            <div class="label">Return (%)</div>
-            <div class="value ${holdingsData.totalPnlPercent >= 0 ? 'positive' : 'negative'}">
-              ${fmtNum(holdingsData.totalPnlPercent)}%
-            </div>
-          </div>
-          <div class="summary-item stat-card">
             <div class="label">Return (₹)</div>
             <div class="value ${holdingsData.totalPnl >= 0 ? 'positive' : 'negative'}">
               ${holdingsData.totalPnl >= 0 ? '' : '-'}₹ ${fmtNum(Math.abs(holdingsData.totalPnl))}
+            </div>
+          </div>
+          <div class="summary-item stat-card">
+            <div class="label">Return (%)</div>
+            <div class="value ${holdingsData.totalPnlPercent >= 0 ? 'positive' : 'negative'}">
+              ${fmtNum(holdingsData.totalPnlPercent)}%
             </div>
           </div>
         </div>
