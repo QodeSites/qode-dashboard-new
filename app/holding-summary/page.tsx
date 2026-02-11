@@ -1732,13 +1732,13 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
             setTimeout(() => paginateLongTable('mf-table', 'Mutual Fund Holdings', mfBasePageNum), 200);
         }
 
-        setTimeout(() => {
+        document.fonts.ready.then(function() {
             try {
                 window.print();
             } catch(e) {
                 console.error('Print error:', e);
             }
-        }, 1000);
+        });
     });
   </script>
 </body>
