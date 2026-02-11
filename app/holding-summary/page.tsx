@@ -1631,7 +1631,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Inria+Serif:wght@300;400;700&display=swap" rel="stylesheet">
+  <link id="google-fonts" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Inria+Serif:wght@300;400;700&display=swap" rel="stylesheet">
   <title>Portfolio Holdings Report</title>
   <style>${commonStyles}</style>
 </head>
@@ -1640,27 +1640,27 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
 
   <script>
     function paginateLongTable(tableId, sectionTitle, basePageNum) {
-        const table = document.getElementById(tableId);
+        var table = document.getElementById(tableId);
         if (!table) return;
 
-        let currentPage = table.closest('.page');
+        var currentPage = table.closest('.page');
         if (!currentPage) return;
 
-        const tbody = table.querySelector('tbody');
+        var tbody = table.querySelector('tbody');
         if (!tbody) return;
 
-        const allRows = Array.from(tbody.querySelectorAll('tr'));
+        var allRows = Array.from(tbody.querySelectorAll('tr'));
         if (allRows.length <= 6) return;
 
-        const totalRow = allRows.find(row => row.classList.contains('total-row'));
-        const dataRows = allRows.filter(row => !row.classList.contains('total-row'));
+        var totalRow = allRows.find(function(row) { return row.classList.contains('total-row'); });
+        var dataRows = allRows.filter(function(row) { return !row.classList.contains('total-row'); });
 
-        const rowsPerPage = 6;
-        let pageNum = basePageNum + 1;
+        var rowsPerPage = 6;
+        var pageNum = basePageNum + 1;
 
         tbody.innerHTML = '';
 
-        for (let i = 0; i < Math.min(rowsPerPage, dataRows.length); i++) {
+        for (var i = 0; i < Math.min(rowsPerPage, dataRows.length); i++) {
             tbody.appendChild(dataRows[i].cloneNode(true));
         }
 
@@ -1668,48 +1668,46 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
             tbody.appendChild(totalRow.cloneNode(true));
         }
 
-        let remainingRows = dataRows.slice(rowsPerPage);
+        var remainingRows = dataRows.slice(rowsPerPage);
 
         while (remainingRows.length > 0) {
-            const newPageHTML = \`
-                <div class="page">
-                    <div class="header">
-                        <div class="header-left">
-                            <h1>\${document.querySelector('.header-left h1').textContent}</h1>
-                            <p>Holdings Summary</p>
-                        </div>
-                        <div class="header-right">
-                            <div class="date">
-                                \${document.querySelector('.header-right .date').textContent}
-                            </div>
-                        </div>
-                    </div>
-                    <div class="section-title">\${sectionTitle}</div>
-                    <div class="section allow-break">
-                        <div class="table-container">
-                            <table>
-                                \${table.querySelector('thead').outerHTML}
-                                <tbody></tbody>
-                            </table>
-                        </div>
-                    </div>
-                    <div class="footer">
-                        <div class="page-number">Page \${pageNum} | Qode</div>
-                    </div>
-                </div>
-            \`;
+            var newPageHTML = '<div class="page">'
+                + '<div class="header">'
+                + '<div class="header-left">'
+                + '<h1>' + document.querySelector('.header-left h1').textContent + '</h1>'
+                + '<p>Holdings Summary</p>'
+                + '</div>'
+                + '<div class="header-right">'
+                + '<div class="date">'
+                + document.querySelector('.header-right .date').textContent
+                + '</div>'
+                + '</div>'
+                + '</div>'
+                + '<div class="section-title">' + sectionTitle + '</div>'
+                + '<div class="section allow-break">'
+                + '<div class="table-container">'
+                + '<table>'
+                + table.querySelector('thead').outerHTML
+                + '<tbody></tbody>'
+                + '</table>'
+                + '</div>'
+                + '</div>'
+                + '<div class="footer">'
+                + '<div class="page-number">Page ' + pageNum + ' | Qode</div>'
+                + '</div>'
+                + '</div>';
 
-            const tempDiv = document.createElement('div');
+            var tempDiv = document.createElement('div');
             tempDiv.innerHTML = newPageHTML;
-            const newPage = tempDiv.firstElementChild;
+            var newPage = tempDiv.firstElementChild;
 
             currentPage.parentNode.insertBefore(newPage, currentPage.nextSibling);
             currentPage = newPage;
 
-            const newTbody = newPage.querySelector('tbody');
-            const pageRows = remainingRows.slice(0, rowsPerPage);
+            var newTbody = newPage.querySelector('tbody');
+            var pageRows = remainingRows.slice(0, rowsPerPage);
 
-            pageRows.forEach(row => {
+            pageRows.forEach(function(row) {
                 newTbody.appendChild(row.cloneNode(true));
             });
 
@@ -1722,39 +1720,87 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
         }
     }
 
-    document.addEventListener('DOMContentLoaded', function() {
+    function runPagination() {
         if (${stocks.length} > 6) {
-            setTimeout(() => paginateLongTable('stocks-table', 'Stock Holdings', 2), 100);
+            paginateLongTable('stocks-table', 'Stock Holdings', 2);
         }
-
         if (${mutualFunds.length} > 6) {
-            const mfBasePageNum = ${stocks.length} > 0 ? 3 : 2;
-            setTimeout(() => paginateLongTable('mf-table', 'Mutual Fund Holdings', mfBasePageNum), 200);
+            var mfBasePageNum = ${stocks.length} > 0 ? 3 : 2;
+            paginateLongTable('mf-table', 'Mutual Fund Holdings', mfBasePageNum);
         }
+    }
 
-        document.fonts.ready.then(function() {
-            try {
-                window.print();
-            } catch(e) {
-                console.error('Print error:', e);
-            }
-        });
+    document.addEventListener('DOMContentLoaded', function() {
+        runPagination();
+        // Signal parent that content is ready for font loading
+        if (window.parent && window.parent.__pdfContentReady) {
+            window.parent.__pdfContentReady();
+        }
     });
   </script>
 </body>
 </html>
 `;
 
-            const w = window.open("", "_blank", "width=1200,height=900");
-            if (w) {
-                w.document.open();
-                w.document.write(fullHTML);
-                w.document.close();
+            // Use a hidden iframe instead of a popup window
+            const existingFrame = document.getElementById('pdf-print-frame') as HTMLIFrameElement;
+            if (existingFrame) existingFrame.remove();
+
+            const iframe = document.createElement('iframe');
+            iframe.id = 'pdf-print-frame';
+            iframe.style.position = 'fixed';
+            iframe.style.width = '0';
+            iframe.style.height = '0';
+            iframe.style.border = 'none';
+            iframe.style.left = '-9999px';
+            document.body.appendChild(iframe);
+
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+            if (!iframeDoc || !iframe.contentWindow) {
+                setError('Failed to create print frame');
+                setIsGeneratingPdf(false);
+                iframe.remove();
+                return;
             }
+
+            const iframeWin = iframe.contentWindow;
+
+            const cleanup = () => {
+                iframe.remove();
+                delete (window as any).__pdfContentReady;
+                setIsGeneratingPdf(false);
+            };
+
+            // Set up the ready callback before writing content
+            (window as any).__pdfContentReady = () => {
+                const link = iframeDoc.getElementById('google-fonts');
+
+                const onFontsReady = () => {
+                    iframeDoc.fonts.ready.then(() => {
+                        try {
+                            iframeWin.print();
+                        } catch (e) {
+                            console.error('Print error:', e);
+                        }
+                        // print() is blocking — cleanup runs after dialog closes
+                        cleanup();
+                    });
+                };
+
+                if (link && !(link as HTMLLinkElement).sheet) {
+                    link.addEventListener('load', onFontsReady);
+                    link.addEventListener('error', onFontsReady);
+                } else {
+                    onFontsReady();
+                }
+            };
+
+            iframeDoc.open();
+            iframeDoc.write(fullHTML);
+            iframeDoc.close();
         } catch (e) {
             console.error(e);
             setError('Failed to open print preview');
-        } finally {
             setIsGeneratingPdf(false);
         }
     };
