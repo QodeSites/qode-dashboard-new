@@ -86,28 +86,20 @@ class ZohoCRMSDK {
     return this.tokens.access_token;
   }
 
-  private async makeAPIRequest(method: 'GET' | 'POST' | 'PUT' | 'DELETE', endpoint: string, data?: any) {
+  private async makeAPIRequest(endpoint: string) {
     const accessToken = await this.getValidAccessToken();
-    console.log(`Making API request to ${this.baseURL}${endpoint} with method ${method}`);
-    console.log('Using Access Token:', accessToken);
 
-    let url = `${this.baseURL}${endpoint}`;
+    const url = `${this.baseURL}${endpoint}`;
     const headers = {
       Authorization: `Zoho-oauthtoken ${accessToken}`,
       'Content-Type': 'application/json',
     };
 
-    const options: RequestInit = {
-      method,
-      headers,
-    };
-
-    if (data && (method === 'POST' || method === 'PUT')) {
-      options.body = JSON.stringify(data);
-    }
-
     try {
-      const response = await fetch(url, options);
+      const response = await fetch(url, {
+        method: 'GET',
+        headers,
+      });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -119,14 +111,6 @@ class ZohoCRMSDK {
       console.error('API request failed:', error);
       throw error;
     }
-  }
-
-  public async createRecord(moduleAPIName: string, recordData: any) {
-    const endpoint = `/${moduleAPIName}`;
-    const payload = {
-      data: [recordData],
-    };
-    return await this.makeAPIRequest('POST', endpoint, payload);
   }
 
   public async getRecords(moduleAPIName: string, page: number = 1, perPage: number = 200, fields: string[] = [
@@ -151,7 +135,7 @@ class ZohoCRMSDK {
 ]) {
     const endpoint = `/${moduleAPIName}?page=${page}&per_page=${perPage}&fields=${encodeURIComponent(fields.join(','))}`;
     console.log('Fetching records from endpoint:', endpoint);
-    return await this.makeAPIRequest('GET', endpoint);
+    return await this.makeAPIRequest(endpoint);
   }
 
   public async getRecord(moduleAPIName: string, recordId: string, fields: string[] = []) {
@@ -159,25 +143,12 @@ class ZohoCRMSDK {
     if (fields.length > 0) {
       endpoint += `?fields=${encodeURIComponent(fields.join(','))}`;
     }
-    return await this.makeAPIRequest('GET', endpoint);
-  }
-
-  public async updateRecord(moduleAPIName: string, recordId: string, recordData: any) {
-    const endpoint = `/${moduleAPIName}/${recordId}`;
-    const payload = {
-      data: [recordData],
-    };
-    return await this.makeAPIRequest('PUT', endpoint, payload);
-  }
-
-  public async deleteRecord(moduleAPIName: string, recordId: string) {
-    const endpoint = `/${moduleAPIName}/${recordId}`;
-    return await this.makeAPIRequest('DELETE', endpoint);
+    return await this.makeAPIRequest(endpoint);
   }
 
   public async searchRecords(moduleAPIName: string, criteria: string, fields: string[] = ['id']) {
     const endpoint = `/${moduleAPIName}/search?criteria=${encodeURIComponent(criteria)}&fields=${encodeURIComponent(fields.join(','))}`;
-    return await this.makeAPIRequest('GET', endpoint);
+    return await this.makeAPIRequest(endpoint);
   }
 
   public getTokens(): ZohoTokens | null {
