@@ -1404,6 +1404,8 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
   color: #718096;
   margin-top: 2px;
 }
+.text-gray { color: #4B5563; }
+.value-col { font-weight: 500; }
 .profit { color: #38a169 !important; }
 .loss { color: #e53e3e !important; }
 .total-row .profit, .total-row .loss { font-weight: 700; }
@@ -1535,13 +1537,13 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
         <td class="text-left">
           <div class="symbol-cell">${h.symbol}</div>
         </td>
-        <td class="text-right">${fmtNum(h.quantity)}</td>
-        <td class="text-right">${fmtNum(h.avgPrice)}</td>
-        <td class="text-right">${fmtNum(h.ltp)}</td>
-        <td class="text-right">${fmtNum(h.buyValue)}</td>
-        <td class="text-right">${fmtNum(h.valueAsOfToday)}</td>
-        <td class="text-right ${h.pnlAmount >= 0 ? 'profit' : 'loss'}">${fmtNum(h.pnlAmount)}</td>
-        <td class="text-right ${h.percentPnl >= 0 ? 'profit' : 'loss'}">${fmtNum(h.percentPnl)}%</td>
+        <td class="text-right text-gray">${fmtNum(h.quantity)}</td>
+        <td class="text-right text-gray">${fmtNum(h.avgPrice)}</td>
+        <td class="text-right text-gray">${fmtNum(h.ltp)}</td>
+        <td class="text-right text-gray value-col">${fmtNum(h.buyValue)}</td>
+        <td class="text-right text-gray value-col">${fmtNum(h.valueAsOfToday)}</td>
+        <td class="text-right value-col ${h.pnlAmount >= 0 ? 'profit' : 'loss'}">${fmtNum(h.pnlAmount)}</td>
+        <td class="text-right value-col ${h.percentPnl >= 0 ? 'profit' : 'loss'}">${fmtNum(h.percentPnl)}%</td>
         <td><span class="category-badge ${h.debtEquity.toLowerCase() === 'equity' ? 'category-equity' : h.debtEquity.toLowerCase() === 'hybrid' ? 'category-hybrid' : 'category-debt'}">${h.debtEquity}</span></td>
       </tr>
     `).join('');
