@@ -134,7 +134,7 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
                                 className="bg-logo-green h-full flex items-center justify-center text-white text-xs font-medium"
                                 style={{ width: `${equityPercent}%` }}
                             >
-                                {equityPercent > 10 ? `${equityPercent.toFixed(1)}%` : ''}
+                                {equityPercent > 10 ? `${equityPercent.toFixed(2)}%` : ''}
                             </div>
                         )}
                         {debtPercent > 0 && (
@@ -142,7 +142,7 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
                                 className="bg-[#DABD38] h-full flex items-center justify-center text-white text-xs font-medium"
                                 style={{ width: `${debtPercent}%` }}
                             >
-                                {debtPercent > 10 ? `${debtPercent.toFixed(1)}%` : ''}
+                                {debtPercent > 10 ? `${debtPercent.toFixed(2)}%` : ''}
                             </div>
                         )}
                         {hybridPercent > 0 && (
@@ -150,7 +150,7 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
                                 className="bg-[#008455] h-full flex items-center justify-center text-white text-xs font-medium"
                                 style={{ width: `${hybridPercent}%` }}
                             >
-                                {hybridPercent > 10 ? `${hybridPercent.toFixed(1)}%` : ''}
+                                {hybridPercent > 10 ? `${hybridPercent.toFixed(2)}%` : ''}
                             </div>
                         )}
                     </div>
@@ -1379,7 +1379,7 @@ h1, h2, h3 { margin: 0; }
   flex: 1;
 }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { background-color: #02422B; color: white; padding: 10px 8px; text-align: center; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+th { background-color: #02422B; color: white; padding: 10px 8px; text-align: center; font-weight: 600; font-size: 10px; letter-spacing: 0.5px; }
 td { padding: 8px; text-align: center; border-bottom: 1px solid #eee; font-weight: 400; }
 thead { display: table-header-group; }
 tbody { display: table-row-group; }
@@ -1412,7 +1412,6 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
   border-radius: 4px;
   font-size: 9px;
   font-weight: 700;
-  text-transform: uppercase;
 }
 .category-equity {
   background: #2F5233 !important;
@@ -1479,9 +1478,9 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
             ${total > 0
                     ? `
                 <div class="chart-bar">
-                ${assetAllocation.equity > 0 ? `<div class="equity-bar" style="width:${((assetAllocation.equity / total) * 100).toFixed(1)}%;">Equity ${((assetAllocation.equity / total) * 100).toFixed(1)}%</div>` : ''}
-                ${assetAllocation.debt > 0 ? `<div class="debt-bar"   style="width:${((assetAllocation.debt / total) * 100).toFixed(1)}%;">Debt ${((assetAllocation.debt / total) * 100).toFixed(1)}%</div>` : ''}
-                ${assetAllocation.hybrid > 0 ? `<div class="hybrid-bar"   style="width:${((assetAllocation.hybrid / total) * 100).toFixed(1)}%;">Hybrid ${((assetAllocation.hybrid / total) * 100).toFixed(1)}%</div>` : ''}
+                ${assetAllocation.equity > 0 ? `<div class="equity-bar" style="width:${((assetAllocation.equity / total) * 100).toFixed(2)}%;">Equity&nbsp;&nbsp;${((assetAllocation.equity / total) * 100).toFixed(2)}%</div>` : ''}
+                ${assetAllocation.debt > 0 ? `<div class="debt-bar"   style="width:${((assetAllocation.debt / total) * 100).toFixed(2)}%;">Debt&nbsp;&nbsp;${((assetAllocation.debt / total) * 100).toFixed(2)}%</div>` : ''}
+                ${assetAllocation.hybrid > 0 ? `<div class="hybrid-bar"   style="width:${((assetAllocation.hybrid / total) * 100).toFixed(2)}%;">Hybrid&nbsp;&nbsp;${((assetAllocation.hybrid / total) * 100).toFixed(2)}%</div>` : ''}
                 </div>
                 <div class="legend">
                 ${assetAllocation.equity > 0 ? `
@@ -1518,7 +1517,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
             const tableHeader = () => `
       <thead>
         <tr>
-          <th class="text-left">Fund Name</th>
+          <th class="text-left">Symbol</th>
           <th class="text-right">Quantity</th>
           <th class="text-right">Average Cost (₹)</th>
           <th class="text-right">Latest Trade Price (₹)</th>
