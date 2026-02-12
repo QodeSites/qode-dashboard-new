@@ -124,7 +124,7 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
     return (
         <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
             <CardTitle className="text-black p-3 mb-4 rounded-t-sm  text-lg ">
-                Holding Distribution
+                Holdings Distribution
             </CardTitle>
             <CardContent>
                 <div className="space-y-4">

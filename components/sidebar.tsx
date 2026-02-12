@@ -19,7 +19,7 @@ import { ChartCandlestickIcon } from "lucide-react"
 const navigation = [
   { name: "Home", href: "/", icon: HomeIcon },
   { name: "Portfolio", href: "/dashboard", icon: ChartBarIcon },
-  { name: "Holding Summary", href: "/holding-summary", icon: ChartCandlestickIcon },
+  { name: "Holdings Summary", href: "/holding-summary", icon: ChartCandlestickIcon },
   { name: "Personal Details", href: "/personal-details", icon: UserCircleIcon },
 ];
 
