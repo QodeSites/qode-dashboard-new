@@ -99,6 +99,12 @@ export class PortfolioApi {
     "Scheme QYE": "Total Portfolio Value",
   };
 
+  // Deposit/cash flow queries use a different system tag for QYE
+  private static readonly MANGESH_DEPOSIT_TAGS: Record<string, string> = {
+    "Scheme QAW": "QAW Zerodha Total Portfolio",
+    "Scheme QYE": "Zerodha Total Portfolio",
+  };
+
   // QAW final NAV (for reference)
   private static readonly QAW_FINAL_NAV = 105.12;
   // QYE start date for filtering
@@ -286,6 +292,10 @@ export class PortfolioApi {
     return this.MANGESH_SYSTEM_TAGS[scheme] || "Total Portfolio Value";
   }
 
+  private static getDepositSystemTag(scheme: string): string {
+    return this.MANGESH_DEPOSIT_TAGS[scheme] || this.getSystemTag(scheme);
+  }
+
   private static normalizeDate(date: Date | string): string {
     if (typeof date === "string") return date.split("T")[0];
     return date.toISOString().split("T")[0];
@@ -305,8 +315,8 @@ export class PortfolioApi {
       return cashFlows.reduce((sum, flow) => sum + flow.amount, 0);
     }
 
-    // QYE: Fetch from database (only from QYE start date onwards)
-    const systemTag = this.getSystemTag(scheme);
+    // QYE: Fetch from database using deposit-specific tag (only from QYE start date onwards)
+    const systemTag = this.getDepositSystemTag(scheme);
     const depositSum = await prisma.master_sheet_test.aggregate({
       where: {
         qcode,
@@ -339,8 +349,8 @@ export class PortfolioApi {
       return this.getLatestExposure(qcode, "Scheme QYE");
     }
 
-    // QYE: Fetch from database (only from QYE start date onwards)
-    const systemTag = this.getSystemTag(scheme);
+    // QYE: Fetch from database using deposit-specific tag (only from QYE start date onwards)
+    const systemTag = this.getDepositSystemTag(scheme);
     const record = await prisma.master_sheet_test.findFirst({
       where: {
         qcode,
@@ -435,8 +445,8 @@ export class PortfolioApi {
       return [...qawCashFlows, ...qyeCashFlows].sort((a, b) => a.date.localeCompare(b.date));
     }
 
-    // QYE: Fetch from database (only from QYE start date onwards)
-    const systemTag = this.getSystemTag(scheme);
+    // QYE: Fetch from database using deposit-specific tag (only from QYE start date onwards)
+    const systemTag = this.getDepositSystemTag(scheme);
     const data = await prisma.master_sheet_test.findMany({
       where: {
         qcode,
