@@ -623,33 +623,57 @@ export class PortfolioApi {
       return this.MANGESH_HARDCODED_DATA["Scheme QAW"].data.monthlyPnl;
     }
 
-    // Total Portfolio: Combine QAW hardcoded + QYE calculated
+    // Total Portfolio: Use unified rebased NAV series for percentages,
+    // overlay per-scheme cash/capitalInOut (since QAW historical data has pnl=0)
     if (scheme === "Total Portfolio") {
+      // 1. Get NAV-based percentages from the unified rebased series
+      const unifiedHistoricalData = await this.getHistoricalData(qcode, "Total Portfolio");
+      const navBasedResult = this.computeMonthlyPnLFromHistoricalData(unifiedHistoricalData, false);
+
+      // 2. Get per-scheme cash data
       const qawMonthlyPnl = this.MANGESH_HARDCODED_DATA["Scheme QAW"].data.monthlyPnl;
       const qyeMonthlyPnl = await this.calculateMonthlyPnL(qcode, "Scheme QYE");
 
-      // Merge: QAW has Nov-Dec 2025 + Jan 2026, QYE has Dec 2025+ data
-      const combined: MonthlyPnL = JSON.parse(JSON.stringify(qawMonthlyPnl)); // Deep copy
-      for (const year of Object.keys(qyeMonthlyPnl)) {
-        if (!combined[year]) {
-          combined[year] = qyeMonthlyPnl[year];
-        } else {
-          // Merge months if same year exists in both
-          for (const month of Object.keys(qyeMonthlyPnl[year].months)) {
-            if (qyeMonthlyPnl[year].months[month].percent !== "-") {
-              combined[year].months[month] = qyeMonthlyPnl[year].months[month];
-            }
-          }
-          combined[year].totalPercent += qyeMonthlyPnl[year].totalPercent;
-          combined[year].totalCash += qyeMonthlyPnl[year].totalCash;
-          combined[year].totalCapitalInOut += qyeMonthlyPnl[year].totalCapitalInOut;
+      // 3. Overlay cash/capitalInOut from per-scheme data into the NAV-based result
+      for (const year of Object.keys(navBasedResult)) {
+        let yearTotalCash = 0;
+        let yearTotalCapitalInOut = 0;
+
+        for (const month of Object.keys(navBasedResult[year].months)) {
+          if (navBasedResult[year].months[month].percent === "-") continue;
+
+          const qawMonth = qawMonthlyPnl[year]?.months[month];
+          const qyeMonth = qyeMonthlyPnl[year]?.months[month];
+          const qawCash = (qawMonth && qawMonth.cash !== "-") ? parseFloat(qawMonth.cash) : 0;
+          const qyeCash = (qyeMonth && qyeMonth.cash !== "-") ? parseFloat(qyeMonth.cash) : 0;
+          const qawCapitalInOut = (qawMonth && qawMonth.capitalInOut !== "-") ? parseFloat(qawMonth.capitalInOut) : 0;
+          const qyeCapitalInOut = (qyeMonth && qyeMonth.capitalInOut !== "-") ? parseFloat(qyeMonth.capitalInOut) : 0;
+
+          const totalCash = qawCash + qyeCash;
+          const totalCapitalInOut = qawCapitalInOut + qyeCapitalInOut;
+
+          navBasedResult[year].months[month].cash = totalCash.toFixed(2);
+          navBasedResult[year].months[month].capitalInOut = totalCapitalInOut.toFixed(2);
+          yearTotalCash += totalCash;
+          yearTotalCapitalInOut += totalCapitalInOut;
         }
+
+        navBasedResult[year].totalCash = yearTotalCash;
+        navBasedResult[year].totalCapitalInOut = yearTotalCapitalInOut;
       }
-      return combined;
+
+      return navBasedResult;
     }
 
     // QYE: Calculate from historical data
     const historicalData = await this.getHistoricalData(qcode, scheme);
+    return this.computeMonthlyPnLFromHistoricalData(historicalData, scheme === "Scheme QYE");
+  }
+
+  private static computeMonthlyPnLFromHistoricalData(
+    historicalData: { date: Date; nav: number; prevNav: number | null; pnl: number; capitalInOut: number }[],
+    useFirstPrevNav: boolean
+  ): MonthlyPnL {
     const monthlyPnl: MonthlyPnL = {};
     const monthNames = [
       "January", "February", "March", "April", "May", "June",
@@ -669,10 +693,10 @@ export class PortfolioApi {
 
       if (!grouped[year]) grouped[year] = {};
       if (!grouped[year][month]) {
-        // For first month, use prevNav as baseline (matching Dinesh's approach)
+        // For first month with useFirstPrevNav, use prevNav as baseline (matching Dinesh's approach)
         // For subsequent months, use previous data point's NAV
         let startNav: number;
-        if (!isFirstMonthSet) {
+        if (!isFirstMonthSet && useFirstPrevNav) {
           startNav = historicalData[0]?.prevNav ?? 100;
           isFirstMonthSet = true;
         } else if (i > 0) {
