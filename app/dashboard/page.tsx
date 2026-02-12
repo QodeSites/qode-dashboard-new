@@ -193,8 +193,7 @@ function filterEquityCurve(equityCurve: { date: string; value: number }[], start
 }
 
 const formatter = new Intl.NumberFormat("en-IN", {
-  style: "currency",
-  currency: "INR",
+  style: "decimal",
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
