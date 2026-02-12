@@ -649,6 +649,12 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
   const CASH_PERCENT_STRATS_SARLA = ["Scheme A", "Scheme C", "Scheme D", "Scheme E", "Scheme F", "Scheme QAW", "Scheme B (inactive)"];
   const CASH_STRATS_SARLA = "Total Portfolio";
+  const SARLA_TOTAL_FEES: { [year: string]: { q1?: number; q2?: number; q3?: number; q4?: number } } = {
+    "2022": { q3: 35297.87, q4: 191023.76 },
+    "2023": { q1: 186871.07, q2: 188947.41, q3: 432749.52, q4: 1499186.69 },
+    "2024": { q1: 1771936.35, q2: 3419092.44, q3: 4658621.93, q4: 5687534.29 },
+    "2025": { q1: 7802830.42, q2: 7732665.25, q3: 5297606.19, q4: 5582892.53 },
+  };
   const CASH_PERCENT_STRATS_SATIDHAM = ["Scheme B", "Scheme A", "Scheme A (Old)"];
   const CASH_STRATS_SATIDHAM = "Total Portfolio";
 
@@ -706,6 +712,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           monthlyPnl={convertedStats.monthlyPnl}
           showOnlyQuarterlyCash={isCashOnlyView}
           showPmsQawView={isCashPercentView}
+          fees={isTotalPortfolio ? SARLA_TOTAL_FEES : undefined}
         />
         {renderCashFlowsTable()}
         {isSarla && !isActive && (
