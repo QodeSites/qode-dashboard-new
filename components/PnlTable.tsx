@@ -65,7 +65,7 @@ export function PnlTable({
       return "-";
     }
     if (value === "-") {
-      return isPercent ? "-%" : "₹-";
+      return isPercent ? "-%" : "-";
     }
     const numValue = parseFloat(value);
     if (isNaN(numValue)) {
@@ -79,7 +79,7 @@ export function PnlTable({
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       });
-      return numValue >= 0 ? `+₹${formattedValue}` : `-₹${formattedValue}`;
+      return numValue >= 0 ? `+${formattedValue}` : `-${formattedValue}`;
     }
   };
 
@@ -284,14 +284,14 @@ const renderMonthlyTable = () => {
                               : `${monthlyPnl[year].totalPercent.toFixed(2)}%`
                             : "-"
                         : monthlyPnl[year]?.totalCash.toString() === "-"
-                          ? "₹-"
+                          ? "-"
                           : monthlyPnl[year]?.totalCash && monthlyPnl[year].totalCash !== 0
                             ? monthlyPnl[year].totalCash >= 0
-                              ? `+₹${Math.abs(monthlyPnl[year].totalCash).toLocaleString("en-IN", {
+                              ? `+${Math.abs(monthlyPnl[year].totalCash).toLocaleString("en-IN", {
                                   minimumFractionDigits: 2,
                                   maximumFractionDigits: 2,
                                 })}`
-                              : `-₹${Math.abs(monthlyPnl[year].totalCash).toLocaleString("en-IN", {
+                              : `-${Math.abs(monthlyPnl[year].totalCash).toLocaleString("en-IN", {
                                   minimumFractionDigits: 2,
                                   maximumFractionDigits: 2,
                                 })}`
