@@ -73,15 +73,15 @@ interface PortfolioConfig {
 const PORTFOLIO_MAPPING: Record<string, Record<string, PortfolioConfig>> = {
   AC10: {
     "Total Portfolio": {
-      current: "Zerodha Total Portfolio",
-      metrics: "Zerodha Total Portfolio",
-      nav: "Zerodha Total Portfolio",
+      current: "Total Portfolio Value",
+      metrics: "Total Portfolio Value",
+      nav: "Total Portfolio Value",
       isActive: true,
     },
     "Scheme QYE": {
-      current: "Zerodha Total Portfolio",
-      metrics: "Zerodha Total Portfolio",
-      nav: "Zerodha Total Portfolio",
+      current: "Total Portfolio Value",
+      metrics: "Total Portfolio Value",
+      nav: "Total Portfolio Value",
       isActive: true,
     },
     "Scheme QAW": {
@@ -96,7 +96,7 @@ const PORTFOLIO_MAPPING: Record<string, Record<string, PortfolioConfig>> = {
 export class PortfolioApi {
   private static readonly MANGESH_SYSTEM_TAGS: Record<string, string> = {
     "Scheme QAW": "QAW Zerodha Total Portfolio",
-    "Scheme QYE": "Zerodha Total Portfolio",  // Same convention as Dinesh - uses base tag with date filter
+    "Scheme QYE": "Total Portfolio Value",
   };
 
   // QAW final NAV (for reference)
@@ -283,7 +283,7 @@ export class PortfolioApi {
   }
 
   private static getSystemTag(scheme: string): string {
-    return this.MANGESH_SYSTEM_TAGS[scheme] || "Zerodha Total Portfolio";
+    return this.MANGESH_SYSTEM_TAGS[scheme] || "Total Portfolio Value";
   }
 
   private static normalizeDate(date: Date | string): string {
