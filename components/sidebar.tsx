@@ -9,14 +9,18 @@ import {
   ChartBarIcon,
   XMarkIcon,
   ArrowRightOnRectangleIcon,
+  UserCircleIcon,
 } from "@heroicons/react/24/outline"
 import { cn } from "@/lib/utils"
 import { signOut, useSession } from "next-auth/react"
 import { Button } from "./ui/button"
 import { useRouter } from "next/navigation"
+import { ChartCandlestickIcon } from "lucide-react"
 const navigation = [
   { name: "Home", href: "/", icon: HomeIcon },
   { name: "Portfolio", href: "/dashboard", icon: ChartBarIcon },
+  { name: "Holdings Summary", href: "/holding-summary", icon: ChartCandlestickIcon },
+  { name: "Personal Details", href: "/personal-details", icon: UserCircleIcon },
 ];
 
 interface SidebarProps {
@@ -77,7 +81,8 @@ export function Sidebar({ open, setOpen }: SidebarProps) {
 
 function SidebarContent({ pathname }: { pathname: string }) {
   const { data: session } = useSession();
-  
+  const router = useRouter();
+
   // Get user info from session with fallbacks
   const userName = session?.user?.name || "User";
   const userEmail = session?.user?.email || "";

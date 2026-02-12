@@ -31,6 +31,51 @@ interface DrawdownMetrics {
   ddCurve: { date: string; drawdown: number }[];
 }
 
+interface Holding {
+  symbol: string;
+  exchange: string;
+  quantity: number;
+  avgPrice: number;
+  ltp: number;
+  buyValue: number;
+  valueAsOfToday: number;
+  pnlAmount: number;
+  percentPnl: number;
+  broker: string;
+  debtEquity: string;
+  subCategory: string;
+  date: Date;
+  type?: 'equity' | 'mutual_fund';
+  isin?: string;
+}
+
+interface HoldingsSummary {
+  totalBuyValue: number;
+  totalCurrentValue: number;
+  totalPnl: number;
+  totalPnlPercent: number;
+  holdingsCount: number;
+  equityHoldings: Holding[];
+  debtHoldings: Holding[];
+  mutualFundHoldings: Holding[];
+  categoryBreakdown: {
+    [category: string]: {
+      buyValue: number;
+      currentValue: number;
+      pnl: number;
+      count: number;
+    };
+  };
+  brokerBreakdown: {
+    [broker: string]: {
+      buyValue: number;
+      currentValue: number;
+      pnl: number;
+      count: number;
+    };
+  };
+}
+
 interface PortfolioData {
   amountDeposited: string;
   currentExposure: string;
@@ -45,6 +90,8 @@ interface PortfolioData {
   monthlyPnl: MonthlyPnL;
   cashFlows: CashFlow[];
   strategyName: string;
+  holdings: Holding[];
+  holdingsSummary: HoldingsSummary;
 }
 
 interface Metadata {
@@ -330,7 +377,7 @@ export class PortfolioApi {
     amountDeposited: number;
     currentExposure: number;
     totalProfit: number;
-    historicalData: { date: string; nav: number; drawdown: number; pnl: number; capitalInOut: number }[];
+    historicalData: { date: string; nav: number; prevNav: number | null; drawdown: number; pnl: number; capitalInOut: number }[];
     cashFlows: CashFlow[];
     latestData: { portfolioValue: number; drawdown: number; nav: number; date: Date } | null;
   }> {
@@ -345,6 +392,7 @@ export class PortfolioApi {
         portfolio_value: true,
         cash_in_out: true,
         nav: true,
+        prev_nav: true,
         pnl: true,
         drawdown_percent: true,
       },
@@ -380,6 +428,7 @@ export class PortfolioApi {
     const historicalData = pmsData.map(record => ({
       date: this.normalizeDate(record.report_date)!,
       nav: Number(record.nav) || 0,
+      prevNav: record.prev_nav ? Number(record.prev_nav) : null,
       drawdown: Math.abs(Number(record.drawdown_percent) || 0),
       pnl: Number(record.pnl) || 0,
       capitalInOut: Number(record.cash_in_out) || 0,
@@ -970,8 +1019,276 @@ export class PortfolioApi {
         },
         drawdown: "-5.24",
         maxDrawdown: "-12.67",
-        equityCurve: [],
-        drawdownCurve: [],
+        equityCurve: [
+          { date: "2024-11-17", nav: 100.0 },
+          { date: "2024-11-18", nav: 99.36 },
+          { date: "2024-11-19", nav: 99.52 },
+          { date: "2024-11-21", nav: 99.53 },
+          { date: "2024-11-22", nav: 100.02 },
+          { date: "2024-11-25", nav: 101.91 },
+          { date: "2024-11-26", nav: 101.83 },
+          { date: "2024-11-27", nav: 102.12 },
+          { date: "2024-11-28", nav: 102.28 },
+          { date: "2024-11-29", nav: 102.41 },
+          { date: "2024-12-02", nav: 102.58 },
+          { date: "2024-12-03", nav: 103.06 },
+          { date: "2024-12-04", nav: 103.04 },
+          { date: "2024-12-05", nav: 102.73 },
+          { date: "2024-12-06", nav: 102.9 },
+          { date: "2024-12-09", nav: 102.88 },
+          { date: "2024-12-10", nav: 102.58 },
+          { date: "2024-12-11", nav: 102.59 },
+          { date: "2024-12-12", nav: 102.09 },
+          { date: "2024-12-13", nav: 102.35 },
+          { date: "2024-12-16", nav: 102.27 },
+          { date: "2024-12-17", nav: 101.97 },
+          { date: "2024-12-18", nav: 101.82 },
+          { date: "2024-12-19", nav: 103.3 },
+          { date: "2024-12-20", nav: 104.16 },
+          { date: "2024-12-23", nav: 102.68 },
+          { date: "2024-12-24", nav: 102.13 },
+          { date: "2024-12-26", nav: 101.56 },
+          { date: "2024-12-27", nav: 101.43 },
+          { date: "2024-12-30", nav: 100.07 },
+          { date: "2024-12-31", nav: 100.42 },
+          { date: "2025-01-01", nav: 100.49 },
+          { date: "2025-01-02", nav: 101.47 },
+          { date: "2025-01-03", nav: 101.29 },
+          { date: "2025-01-06", nav: 99.96 },
+          { date: "2025-01-07", nav: 99.5 },
+          { date: "2025-01-08", nav: 99.87 },
+          { date: "2025-01-09", nav: 100.44 },
+          { date: "2025-01-10", nav: 99.43 },
+          { date: "2025-01-13", nav: 98.07 },
+          { date: "2025-01-14", nav: 98.32 },
+          { date: "2025-01-15", nav: 98.52 },
+          { date: "2025-01-16", nav: 98.95 },
+          { date: "2025-01-17", nav: 99.34 },
+          { date: "2025-01-20", nav: 99.77 },
+          { date: "2025-01-21", nav: 99.12 },
+          { date: "2025-01-22", nav: 98.85 },
+          { date: "2025-01-23", nav: 98.43 },
+          { date: "2025-01-24", nav: 97.82 },
+          { date: "2025-01-27", nav: 96.71 },
+          { date: "2025-01-28", nav: 95.96 },
+          { date: "2025-01-29", nav: 96.05 },
+          { date: "2025-01-30", nav: 96.47 },
+          { date: "2025-01-31", nav: 97.24 },
+          { date: "2025-02-01", nav: 97.26 },
+          { date: "2025-02-03", nav: 96.23 },
+          { date: "2025-02-04", nav: 97.44 },
+          { date: "2025-02-05", nav: 97.47 },
+          { date: "2025-02-06", nav: 97.08 },
+          { date: "2025-02-07", nav: 96.45 },
+          { date: "2025-02-10", nav: 95.35 },
+          { date: "2025-02-11", nav: 95.3 },
+          { date: "2025-02-12", nav: 95.27 },
+          { date: "2025-02-13", nav: 95.31 },
+          { date: "2025-02-14", nav: 96.28 },
+          { date: "2025-02-17", nav: 95.6 },
+          { date: "2025-02-18", nav: 94.71 },
+          { date: "2025-02-19", nav: 95.2 },
+          { date: "2025-02-20", nav: 95.24 },
+          { date: "2025-02-21", nav: 95.08 },
+          { date: "2025-02-24", nav: 94.37 },
+          { date: "2025-02-25", nav: 94.4 },
+          { date: "2025-02-27", nav: 93.93 },
+          { date: "2025-02-28", nav: 93.94 },
+          { date: "2025-03-03", nav: 92.15 },
+          { date: "2025-03-04", nav: 91.2 },
+          { date: "2025-03-05", nav: 90.21 },
+          { date: "2025-03-06", nav: 91.28 },
+          { date: "2025-03-07", nav: 92.21 },
+          { date: "2025-03-10", nav: 91.11 },
+          { date: "2025-03-11", nav: 92.06 },
+          { date: "2025-03-12", nav: 91.68 },
+          { date: "2025-03-13", nav: 91.29 },
+          { date: "2025-03-17", nav: 91.07 },
+          { date: "2025-03-18", nav: 92.52 },
+          { date: "2025-03-19", nav: 93.53 },
+          { date: "2025-03-20", nav: 94.77 },
+          { date: "2025-03-21", nav: 95.82 },
+          { date: "2025-03-24", nav: 97.92 },
+          { date: "2025-03-25", nav: 96.96 },
+          { date: "2025-03-26", nav: 96.31 },
+          { date: "2025-03-27", nav: 96.55 },
+          { date: "2025-03-28", nav: 96.09 },
+          { date: "2025-04-01", nav: 95.64 },
+          { date: "2025-04-02", nav: 95.06 },
+          { date: "2025-04-03", nav: 94.32 },
+          { date: "2025-04-04", nav: 94.29 },
+          { date: "2025-04-07", nav: 97.45 },
+          { date: "2025-04-08", nav: 98.3 },
+          { date: "2025-04-09", nav: 98.29 },
+          { date: "2025-04-11", nav: 99.6 },
+          { date: "2025-04-15", nav: 99.16 },
+          { date: "2025-04-16", nav: 99.61 },
+          { date: "2025-04-17", nav: 101.15 },
+          { date: "2025-04-21", nav: 102.15 },
+          { date: "2025-04-22", nav: 102.19 },
+          { date: "2025-04-23", nav: 102.95 },
+          { date: "2025-04-24", nav: 102.72 },
+          { date: "2025-04-25", nav: 101.59 },
+          { date: "2025-04-28", nav: 102.95 },
+          { date: "2025-04-29", nav: 103.37 },
+          { date: "2025-04-30", nav: 102.91 },
+          { date: "2025-05-02", nav: 102.9 },
+          { date: "2025-05-05", nav: 103.29 },
+          { date: "2025-05-06", nav: 102.33 },
+          { date: "2025-05-07", nav: 101.99 },
+          { date: "2025-05-08", nav: 101.99 },
+          { date: "2025-05-09", nav: 100.81 },
+          { date: "2025-05-12", nav: 102.28 },
+          { date: "2025-05-13", nav: 102.01 },
+          { date: "2025-05-14", nav: 102.21 },
+          { date: "2025-05-15", nav: 103.65 },
+          { date: "2025-05-16", nav: 103.89 },
+          { date: "2025-05-19", nav: 103.75 },
+          { date: "2025-05-20", nav: 103.29 },
+          { date: "2025-05-21", nav: 103.21 },
+          { date: "2025-05-22", nav: 102.2 },
+          { date: "2025-05-23", nav: 102.34 },
+          { date: "2025-05-26", nav: 103.1 },
+          { date: "2025-05-27", nav: 102.45 },
+          { date: "2025-05-28", nav: 102.1 },
+          { date: "2025-05-29", nav: 102.16 },
+          { date: "2025-05-30", nav: 102.28 },
+        ],
+        drawdownCurve: [
+          { date: "2024-11-17", drawdown: 0.0 },
+          { date: "2024-11-18", drawdown: 0.0 },
+          { date: "2024-11-19", drawdown: 0.0 },
+          { date: "2024-11-21", drawdown: 0.0 },
+          { date: "2024-11-22", drawdown: 0.0 },
+          { date: "2024-11-25", drawdown: 0.0 },
+          { date: "2024-11-26", drawdown: -0.08 },
+          { date: "2024-11-27", drawdown: 0.0 },
+          { date: "2024-11-28", drawdown: 0.0 },
+          { date: "2024-11-29", drawdown: 0.0 },
+          { date: "2024-12-02", drawdown: 0.0 },
+          { date: "2024-12-03", drawdown: 0.0 },
+          { date: "2024-12-04", drawdown: -0.02 },
+          { date: "2024-12-05", drawdown: -0.32 },
+          { date: "2024-12-06", drawdown: -0.16 },
+          { date: "2024-12-09", drawdown: -0.17 },
+          { date: "2024-12-10", drawdown: -0.47 },
+          { date: "2024-12-11", drawdown: -0.46 },
+          { date: "2024-12-12", drawdown: -0.94 },
+          { date: "2024-12-13", drawdown: -0.69 },
+          { date: "2024-12-16", drawdown: -0.77 },
+          { date: "2024-12-17", drawdown: -1.05 },
+          { date: "2024-12-18", drawdown: -1.21 },
+          { date: "2024-12-19", drawdown: 0.0 },
+          { date: "2024-12-20", drawdown: 0.0 },
+          { date: "2024-12-23", drawdown: -1.42 },
+          { date: "2024-12-24", drawdown: -1.95 },
+          { date: "2024-12-26", drawdown: -2.5 },
+          { date: "2024-12-27", drawdown: -2.62 },
+          { date: "2024-12-30", drawdown: -3.93 },
+          { date: "2024-12-31", drawdown: -3.59 },
+          { date: "2025-01-01", drawdown: -3.52 },
+          { date: "2025-01-02", drawdown: -2.58 },
+          { date: "2025-01-03", drawdown: -2.76 },
+          { date: "2025-01-06", drawdown: -4.03 },
+          { date: "2025-01-07", drawdown: -4.48 },
+          { date: "2025-01-08", drawdown: -4.12 },
+          { date: "2025-01-09", drawdown: -3.57 },
+          { date: "2025-01-10", drawdown: -4.54 },
+          { date: "2025-01-13", drawdown: -5.85 },
+          { date: "2025-01-14", drawdown: -5.61 },
+          { date: "2025-01-15", drawdown: -5.41 },
+          { date: "2025-01-16", drawdown: -5.0 },
+          { date: "2025-01-17", drawdown: -4.63 },
+          { date: "2025-01-20", drawdown: -4.21 },
+          { date: "2025-01-21", drawdown: -4.84 },
+          { date: "2025-01-22", drawdown: -5.09 },
+          { date: "2025-01-23", drawdown: -5.5 },
+          { date: "2025-01-24", drawdown: -6.09 },
+          { date: "2025-01-27", drawdown: -7.16 },
+          { date: "2025-01-28", drawdown: -7.87 },
+          { date: "2025-01-29", drawdown: -7.78 },
+          { date: "2025-01-30", drawdown: -7.38 },
+          { date: "2025-01-31", drawdown: -6.64 },
+          { date: "2025-02-01", drawdown: -6.63 },
+          { date: "2025-02-03", drawdown: -7.61 },
+          { date: "2025-02-04", drawdown: -6.45 },
+          { date: "2025-02-05", drawdown: -6.42 },
+          { date: "2025-02-06", drawdown: -6.8 },
+          { date: "2025-02-07", drawdown: -7.4 },
+          { date: "2025-02-10", drawdown: -8.46 },
+          { date: "2025-02-11", drawdown: -8.51 },
+          { date: "2025-02-12", drawdown: -8.54 },
+          { date: "2025-02-13", drawdown: -8.5 },
+          { date: "2025-02-14", drawdown: -7.56 },
+          { date: "2025-02-17", drawdown: -8.22 },
+          { date: "2025-02-18", drawdown: -9.08 },
+          { date: "2025-02-19", drawdown: -8.6 },
+          { date: "2025-02-20", drawdown: -8.56 },
+          { date: "2025-02-21", drawdown: -8.72 },
+          { date: "2025-02-24", drawdown: -9.4 },
+          { date: "2025-02-25", drawdown: -9.37 },
+          { date: "2025-02-27", drawdown: -9.82 },
+          { date: "2025-02-28", drawdown: -9.81 },
+          { date: "2025-03-03", drawdown: -11.53 },
+          { date: "2025-03-04", drawdown: -12.45 },
+          { date: "2025-03-05", drawdown: -13.4 },
+          { date: "2025-03-06", drawdown: -12.37 },
+          { date: "2025-03-07", drawdown: -11.47 },
+          { date: "2025-03-10", drawdown: -12.53 },
+          { date: "2025-03-11", drawdown: -11.62 },
+          { date: "2025-03-12", drawdown: -11.98 },
+          { date: "2025-03-13", drawdown: -12.35 },
+          { date: "2025-03-17", drawdown: -12.57 },
+          { date: "2025-03-18", drawdown: -11.18 },
+          { date: "2025-03-19", drawdown: -10.21 },
+          { date: "2025-03-20", drawdown: -9.01 },
+          { date: "2025-03-21", drawdown: -8.01 },
+          { date: "2025-03-24", drawdown: -5.99 },
+          { date: "2025-03-25", drawdown: -6.91 },
+          { date: "2025-03-26", drawdown: -7.54 },
+          { date: "2025-03-27", drawdown: -7.31 },
+          { date: "2025-03-28", drawdown: -7.75 },
+          { date: "2025-04-01", drawdown: -8.18 },
+          { date: "2025-04-02", drawdown: -8.73 },
+          { date: "2025-04-03", drawdown: -9.45 },
+          { date: "2025-04-04", drawdown: -9.48 },
+          { date: "2025-04-07", drawdown: -6.44 },
+          { date: "2025-04-08", drawdown: -5.63 },
+          { date: "2025-04-09", drawdown: -5.64 },
+          { date: "2025-04-11", drawdown: -4.38 },
+          { date: "2025-04-15", drawdown: -4.8 },
+          { date: "2025-04-16", drawdown: -4.37 },
+          { date: "2025-04-17", drawdown: -2.89 },
+          { date: "2025-04-21", drawdown: -1.93 },
+          { date: "2025-04-22", drawdown: -1.89 },
+          { date: "2025-04-23", drawdown: -1.16 },
+          { date: "2025-04-24", drawdown: -1.38 },
+          { date: "2025-04-25", drawdown: -2.47 },
+          { date: "2025-04-28", drawdown: -1.16 },
+          { date: "2025-04-29", drawdown: -0.76 },
+          { date: "2025-04-30", drawdown: -1.2 },
+          { date: "2025-05-02", drawdown: -1.21 },
+          { date: "2025-05-05", drawdown: -0.84 },
+          { date: "2025-05-06", drawdown: -1.76 },
+          { date: "2025-05-07", drawdown: -2.09 },
+          { date: "2025-05-08", drawdown: -2.08 },
+          { date: "2025-05-09", drawdown: -3.21 },
+          { date: "2025-05-12", drawdown: -1.8 },
+          { date: "2025-05-13", drawdown: -2.06 },
+          { date: "2025-05-14", drawdown: -1.87 },
+          { date: "2025-05-15", drawdown: -0.49 },
+          { date: "2025-05-16", drawdown: -0.26 },
+          { date: "2025-05-19", drawdown: -0.39 },
+          { date: "2025-05-20", drawdown: -0.84 },
+          { date: "2025-05-21", drawdown: -0.91 },
+          { date: "2025-05-22", drawdown: -1.88 },
+          { date: "2025-05-23", drawdown: -1.75 },
+          { date: "2025-05-26", drawdown: -1.02 },
+          { date: "2025-05-27", drawdown: -1.64 },
+          { date: "2025-05-28", drawdown: -1.97 },
+          { date: "2025-05-29", drawdown: -1.92 },
+          { date: "2025-05-30", drawdown: -1.81 },
+        ],
         quarterlyPnl: {
           "2024": {
             percent: { q1: "-", q2: "-", q3: "-", q4: "-0.36", total: "-0.36" },
@@ -1069,8 +1386,210 @@ export class PortfolioApi {
         },
         drawdown: "-0.47",
         maxDrawdown: "-2.35",
-        equityCurve: [],
-        drawdownCurve: [],
+        equityCurve: [
+          { date: "2024-06-24", nav: 100.0 },
+          { date: "2024-06-25", nav: 100.51 },
+          { date: "2024-06-26", nav: 100.29 },
+          { date: "2024-06-27", nav: 100.26 },
+          { date: "2024-06-28", nav: 100.3 },
+          { date: "2024-07-01", nav: 100.34 },
+          { date: "2024-07-02", nav: 100.36 },
+          { date: "2024-07-03", nav: 100.31 },
+          { date: "2024-07-04", nav: 100.55 },
+          { date: "2024-07-05", nav: 100.36 },
+          { date: "2024-07-08", nav: 100.15 },
+          { date: "2024-07-09", nav: 100.27 },
+          { date: "2024-07-10", nav: 100.19 },
+          { date: "2024-07-11", nav: 99.79 },
+          { date: "2024-07-12", nav: 99.76 },
+          { date: "2024-07-15", nav: 99.76 },
+          { date: "2024-07-16", nav: 99.79 },
+          { date: "2024-07-18", nav: 99.31 },
+          { date: "2024-07-19", nav: 99.12 },
+          { date: "2024-07-22", nav: 99.12 },
+          { date: "2024-07-23", nav: 99.18 },
+          { date: "2024-07-24", nav: 98.86 },
+          { date: "2024-07-25", nav: 99.06 },
+          { date: "2024-07-26", nav: 99.74 },
+          { date: "2024-07-29", nav: 100.11 },
+          { date: "2024-07-30", nav: 99.71 },
+          { date: "2024-07-31", nav: 99.58 },
+          { date: "2024-08-01", nav: 99.57 },
+          { date: "2024-08-02", nav: 99.53 },
+          { date: "2024-08-05", nav: 100.25 },
+          { date: "2024-08-06", nav: 100.06 },
+          { date: "2024-08-07", nav: 98.91 },
+          { date: "2024-08-08", nav: 98.47 },
+          { date: "2024-08-09", nav: 98.47 },
+          { date: "2024-08-12", nav: 98.19 },
+          { date: "2024-08-13", nav: 99.04 },
+          { date: "2024-08-14", nav: 99.12 },
+          { date: "2024-08-16", nav: 99.14 },
+          { date: "2024-08-19", nav: 99.21 },
+          { date: "2024-08-20", nav: 99.22 },
+          { date: "2024-08-21", nav: 99.11 },
+          { date: "2024-08-22", nav: 99.25 },
+          { date: "2024-08-23", nav: 99.18 },
+          { date: "2024-08-26", nav: 99.34 },
+          { date: "2024-08-27", nav: 99.17 },
+          { date: "2024-08-28", nav: 99.12 },
+          { date: "2024-08-29", nav: 98.7 },
+          { date: "2024-08-30", nav: 98.83 },
+          { date: "2024-09-02", nav: 98.7 },
+          { date: "2024-09-03", nav: 98.85 },
+          { date: "2024-09-04", nav: 98.44 },
+          { date: "2024-09-05", nav: 98.47 },
+          { date: "2024-09-06", nav: 99.18 },
+          { date: "2024-09-09", nav: 99.59 },
+          { date: "2024-09-10", nav: 99.44 },
+          { date: "2024-09-11", nav: 99.34 },
+          { date: "2024-09-12", nav: 99.59 },
+          { date: "2024-09-13", nav: 99.79 },
+          { date: "2024-09-16", nav: 99.78 },
+          { date: "2024-09-17", nav: 99.7 },
+          { date: "2024-09-18", nav: 99.68 },
+          { date: "2024-09-19", nav: 99.47 },
+          { date: "2024-09-20", nav: 99.43 },
+          { date: "2024-09-23", nav: 99.92 },
+          { date: "2024-09-24", nav: 99.76 },
+          { date: "2024-09-25", nav: 99.85 },
+          { date: "2024-09-26", nav: 100.08 },
+          { date: "2024-09-27", nav: 100.33 },
+          { date: "2024-09-30", nav: 101.3 },
+          { date: "2024-10-01", nav: 100.7 },
+          { date: "2024-10-03", nav: 101.31 },
+          { date: "2024-10-04", nav: 101.3 },
+          { date: "2024-10-07", nav: 101.28 },
+          { date: "2024-10-08", nav: 101.41 },
+          { date: "2024-10-09", nav: 101.05 },
+          { date: "2024-10-10", nav: 101.06 },
+          { date: "2024-10-11", nav: 100.93 },
+          { date: "2024-10-14", nav: 101.18 },
+          { date: "2024-10-15", nav: 101.0 },
+          { date: "2024-10-16", nav: 100.74 },
+          { date: "2024-10-17", nav: 101.14 },
+          { date: "2024-10-18", nav: 101.67 },
+          { date: "2024-10-21", nav: 101.81 },
+          { date: "2024-10-22", nav: 102.05 },
+          { date: "2024-10-23", nav: 101.8 },
+          { date: "2024-10-24", nav: 101.64 },
+          { date: "2024-10-25", nav: 101.76 },
+          { date: "2024-10-28", nav: 101.63 },
+          { date: "2024-10-29", nav: 102.29 },
+          { date: "2024-10-30", nav: 101.76 },
+          { date: "2024-10-31", nav: 101.83 },
+          { date: "2024-11-04", nav: 102.11 },
+          { date: "2024-11-05", nav: 102.24 },
+          { date: "2024-11-06", nav: 102.71 },
+          { date: "2024-11-07", nav: 102.64 },
+          { date: "2024-11-08", nav: 102.44 },
+          { date: "2024-11-11", nav: 102.22 },
+          { date: "2024-11-12", nav: 102.23 },
+          { date: "2024-11-13", nav: 102.23 },
+          { date: "2024-11-14", nav: 102.23 },
+        ],
+        drawdownCurve: [
+          { date: "2024-06-24", drawdown: 0.0 },
+          { date: "2024-06-25", drawdown: 0.0 },
+          { date: "2024-06-26", drawdown: -0.21 },
+          { date: "2024-06-27", drawdown: -0.25 },
+          { date: "2024-06-28", drawdown: -0.21 },
+          { date: "2024-07-01", drawdown: -0.16 },
+          { date: "2024-07-02", drawdown: -0.15 },
+          { date: "2024-07-03", drawdown: -0.2 },
+          { date: "2024-07-04", drawdown: 0.0 },
+          { date: "2024-07-05", drawdown: -0.19 },
+          { date: "2024-07-08", drawdown: -0.4 },
+          { date: "2024-07-09", drawdown: -0.27 },
+          { date: "2024-07-10", drawdown: -0.36 },
+          { date: "2024-07-11", drawdown: -0.76 },
+          { date: "2024-07-12", drawdown: -0.78 },
+          { date: "2024-07-15", drawdown: -0.79 },
+          { date: "2024-07-16", drawdown: -0.75 },
+          { date: "2024-07-18", drawdown: -1.24 },
+          { date: "2024-07-19", drawdown: -1.42 },
+          { date: "2024-07-22", drawdown: -1.42 },
+          { date: "2024-07-23", drawdown: -1.37 },
+          { date: "2024-07-24", drawdown: -1.68 },
+          { date: "2024-07-25", drawdown: -1.49 },
+          { date: "2024-07-26", drawdown: -0.8 },
+          { date: "2024-07-29", drawdown: -0.44 },
+          { date: "2024-07-30", drawdown: -0.84 },
+          { date: "2024-07-31", drawdown: -0.97 },
+          { date: "2024-08-01", drawdown: -0.97 },
+          { date: "2024-08-02", drawdown: -1.01 },
+          { date: "2024-08-05", drawdown: -0.3 },
+          { date: "2024-08-06", drawdown: -0.48 },
+          { date: "2024-08-07", drawdown: -1.63 },
+          { date: "2024-08-08", drawdown: -2.07 },
+          { date: "2024-08-09", drawdown: -2.07 },
+          { date: "2024-08-12", drawdown: -2.35 },
+          { date: "2024-08-13", drawdown: -1.5 },
+          { date: "2024-08-14", drawdown: -1.42 },
+          { date: "2024-08-16", drawdown: -1.41 },
+          { date: "2024-08-19", drawdown: -1.34 },
+          { date: "2024-08-20", drawdown: -1.32 },
+          { date: "2024-08-21", drawdown: -1.44 },
+          { date: "2024-08-22", drawdown: -1.3 },
+          { date: "2024-08-23", drawdown: -1.36 },
+          { date: "2024-08-26", drawdown: -1.21 },
+          { date: "2024-08-27", drawdown: -1.37 },
+          { date: "2024-08-28", drawdown: -1.42 },
+          { date: "2024-08-29", drawdown: -1.84 },
+          { date: "2024-08-30", drawdown: -1.72 },
+          { date: "2024-09-02", drawdown: -1.85 },
+          { date: "2024-09-03", drawdown: -1.69 },
+          { date: "2024-09-04", drawdown: -2.1 },
+          { date: "2024-09-05", drawdown: -2.07 },
+          { date: "2024-09-06", drawdown: -1.36 },
+          { date: "2024-09-09", drawdown: -0.96 },
+          { date: "2024-09-10", drawdown: -1.11 },
+          { date: "2024-09-11", drawdown: -1.2 },
+          { date: "2024-09-12", drawdown: -0.96 },
+          { date: "2024-09-13", drawdown: -0.75 },
+          { date: "2024-09-16", drawdown: -0.77 },
+          { date: "2024-09-17", drawdown: -0.85 },
+          { date: "2024-09-18", drawdown: -0.87 },
+          { date: "2024-09-19", drawdown: -1.07 },
+          { date: "2024-09-20", drawdown: -1.11 },
+          { date: "2024-09-23", drawdown: -0.63 },
+          { date: "2024-09-24", drawdown: -0.79 },
+          { date: "2024-09-25", drawdown: -0.7 },
+          { date: "2024-09-26", drawdown: -0.47 },
+          { date: "2024-09-27", drawdown: -0.22 },
+          { date: "2024-09-30", drawdown: 0.0 },
+          { date: "2024-10-01", drawdown: -0.59 },
+          { date: "2024-10-03", drawdown: 0.0 },
+          { date: "2024-10-04", drawdown: -0.02 },
+          { date: "2024-10-07", drawdown: -0.03 },
+          { date: "2024-10-08", drawdown: 0.0 },
+          { date: "2024-10-09", drawdown: -0.35 },
+          { date: "2024-10-10", drawdown: -0.34 },
+          { date: "2024-10-11", drawdown: -0.47 },
+          { date: "2024-10-14", drawdown: -0.23 },
+          { date: "2024-10-15", drawdown: -0.4 },
+          { date: "2024-10-16", drawdown: -0.66 },
+          { date: "2024-10-17", drawdown: -0.27 },
+          { date: "2024-10-18", drawdown: 0.0 },
+          { date: "2024-10-21", drawdown: 0.0 },
+          { date: "2024-10-22", drawdown: 0.0 },
+          { date: "2024-10-23", drawdown: -0.24 },
+          { date: "2024-10-24", drawdown: -0.39 },
+          { date: "2024-10-25", drawdown: -0.28 },
+          { date: "2024-10-28", drawdown: -0.41 },
+          { date: "2024-10-29", drawdown: 0.0 },
+          { date: "2024-10-30", drawdown: -0.52 },
+          { date: "2024-10-31", drawdown: -0.46 },
+          { date: "2024-11-04", drawdown: -0.18 },
+          { date: "2024-11-05", drawdown: -0.05 },
+          { date: "2024-11-06", drawdown: 0.0 },
+          { date: "2024-11-07", drawdown: -0.06 },
+          { date: "2024-11-08", drawdown: -0.26 },
+          { date: "2024-11-11", drawdown: -0.47 },
+          { date: "2024-11-12", drawdown: -0.47 },
+          { date: "2024-11-13", drawdown: -0.47 },
+          { date: "2024-11-14", drawdown: -0.47 },
+        ],
         quarterlyPnl: {
           "2024": {
             percent: { q1: "-", q2: "0.3", q3: "-0.75", q4: "0.91", total: "2.23" },
@@ -1138,8 +1657,18 @@ export class PortfolioApi {
         },
         drawdown: "-0.64",
         maxDrawdown: "-0.98",
-        equityCurve: [],
-        drawdownCurve: [],
+        equityCurve: [
+          { date: "2024-06-19", nav: 100.0 },
+          { date: "2024-06-20", nav: 99.6 },
+          { date: "2024-06-21", nav: 99.02 },
+          { date: "2024-06-24", nav: 99.4 },
+        ],
+        drawdownCurve: [
+          { date: "2024-06-19", drawdown: 0.0 },
+          { date: "2024-06-20", drawdown: -0.4 },
+          { date: "2024-06-21", drawdown: -0.98 },
+          { date: "2024-06-24", drawdown: -0.6 },
+        ],
         quarterlyPnl: {
           "2024": {
             percent: { q1: "-", q2: "-0.64", q3: "-", q4: "-", total: "-0.64" },
@@ -1724,7 +2253,7 @@ export class PortfolioApi {
     console.log(`[TotalProfit] ${qcode} | TOTAL = ${total}`);
     return total;
   }
-  private static async getHistoricalData(qcode: string, scheme: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]> {
+  private static async getHistoricalData(qcode: string, scheme: string): Promise<{ date: Date; nav: number; prevNav: number | null; drawdown: number; pnl: number; capitalInOut: number }[]> {
     // Check for hardcoded historical data (for inactive schemes)
     const HC = this.getHardcoded(qcode);
     if (HC?.[scheme] && HC[scheme].data.equityCurve.length > 0) {
@@ -1733,6 +2262,7 @@ export class PortfolioApi {
         return {
           date: new Date(entry.date),
           nav: entry.nav,
+          prevNav: null, // Hardcoded data doesn't have prevNav, will fall back to nav
           drawdown: drawdownEntry?.drawdown || 0,
           pnl: 0, // PnL is handled separately via hardcoded quarterlyPnl/monthlyPnl
           capitalInOut: 0, // Cash flows are handled separately via hardcoded cashFlows
@@ -1745,6 +2275,7 @@ export class PortfolioApi {
       return pmsData.historicalData.map(item => ({
         date: new Date(item.date),
         nav: item.nav,
+        prevNav: item.prevNav,
         drawdown: item.drawdown,
         pnl: item.pnl,
         capitalInOut: item.capitalInOut,
@@ -1762,7 +2293,7 @@ export class PortfolioApi {
         nav: { not: null },
         drawdown: { not: null },
       },
-      select: { date: true, nav: true, drawdown: true, pnl: true, capital_in_out: true },
+      select: { date: true, nav: true, prev_nav: true, drawdown: true, pnl: true, capital_in_out: true },
       orderBy: { date: "asc" },
     });
 
@@ -1770,6 +2301,7 @@ export class PortfolioApi {
     return data.map(entry => ({
       date: entry.date,
       nav: Number(entry.nav) || 0,
+      prevNav: entry.prev_nav ? Number(entry.prev_nav) : null,
       drawdown: Math.abs(Number(entry.drawdown) || 0),
       pnl: Number(entry.pnl) || 0,
       capitalInOut: Number(entry.capital_in_out) || 0,
@@ -1807,6 +2339,10 @@ export class PortfolioApi {
                 dividend: entry.dividend || 0,
               }))
             );
+          } else if (s === "Scheme PMS QAW") {
+            // Fetch from pms_master_sheet using getPMSData
+            const pmsData = await this.getPMSData(qcode);
+            cashFlows = cashFlows.concat(pmsData.cashFlows);
           } else if (s === "Scheme QAW++") {
             // Fetch from database using QAC00066
             const effectiveQcode = PortfolioApi.getEffectiveQcode(s, qcode);
@@ -2085,6 +2621,7 @@ export class PortfolioApi {
       const navData = pmsData.historicalData.map(item => ({
         date: item.date,
         nav: item.nav,
+        prevNav: item.prevNav,
         pnl: item.pnl,
         capitalInOut: item.capitalInOut,
       }));
@@ -2097,7 +2634,7 @@ export class PortfolioApi {
         .filter(entry => entry.date)
         .sort((a, b) => a.date.localeCompare(b.date));
 
-      const monthlyData: { [yearMonth: string]: { entries: { date: string; nav: number; pnl: number; capitalInOut: number }[] } } = {};
+      const monthlyData: { [yearMonth: string]: { entries: { date: string; nav: number; prevNav: number | null; pnl: number; capitalInOut: number }[] } } = {};
 
       sortedNavData.forEach(entry => {
         const [year, month] = entry.date.split("-").map(Number);
@@ -2121,7 +2658,9 @@ export class PortfolioApi {
         const totalCapitalInOut = entries.reduce((sum, entry) => sum + entry.capitalInOut, 0);
         const totalCashPnL = entries.reduce((sum, entry) => sum + entry.pnl, 0);
 
-        let startNav = entries[0].nav;
+        // For first month, use prev_nav as starting NAV (the baseline before first trade)
+        // Fall back to nav if prev_nav is not available
+        let startNav = index === 0 ? (entries[0].prevNav ?? entries[0].nav) : entries[0].nav;
         if (index > 0) {
           const prevYearMonth = sortedYearMonths[index - 1];
           const prevEntries = monthlyData[prevYearMonth].entries;
@@ -2188,13 +2727,14 @@ export class PortfolioApi {
     if (scheme === "Total Portfolio") {
       // Satidham (QAC00046) includes different schemes than Sarla (QAC00041)
       const isSatidham = qcode === "QAC00046";
-      const allData: { date: string; nav: number; pnl: number; capitalInOut: number }[] = [];
+      const allData: { date: string; nav: number; prevNav: number | null; pnl: number; capitalInOut: number }[] = [];
 
       // Fetch data for Scheme B
       const schemeBData = await PortfolioApi.getHistoricalData(qcode, "Scheme B");
       allData.push(...schemeBData.map(item => ({
         date: PortfolioApi.normalizeDate(item.date)!,
         nav: item.nav,
+        prevNav: item.prevNav,
         pnl: item.pnl,
         capitalInOut: item.capitalInOut,
       })));
@@ -2204,6 +2744,7 @@ export class PortfolioApi {
       allData.push(...pmsData.historicalData.map(item => ({
         date: item.date,
         nav: item.nav,
+        prevNav: item.prevNav,
         pnl: item.pnl,
         capitalInOut: item.capitalInOut,
       })));
@@ -2214,6 +2755,7 @@ export class PortfolioApi {
         allData.push(...schemeAData.map(item => ({
           date: PortfolioApi.normalizeDate(item.date)!,
           nav: item.nav,
+          prevNav: item.prevNav,
           pnl: item.pnl,
           capitalInOut: item.capitalInOut,
         })));
@@ -2222,6 +2764,7 @@ export class PortfolioApi {
         allData.push(...schemeQAWPlusData.map(item => ({
           date: PortfolioApi.normalizeDate(item.date)!,
           nav: item.nav,
+          prevNav: item.prevNav,
           pnl: item.pnl,
           capitalInOut: item.capitalInOut,
         })));
@@ -2230,6 +2773,7 @@ export class PortfolioApi {
         allData.push(...schemeQYEData.map(item => ({
           date: PortfolioApi.normalizeDate(item.date)!,
           nav: item.nav,
+          prevNav: item.prevNav,
           pnl: item.pnl,
           capitalInOut: item.capitalInOut,
         })));
@@ -2244,7 +2788,7 @@ export class PortfolioApi {
         .filter(entry => entry.date)
         .sort((a, b) => a.date.localeCompare(b.date));
 
-      const monthlyData: { [yearMonth: string]: { entries: { date: string; nav: number; pnl: number; capitalInOut: number }[] } } = {};
+      const monthlyData: { [yearMonth: string]: { entries: { date: string; nav: number; prevNav: number | null; pnl: number; capitalInOut: number }[] } } = {};
 
       sortedNavData.forEach(entry => {
         const [year, month] = entry.date.split("-").map(Number);
@@ -2270,7 +2814,9 @@ export class PortfolioApi {
         const totalCashPnL = entries.reduce((sum, entry) => sum + entry.pnl, 0);
 
         // Calculate NAV for percentage return
-        let startNav = entries[0].nav;
+        // For first month, use prev_nav as starting NAV (the baseline before first trade)
+        // Fall back to nav if prev_nav is not available
+        let startNav = index === 0 ? (entries[0].prevNav ?? entries[0].nav) : entries[0].nav;
         if (index > 0) {
           const prevYearMonth = sortedYearMonths[index - 1];
           const prevEntries = monthlyData[prevYearMonth].entries;
@@ -2347,7 +2893,7 @@ export class PortfolioApi {
       .filter(entry => entry.date)
       .sort((a, b) => a.date!.localeCompare(b.date!));
 
-    const monthlyData: { [yearMonth: string]: { entries: { date: string; nav: number; pnl: number; capitalInOut: number }[] } } = {};
+    const monthlyData: { [yearMonth: string]: { entries: { date: string | null; nav: number; prevNav: number | null; pnl: number; capitalInOut: number }[] } } = {};
 
     sortedNavData.forEach(entry => {
       const [year, month] = entry.date!.split("-").map(Number);
@@ -2371,7 +2917,9 @@ export class PortfolioApi {
       const totalCapitalInOut = entries.reduce((sum, entry) => sum + entry.capitalInOut, 0);
       const totalCashPnL = entries.reduce((sum, entry) => sum + entry.pnl, 0);
 
-      let startNav = entries[0].nav;
+      // For first month, use prev_nav as starting NAV (the baseline before first trade)
+      // Fall back to nav if prev_nav is not available
+      let startNav = index === 0 ? (entries[0].prevNav ?? entries[0].nav) : entries[0].nav;
       if (index > 0) {
         const prevYearMonth = sortedYearMonths[index - 1];
         const prevEntries = monthlyData[prevYearMonth].entries;
@@ -2440,7 +2988,7 @@ export class PortfolioApi {
   private static async calculateQuarterlyPnLWithDailyPL(
     qcode: string,
     scheme: string,
-    navData: { date: string; nav: number; pnl: number }[]
+    navData: { date: string; nav: number; prevNav?: number | null; pnl: number }[]
   ): Promise<QuarterlyPnL> {
     // If hardcoded exists for this qcode/scheme, return it directly
     const HC = this.getHardcoded(qcode);
@@ -2458,6 +3006,7 @@ export class PortfolioApi {
         pmsData.historicalData.map(d => ({
           date: d.date,
           nav: d.nav,
+          prevNav: d.prevNav,
           pnl: d.pnl,
         }))
       );
@@ -2468,6 +3017,7 @@ export class PortfolioApi {
         schemeBData.map(d => ({
           date: PortfolioApi.normalizeDate(d.date)!,
           nav: d.nav,
+          prevNav: d.prevNav,
           pnl: d.pnl,
         }))
       );
@@ -2482,6 +3032,7 @@ export class PortfolioApi {
           schemeAData.map(d => ({
             date: PortfolioApi.normalizeDate(d.date)!,
             nav: d.nav,
+            prevNav: d.prevNav,
             pnl: d.pnl,
           }))
         );
@@ -2491,6 +3042,7 @@ export class PortfolioApi {
           schemeQAWPlusData.map(d => ({
             date: PortfolioApi.normalizeDate(d.date)!,
             nav: d.nav,
+            prevNav: d.prevNav,
             pnl: d.pnl,
           }))
         );
@@ -2506,6 +3058,7 @@ export class PortfolioApi {
             schemeQYEData.map(d => ({
               date: PortfolioApi.normalizeDate(d.date)!,
               nav: d.nav,
+              prevNav: d.prevNav,
               pnl: d.pnl,
             }))
           );
@@ -2659,7 +3212,7 @@ if (scheme === "Scheme PMS QAW") {
     const quarterlyPnl = this.calculateQuarterlyPnLFromNavData(sortedNavData);
     return quarterlyPnl;
   }
-  private static calculateQuarterlyPnLFromNavData(navData: { date: string; nav: number; pnl: number }[]): QuarterlyPnL {
+  private static calculateQuarterlyPnLFromNavData(navData: { date: string; nav: number; prevNav?: number | null; pnl: number }[]): QuarterlyPnL {
     const getQuarter = (month: number): string => {
       if (month < 3) return "q1";
       if (month < 6) return "q2";
@@ -2672,7 +3225,7 @@ if (scheme === "Scheme PMS QAW") {
       return quarterMap[quarter];
     };
 
-    const quarterlyData: { [yearQuarter: string]: { cash: number; entries: { date: string; nav: number; pnl: number }[] } } = {};
+    const quarterlyData: { [yearQuarter: string]: { cash: number; entries: { date: string; nav: number; prevNav?: number | null; pnl: number }[] } } = {};
     navData.forEach(entry => {
       const date = new Date(entry.date);
       const year = date.getUTCFullYear();
@@ -2719,7 +3272,10 @@ if (scheme === "Scheme PMS QAW") {
         const entries = quarterlyData[yearQuarter].entries;
 
         if (entries.length > 0) {
-          let startNav = entries[0].nav;
+          // For first quarter ever, use prev_nav as starting NAV (the baseline before first trade)
+          // Fall back to nav if prev_nav is not available
+          const isFirstQuarterEver = quarterIndex === 0 && year === sortedYearQuarters[0].split("-")[0];
+          let startNav = isFirstQuarterEver ? (entries[0].prevNav ?? entries[0].nav) : entries[0].nav;
 
           if (quarterIndex > 0) {
             const prevYearQuarter = yearlyQuarters[year][quarterIndex - 1];
@@ -2844,6 +3400,11 @@ if (scheme === "Scheme PMS QAW") {
         const returns = await PortfolioApi.getPortfolioReturns(qcode, scheme);
         const historicalData = await PortfolioApi.getHistoricalData(qcode, scheme);
         const cashFlows = await PortfolioApi.getCashFlows(qcode, scheme);
+        const holdingsBase = await PortfolioApi.getHoldings(qcode);
+        const holdings = qcode === "QAC00046"
+          ? [...holdingsBase, ...(await PortfolioApi.getHoldings("QAC00066"))]
+          : holdingsBase;
+        const holdingsSummary = PortfolioApi.processHoldingsSummary(holdings);
         const drawdownMetrics = PortfolioApi.calculateDrawdownMetrics(historicalData.map(d => ({ date: PortfolioApi.normalizeDate(d.date)!, nav: d.nav })));
         const trailingReturns = await PortfolioApi.calculateTrailingReturns(qcode, scheme, drawdownMetrics);
         const monthlyPnl = await PortfolioApi.calculateMonthlyPnL(qcode, scheme);
@@ -2853,6 +3414,7 @@ if (scheme === "Scheme PMS QAW") {
           historicalData.map(d => ({
             date: PortfolioApi.normalizeDate(d.date)!,
             nav: d.nav,
+            prevNav: d.prevNav,
             pnl: d.pnl,
           }))
         );
@@ -2893,6 +3455,8 @@ if (scheme === "Scheme PMS QAW") {
           monthlyPnl,
           cashFlows,
           strategyName: scheme,
+          holdings,
+          holdingsSummary,
         };
 
         const metadata: Metadata = {
@@ -2928,5 +3492,187 @@ if (scheme === "Scheme PMS QAW") {
         { status: 500 }
       );
     }
+  }
+
+  static async getHoldings(qcode: string): Promise<Holding[]> {
+    // Fetch equity holdings for the latest date only
+    const equityHoldings = await prisma.$queryRaw<{
+      symbol: string;
+      exchange: string;
+      quantity: number;
+      avg_price: number;
+      ltp: number;
+      buy_value: number;
+      value_as_of_today: number;
+      pnl_amount: number;
+      percent_pnl: number;
+      broker: string;
+      debt_equity: string;
+      sub_category: string;
+      date: Date;
+    }[]>`
+      SELECT e.*
+      FROM equity_holding e
+      WHERE e.qcode = ${qcode}
+        AND e.quantity > 0
+        AND e.date = (
+          SELECT MAX(date)
+          FROM equity_holding
+          WHERE qcode = ${qcode} AND date IS NOT NULL
+        )
+    `;
+
+    // Fetch mutual fund holdings deduplicated by ISIN for the latest date
+    const mutualFundHoldings = await prisma.$queryRaw<{
+      isin: string;
+      symbol: string;
+      scheme_code: string;
+      quantity: number;
+      avg_price: number;
+      nav: number;
+      buy_value: number;
+      value_as_of_today: number;
+      pnl_amount: number;
+      percent_pnl: number;
+      broker: string;
+      debt_equity: string;
+      sub_category: string;
+      as_of_date: Date;
+      mastersheet_tag: string;
+    }[]>`
+      WITH latest_date AS (
+        SELECT MAX(as_of_date) as max_date
+        FROM mutual_fund_holding_sheet
+        WHERE qcode = ${qcode} AND as_of_date IS NOT NULL
+      ),
+      ranked_holdings AS (
+        SELECT
+          m.*,
+          ROW_NUMBER() OVER (
+            PARTITION BY m.isin
+            ORDER BY m.quantity DESC, m.buy_value DESC
+          ) as rn
+        FROM mutual_fund_holding_sheet m
+        CROSS JOIN latest_date ld
+        WHERE m.qcode = ${qcode}
+          AND m.quantity > 0
+          AND m.isin IS NOT NULL
+          AND m.isin != ''
+          AND m.as_of_date = ld.max_date
+      )
+      SELECT
+        isin,
+        MAX(symbol) as symbol,
+        MAX(scheme_code) as scheme_code,
+        SUM(quantity) as quantity,
+        SUM(buy_value) / NULLIF(SUM(quantity), 0) as avg_price,
+        MAX(nav) as nav,
+        SUM(buy_value) as buy_value,
+        SUM(value_as_of_today) as value_as_of_today,
+        SUM(pnl_amount) as pnl_amount,
+        (SUM(pnl_amount) / NULLIF(SUM(buy_value), 0) * 100) as percent_pnl,
+        MAX(broker) as broker,
+        MAX(debt_equity) as debt_equity,
+        MAX(sub_category) as sub_category,
+        MAX(as_of_date) as as_of_date,
+        MAX(mastersheet_tag) as mastersheet_tag
+      FROM ranked_holdings
+      WHERE rn = 1
+      GROUP BY isin
+    `;
+
+    const processedEquityHoldings: Holding[] = equityHoldings.map(holding => ({
+      symbol: holding.symbol || '',
+      exchange: holding.exchange || '',
+      quantity: Number(holding.quantity) || 0,
+      avgPrice: Number(holding.avg_price) || 0,
+      ltp: Number(holding.ltp) || 0,
+      buyValue: Number(holding.buy_value) || 0,
+      valueAsOfToday: Number(holding.value_as_of_today) || 0,
+      pnlAmount: Number(holding.pnl_amount) || 0,
+      percentPnl: Number(holding.percent_pnl) || 0,
+      broker: holding.broker || '',
+      debtEquity: holding.debt_equity || '',
+      subCategory: holding.sub_category || '',
+      date: holding.date || new Date(),
+      type: 'equity' as const,
+    }));
+
+    const isinMap = new Map<string, Holding>();
+
+    mutualFundHoldings.forEach(holding => {
+      const isin = holding.isin || '';
+      if (isin && !isinMap.has(isin)) {
+        isinMap.set(isin, {
+          symbol: holding.symbol || '',
+          exchange: 'MUTUAL_FUND',
+          quantity: Number(holding.quantity) || 0,
+          avgPrice: Number(holding.avg_price) || 0,
+          ltp: Number(holding.nav) || 0,
+          buyValue: Number(holding.buy_value) || 0,
+          valueAsOfToday: Number(holding.value_as_of_today) || 0,
+          pnlAmount: Number(holding.pnl_amount) || 0,
+          percentPnl: Number(holding.percent_pnl) || 0,
+          broker: holding.broker || '',
+          debtEquity: holding.debt_equity || '',
+          subCategory: holding.sub_category || '',
+          date: holding.as_of_date ? new Date(holding.as_of_date) : new Date(),
+          type: 'mutual_fund' as const,
+          isin: isin,
+        });
+      }
+    });
+
+    const processedMutualFundHoldings = Array.from(isinMap.values());
+
+    return [...processedEquityHoldings, ...processedMutualFundHoldings];
+  }
+
+  static processHoldingsSummary(holdings: Holding[]): HoldingsSummary {
+    const equityHoldings = holdings.filter(h => h.type === 'equity');
+    const debtHoldings = holdings.filter(h => h.debtEquity?.toLowerCase() === 'debt');
+    const mutualFundHoldings = holdings.filter(h => h.type === 'mutual_fund');
+
+    const totalBuyValue = holdings.reduce((sum, h) => sum + h.buyValue, 0);
+    const totalCurrentValue = holdings.reduce((sum, h) => sum + h.valueAsOfToday, 0);
+    const totalPnl = holdings.reduce((sum, h) => sum + h.pnlAmount, 0);
+    const totalPnlPercent = totalBuyValue > 0 ? (totalPnl / totalBuyValue) * 100 : 0;
+
+    const categoryBreakdown: { [category: string]: { buyValue: number; currentValue: number; pnl: number; count: number } } = {};
+    holdings.forEach(holding => {
+      const category = holding.subCategory || 'Other';
+      if (!categoryBreakdown[category]) {
+        categoryBreakdown[category] = { buyValue: 0, currentValue: 0, pnl: 0, count: 0 };
+      }
+      categoryBreakdown[category].buyValue += holding.buyValue;
+      categoryBreakdown[category].currentValue += holding.valueAsOfToday;
+      categoryBreakdown[category].pnl += holding.pnlAmount;
+      categoryBreakdown[category].count += 1;
+    });
+
+    const brokerBreakdown: { [broker: string]: { buyValue: number; currentValue: number; pnl: number; count: number } } = {};
+    holdings.forEach(holding => {
+      const broker = holding.broker || 'Unknown';
+      if (!brokerBreakdown[broker]) {
+        brokerBreakdown[broker] = { buyValue: 0, currentValue: 0, pnl: 0, count: 0 };
+      }
+      brokerBreakdown[broker].buyValue += holding.buyValue;
+      brokerBreakdown[broker].currentValue += holding.valueAsOfToday;
+      brokerBreakdown[broker].pnl += holding.pnlAmount;
+      brokerBreakdown[broker].count += 1;
+    });
+
+    return {
+      totalBuyValue,
+      totalCurrentValue,
+      totalPnl,
+      totalPnlPercent,
+      holdingsCount: holdings.length,
+      equityHoldings,
+      debtHoldings,
+      mutualFundHoldings,
+      categoryBreakdown,
+      brokerBreakdown,
+    };
   }
 }
