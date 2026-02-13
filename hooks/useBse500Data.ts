@@ -45,28 +45,33 @@ export function useBse500Data(equityCurve: EquityCurvePoint[], adjustStartDateBy
           fetchStartDate = startDateObj.toISOString().split('T')[0];
         }
 
-        const queryParams = new URLSearchParams({
-          indices: "NIFTY 50",
-          start_date: fetchStartDate,
-          end_date: endDate,
-        });
-
         const response = await fetch(
-          `https://research.qodeinvest.com/api/getIndices?${queryParams.toString()}`
+          "https://qode360-backend.qodeinvest.com/api/v1/returns/indices/?downloadNav=true",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              accept: "application/json",
+            },
+            body: JSON.stringify({
+              startDate: fetchStartDate,
+              endDate: endDate,
+              indices: ["NIFTY 50"],
+            }),
+          }
         );
         if (!response.ok) {
-          throw new Error("Failed to fetch BSE500 data");
+          throw new Error("Failed to fetch index data");
         }
         const result = await response.json();
 
-        let processedData: Bse500DataPoint[] = [];
-        if (result.data && Array.isArray(result.data)) {
-          processedData = result.data;
-        } else if (result["BSE500"] && Array.isArray(result["BSE500"])) {
-          processedData = result["BSE500"];
-        } else if (Array.isArray(result)) {
-          processedData = result;
-        }
+        const rawData = result?.data?.data?.["NIFTY 50"];
+        const processedData: Bse500DataPoint[] = Array.isArray(rawData)
+          ? rawData.map((d: { date: string; nav: number }) => ({
+              date: d.date,
+              nav: d.nav.toString(),
+            }))
+          : [];
 
         // Determine the effective start date for filtering
         let effectiveStartDate = startDate;
