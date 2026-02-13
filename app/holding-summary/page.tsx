@@ -8,7 +8,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Download, ChevronLeft, ChevronRight } from "lucide-react";
+import { Download, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import * as XLSX from "xlsx-js-style";
 
 interface Holding {
@@ -208,20 +208,52 @@ const HoldingsTable = ({
 }) => {
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState<number>(10);
+    const [sortKey, setSortKey] = useState<keyof Holding | null>(null);
+    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
     useEffect(() => {
         setCurrentPage(1);
     }, [holdings]);
 
-    const effectivePageSize = pageSize === 0 ? holdings.length : pageSize;
-    const totalPages = Math.max(1, Math.ceil(holdings.length / (effectivePageSize || 1)));
+    const handleSort = (key: keyof Holding) => {
+        if (sortKey === key) {
+            if (sortDirection === 'asc') {
+                setSortDirection('desc');
+            } else {
+                setSortKey(null);
+                setSortDirection('asc');
+            }
+        } else {
+            setSortKey(key);
+            setSortDirection('asc');
+        }
+        setCurrentPage(1);
+    };
+
+    const sortedHoldings = useMemo(() => {
+        if (!sortKey) return holdings;
+        return [...holdings].sort((a, b) => {
+            const aVal = a[sortKey];
+            const bVal = b[sortKey];
+            let cmp = 0;
+            if (typeof aVal === 'string' && typeof bVal === 'string') {
+                cmp = aVal.localeCompare(bVal);
+            } else {
+                cmp = (Number(aVal) || 0) - (Number(bVal) || 0);
+            }
+            return sortDirection === 'asc' ? cmp : -cmp;
+        });
+    }, [holdings, sortKey, sortDirection]);
+
+    const effectivePageSize = pageSize === 0 ? sortedHoldings.length : pageSize;
+    const totalPages = Math.max(1, Math.ceil(sortedHoldings.length / (effectivePageSize || 1)));
     const safePage = Math.min(currentPage, totalPages);
 
     const paginatedHoldings = useMemo(() => {
-        if (pageSize === 0 || holdings.length === 0) return holdings;
+        if (pageSize === 0 || sortedHoldings.length === 0) return sortedHoldings;
         const start = (safePage - 1) * effectivePageSize;
-        return holdings.slice(start, start + effectivePageSize);
-    }, [holdings, safePage, effectivePageSize, pageSize]);
+        return sortedHoldings.slice(start, start + effectivePageSize);
+    }, [sortedHoldings, safePage, effectivePageSize, pageSize]);
 
     const startEntry = holdings.length === 0 ? 0 : (safePage - 1) * effectivePageSize + 1;
     const endEntry = Math.min(safePage * effectivePageSize, holdings.length);
@@ -283,34 +315,33 @@ const HoldingsTable = ({
                 <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
                     <Table className="min-w-full">
                         <TableHeader className="sticky top-0 z-10">
-                            <TableRow className="bg-black/5 hover:bg-black/5 border-b border-gray-200">
-                                <TableHead className="py-3 text-left text-sm font-medium text-card-text tracking-wider">
-                                    Symbol
-                                </TableHead>
-                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
-                                    Quantity
-                                </TableHead>
-                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
-                                    Average Cost (₹)
-                                </TableHead>
-                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
-                                    Last Traded Price (₹)
-                                </TableHead>
-                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
-                                    Invested Amount (₹)
-                                </TableHead>
-                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
-                                    Current Value (₹)
-                                </TableHead>
-                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
-                                    Profit & Loss (₹)
-                                </TableHead>
-                                <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider">
-                                    Profit & Loss (%)
-                                </TableHead>
-                                <TableHead className="py-3 text-left text-sm font-medium text-card-text tracking-wider">
-                                    Category
-                                </TableHead>
+                            <TableRow className="bg-[#E9E8DE] hover:bg-[#E9E8DE] border-b border-gray-200">
+                                {([
+                                    { key: 'symbol' as keyof Holding, label: 'Symbol', align: 'left' },
+                                    { key: 'quantity' as keyof Holding, label: 'Quantity', align: 'right' },
+                                    { key: 'avgPrice' as keyof Holding, label: 'Average Cost (₹)', align: 'right' },
+                                    { key: 'ltp' as keyof Holding, label: 'Last Traded Price (₹)', align: 'right' },
+                                    { key: 'buyValue' as keyof Holding, label: 'Invested Amount (₹)', align: 'right' },
+                                    { key: 'valueAsOfToday' as keyof Holding, label: 'Current Value (₹)', align: 'right' },
+                                    { key: 'pnlAmount' as keyof Holding, label: 'Profit & Loss (₹)', align: 'right' },
+                                    { key: 'percentPnl' as keyof Holding, label: 'Profit & Loss (%)', align: 'right' },
+                                    { key: 'debtEquity' as keyof Holding, label: 'Category', align: 'left' },
+                                ]).map(({ key, label, align }) => (
+                                    <TableHead
+                                        key={key}
+                                        className={`py-3 text-${align} text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE] cursor-pointer select-none`}
+                                        onClick={() => handleSort(key)}
+                                    >
+                                        <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>
+                                            {label}
+                                            {sortKey === key ? (
+                                                sortDirection === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />
+                                            ) : (
+                                                <ArrowUpDown className="h-3.5 w-3.5 opacity-30" />
+                                            )}
+                                        </div>
+                                    </TableHead>
+                                ))}
                             </TableRow>
                         </TableHeader>
                         <TableBody>
