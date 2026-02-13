@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import StockTable from "@/components/StockTable";
+import { ImpersonationBanner } from "@/components/admin/ImpersonationBanner";
 
 // Interfaces for stats
 interface Stats {
@@ -223,11 +224,19 @@ const getGreeting = () => {
 };
 
 export default function Portfolio() {
-  const { data: session, status } = useSession();
-  const isSarla = session?.user?.icode === "QUS0007";
-  const isSatidham = session?.user?.icode === "QUS0010";
-  const isDinesh = session?.user?.icode === "QUS00072";
+  const { data: session, status, update: updateSession } = useSession();
   const router = useRouter();
+
+  // Admin impersonation: use impersonated icode if available
+  const isAdmin = session?.user?.accessType === "admin";
+  const isImpersonating = isAdmin && !!session?.user?.impersonating;
+  const effectiveIcode = isImpersonating
+    ? session.user.impersonating!.icode
+    : session?.user?.icode;
+
+  const isSarla = effectiveIcode === "QUS0007";
+  const isSatidham = effectiveIcode === "QUS0010";
+  const isDinesh = effectiveIcode === "QUS00072";
   const searchParams = useSearchParams();
   const accountCode = searchParams.get("accountCode") || "AC5";
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -241,9 +250,21 @@ export default function Portfolio() {
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
   const [availableStrategies, setAvailableStrategies] = useState<string[]>([]);
 const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percent");
+  // Exit impersonation handler
+  const handleExitImpersonation = async () => {
+    await updateSession({ impersonating: null });
+    router.push("/admin");
+  };
+
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push("/");
+      return;
+    }
+
+    // Redirect admin to admin dashboard if not impersonating
+    if (status === "authenticated" && isAdmin && !isImpersonating) {
+      router.push("/admin");
       return;
     }
 
@@ -889,6 +910,13 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
   return (
     <div className="sm:p-2 space-y-6">
+      {isImpersonating && session?.user?.impersonating && (
+        <ImpersonationBanner
+          name={session.user.impersonating.name}
+          icode={session.user.impersonating.icode}
+          onExit={handleExitImpersonation}
+        />
+      )}
       <div>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           {/* Greeting and Metadata */}

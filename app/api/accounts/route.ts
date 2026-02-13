@@ -2,15 +2,16 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
+import { getEffectiveIcode } from "@/app/lib/admin-utils";
 
 export async function GET() {
   try {
     // Authenticate user
     const session = await getServerSession(authOptions);
-    if (!session?.user?.icode) {
+    const icode = getEffectiveIcode(session);
+    if (!icode) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const icode = session.user.icode;
 
     // Fetch accounts where the user has access
     const accounts = await prisma.accounts.findMany({

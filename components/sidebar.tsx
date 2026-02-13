@@ -11,6 +11,7 @@ import {
   ArrowRightOnRectangleIcon,
   CurrencyDollarIcon,
   UserCircleIcon,
+  ArrowLeftIcon,
 } from "@heroicons/react/24/outline"
 import { cn } from "@/lib/utils"
 import { signOut, useSession } from "next-auth/react"
@@ -82,13 +83,22 @@ export function Sidebar({ open, setOpen }: SidebarProps) {
 }
 
 function SidebarContent({ pathname }: { pathname: string }) {
-  const { data: session } = useSession();
+  const { data: session, update: updateSession } = useSession();
   const router = useRouter();
 
+  // Admin impersonation state
+  const isAdmin = session?.user?.accessType === "admin";
+  const isImpersonating = isAdmin && !!session?.user?.impersonating;
+  const effectiveIcode = isImpersonating
+    ? session.user.impersonating!.icode
+    : session?.user?.icode || "";
+
   // Get user info from session with fallbacks
-  const userName = session?.user?.name || "User";
+  const userName = isImpersonating
+    ? session.user.impersonating!.name
+    : session?.user?.name || "User";
   const userEmail = session?.user?.email || "";
-  const userIcode = session?.user?.icode || "";
+  const userIcode = effectiveIcode;
   const userInitials = userName
     .split(" ")
     .map(name => name.charAt(0))
@@ -96,8 +106,13 @@ function SidebarContent({ pathname }: { pathname: string }) {
     .toUpperCase()
     .slice(0, 2);
 
-  // Check if user is Sarla client (QUS0007)
+  // Check if effective user is Sarla client (QUS0007)
   const isSarla = userIcode === "QUS0007";
+
+  const handleExitImpersonation = async () => {
+    await updateSession({ impersonating: null });
+    router.push("/admin");
+  };
 
   // Filter navigation based on user type
   const filteredNavigation = navigation.filter(item => {
@@ -121,6 +136,15 @@ function SidebarContent({ pathname }: { pathname: string }) {
       <div className="flex h-16 shrink-0 items-center">
         <h1 className="text-3xl font-serif font-bold text-logo-green">Qode</h1>
       </div>
+      {isImpersonating && (
+        <button
+          onClick={handleExitImpersonation}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-300 text-amber-800 text-sm font-medium hover:bg-amber-100 transition-colors"
+        >
+          <ArrowLeftIcon className="h-4 w-4" />
+          Back to Admin
+        </button>
+      )}
       <nav className="flex flex-1 flex-col justify-center">
         <ul role="list" className="flex flex-col gap-y-7">
           <li>
