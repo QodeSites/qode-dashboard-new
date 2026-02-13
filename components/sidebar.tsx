@@ -20,7 +20,7 @@ import { ChartCandlestickIcon } from "lucide-react"
 const navigation = [
   { name: "Home", href: "/", icon: HomeIcon },
   { name: "Portfolio", href: "/dashboard", icon: ChartBarIcon },
-  { name: "Holding Summary", href: "/holding-summary", icon: ChartCandlestickIcon },
+  { name: "Holdings Summary", href: "/holding-summary", icon: ChartCandlestickIcon },
   { name: "Costs Summary", href: "/quarterly-fees", icon: CurrencyDollarIcon },
   { name: "Personal Details", href: "/personal-details", icon: UserCircleIcon },
 ];
@@ -101,7 +101,7 @@ function SidebarContent({ pathname }: { pathname: string }) {
 
   // Filter navigation based on user type
   const filteredNavigation = navigation.filter(item => {
-    if (item.name === "Fee Summary") {
+    if (item.name === "Costs Summary") {
       return isSarla;
     }
     return true;

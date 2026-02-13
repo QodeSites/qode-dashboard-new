@@ -78,7 +78,7 @@ export default function QuarterlyFeesPage() {
       const subHeaderRowIndices: number[] = [];
 
       // Add Qode symbol/logo as title and empty row
-      wsData.push(["", "Q"]);
+      wsData.push(["", "Qode"]);
       wsData.push([]);
 
       // Fee Schedule Summary Section
