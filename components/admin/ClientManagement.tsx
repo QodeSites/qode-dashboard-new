@@ -38,9 +38,10 @@ interface Pagination {
 
 interface ClientManagementProps {
   onImpersonate: (icode: string) => void;
+  impersonatingIcode: string | null;
 }
 
-export function ClientManagement({ onImpersonate }: ClientManagementProps) {
+export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientManagementProps) {
   const [clients, setClients] = useState<Client[]>([]);
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
@@ -180,6 +181,7 @@ export function ClientManagement({ onImpersonate }: ClientManagementProps) {
               accounts={client.accounts}
               accountCount={client.accountCount}
               onImpersonate={onImpersonate}
+              isImpersonating={impersonatingIcode === client.icode}
             />
           ))}
         </div>
@@ -221,8 +223,9 @@ export function ClientManagement({ onImpersonate }: ClientManagementProps) {
                       size="sm"
                       className="text-logo-green border-logo-green/30 hover:bg-logo-green/5"
                       onClick={() => onImpersonate(client.icode)}
+                      disabled={impersonatingIcode !== null}
                     >
-                      View Dashboard
+                      {impersonatingIcode === client.icode ? "Loading..." : "View Dashboard"}
                     </Button>
                   </TableCell>
                 </TableRow>

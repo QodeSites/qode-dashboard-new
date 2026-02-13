@@ -17,7 +17,8 @@ export default function AdminPage() {
   const router = useRouter();
   const [stats, setStats] = useState<Stats>({ totalClients: 0, totalAccounts: 0 });
   const [statsLoading, setStatsLoading] = useState(true);
-  const [impersonateMessage, setImpersonateMessage] = useState<string | null>(null);
+  const [impersonatingIcode, setImpersonatingIcode] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Redirect non-admin users
   useEffect(() => {
@@ -52,6 +53,9 @@ export default function AdminPage() {
   }, [status, session]);
 
   const handleImpersonate = async (icode: string) => {
+    setImpersonatingIcode(icode);
+    setError(null);
+
     try {
       const res = await fetch("/api/admin/impersonate", {
         method: "POST",
@@ -67,7 +71,6 @@ export default function AdminPage() {
 
       const clientData = await res.json();
 
-      // Update the session with impersonation data
       await updateSession({
         impersonating: {
           icode: clientData.icode,
@@ -76,17 +79,11 @@ export default function AdminPage() {
         },
       });
 
-      setImpersonateMessage(`Successfully initiated impersonation for ${clientData.icode}`);
-
-      // Navigate to the dashboard after a brief delay to show the message
-      setTimeout(() => {
-        router.push("/dashboard");
-      }, 1000);
+      router.push("/dashboard");
     } catch (err) {
       console.error("Impersonation error:", err);
-      setImpersonateMessage(
-        err instanceof Error ? err.message : "Failed to impersonate"
-      );
+      setError(err instanceof Error ? err.message : "Failed to impersonate");
+      setImpersonatingIcode(null);
     }
   };
 
@@ -120,13 +117,16 @@ export default function AdminPage() {
         />
       </div>
 
-      {impersonateMessage && (
-        <div className="bg-amber-50 border border-amber-300 rounded-lg px-4 py-3 flex items-center gap-2">
-          <span className="text-sm text-amber-800">{impersonateMessage}</span>
+      {error && (
+        <div className="bg-red-50 border border-red-300 rounded-lg px-4 py-3">
+          <span className="text-sm text-red-800">{error}</span>
         </div>
       )}
 
-      <ClientManagement onImpersonate={handleImpersonate} />
+      <ClientManagement
+        onImpersonate={handleImpersonate}
+        impersonatingIcode={impersonatingIcode}
+      />
     </div>
   );
 }

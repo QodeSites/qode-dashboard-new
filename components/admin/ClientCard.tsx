@@ -19,6 +19,7 @@ interface ClientCardProps {
   accounts: Account[];
   accountCount: number;
   onImpersonate: (icode: string) => void;
+  isImpersonating?: boolean;
 }
 
 export function ClientCard({
@@ -28,6 +29,7 @@ export function ClientCard({
   accounts,
   accountCount,
   onImpersonate,
+  isImpersonating,
 }: ClientCardProps) {
   return (
     <Card className="bg-white/50 border border-card-text-secondary/20 hover:shadow-md transition-shadow">
@@ -74,9 +76,16 @@ export function ClientCard({
           size="sm"
           className="w-full gap-2 text-logo-green border-logo-green/30 hover:bg-logo-green/5"
           onClick={() => onImpersonate(icode)}
+          disabled={isImpersonating}
         >
-          <EyeIcon className="h-4 w-4" />
-          View Dashboard
+          {isImpersonating ? (
+            "Loading..."
+          ) : (
+            <>
+              <EyeIcon className="h-4 w-4" />
+              View Dashboard
+            </>
+          )}
         </Button>
       </CardContent>
     </Card>
