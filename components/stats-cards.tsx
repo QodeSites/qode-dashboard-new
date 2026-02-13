@@ -31,6 +31,7 @@ interface StatsCardsProps {
   isTotalPortfolio?: boolean;
   returnViewType?: "percent" | "cash"; // Add this prop
   setReturnViewType?: (type: "percent" | "cash") => void; // Add this prop
+  totalFees?: number;
 }
 
 export function StatsCards({ 
@@ -39,13 +40,16 @@ export function StatsCards({
   broker, 
   isTotalPortfolio = false,
   returnViewType = "percent", // Default fallback
-  setReturnViewType // Use the prop instead of local state
+  setReturnViewType, // Use the prop instead of local state
+  totalFees
 }: StatsCardsProps) {
   // Remove the local useState - we now use props
   // const [returnViewType, setReturnViewType] = useState<"percent" | "cash">(isTotalPortfolio ? "cash" : "percent");
 
   // For total portfolio, force cash view
   const effectiveReturnViewType = isTotalPortfolio ? "cash" : returnViewType;
+
+  const [showNetOfFees, setShowNetOfFees] = React.useState(false);
 
   // Function to get card labels based on account type and broker
   const getCardLabels = (accountType: string, broker?: string) => {
@@ -87,7 +91,11 @@ export function StatsCards({
       name: labels.return,
       value: effectiveReturnViewType === "percent"
         ? `${parseFloat(stats.return).toFixed(2)}%`
-        : `₹ ${parseFloat(stats.totalProfit).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        : (() => {
+            const gross = parseFloat(stats.totalProfit);
+            const display = showNetOfFees && totalFees ? gross - totalFees : gross;
+            return `₹ ${display.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+          })(),
       change: effectiveReturnViewType === "cash"
         ? parseFloat(stats.return) >= 0 ? `+${parseFloat(stats.return).toFixed(2)}%` : `${parseFloat(stats.return).toFixed(2)}%`
         : parseFloat(stats.totalProfit) >= 0 ? `+₹${parseFloat(stats.totalProfit).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `-₹${parseFloat(stats.totalProfit).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
@@ -146,6 +154,30 @@ export function StatsCards({
                     }`}
                   >
                     Percentage
+                  </button>
+                </div>
+              )}
+              {stat.showNote && isTotalPortfolio && totalFees != null && (
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setShowNetOfFees(false)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                      !showNetOfFees
+                        ? "bg-button-text text-logo-green"
+                        : "text-button-text bg-logo-green"
+                    }`}
+                  >
+                    Gross
+                  </button>
+                  <button
+                    onClick={() => setShowNetOfFees(true)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                      showNetOfFees
+                        ? "bg-button-text text-logo-green"
+                        : "text-button-text bg-logo-green"
+                    }`}
+                  >
+                    Net
                   </button>
                 </div>
               )}
