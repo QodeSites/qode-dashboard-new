@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import StockTable from "@/components/StockTable";
+import { Download } from "lucide-react";
+import { buildSarlaPortfolioReportHTML, buildSarlaSchemeReportHTML } from "@/components/buildSarlaPortfolioReportHTML";
 
 // Interfaces for stats
 interface Stats {
@@ -681,14 +683,63 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     const isTotalPortfolio = selectedStrategy === "Total Portfolio";
     const isActive = strategyData.metadata.isActive;
 
+    const handleSarlaPDF = () => {
+      let html: string;
+      if (isTotalPortfolio) {
+        html = buildSarlaPortfolioReportHTML({
+          sessionUserName: session?.user?.name || "User",
+          amountDeposited: parseFloat(convertedStats.amountDeposited) || 0,
+          currentExposure: parseFloat(convertedStats.currentExposure) || 0,
+          grossProfit: parseFloat(convertedStats.totalProfit) || 0,
+          totalFeesSum: SARLA_TOTAL_FEES_SUM,
+          quarterlyPnl: convertedStats.quarterlyPnl,
+          fees: SARLA_TOTAL_FEES,
+          cashFlows: strategyData.data.cashFlows || [],
+        });
+      } else {
+        html = buildSarlaSchemeReportHTML({
+          sessionUserName: session?.user?.name || "User",
+          strategyName: selectedStrategy,
+          isActive,
+          amountDeposited: parseFloat(convertedStats.amountDeposited) || 0,
+          currentExposure: parseFloat(convertedStats.currentExposure) || 0,
+          returnPercent: parseFloat(convertedStats.return) || 0,
+          totalProfit: parseFloat(convertedStats.totalProfit) || 0,
+          trailingReturns: convertedStats.trailingReturns,
+          drawdown: convertedStats.drawdown,
+          quarterlyPnl: convertedStats.quarterlyPnl,
+          monthlyPnl: convertedStats.monthlyPnl,
+          cashFlows: strategyData.data.cashFlows || [],
+        });
+      }
+      const w = window.open("", "_blank", "width=1200,height=900");
+      if (w) {
+        w.document.open();
+        w.document.write(html);
+        w.document.close();
+      }
+    };
+
     return (
       <div className="space-y-6">
-        <Button
-          variant="outline"
-          className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
-        >
-          {selectedStrategy} {!isActive ? "(Inactive)" : ""}
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
+          >
+            {selectedStrategy} {!isActive ? "(Inactive)" : ""}
+          </Button>
+          <div className="flex gap-2 ml-auto">
+            <Button
+              onClick={handleSarlaPDF}
+              className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+              variant="default"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              PDF
+            </Button>
+          </div>
+        </div>
         <StatsCards
   stats={convertedStats}
   accountType="sarla"
