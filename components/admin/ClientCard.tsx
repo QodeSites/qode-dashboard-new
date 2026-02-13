@@ -42,16 +42,10 @@ export function ClientCard({
           </Badge>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="mb-4">
           <div className="text-center p-2 bg-primary-bg rounded-lg">
             <p className="text-lg font-bold text-card-text">{accountCount}</p>
             <p className="text-xs text-card-text-secondary">Accounts</p>
-          </div>
-          <div className="text-center p-2 bg-primary-bg rounded-lg">
-            <p className="text-lg font-bold text-card-text">
-              {[...new Set(accounts.map((a) => a.broker))].length}
-            </p>
-            <p className="text-xs text-card-text-secondary">Brokers</p>
           </div>
         </div>
 
@@ -60,17 +54,11 @@ export function ClientCard({
             {accounts.slice(0, 3).map((account) => (
               <div
                 key={account.qcode}
-                className="flex items-center justify-between text-xs"
+                className="text-xs"
               >
                 <span className="text-card-text-secondary truncate">
                   {account.qcode}
                 </span>
-                <Badge
-                  variant="secondary"
-                  className="text-[10px] px-1.5 py-0"
-                >
-                  {account.broker}
-                </Badge>
               </div>
             ))}
             {accounts.length > 3 && (

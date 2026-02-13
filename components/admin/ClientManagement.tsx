@@ -195,7 +195,6 @@ export function ClientManagement({ onImpersonate }: ClientManagementProps) {
                 <TableHead>Email</TableHead>
                 <TableHead>ICode</TableHead>
                 <TableHead className="text-center">Accounts</TableHead>
-                <TableHead>Brokers</TableHead>
                 <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
@@ -215,21 +214,6 @@ export function ClientManagement({ onImpersonate }: ClientManagementProps) {
                   </TableCell>
                   <TableCell className="text-center">
                     {client.accountCount}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1 flex-wrap">
-                      {[...new Set(client.accounts.map((a) => a.broker))].map(
-                        (broker) => (
-                          <Badge
-                            key={broker}
-                            variant="secondary"
-                            className="text-[10px]"
-                          >
-                            {broker}
-                          </Badge>
-                        )
-                      )}
-                    </div>
                   </TableCell>
                   <TableCell className="text-right">
                     <Button
