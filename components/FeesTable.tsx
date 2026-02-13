@@ -35,7 +35,7 @@ export function FeesTable({ fees, title }: FeesTableProps) {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
-    return `₹${formattedValue}`;
+    return formattedValue;
   };
 
   const quarterlyYears = Object.keys(fees).sort(
