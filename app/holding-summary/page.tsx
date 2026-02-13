@@ -283,7 +283,7 @@ const HoldingsTable = ({
                 <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
                     <Table className="min-w-full">
                         <TableHeader className="sticky top-0 z-10">
-                            <TableRow className="bg-black/5 hover:bg-black/5 border-b border-gray-200">
+                            <TableRow className="bg-[#E9E8DE] hover:bg-[#E9E8DE] border-b border-gray-200">
                                 <TableHead className="py-3 text-left text-sm font-medium text-card-text tracking-wider">
                                     Symbol
                                 </TableHead>
