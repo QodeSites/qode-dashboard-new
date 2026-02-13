@@ -1709,7 +1709,7 @@ export class PortfolioApi {
         lastUpdated: "2025-08-05",
         filtersApplied: { accountType: null, broker: null, startDate: null, endDate: null },
         inceptionDate: "2024-06-18",
-        dataAsOfDate: "2024-06-25",
+        dataAsOfDate: "2024-06-24",
         strategyName: "Scheme A (Old)",
         isActive: false,
       },
