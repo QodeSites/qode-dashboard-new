@@ -21,7 +21,7 @@ const navigation = [
   { name: "Home", href: "/", icon: HomeIcon },
   { name: "Portfolio", href: "/dashboard", icon: ChartBarIcon },
   { name: "Holding Summary", href: "/holding-summary", icon: ChartCandlestickIcon },
-  { name: "Fee Summary", href: "/quarterly-fees", icon: CurrencyDollarIcon },
+  { name: "Costs Summary", href: "/quarterly-fees", icon: CurrencyDollarIcon },
   { name: "Personal Details", href: "/personal-details", icon: UserCircleIcon },
 ];
 

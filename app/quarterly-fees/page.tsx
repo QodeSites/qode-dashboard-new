@@ -83,7 +83,7 @@ export default function QuarterlyFeesPage() {
 
       // Fee Schedule Summary Section
       headerRowIndices.push(wsData.length);
-      wsData.push(["", "Fee Schedule Summary"]);
+      wsData.push(["", "Costs Schedule Summary"]);
       wsData.push(["", "Generated on:", new Date().toLocaleString("en-IN")]);
       wsData.push(["", "Account:", session?.user?.name || "N/A"]);
       wsData.push([]);
@@ -111,26 +111,26 @@ export default function QuarterlyFeesPage() {
       };
 
       // Total Fees Section
-      addFeeSection("Total Fees", totalFees);
+      addFeeSection("Total Costs", totalFees);
       wsData.push([]);
 
       // Zerodha Fees Section
-      addFeeSection("Zerodha Fees", zerodhaFees);
+      addFeeSection("Zerodha Costs", zerodhaFees);
       wsData.push([
         "",
-        "Note: Zerodha fee figures are as of 31 December 2025 and include both collections and accruals.",
+        "Note: Zerodha costs figures are as of 31 December 2025 and include both collections and accruals.",
       ]);
       wsData.push([]);
 
       // PMS Fees Section
-      addFeeSection("PMS Fees", pmsFees);
+      addFeeSection("PMS Costs", pmsFees);
       wsData.push([
         "",
-        "Note: PMS fee figures are as of 31 December 2025 and include both collections and accruals.",
+        "Note: PMS costs figures are as of 31 December 2025 and include both collections and accruals.",
       ]);
       wsData.push([
         "",
-        "Disclaimer: The fees listed for PMS represent the agreed-upon quarterly Management Fee only. This amount excludes the Performance Fee, which is calculated separately and charged at the end of the respective financial year.",
+        "Disclaimer: The costs listed for PMS represent the agreed-upon quarterly Management Fee only. This amount excludes the Performance Fee, which is calculated separately and charged at the end of the respective financial year.",
       ]);
       wsData.push([]);
 
@@ -317,10 +317,10 @@ export default function QuarterlyFeesPage() {
 
       // Create workbook and download
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Fee Schedule");
+      XLSX.utils.book_append_sheet(wb, ws, "Cost Schedule");
 
       const timestamp = new Date().toISOString().split("T")[0];
-      const filename = `Fee_Schedule_${session?.user?.name || "User"}_${timestamp}.xlsx`;
+      const filename = `Cost_Schedule_${session?.user?.name || "User"}_${timestamp}.xlsx`;
 
       XLSX.writeFile(wb, filename);
     } catch (err) {
@@ -336,10 +336,10 @@ export default function QuarterlyFeesPage() {
         <div className="flex justify-between items-start">
           <div className="flex flex-col gap-2">
             <h1 className="text-2xl font-semibold text-card-text-secondary font-heading">
-              Fee Summary
+              Costs Summary
             </h1>
             <p className="text-sm text-card-text-secondary/70">
-              View your quarterly fee breakdown
+              View your quarterly costs breakdown
             </p>
           </div>
           <Button
@@ -353,23 +353,23 @@ export default function QuarterlyFeesPage() {
         </div>
 
         {/* Total Fees Table */}
-        <FeesTable fees={totalFees} title="Total Fees (₹)" />
+        <FeesTable fees={totalFees} title="Total Costs (₹)" />
 
         {/* Zerodha Fees Table */}
-        <FeesTable fees={zerodhaFees} title="Zerodha Fees (₹)" />
+        <FeesTable fees={zerodhaFees} title="Zerodha Costs (₹)" />
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          Note: Zerodha fee figures are as of 31 December 2025 and include both
+          Note: Zerodha costs figures are as of 31 December 2025 and include both
           collections and accruals.
         </p>
 
         {/* PMS Fees Table */}
-        <FeesTable fees={pmsFees} title="PMS Fees (₹)" />
+        <FeesTable fees={pmsFees} title="PMS Costs (₹)" />
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          Note: PMS fee figures are as of 31 December 2025 and include both
+          Note: PMS costs figures are as of 31 December 2025 and include both
           collections and accruals.
         </p>
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          Disclaimer: The fees listed for PMS represent the agreed-upon
+          Disclaimer: The costs listed for PMS represent the agreed-upon
           quarterly Management Fee only. This amount excludes the Performance
           Fee, which is calculated separately and charged at the end of the
           respective financial year.
