@@ -9,6 +9,7 @@ import type { FeesData } from "@/components/FeesTable";
 import * as XLSX from "xlsx-js-style";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { buildCostsSummaryReportHTML } from "@/components/buildCostsSummaryReportHTML";
 
 export default function QuarterlyFeesPage() {
   const { data: session, status } = useSession();
@@ -68,6 +69,21 @@ export default function QuarterlyFeesPage() {
 
   const pmsFees: FeesData = {
     "2025": { q1: "-", q2: "693266.69", q3: "1067628.41", q4: "1206738.52", total: "2967633.62" },
+  };
+
+  const handleDownloadPDF = () => {
+    const html = buildCostsSummaryReportHTML({
+      totalFees,
+      zerodhaFees,
+      pmsFees,
+      sessionUserName: session?.user?.name || "User",
+    });
+    const w = window.open("", "_blank", "width=1200,height=900");
+    if (w) {
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+    }
   };
 
   // Excel Download Function with styled headers
@@ -342,14 +358,24 @@ export default function QuarterlyFeesPage() {
               View your quarterly costs breakdown
             </p>
           </div>
-          <Button
-            onClick={handleDownloadExcel}
-            className="h-11 px-4 text-sm font-medium"
-            variant="default"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Excel
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              onClick={handleDownloadPDF}
+              className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+              variant="default"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              PDF
+            </Button>
+            <Button
+              onClick={handleDownloadExcel}
+              className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+              variant="default"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Excel
+            </Button>
+          </div>
         </div>
 
         {/* Total Fees Table */}
