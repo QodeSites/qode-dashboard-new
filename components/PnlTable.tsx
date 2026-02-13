@@ -30,6 +30,7 @@ interface PnlTableProps {
   monthlyPnl: MonthlyPnlData;
   showOnlyQuarterlyCash?: boolean;
   showPmsQawView?: boolean;
+  fees?: { [year: string]: { q1?: number; q2?: number; q3?: number; q4?: number } };
 }
 
 export function PnlTable({
@@ -37,12 +38,23 @@ export function PnlTable({
   monthlyPnl,
   showOnlyQuarterlyCash = false,
   showPmsQawView = false,
+  fees,
 }: PnlTableProps) {
   console.log(showOnlyQuarterlyCash)
 
   const [viewType, setViewType] = useState<"percent" | "cash">(
     showPmsQawView ? "percent" : "cash"
   );
+  const [showNetOfFees, setShowNetOfFees] = useState(false);
+
+  const getNetCashValue = (year: string, quarter: string, rawValue: string): string => {
+    if (!showNetOfFees || !fees) return rawValue;
+    if (rawValue === "-") return rawValue;
+    const gross = parseFloat(rawValue);
+    if (isNaN(gross)) return rawValue;
+    const feeVal = fees[year]?.[quarter as keyof (typeof fees)[string]] ?? 0;
+    return (gross - feeVal).toFixed(2);
+  };
 
   const getReturnColor = (value: string) => {
     if (value === "-" || value === "---") return "text-black";
@@ -65,7 +77,7 @@ export function PnlTable({
       return "-";
     }
     if (value === "-") {
-      return isPercent ? "-%" : "₹-";
+      return isPercent ? "-%" : "-";
     }
     const numValue = parseFloat(value);
     if (isNaN(numValue)) {
@@ -79,7 +91,7 @@ export function PnlTable({
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       });
-      return numValue >= 0 ? `+₹${formattedValue}` : `-₹${formattedValue}`;
+      return numValue >= 0 ? `+${formattedValue}` : `-${formattedValue}`;
     }
   };
 
@@ -122,6 +134,26 @@ const renderQuarterlyTable = () => {
             </Button>
           </div>
         )}
+        {fees && (
+          <div className="space-x-2">
+            <Button
+              onClick={() => setShowNetOfFees(false)}
+              size="sm"
+              variant={!showNetOfFees ? "default" : "outline"}
+              className="border-green-700 text-xs"
+            >
+              Gross
+            </Button>
+            <Button
+              onClick={() => setShowNetOfFees(true)}
+              size="sm"
+              variant={showNetOfFees ? "default" : "outline"}
+              className="border-green-700 text-xs"
+            >
+              Net
+            </Button>
+          </div>
+        )}
       </div>
       <CardContent className="p-0 mt-4">
         <div className="w-full overflow-x-auto">
@@ -152,23 +184,46 @@ const renderQuarterlyTable = () => {
               {quarterlyYears.map((year) => (
                 <tr key={`${year}-${displayType}`} className="border-gray-300 text-sm">
                   <td className="px-4 py-3 text-center whitespace-nowrap text-black min-w-[60px]">{year}</td>
-                  {["q1", "q2", "q3", "q4", "total"].map((quarter) => {
-                    const rawValue = (showOnlyQuarterlyCash || showPmsQawView || displayType === "cash")
-                      ? quarterlyPnl[year].cash[quarter as keyof typeof quarterlyPnl[string]["cash"]]
-                      : quarterlyPnl[year].percent[quarter as keyof typeof quarterlyPnl[string]["percent"]];
+                  {(() => {
+                    const isCashDisplay = showOnlyQuarterlyCash || showPmsQawView || displayType === "cash";
+                    // Compute net values for q1-q4 to recompute total
+                    let netTotal = 0;
+                    let hasAnyQuarter = false;
+                    if (isCashDisplay && showNetOfFees && fees) {
+                      (["q1", "q2", "q3", "q4"] as const).forEach((q) => {
+                        const val = getNetCashValue(year, q, quarterlyPnl[year].cash[q]);
+                        if (val !== "-") {
+                          netTotal += parseFloat(val);
+                          hasAnyQuarter = true;
+                        }
+                      });
+                    }
+                    return ["q1", "q2", "q3", "q4", "total"].map((quarter) => {
+                      const rawValue = isCashDisplay
+                        ? quarterlyPnl[year].cash[quarter as keyof typeof quarterlyPnl[string]["cash"]]
+                        : quarterlyPnl[year].percent[quarter as keyof typeof quarterlyPnl[string]["percent"]];
 
-                    const displayValue = formatDisplayValue(rawValue, isPercentView);
-                    const cellClass = getCellClass(rawValue, isPercentView);
-                    const isTotal = quarter === "total";
+                      let adjustedValue = rawValue;
+                      if (isCashDisplay && showNetOfFees && fees) {
+                        if (quarter === "total") {
+                          adjustedValue = hasAnyQuarter ? netTotal.toFixed(2) : rawValue;
+                        } else {
+                          adjustedValue = getNetCashValue(year, quarter, rawValue);
+                        }
+                      }
 
-                    return (
-                      <td key={quarter} className={`${cellClass} ${isTotal ? "" : ""}`}>
-                        <span className={getReturnColor(rawValue)}>
-                          {displayValue}
-                        </span>
-                      </td>
-                    );
-                  })}
+                      const displayValue = formatDisplayValue(adjustedValue, isPercentView);
+                      const cellClass = getCellClass(adjustedValue, isPercentView);
+
+                      return (
+                        <td key={quarter} className={cellClass}>
+                          <span className={getReturnColor(adjustedValue)}>
+                            {displayValue}
+                          </span>
+                        </td>
+                      );
+                    });
+                  })()}
                 </tr>
               ))}
               {quarterlyYears.length === 0 && (
@@ -284,14 +339,14 @@ const renderMonthlyTable = () => {
                               : `${monthlyPnl[year].totalPercent.toFixed(2)}%`
                             : "-"
                         : monthlyPnl[year]?.totalCash.toString() === "-"
-                          ? "₹-"
+                          ? "-"
                           : monthlyPnl[year]?.totalCash && monthlyPnl[year].totalCash !== 0
                             ? monthlyPnl[year].totalCash >= 0
-                              ? `+₹${Math.abs(monthlyPnl[year].totalCash).toLocaleString("en-IN", {
+                              ? `+${Math.abs(monthlyPnl[year].totalCash).toLocaleString("en-IN", {
                                   minimumFractionDigits: 2,
                                   maximumFractionDigits: 2,
                                 })}`
-                              : `-₹${Math.abs(monthlyPnl[year].totalCash).toLocaleString("en-IN", {
+                              : `-${Math.abs(monthlyPnl[year].totalCash).toLocaleString("en-IN", {
                                   minimumFractionDigits: 2,
                                   maximumFractionDigits: 2,
                                 })}`

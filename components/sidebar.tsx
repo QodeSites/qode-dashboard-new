@@ -9,6 +9,8 @@ import {
   ChartBarIcon,
   XMarkIcon,
   ArrowRightOnRectangleIcon,
+  CurrencyDollarIcon,
+  UserCircleIcon,
 } from "@heroicons/react/24/outline"
 import { cn } from "@/lib/utils"
 import { signOut, useSession } from "next-auth/react"
@@ -18,7 +20,9 @@ import { ChartCandlestickIcon } from "lucide-react"
 const navigation = [
   { name: "Home", href: "/", icon: HomeIcon },
   { name: "Portfolio", href: "/dashboard", icon: ChartBarIcon },
-  { name: "Holding Summary", href: "/holding-summary", icon: ChartCandlestickIcon },
+  { name: "Holdings Summary", href: "/holding-summary", icon: ChartCandlestickIcon },
+  { name: "Fee Summary", href: "/quarterly-fees", icon: CurrencyDollarIcon },
+  { name: "Personal Details", href: "/personal-details", icon: UserCircleIcon },
 ];
 
 interface SidebarProps {
@@ -79,7 +83,8 @@ export function Sidebar({ open, setOpen }: SidebarProps) {
 
 function SidebarContent({ pathname }: { pathname: string }) {
   const { data: session } = useSession();
-  
+  const router = useRouter();
+
   // Get user info from session with fallbacks
   const userName = session?.user?.name || "User";
   const userEmail = session?.user?.email || "";
@@ -90,6 +95,17 @@ function SidebarContent({ pathname }: { pathname: string }) {
     .join("")
     .toUpperCase()
     .slice(0, 2);
+
+  // Check if user is Sarla client (QUS0007)
+  const isSarla = userIcode === "QUS0007";
+
+  // Filter navigation based on user type
+  const filteredNavigation = navigation.filter(item => {
+    if (item.name === "Fee Summary") {
+      return isSarla;
+    }
+    return true;
+  });
 
   const handleLogout = async () => {
     try {
@@ -109,7 +125,7 @@ function SidebarContent({ pathname }: { pathname: string }) {
         <ul role="list" className="flex flex-col gap-y-7">
           <li>
             <ul role="list" className="-mx-2 space-y-1">
-              {navigation.map((item) => (
+              {filteredNavigation.map((item) => (
                 <li key={item.name}>
                   <Link
                     href={item.href}
