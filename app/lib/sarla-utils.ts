@@ -1874,10 +1874,10 @@ export class PortfolioApi {
 
     if (scheme === "Total Portfolio") {
       // Satidham (QAC00046) includes different schemes than Sarla (QAC00041)
-      // For Satidham, Amount Invested = PMS + Scheme QAW++ + Scheme QYE++ (PMS added separately below)
+      // For Satidham, Amount Invested = net flow of all schemes (PMS added separately below)
       const isSatidham = qcode === "QAC00046";
       const schemes = isSatidham
-        ? ["Scheme QAW++", "Scheme QYE++"]
+        ? ["Scheme A", "Scheme A (Old)", "Scheme B", "Scheme QAW++", "Scheme QYE++"]
         : ["Scheme B", "Scheme PMS QAW"];
       let totalDeposited = 0;
 
