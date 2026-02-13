@@ -1613,7 +1613,7 @@ export class PortfolioApi {
               November: { percent: "0.39", cash: "690553.23", capitalInOut: "-77915199.00" },
               December: { percent: "-", cash: "0.00", capitalInOut: "0.00" },
             },
-            totalPercent: 2.23,
+            totalPercent: 2.21,
             totalCash: 1645377.07,
             totalCapitalInOut: -3353378.80,
           },
@@ -1642,7 +1642,7 @@ export class PortfolioApi {
         return: "-0.64",
         totalProfit: "-436319.80",
         trailingReturns: {
-          "5d": -0.6,
+          "5d": -0.64,
           "10d": null,
           "15d": null,
           "1m": null,
