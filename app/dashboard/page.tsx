@@ -655,6 +655,10 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     "2024": { q1: 1771936.35, q2: 3419092.44, q3: 4658621.93, q4: 5687534.29 },
     "2025": { q1: 7802830.42, q2: 7732665.25, q3: 5297606.19, q4: 5582892.53 },
   };
+  const SARLA_TOTAL_FEES_SUM = Object.values(SARLA_TOTAL_FEES).reduce(
+    (sum, year) => sum + Object.values(year).reduce((qSum, val) => qSum + val, 0),
+    0
+  );
   const CASH_PERCENT_STRATS_SATIDHAM = ["Scheme B", "Scheme A", "Scheme A (Old)"];
   const CASH_STRATS_SATIDHAM = "Total Portfolio";
 
@@ -693,6 +697,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   isActive={isActive}
   returnViewType={returnViewType}
   setReturnViewType={setReturnViewType}
+  totalFees={isTotalPortfolio ? SARLA_TOTAL_FEES_SUM : undefined}
 />
         {!isTotalPortfolio && (
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
