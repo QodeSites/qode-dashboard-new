@@ -245,27 +245,31 @@ async function fetchBenchmarkReturns(
     fetchStartDateObj.setDate(fetchStartDateObj.getDate() - 10);
     const fetchStartDate = fetchStartDateObj.toISOString().split('T')[0];
 
-    const queryParams = new URLSearchParams({
-      indices: "NIFTY 50",
-      start_date: fetchStartDate,
-      end_date: endDate,
-    });
-
     const response = await fetch(
-      `https://research.qodeinvest.com/api/getIndices?${queryParams.toString()}`
+      "https://qode360-backend.qodeinvest.com/api/v1/returns/indices/?downloadNav=true",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          accept: "application/json",
+        },
+        body: JSON.stringify({
+          startDate: fetchStartDate,
+          endDate: endDate,
+          indices: ["NIFTY 50"],
+        }),
+      }
     );
     if (!response.ok) return benchmarkReturns;
 
     const result = await response.json();
-    let rawBenchmarkData: { date: string; nav: string }[] = [];
-
-    if (result.data && Array.isArray(result.data)) {
-      rawBenchmarkData = result.data;
-    } else if (result["BSE500"] && Array.isArray(result["BSE500"])) {
-      rawBenchmarkData = result["BSE500"];
-    } else if (Array.isArray(result)) {
-      rawBenchmarkData = result;
-    }
+    const rawData = result?.data?.data?.["NIFTY 50"];
+    const rawBenchmarkData: { date: string; nav: string }[] = Array.isArray(rawData)
+      ? rawData.map((d: { date: string; nav: number }) => ({
+          date: d.date,
+          nav: d.nav.toString(),
+        }))
+      : [];
 
     if (!rawBenchmarkData.length) return benchmarkReturns;
 
