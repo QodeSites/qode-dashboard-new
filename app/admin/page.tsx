@@ -19,6 +19,7 @@ export default function AdminPage() {
   const [statsLoading, setStatsLoading] = useState(true);
   const [impersonatingIcode, setImpersonatingIcode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
   // Redirect non-admin users
   useEffect(() => {
@@ -52,8 +53,40 @@ export default function AdminPage() {
     fetchStats();
   }, [status, session]);
 
+  // Prefetch dashboard so route change after impersonation is faster.
+  useEffect(() => {
+    if (status === "authenticated" && session?.user?.accessType === "admin") {
+      router.prefetch("/dashboard");
+    }
+  }, [status, session, router]);
+
+  const waitForImpersonationSession = async (icode: string, timeoutMs = 3500) => {
+    const start = Date.now();
+
+    while (Date.now() - start < timeoutMs) {
+      const res = await fetch("/api/auth/session", {
+        credentials: "include",
+        cache: "no-store",
+      });
+
+      if (res.ok) {
+        const currentSession = await res.json();
+        if (currentSession?.user?.impersonating?.icode === icode) {
+          return true;
+        }
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+
+    return false;
+  };
+
   const handleImpersonate = async (icode: string) => {
+    if (isTransitioning) return;
+
     setImpersonatingIcode(icode);
+    setIsTransitioning(true);
     setError(null);
 
     try {
@@ -71,7 +104,7 @@ export default function AdminPage() {
 
       const clientData = await res.json();
 
-      await updateSession({
+      const updatedSession = await updateSession({
         impersonating: {
           icode: clientData.icode,
           name: clientData.name,
@@ -79,11 +112,22 @@ export default function AdminPage() {
         },
       });
 
-      router.push("/dashboard");
+      const updatedImmediately =
+        updatedSession?.user?.impersonating?.icode === clientData.icode;
+
+      if (!updatedImmediately) {
+        const confirmed = await waitForImpersonationSession(clientData.icode);
+        if (!confirmed) {
+          throw new Error("Session update timed out while switching client context");
+        }
+      }
+
+      router.replace("/dashboard");
     } catch (err) {
       console.error("Impersonation error:", err);
       setError(err instanceof Error ? err.message : "Failed to impersonate");
       setImpersonatingIcode(null);
+      setIsTransitioning(false);
     }
   };
 
@@ -101,6 +145,13 @@ export default function AdminPage() {
 
   return (
     <div className="space-y-6 pb-8">
+      {isTransitioning && (
+        <div className="fixed inset-0 z-50 bg-primary-bg flex items-center justify-center">
+          <div className="text-center px-4">
+            <div className="text-logo-green text-2xl font-heading">Loading...</div>
+          </div>
+        </div>
+      )}
       <AdminHeader />
 
       <div>

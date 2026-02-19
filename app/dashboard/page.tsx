@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { StatsCards } from "@/components/stats-cards";
 import { RevenueChart } from "@/components/revenue-chart";
 import { PnlTable } from "@/components/PnlTable";
@@ -237,8 +237,11 @@ export default function Portfolio() {
   const isSarla = effectiveIcode === "QUS0007";
   const isSatidham = effectiveIcode === "QUS0010";
   const isDinesh = effectiveIcode === "QUS00072";
-  const searchParams = useSearchParams();
-  const accountCode = searchParams.get("accountCode") || "AC5";
+  // Read URL params directly to avoid useSearchParams() which triggers a Suspense boundary
+  // and causes a loading flicker (Suspense fallback → page loading state).
+  // Safe because during SSR status="loading" so the loading UI renders regardless of param values.
+  const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const accountCode = urlParams?.get("accountCode") || "AC5";
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"consolidated" | "individual">("consolidated");
@@ -250,6 +253,8 @@ export default function Portfolio() {
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
   const [availableStrategies, setAvailableStrategies] = useState<string[]>([]);
 const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percent");
+  const hasFetchedRef = useRef(false);
+
   // Exit impersonation handler
   const handleExitImpersonation = async () => {
     await updateSession({ impersonating: null });
@@ -262,17 +267,18 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
       return;
     }
 
-    // Redirect admin to admin dashboard if not impersonating
+    // Admins can use this page only while impersonating.
     if (status === "authenticated" && isAdmin && !isImpersonating) {
       router.push("/admin");
       return;
     }
 
     if (status === "authenticated") {
+      if (hasFetchedRef.current) return;
+      hasFetchedRef.current = true;
       if (isSarla) {
         const fetchSarlaData = async () => {
           try {
-            console.log(`Fetching Sarla data with accountCode: ${accountCode}`);
             const res = await fetch(`/api/sarla-api?qcode=QAC00041&accountCode=${accountCode}`, { credentials: "include" });
             if (!res.ok) {
               const errorData = await res.json();
@@ -360,8 +366,11 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
             setAccounts(data);
             if (data.length > 0) {
               setSelectedAccount(data[0].qcode);
+              // Don't set isLoading=false here — the portfolio fetch (triggered by
+              // selectedAccount change) will set it once the actual data is loaded.
+            } else {
+              setIsLoading(false);
             }
-            setIsLoading(false);
           } catch (err) {
             setError(err instanceof Error ? err.message : "An unexpected error occurred");
             setIsLoading(false);
@@ -371,7 +380,8 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         fetchAccounts();
       }
     }
-  }, [status, router, isSarla, isSatidham, isDinesh, accountCode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, router, isSarla, isSatidham, isDinesh, accountCode, isAdmin, isImpersonating]);
 
   useEffect(() => {
     if (selectedAccount && status === "authenticated" && !isSarla && !isSatidham && !isDinesh) {
@@ -396,16 +406,11 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           }
 
           const response = await res.json();
-          console.log("Raw API response:", response);
-          console.log("Response type:", selectedAccountData.account_type);
-          console.log("Has 'data' property?", 'data' in response);
-          console.log("Response keys:", Object.keys(response));
 
           let statsData: Stats | PmsStats | Array<any>;
           let metadataData: Metadata | null = null;
 
           if ('data' in response && response.data !== undefined) {
-            console.log("Processing wrapped response structure");
             if (viewMode === "individual" && Array.isArray(response.data)) {
               statsData = response.data;
               metadataData = null;
@@ -414,8 +419,6 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
               metadataData = response.metadata || null;
             }
           } else {
-            console.log("Processing flat response structure");
-
             if (selectedAccountData.account_type === "pms") {
               const pmsData = response as any;
 
@@ -483,9 +486,6 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
               }
             }
           }
-
-          console.log("Final processed stats data:", statsData);
-          console.log("Final processed metadata:", metadataData);
 
           if (statsData) {
             setStats(statsData);
@@ -876,7 +876,11 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
   if (status === "loading" || isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen">Loading...</div>
+      <div className="fixed inset-0 z-50 bg-primary-bg flex items-center justify-center">
+        <div className="text-center px-4">
+          <div className="text-logo-green text-2xl font-heading">Loading...</div>
+        </div>
+      </div>
     );
   }
 
