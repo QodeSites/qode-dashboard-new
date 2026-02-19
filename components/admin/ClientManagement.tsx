@@ -29,13 +29,6 @@ interface Client {
   accountCount: number;
 }
 
-interface Pagination {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
-}
-
 interface ClientManagementProps {
   onImpersonate: (icode: string) => void;
   impersonatingIcode: string | null;
@@ -43,12 +36,6 @@ interface ClientManagementProps {
 
 export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientManagementProps) {
   const [clients, setClients] = useState<Client[]>([]);
-  const [pagination, setPagination] = useState<Pagination>({
-    page: 1,
-    limit: 20,
-    total: 0,
-    totalPages: 0,
-  });
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
@@ -62,13 +49,10 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
     return () => clearTimeout(timer);
   }, [search]);
 
-  const fetchClients = useCallback(async (page: number, searchTerm: string) => {
+  const fetchClients = useCallback(async (searchTerm: string) => {
     setIsLoading(true);
     try {
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: "20",
-      });
+      const params = new URLSearchParams();
       if (searchTerm) params.set("search", searchTerm);
 
       const res = await fetch(`/api/admin/clients?${params}`, {
@@ -77,7 +61,6 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
       if (!res.ok) throw new Error("Failed to fetch clients");
       const data = await res.json();
       setClients(data.clients);
-      setPagination(data.pagination);
     } catch (err) {
       console.error("Error fetching clients:", err);
     } finally {
@@ -86,15 +69,11 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
   }, []);
 
   useEffect(() => {
-    fetchClients(1, debouncedSearch);
+    fetchClients(debouncedSearch);
   }, [debouncedSearch, fetchClients]);
 
-  const handlePageChange = (newPage: number) => {
-    fetchClients(newPage, debouncedSearch);
-  };
-
   const handleRefresh = () => {
-    fetchClients(pagination.page, debouncedSearch);
+    fetchClients(debouncedSearch);
   };
 
   return (
@@ -235,34 +214,6 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
         </div>
       )}
 
-      {/* Pagination */}
-      {!isLoading && pagination.totalPages > 1 && (
-        <div className="flex items-center justify-between pt-2">
-          <p className="text-sm text-card-text-secondary">
-            Showing {(pagination.page - 1) * pagination.limit + 1}–
-            {Math.min(pagination.page * pagination.limit, pagination.total)} of{" "}
-            {pagination.total} clients
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={pagination.page <= 1}
-              onClick={() => handlePageChange(pagination.page - 1)}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={pagination.page >= pagination.totalPages}
-              onClick={() => handlePageChange(pagination.page + 1)}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
