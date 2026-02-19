@@ -104,12 +104,6 @@ export default function AdminPage() {
       <AdminHeader />
 
       <div>
-        <h2 className="text-xl font-heading font-semibold text-card-text mb-1">
-          Client Management Dashboard
-        </h2>
-        <p className="text-sm text-card-text-secondary mb-4">
-          Monitor clients, manage multiple accounts, and view dashboards
-        </p>
         <AdminStats
           totalClients={stats.totalClients}
           totalAccounts={stats.totalAccounts}
