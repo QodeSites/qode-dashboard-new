@@ -879,7 +879,10 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         isTotalPortfolio,
         isActive: true,
         dateFormatter,
-        formatter: (v) => formatter.format(v),
+        formatter: (v) =>
+          v === 0
+            ? "-"
+            : `₹ ${v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
         sessionUserName: session?.user?.name || "User",
         currentMetadata: {
           inceptionDate: exportMetadata?.inceptionDate || convertedStats.equityCurve?.[0]?.date || null,

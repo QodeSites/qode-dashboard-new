@@ -142,8 +142,8 @@ export function buildPortfolioReportHTML(
 
   // Top stats
   const statItems = [
-    { name: "Amount Invested", value: formatter(metrics?.amountInvested || 0) },
-    { name: "Current Portfolio Value", value: formatter(metrics?.currentPortfolioValue || 0) },
+    { name: "Amount Invested (₹)", value: formatter(metrics?.amountInvested || 0) },
+    { name: "Current Portfolio Value (₹)", value: formatter(metrics?.currentPortfolioValue || 0) },
     { name: "Returns (%)", value: `${metrics?.returns_percent} %` },
     { name: "Returns (₹)", value: formatter(metrics?.returns || 0) },
   ];
@@ -266,7 +266,7 @@ export function buildPortfolioReportHTML(
     .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
     .stat-card { background: #EFECD3; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 4px solid #DABD38; }
     .stat-card h3 { font-size: 11px; color: #666; margin-bottom: 8px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
-    .stat-card .value { font-family: 'Inria Serif'; font-size: 18px; font-weight: 500; color: #02422B; }
+    .stat-card .value { font-family: 'Inria Serif', 'Lato', sans-serif; font-size: 18px; font-weight: 500; color: #02422B; }
     .section { background: #EFECD3; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
     .section table { border-radius: 8px; overflow: hidden; }
     /* NOTE: default page-break-inside avoided for short sections, but we provide a utility to allow splitting */
