@@ -824,7 +824,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   };
 
   // Export handler functions
-  const handleDownloadPDF = async (convertedStats: Stats, strategyName: string, isTotalPortfolio: boolean) => {
+  const handleDownloadPDF = async (convertedStats: Stats, strategyName: string, isTotalPortfolio: boolean, exportMetadata?: { inceptionDate?: string | null; dataAsOfDate?: string | null }) => {
     try {
       setExporting(true);
       const cashFlows = convertedStats.cashFlows || [];
@@ -878,9 +878,13 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         strategyName,
         isTotalPortfolio,
         isActive: true,
-        dateFormatter: (d) => new Date(d).toLocaleDateString("en-IN"),
+        dateFormatter,
         formatter: (v) => formatter.format(v),
         sessionUserName: session?.user?.name || "User",
+        currentMetadata: {
+          inceptionDate: exportMetadata?.inceptionDate || convertedStats.equityCurve?.[0]?.date || null,
+          dataAsOfDate: exportMetadata?.dataAsOfDate || convertedStats.equityCurve?.[convertedStats.equityCurve.length - 1]?.date || null,
+        },
       });
 
       // Use a hidden iframe for printing (matches holdings page pattern)
@@ -1073,7 +1077,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           </Button>
           <div className="flex gap-2 ml-auto">
             <Button
-              onClick={() => handleDownloadPDF(convertedStats, selectedStrategy, isTotalPortfolio)}
+              onClick={() => handleDownloadPDF(convertedStats, selectedStrategy, isTotalPortfolio, { inceptionDate: strategyData.metadata?.inceptionDate, dataAsOfDate: strategyData.metadata?.dataAsOfDate })}
               disabled={exporting}
               className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
               variant="default"
@@ -1162,7 +1166,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           </Button>
           <div className="flex gap-2 ml-auto">
             <Button
-              onClick={() => handleDownloadPDF(convertedStats, selectedStrategy, isTotalPortfolio)}
+              onClick={() => handleDownloadPDF(convertedStats, selectedStrategy, isTotalPortfolio, { inceptionDate: strategyData.metadata?.inceptionDate, dataAsOfDate: strategyData.metadata?.dataAsOfDate })}
               disabled={exporting}
               className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
               variant="default"
@@ -1247,7 +1251,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           </Button>
           <div className="flex gap-2 ml-auto">
             <Button
-              onClick={() => handleDownloadPDF(convertedStats, selectedStrategy, isTotalPortfolio)}
+              onClick={() => handleDownloadPDF(convertedStats, selectedStrategy, isTotalPortfolio, { inceptionDate: strategyData.metadata?.inceptionDate, dataAsOfDate: strategyData.metadata?.dataAsOfDate })}
               disabled={exporting}
               className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
               variant="default"
@@ -1438,7 +1442,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                           </div>
                           <div className="flex gap-2">
                             <Button
-                              onClick={() => handleDownloadPDF(convertedStats, item.metadata.strategyName || "Unknown Strategy", false)}
+                              onClick={() => handleDownloadPDF(convertedStats, item.metadata.strategyName || "Unknown Strategy", false, { inceptionDate: item.metadata.inceptionDate, dataAsOfDate: item.metadata.dataAsOfDate })}
                               disabled={exporting}
                               className="h-8 px-2 text-xs font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
                               variant="default"
@@ -1504,7 +1508,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                     <>
                       <div className="flex justify-end gap-2 mb-4">
                         <Button
-                          onClick={() => handleDownloadPDF(convertedStats, strategyName, false)}
+                          onClick={() => handleDownloadPDF(convertedStats, strategyName, false, { inceptionDate: metadata?.inceptionDate, dataAsOfDate: metadata?.dataAsOfDate })}
                           disabled={exporting}
                           className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
                           variant="default"
