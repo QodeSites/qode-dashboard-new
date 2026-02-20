@@ -877,21 +877,20 @@ export function buildPortfolioReportHTML(
         console.log('Pagination completed. Total rows:', originalRows.length, 'Pages created:', nextPageNum - (isTotalPortfolio ? 3 : 4));
       }
 
-      // Run pagination for tables with many rows
+      // Run pagination for tables with many rows, then signal ready
       const cashFlowCount = ${JSON.stringify(recentCashFlows.length)};
-      console.log('Cash flow count:', cashFlowCount);
-      
+
       if (cashFlowCount > 20) {
-        console.log('Running pagination...');
-        setTimeout(() => { 
-          try { 
-            paginateLongTable('cash-flows-table'); 
-          } catch(e) { 
-            console.error('Pagination error:', e); 
-          } 
+        setTimeout(() => {
+          try {
+            paginateLongTable('cash-flows-table');
+          } catch(e) {
+            console.error('Pagination error:', e);
+          }
+          window.parent.postMessage('portfolio-report-ready', '*');
         }, 500);
       } else {
-        console.log('No pagination needed - row count is', cashFlowCount);
+        window.parent.postMessage('portfolio-report-ready', '*');
       }
 
     })();

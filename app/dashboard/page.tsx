@@ -907,18 +907,32 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
       iframeDoc.write(html);
       iframeDoc.close();
 
-      // Wait for fonts to load, then allow time for Highcharts to render, then print
-      iframeDoc.fonts.ready.then(() => {
-        setTimeout(() => {
+      // Wait for fonts + chart/pagination to finish, then print
+      const cleanup = () => {
+        iframe.remove();
+        setExporting(false);
+      };
+
+      const onReady = (e: MessageEvent) => {
+        if (e.data !== 'portfolio-report-ready') return;
+        window.removeEventListener('message', onReady);
+        iframeDoc.fonts.ready.then(() => {
           try {
             iframeWin.print();
           } catch (e) {
             console.error('Print error:', e);
           }
-          iframe.remove();
-          setExporting(false);
-        }, 1000);
-      });
+          cleanup();
+        });
+      };
+      window.addEventListener('message', onReady);
+
+      // Fallback if message never arrives (e.g. script error in iframe)
+      setTimeout(() => {
+        window.removeEventListener('message', onReady);
+        try { iframeWin.print(); } catch (_) { /* ignore */ }
+        cleanup();
+      }, 5000);
       return;
     } catch (err) {
       console.error(err);
