@@ -861,12 +861,43 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         sessionUserName: session?.user?.name || "User",
       });
 
-      const w = window.open("", "_blank", "width=1200,height=900");
-      if (w) {
-        w.document.open();
-        w.document.write(html);
-        w.document.close();
+      // Use a hidden iframe for printing (matches holdings page pattern)
+      const existingFrame = document.getElementById('portfolio-print-frame') as HTMLIFrameElement;
+      if (existingFrame) existingFrame.remove();
+
+      const iframe = document.createElement('iframe');
+      iframe.id = 'portfolio-print-frame';
+      iframe.style.position = 'fixed';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = 'none';
+      iframe.style.left = '-9999px';
+      document.body.appendChild(iframe);
+
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+      const iframeWin = iframe.contentWindow;
+      if (!iframeDoc || !iframeWin) {
+        iframe.remove();
+        throw new Error('Failed to create print frame');
       }
+
+      iframeDoc.open();
+      iframeDoc.write(html);
+      iframeDoc.close();
+
+      // Wait for fonts to load, then allow time for Highcharts to render, then print
+      iframeDoc.fonts.ready.then(() => {
+        setTimeout(() => {
+          try {
+            iframeWin.print();
+          } catch (e) {
+            console.error('Print error:', e);
+          }
+          iframe.remove();
+          setExporting(false);
+        }, 1000);
+      });
+      return;
     } catch (err) {
       console.error(err);
       alert("PDF export failed. See console for details.");

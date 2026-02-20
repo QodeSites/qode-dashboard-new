@@ -894,8 +894,6 @@ export function buildPortfolioReportHTML(
         console.log('No pagination needed - row count is', cashFlowCount);
       }
 
-      // Auto-print after render
-      setTimeout(() => { try { window.print(); } catch(e) {} }, 800);
     })();
   </script>
 </body>
