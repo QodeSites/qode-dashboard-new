@@ -287,7 +287,8 @@ export function buildPortfolioReportHTML(
     .cash-flow-positive { color: #059669; font-weight: 600; }
     .cash-flow-negative { color: #dc2626; font-weight: 600; }
     .summary-row { background-color: rgba(243,244,246,0.5); font-weight: 600; }
-    .trailing-returns-table th:first-child, .trailing-returns-table td:first-child { text-align: left; font-weight: 500; }
+    .trailing-returns-table th:first-child { text-align: left; font-weight: 600; }
+    .trailing-returns-table td:first-child { text-align: left; font-weight: 500; }
     .note { font-size: 10px; color: #666; margin-top: 10px; font-style: italic; padding: 0 8px 8px; }
     .footer { margin-top: auto; padding-top: 15px; border-top: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #666; }
     .disclaimer { font-size: 9px; color: #999; line-height: 1.4; max-width: 75%; }
