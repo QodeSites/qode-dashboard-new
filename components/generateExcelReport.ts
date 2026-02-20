@@ -90,18 +90,12 @@ export function generateExcelReport(input: ExcelReportInput): void {
   } = input;
 
   try {
-    const filename = `${strategyName.replace(/\s+/g, "_")}_data.xlsx`;
+    const nameForFile = accountInfo?.accountName || sessionUserName || strategyName;
+    const filename = `${nameForFile.replace(/\s+/g, "_")}_data.xlsx`;
     const wb = XLSX.utils.book_new();
     const wsData: any[][] = [];
     const headerRows: number[] = [];
     const subHeaderRows: number[] = [];
-    const currencyCellSet = new Set<string>();
-    const currencyNumFmt = "₹ #,##0.00";
-    const currencyCellKey = (row: number, col: number) => `${row}:${col}`;
-    const markCurrencyCell = (row: number, col: number) => {
-      currencyCellSet.add(currencyCellKey(row, col));
-    };
-    const isCurrencyCell = (row: number, col: number) => currencyCellSet.has(currencyCellKey(row, col));
 
     // ========================================================================
     // Title Row
@@ -120,11 +114,8 @@ export function generateExcelReport(input: ExcelReportInput): void {
     wsData.push(["", "Strategy", strategyName]);
     wsData.push(["", "Status", isActive ? "Active" : "Inactive"]);
     wsData.push(["", "Amount Deposited (₹)", metrics.amountDeposited || 0]);
-    markCurrencyCell(wsData.length - 1, 2);
     wsData.push(["", "Current Exposure (₹)", metrics.currentExposure || 0]);
-    markCurrencyCell(wsData.length - 1, 2);
     wsData.push(["", "Total Profit (₹)", metrics.totalProfit || 0]);
-    markCurrencyCell(wsData.length - 1, 2);
     wsData.push([]);
 
     // ========================================================================
@@ -195,11 +186,8 @@ export function generateExcelReport(input: ExcelReportInput): void {
       headerRows.push(wsData.length);
       wsData.push(["", "Cash Flow Summary"]);
       wsData.push(["", "Total Cash In (₹)", cashFlowTotals.totalIn || 0]);
-      markCurrencyCell(wsData.length - 1, 2);
       wsData.push(["", "Total Cash Out (₹)", cashFlowTotals.totalOut || 0]);
-      markCurrencyCell(wsData.length - 1, 2);
       wsData.push(["", "Net Cash Flow (₹)", cashFlowTotals.netFlow || 0]);
-      markCurrencyCell(wsData.length - 1, 2);
       wsData.push([]);
 
       headerRows.push(wsData.length);
@@ -215,7 +203,6 @@ export function generateExcelReport(input: ExcelReportInput): void {
         const year = dateObj.getFullYear();
         const formattedDate = `${day}-${month}-${year}`;
         wsData.push(["", formattedDate, Number(flow.amount)]);
-        markCurrencyCell(wsData.length - 1, 2);
       });
       wsData.push([]);
     }
@@ -247,7 +234,6 @@ export function generateExcelReport(input: ExcelReportInput): void {
               parseFloat(monthData.percent) || 0,
               parseFloat(monthData.cash) || 0
             ]);
-            markCurrencyCell(wsData.length - 1, 4);
           }
         });
       });
@@ -278,22 +264,14 @@ export function generateExcelReport(input: ExcelReportInput): void {
         const yearData = quarterlyPnl[year];
         if (isTotalPortfolio) {
           wsData.push(["", year, "Q1", parseFloat(yearData.cash.q1) || 0]);
-          markCurrencyCell(wsData.length - 1, 3);
           wsData.push(["", year, "Q2", parseFloat(yearData.cash.q2) || 0]);
-          markCurrencyCell(wsData.length - 1, 3);
           wsData.push(["", year, "Q3", parseFloat(yearData.cash.q3) || 0]);
-          markCurrencyCell(wsData.length - 1, 3);
           wsData.push(["", year, "Q4", parseFloat(yearData.cash.q4) || 0]);
-          markCurrencyCell(wsData.length - 1, 3);
         } else {
           wsData.push(["", year, "Q1", parseFloat(yearData.percent.q1) || 0, parseFloat(yearData.cash.q1) || 0]);
-          markCurrencyCell(wsData.length - 1, 4);
           wsData.push(["", year, "Q2", parseFloat(yearData.percent.q2) || 0, parseFloat(yearData.cash.q2) || 0]);
-          markCurrencyCell(wsData.length - 1, 4);
           wsData.push(["", year, "Q3", parseFloat(yearData.percent.q3) || 0, parseFloat(yearData.cash.q3) || 0]);
-          markCurrencyCell(wsData.length - 1, 4);
           wsData.push(["", year, "Q4", parseFloat(yearData.percent.q4) || 0, parseFloat(yearData.cash.q4) || 0]);
-          markCurrencyCell(wsData.length - 1, 4);
         }
       });
       wsData.push([]);
@@ -402,11 +380,6 @@ export function generateExcelReport(input: ExcelReportInput): void {
       border: tableBorder
     };
 
-    const currencyNumberStyle = {
-      ...numberStyle,
-      numFmt: currencyNumFmt
-    };
-
     const titleStyle = {
       font: {
         name: "Playfair Display",
@@ -444,7 +417,6 @@ export function generateExcelReport(input: ExcelReportInput): void {
         if (!ws[cellAddress]) continue;
 
         const cellValue = ws[cellAddress].v;
-        const currencyCell = isCurrencyCell(R, C);
 
         // Skip styling for truly empty cells
         if (cellValue === null || cellValue === undefined || cellValue === '') {
@@ -469,7 +441,7 @@ export function generateExcelReport(input: ExcelReportInput): void {
           if (Number.isInteger(ws[cellAddress].v) && ws[cellAddress].v >= 1900 && ws[cellAddress].v <= 2100) {
             ws[cellAddress].z = '0'; // Format years as integers
           } else {
-            ws[cellAddress].z = currencyCell ? currencyNumFmt : '0.00'; // Format currency cells and decimal cells
+            ws[cellAddress].z = '0.00'; // Format other numbers with 2 decimal places
           }
         } else if (typeof ws[cellAddress].v === 'string') {
           const trimmed = ws[cellAddress].v.trim();
@@ -480,7 +452,7 @@ export function generateExcelReport(input: ExcelReportInput): void {
             if (Number.isInteger(num) && num >= 1900 && num <= 2100) {
               ws[cellAddress].z = '0';
             } else {
-              ws[cellAddress].z = currencyCell ? currencyNumFmt : '0.00';
+              ws[cellAddress].z = '0.00';
             }
           } else {
             ws[cellAddress].t = 's';
@@ -499,7 +471,7 @@ export function generateExcelReport(input: ExcelReportInput): void {
             if (C === 1) {
               ws[cellAddress].s = textStyle;
             } else if (ws[cellAddress].t === 'n') {
-              ws[cellAddress].s = currencyCell ? currencyNumberStyle : numberStyle;
+              ws[cellAddress].s = numberStyle;
             } else {
               ws[cellAddress].s = {
                 ...textStyle,
