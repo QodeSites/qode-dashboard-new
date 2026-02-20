@@ -661,6 +661,24 @@ export function buildPortfolioReportHTML(
       const benchDDCurve = ${JSON.stringify(benchmarkDrawdownCurve || [])};
       const showFullPages = ${JSON.stringify(showFullPages)};
       const isTotalPortfolio = ${JSON.stringify(isTotalPortfolio)};
+      let chartReadyResolved = false;
+      let resolveChartReady = () => {};
+      const chartReadyPromise = new Promise((resolve) => {
+        resolveChartReady = resolve;
+      });
+      const markChartReady = () => {
+        if (chartReadyResolved) return;
+        chartReadyResolved = true;
+        resolveChartReady();
+      };
+      const waitForFonts = () => {
+        if (!document.fonts || !document.fonts.ready) return Promise.resolve();
+        return document.fonts.ready.catch(() => undefined);
+      };
+
+      if (!showFullPages) {
+        markChartReady();
+      }
 
       if (showFullPages) {
         // Portfolio series
@@ -741,61 +759,106 @@ export function buildPortfolioReportHTML(
           return sorted[sorted.length - 1][0] - sorted[0][0];
         })();
         const tickInterval = dateRange > 0 ? Math.max(7*24*60*60*1000, Math.ceil(dateRange / 20)) : undefined;
-
-        Highcharts.chart('chart-container', {
-          chart: { zoomType: 'xy', height: 400, backgroundColor: 'transparent', plotBackgroundColor: 'transparent', style: { fontFamily: 'Lato, sans-serif' }},
-          title: { text: '' },
-          xAxis: {
-            type: 'datetime',
-            title: { text: 'Date', style: { color: '#2E8B57', fontSize: '12px', fontFamily: 'Lato, sans-serif' } },
-            labels: { format: '{value:%d-%m-%Y}', style: { color: '#2E8B57', fontSize: '12px', fontFamily: 'Lato, sans-serif' } },
-            tickInterval,
-            gridLineColor: '#e6e6e6',
-            tickWidth: 1,
-            lineColor: '#2E8B57'
-          },
-          yAxis: [{
-            title: { text: 'Performance', style: { color: '#2E8B57', fontSize: '12px', fontFamily: 'Lato, sans-serif' } },
-            height: '50%', top: '0%',
-            labels: { formatter: function(){ return (Math.round(this.value*100)/100) + ''; }, style: { color: '#2E8B57', fontSize: '12px' } },
-            min: navScale.min, max: navScale.max, tickAmount: navScale.tickAmount,
-            lineColor: '#2E8B57', tickColor: '#2E8B57', tickWidth: 1, gridLineColor: '#e6e6e6',
-            plotLines: [{ value: 100, color: '#2E8B57', width: 1, zIndex: 5, dashStyle: 'dot' }]
-          },{
-            title: { text: 'Drawdown', style: { color: '#FF4560', fontSize: '12px', fontFamily: 'Lato, sans-serif' } },
-            height: '30%', top: '65%', offset: 0,
-            min: ddScale.min, max: 0, tickAmount: ddScale.tickAmount,
-            labels: { formatter: function(){ return (Math.round(this.value*100)/100) + '%'; }, style: { color: '#FF4560', fontSize: '12px' } },
-            lineColor: '#FF4560', tickColor: '#FF4560', tickWidth: 1, gridLineColor: '#e6e6e6'
-          }],
-          tooltip: {
-            shared: true, xDateFormat: '%d-%m-%Y', valueDecimals: 2, style: { fontFamily: 'Lato, sans-serif' },
-            formatter: function() {
-              const get = (name) => this.points?.find(pt => pt.series.name === name);
-              const p  = get('Portfolio');
-              const pb = get('Nifty 50');
-              const d  = get('Portfolio Drawdown');
-              const db = get('Nifty 50 Drawdown');
-              let s = '<b>' + Highcharts.dateFormat('%d-%m-%Y', this.x) + '</b><br/><br/>';
-              s += '<span style="font-weight:bold;">Performance:</span><br/>';
-              s += '<span style="color:#2E8B57;">●</span> Portfolio: ' + (p ? p.y.toFixed(2) : 'N/A') + '<br/>';
-              if (pb) s += '<span style="color:#1f4f8a;">●</span> Nifty 50: ' + pb.y.toFixed(2) + '<br/>';
-              s += '<br/><span style="font-weight:bold;">Drawdown:</span><br/>';
-              s += '<span style="color:#FF4560;">●</span> Portfolio: ' + (d ? d.y.toFixed(2) + '%' : 'N/A') + '<br/>';
-              if (db) s += '<span style="color:#a83279;">●</span> Nifty 50: ' + db.y.toFixed(2) + '%' + '<br/>';
-              return s;
-            }
-          },
-          legend: { enabled: true, layout: 'horizontal', align: 'center', verticalAlign: 'bottom', itemStyle: { fontSize: '12px', color: '#2E8B57' } },
-          plotOptions: { line: { marker: { enabled: false } }, area: { fillOpacity: 0.2, marker: { enabled: false } }, series: { animation: false } },
-          series: [
-            { name: 'Portfolio', data: portfolioData, color: '#2E8B57', zIndex: 3, yAxis: 0, type: 'line', marker: { enabled: false } },
-            ${benchmarkEquityCurve.length ? `{ name: 'Nifty 50', data: benchData, color: '#1f4f8a', zIndex: 2, yAxis: 0, type: 'line', marker: { enabled: false } },` : ``}
-            { name: 'Portfolio Drawdown', data: ddData, color: '#FF4560', zIndex: 1, yAxis: 1, type: 'area', marker: { enabled: false }, fillOpacity: 0.2, threshold: 0, tooltip: { valueSuffix: '%' } }
-            ${benchmarkDrawdownCurve.length ? `,{ name: 'Nifty 50 Drawdown', data: benchDDData, color: '#ff8700', zIndex: 1, yAxis: 1, type: 'area', marker: { enabled: false }, fillOpacity: 0.15, threshold: 0, tooltip: { valueSuffix: '%' } }` : ``}
-          ],
-          credits: { enabled: false }
+        waitForFonts().then(() => {
+          try {
+            Highcharts.chart('chart-container', {
+              chart: {
+                zoomType: 'xy',
+                height: 400,
+                spacingLeft: 12,
+                spacingRight: 8,
+                backgroundColor: 'transparent',
+                plotBackgroundColor: 'transparent',
+                style: { fontFamily: 'Lato, sans-serif' },
+                events: {
+                  load: function() {
+                    const chart = this;
+                    waitForFonts().then(() => {
+                      requestAnimationFrame(() => {
+                        try {
+                          chart.reflow();
+                          chart.redraw(false);
+                        } catch (_) {
+                          // no-op
+                        }
+                        markChartReady();
+                      });
+                    });
+                  }
+                }
+              },
+              title: { text: '' },
+              xAxis: {
+                type: 'datetime',
+                title: { text: 'Date', style: { color: '#2E8B57', fontSize: '12px', fontFamily: 'Lato, sans-serif' } },
+                labels: { format: '{value:%d-%m-%Y}', style: { color: '#2E8B57', fontSize: '12px', fontFamily: 'Lato, sans-serif' } },
+                tickInterval,
+                gridLineColor: '#e6e6e6',
+                tickWidth: 1,
+                lineColor: '#2E8B57'
+              },
+              yAxis: [{
+                title: { text: 'Performance', style: { color: '#2E8B57', fontSize: '12px', fontFamily: 'Lato, sans-serif' } },
+                height: '60%', top: '0%', offset: 0,
+                labels: {
+                  align: 'right',
+                  x: -6,
+                  reserveSpace: true,
+                  formatter: function(){ return (Math.round(this.value*100)/100) + ''; },
+                  style: { color: '#2E8B57', fontSize: '12px' }
+                },
+                min: navScale.min, max: navScale.max, tickAmount: navScale.tickAmount,
+                lineColor: '#2E8B57', tickColor: '#2E8B57', tickWidth: 1, gridLineColor: '#e6e6e6',
+                plotLines: [{ value: 100, color: '#2E8B57', width: 1, zIndex: 5, dashStyle: 'dot' }]
+              },{
+                title: { text: 'Drawdown', style: { color: '#FF4560', fontSize: '12px', fontFamily: 'Lato, sans-serif' } },
+                height: '20%', top: '75%', offset: 0,
+                min: ddScale.min, max: 0, tickAmount: ddScale.tickAmount,
+                labels: {
+                  align: 'right',
+                  x: -6,
+                  reserveSpace: true,
+                  formatter: function(){ return (Math.round(this.value*100)/100) + '%'; },
+                  style: { color: '#FF4560', fontSize: '12px' }
+                },
+                lineColor: '#FF4560', tickColor: '#FF4560', tickWidth: 1, gridLineColor: '#e6e6e6'
+              }],
+              tooltip: {
+                shared: true, xDateFormat: '%d-%m-%Y', valueDecimals: 2, style: { fontFamily: 'Lato, sans-serif' },
+                formatter: function() {
+                  const get = (name) => this.points?.find(pt => pt.series.name === name);
+                  const p  = get('Portfolio');
+                  const pb = get('Nifty 50');
+                  const d  = get('Portfolio Drawdown');
+                  const db = get('Nifty 50 Drawdown');
+                  let s = '<b>' + Highcharts.dateFormat('%d-%m-%Y', this.x) + '</b><br/><br/>';
+                  s += '<span style="font-weight:bold;">Performance:</span><br/>';
+                  s += '<span style="color:#2E8B57;">●</span> Portfolio: ' + (p ? p.y.toFixed(2) : 'N/A') + '<br/>';
+                  if (pb) s += '<span style="color:#1f4f8a;">●</span> Nifty 50: ' + pb.y.toFixed(2) + '<br/>';
+                  s += '<br/><span style="font-weight:bold;">Drawdown:</span><br/>';
+                  s += '<span style="color:#FF4560;">●</span> Portfolio: ' + (d ? d.y.toFixed(2) + '%' : 'N/A') + '<br/>';
+                  if (db) s += '<span style="color:#a83279;">●</span> Nifty 50: ' + db.y.toFixed(2) + '%' + '<br/>';
+                  return s;
+                }
+              },
+              legend: { enabled: true, layout: 'horizontal', align: 'center', verticalAlign: 'bottom', itemStyle: { fontSize: '12px', color: '#2E8B57' } },
+              plotOptions: { line: { marker: { enabled: false } }, area: { fillOpacity: 0.2, marker: { enabled: false } }, series: { animation: false } },
+              series: [
+                { name: 'Portfolio', data: portfolioData, color: '#2E8B57', zIndex: 3, yAxis: 0, type: 'line', marker: { enabled: false } },
+                ${benchmarkEquityCurve.length ? `{ name: 'Nifty 50', data: benchData, color: '#1f4f8a', zIndex: 2, yAxis: 0, type: 'line', marker: { enabled: false } },` : ``}
+                { name: 'Portfolio Drawdown', data: ddData, color: '#FF4560', zIndex: 1, yAxis: 1, type: 'area', marker: { enabled: false }, fillOpacity: 0.2, threshold: 0, tooltip: { valueSuffix: '%' } }
+                ${benchmarkDrawdownCurve.length ? `,{ name: 'Nifty 50 Drawdown', data: benchDDData, color: '#ff8700', zIndex: 1, yAxis: 1, type: 'area', marker: { enabled: false }, fillOpacity: 0.15, threshold: 0, tooltip: { valueSuffix: '%' } }` : ``}
+              ],
+              credits: { enabled: false }
+            });
+          } catch (e) {
+            console.error('Chart render error:', e);
+            markChartReady();
+          }
         });
+
+        // Ensure print flow does not block forever if chart event never fires.
+        setTimeout(markChartReady, 2000);
       }
 
       // =====================
@@ -880,19 +943,24 @@ export function buildPortfolioReportHTML(
 
       // Run pagination for tables with many rows, then signal ready
       const cashFlowCount = ${JSON.stringify(recentCashFlows.length)};
+      const paginationReadyPromise = new Promise((resolve) => {
+        if (cashFlowCount > 20) {
+          setTimeout(() => {
+            try {
+              paginateLongTable('cash-flows-table');
+            } catch(e) {
+              console.error('Pagination error:', e);
+            }
+            resolve(undefined);
+          }, 500);
+        } else {
+          resolve(undefined);
+        }
+      });
 
-      if (cashFlowCount > 20) {
-        setTimeout(() => {
-          try {
-            paginateLongTable('cash-flows-table');
-          } catch(e) {
-            console.error('Pagination error:', e);
-          }
-          window.parent.postMessage('portfolio-report-ready', '*');
-        }, 500);
-      } else {
+      Promise.all([chartReadyPromise, paginationReadyPromise]).then(() => {
         window.parent.postMessage('portfolio-report-ready', '*');
-      }
+      });
 
     })();
   </script>
