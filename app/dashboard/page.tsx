@@ -227,15 +227,27 @@ const getGreeting = () => {
 };
 
 // Helper function to fetch and calculate benchmark returns for PDF/Excel export
+interface BenchmarkResult {
+  returns: { [key: string]: string };
+  equityCurve: { date: string; nav: number }[];
+  drawdownCurve: { date: string; value: number }[];
+}
+
 async function fetchBenchmarkReturns(
   equityCurve: { date: string; value: number }[]
-): Promise<{ [key: string]: string }> {
-  const benchmarkReturns: { [key: string]: string } = {
-    "5d": "-", "10d": "-", "15d": "-", "1m": "-", "3m": "-", "6m": "-",
-    "1y": "-", "2y": "-", "sinceInception": "-", "MDD": "-", "currentDD": "-"
+): Promise<BenchmarkResult> {
+  const emptyResult: BenchmarkResult = {
+    returns: {
+      "5d": "-", "10d": "-", "15d": "-", "1m": "-", "3m": "-", "6m": "-",
+      "1y": "-", "2y": "-", "sinceInception": "-", "MDD": "-", "currentDD": "-"
+    },
+    equityCurve: [],
+    drawdownCurve: [],
   };
 
-  if (!equityCurve?.length) return benchmarkReturns;
+  if (!equityCurve?.length) return emptyResult;
+
+  const benchmarkReturns = { ...emptyResult.returns };
 
   try {
     const startDate = equityCurve[0].date;
@@ -260,7 +272,7 @@ async function fetchBenchmarkReturns(
         }),
       }
     );
-    if (!response.ok) return benchmarkReturns;
+    if (!response.ok) return emptyResult;
 
     const result = await response.json();
     const rawData = result?.data?.data?.["NIFTY 50"];
@@ -271,7 +283,7 @@ async function fetchBenchmarkReturns(
         }))
       : [];
 
-    if (!rawBenchmarkData.length) return benchmarkReturns;
+    if (!rawBenchmarkData.length) return emptyResult;
 
     let effectiveStartDate = startDate;
     const startDateTime = new Date(startDate).getTime();
@@ -293,7 +305,7 @@ async function fetchBenchmarkReturns(
       (d) => new Date(d.date) >= new Date(effectiveStartDate) && new Date(d.date) <= new Date(endDate)
     );
 
-    if (!bse500Data.length) return benchmarkReturns;
+    if (!bse500Data.length) return emptyResult;
 
     const endDateObj = new Date(endDate);
 
@@ -360,29 +372,36 @@ async function fetchBenchmarkReturns(
     let peakNav = -Infinity;
     const currentNav = parseFloat(bse500Data[bse500Data.length - 1].nav);
 
+    // Build benchmark equity curve and drawdown curve for chart rendering
+    const benchmarkEquityCurve: { date: string; nav: number }[] = [];
+    const benchmarkDrawdownCurve: { date: string; value: number }[] = [];
+
     bse500Data.forEach((point) => {
       const nav = parseFloat(point.nav);
       if (nav > peakNav) peakNav = nav;
       const drawdownValue = ((nav - peakNav) / peakNav) * 100;
       if (drawdownValue < maxDrawdown) maxDrawdown = drawdownValue;
+
+      benchmarkEquityCurve.push({ date: point.date, nav });
+      benchmarkDrawdownCurve.push({ date: point.date, value: Math.abs(drawdownValue) });
     });
 
-    let allTimePeak = -Infinity;
-    bse500Data.forEach((point) => {
-      const nav = parseFloat(point.nav);
-      if (nav > allTimePeak) allTimePeak = nav;
-    });
-
-    const currentDrawdown = allTimePeak > 0 ? ((currentNav - allTimePeak) / allTimePeak) * 100 : 0;
+    const currentDrawdown = peakNav > 0 ? ((currentNav - peakNav) / peakNav) * 100 : 0;
 
     benchmarkReturns["MDD"] = (-Math.abs(maxDrawdown)).toFixed(2);
     benchmarkReturns["currentDD"] = (-Math.abs(currentDrawdown)).toFixed(2);
+
+    return {
+      returns: benchmarkReturns,
+      equityCurve: benchmarkEquityCurve,
+      drawdownCurve: benchmarkDrawdownCurve,
+    };
 
   } catch (err) {
     console.error("Error fetching benchmark data for export:", err);
   }
 
-  return benchmarkReturns;
+  return emptyResult;
 }
 
 export default function Portfolio() {
@@ -824,7 +843,8 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
       const getTrailingValue = (longKey: string, shortKey: string) =>
         tr[longKey] ?? tr[shortKey] ?? null;
 
-      const benchmarkReturns = await fetchBenchmarkReturns(convertedStats.equityCurve);
+      const benchmark = await fetchBenchmarkReturns(convertedStats.equityCurve);
+      const benchmarkReturns = benchmark.returns;
 
       const html = buildPortfolioReportHTML({
         transactions: cashFlows,
@@ -837,6 +857,8 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         },
         equityCurve: convertedStats.equityCurve,
         drawdownCurve: convertedStats.drawdownCurve,
+        benchmarkEquityCurve: benchmark.equityCurve,
+        benchmarkDrawdownCurve: benchmark.drawdownCurve,
         combinedTrailing: {
           fiveDays: { portfolio: getTrailingValue("fiveDays", "5d"), benchmark: benchmarkReturns["5d"] },
           tenDays: { portfolio: getTrailingValue("tenDays", "10d"), benchmark: benchmarkReturns["10d"] },
@@ -910,7 +932,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     try {
       setExporting(true);
 
-      const benchmarkReturns = await fetchBenchmarkReturns(convertedStats.equityCurve);
+      const benchmarkReturns = (await fetchBenchmarkReturns(convertedStats.equityCurve)).returns;
 
       const tr = convertedStats.trailingReturns as Record<string, unknown>;
       const getTrailingValue = (longKey: string, shortKey: string): string | number | null => {
