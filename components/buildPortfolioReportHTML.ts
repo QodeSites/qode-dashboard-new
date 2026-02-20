@@ -772,16 +772,16 @@ export function buildPortfolioReportHTML(
             formatter: function() {
               const get = (name) => this.points?.find(pt => pt.series.name === name);
               const p  = get('Portfolio');
-              const pb = get('Benchmark');
+              const pb = get('Nifty 50');
               const d  = get('Portfolio Drawdown');
-              const db = get('Benchmark Drawdown');
+              const db = get('Nifty 50 Drawdown');
               let s = '<b>' + Highcharts.dateFormat('%d-%m-%Y', this.x) + '</b><br/><br/>';
               s += '<span style="font-weight:bold;">Performance:</span><br/>';
               s += '<span style="color:#2E8B57;">●</span> Portfolio: ' + (p ? p.y.toFixed(2) : 'N/A') + '<br/>';
-              if (pb) s += '<span style="color:#1f4f8a;">●</span> Benchmark: ' + pb.y.toFixed(2) + '<br/>';
+              if (pb) s += '<span style="color:#1f4f8a;">●</span> Nifty 50: ' + pb.y.toFixed(2) + '<br/>';
               s += '<br/><span style="font-weight:bold;">Drawdown:</span><br/>';
               s += '<span style="color:#FF4560;">●</span> Portfolio: ' + (d ? d.y.toFixed(2) + '%' : 'N/A') + '<br/>';
-              if (db) s += '<span style="color:#a83279;">●</span> Benchmark: ' + db.y.toFixed(2) + '%' + '<br/>';
+              if (db) s += '<span style="color:#a83279;">●</span> Nifty 50: ' + db.y.toFixed(2) + '%' + '<br/>';
               return s;
             }
           },
@@ -789,9 +789,9 @@ export function buildPortfolioReportHTML(
           plotOptions: { line: { marker: { enabled: false } }, area: { fillOpacity: 0.2, marker: { enabled: false } }, series: { animation: false } },
           series: [
             { name: 'Portfolio', data: portfolioData, color: '#2E8B57', zIndex: 3, yAxis: 0, type: 'line', marker: { enabled: false } },
-            ${benchmarkEquityCurve.length ? `{ name: 'BSE500', data: benchData, color: '#1f4f8a', zIndex: 2, yAxis: 0, type: 'line', marker: { enabled: false } },` : ``}
+            ${benchmarkEquityCurve.length ? `{ name: 'Nifty 50', data: benchData, color: '#1f4f8a', zIndex: 2, yAxis: 0, type: 'line', marker: { enabled: false } },` : ``}
             { name: 'Portfolio Drawdown', data: ddData, color: '#FF4560', zIndex: 1, yAxis: 1, type: 'area', marker: { enabled: false }, fillOpacity: 0.2, threshold: 0, tooltip: { valueSuffix: '%' } }
-            ${benchmarkDrawdownCurve.length ? `,{ name: 'BSE500 Drawdown', data: benchDDData, color: '#ff8700', zIndex: 1, yAxis: 1, type: 'area', marker: { enabled: false }, fillOpacity: 0.15, threshold: 0, tooltip: { valueSuffix: '%' } }` : ``}
+            ${benchmarkDrawdownCurve.length ? `,{ name: 'Nifty 50 Drawdown', data: benchDDData, color: '#ff8700', zIndex: 1, yAxis: 1, type: 'area', marker: { enabled: false }, fillOpacity: 0.15, threshold: 0, tooltip: { valueSuffix: '%' } }` : ``}
           ],
           credits: { enabled: false }
         });
