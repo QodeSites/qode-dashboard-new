@@ -1403,14 +1403,45 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           )}
         </div>
 
-        {!isSarla && !isSatidham && !isDinesh && currentMetadata?.strategyName && (
-          <Button
-            variant="outline"
-            className={`bg-logo-green mt-4 font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${(isSarla || isSatidham || isDinesh) && !currentMetadata.isActive ? "opacity-70" : ""
-              }`}
-          >
-            {currentMetadata.strategyName} {(isSarla || isSatidham || isDinesh) && !currentMetadata.isActive ? "(Inactive)" : ""}
-          </Button>
+        {!isSarla && !isSatidham && !isDinesh && (currentMetadata?.strategyName || (stats && !Array.isArray(stats))) && (
+          <div className="flex flex-wrap items-center gap-3 mt-4">
+            {currentMetadata?.strategyName && (
+              <Button
+                variant="outline"
+                className="bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full"
+              >
+                {currentMetadata.strategyName}
+              </Button>
+            )}
+            {stats && !Array.isArray(stats) && (
+              <div className="flex gap-2 ml-auto">
+                <Button
+                  onClick={() => {
+                    const convertedStats = isPmsStats(stats) ? convertPmsStatsToStats(stats) : stats;
+                    handleDownloadPDF(convertedStats, currentMetadata?.strategyName || "Portfolio", false, { inceptionDate: metadata?.inceptionDate, dataAsOfDate: metadata?.dataAsOfDate });
+                  }}
+                  disabled={exporting}
+                  className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+                  variant="default"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  PDF
+                </Button>
+                <Button
+                  onClick={() => {
+                    const convertedStats = isPmsStats(stats) ? convertPmsStatsToStats(stats) : stats;
+                    handleDownloadExcel(convertedStats, currentMetadata?.strategyName || "Portfolio", false);
+                  }}
+                  disabled={exporting}
+                  className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+                  variant="default"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Excel
+                </Button>
+              </div>
+            )}
+          </div>
         )}
         {(isSarla || isSatidham || isDinesh) && sarlaData && availableStrategies.length > 0 && (
           <div className="mt-2 text-xs text-card-text-secondary">
@@ -1519,26 +1550,6 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                   const strategyName = metadata?.strategyName || "Portfolio";
                   return (
                     <>
-                      <div className="flex justify-end gap-2 mb-4">
-                        <Button
-                          onClick={() => handleDownloadPDF(convertedStats, strategyName, false, { inceptionDate: metadata?.inceptionDate, dataAsOfDate: metadata?.dataAsOfDate })}
-                          disabled={exporting}
-                          className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
-                          variant="default"
-                        >
-                          <Download className="h-4 w-4 mr-2" />
-                          PDF
-                        </Button>
-                        <Button
-                          onClick={() => handleDownloadExcel(convertedStats, strategyName, false)}
-                          disabled={exporting}
-                          className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
-                          variant="default"
-                        >
-                          <Download className="h-4 w-4 mr-2" />
-                          Excel
-                        </Button>
-                      </div>
                       <StatsCards
                         stats={convertedStats}
                         accountType={accounts.find((acc) => acc.qcode === selectedAccount)?.account_type || "unknown"}
