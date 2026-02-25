@@ -1409,7 +1409,7 @@ h1, h2, h3 { margin: 0; }
 .table-container {
   flex: 1;
 }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; border-radius: 8px; overflow: hidden; }
 th { background-color: #02422B; color: white; padding: 10px 8px; text-align: center; font-weight: 600; font-size: 10px; letter-spacing: 0.5px; }
 td { padding: 8px; text-align: center; border-bottom: 1px solid #eee; font-weight: 400; }
 thead { display: table-header-group; }
