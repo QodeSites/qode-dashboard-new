@@ -255,7 +255,7 @@ export function buildPortfolioReportHTML(
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Lato', sans-serif; background-color: #EFECD3; color: #333; line-height: 1.5; font-size: 12px; }
-    .page { width: 297mm; height: 210mm; padding: 5mm; margin: 0; background-color: #EFECD3; page-break-after: always; display: flex; flex-direction: column; position: relative; }
+    .page { width: 297mm; height: 210mm; padding: 10mm; margin: 0; background-color: #EFECD3; page-break-after: always; display: flex; flex-direction: column; position: relative; }
     .page:last-child { page-break-after: auto; }
     .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 3px solid #02422B; }
     .header-left h1 { font-family: 'Playfair Display', serif; font-size: 24px; font-weight: 700; color: #02422B; margin-bottom: 5px; }
@@ -440,7 +440,7 @@ export function buildPortfolioReportHTML(
   ${
     showFullPages
       ? `
-        <!-- Page 2: P&L (%) -->
+        <!-- Page 2: Chart -->
         <div class="page">
           <div class="header">
             <div class="header-left">
@@ -450,13 +450,33 @@ export function buildPortfolioReportHTML(
             <div class="header-right">
               <div class="date">Inception Date: ${inceptionDisp}</div>
               <div class="date">Data as of: ${dataAsOfDisp}</div>
-              
+
             </div>
           </div>
           <div class="section-header">Portfolio & Benchmark — Performance and Drawdown</div>
           <div class="section no-split">
             <div class="section-content">
               <div id="chart-container" class="chart-container"></div>
+            </div>
+          </div>
+
+          <div class="footer">
+            <div class="disclaimer"></div>
+            <div class="page-number">2 | Qode</div>
+          </div>
+        </div>
+
+        <!-- Page 3: P&L (%) -->
+        <div class="page">
+          <div class="header">
+            <div class="header-left">
+        <h1>${sessionUserName}<h1>
+              <p>${title}</p>
+            </div>
+            <div class="header-right">
+              <div class="date">Inception Date: ${inceptionDisp}</div>
+              <div class="date">Data as of: ${dataAsOfDisp}</div>
+
             </div>
           </div>
           <div class="section-header">Quarterly Profit and Loss (%)</div>
@@ -518,11 +538,11 @@ export function buildPortfolioReportHTML(
 
           <div class="footer">
             <div class="disclaimer"></div>
-            <div class="page-number">2 | Qode</div>
+            <div class="page-number">3 | Qode</div>
           </div>
         </div>
 
-        <!-- Page 3: Cash Flows -->
+        <!-- Page 4: Cash Flows -->
         <div class="page">
           <div class="header">
             <div class="header-left">
@@ -532,7 +552,7 @@ export function buildPortfolioReportHTML(
             <div class="header-right">
               <div class="date">Inception Date: ${inceptionDisp}</div>
               <div class="date">Data as of: ${dataAsOfDisp}</div>
-              
+
             </div>
           </div>
 
@@ -583,7 +603,7 @@ export function buildPortfolioReportHTML(
 
           <div class="footer">
             <div class="disclaimer"></div>
-            <div class="page-number">3 | Qode</div>
+            <div class="page-number">4 | Qode</div>
           </div>
         </div>
       `
@@ -765,7 +785,7 @@ export function buildPortfolioReportHTML(
             Highcharts.chart('chart-container', {
               chart: {
                 zoomType: 'xy',
-                width: 1075,
+                width: 1040,
                 height: 400,
                 spacingLeft: 12,
                 spacingRight: 8,
@@ -883,7 +903,7 @@ export function buildPortfolioReportHTML(
         const originalRows = allRows.map(row => row.cloneNode(true));
         
         // Set starting page number based on portfolio type
-        let nextPageNum = isTotalPortfolio ? 3 : 4; // Next page after cash flows page
+        let nextPageNum = isTotalPortfolio ? 3 : 5; // Next page after cash flows page
         
         function createContinuationPage(refPage, pageNum) {
           const newPage = refPage.cloneNode(true);
@@ -940,7 +960,7 @@ export function buildPortfolioReportHTML(
           rowsAddedToCurrentPage++;
         }
         
-        console.log('Pagination completed. Total rows:', originalRows.length, 'Pages created:', nextPageNum - (isTotalPortfolio ? 3 : 4));
+        console.log('Pagination completed. Total rows:', originalRows.length, 'Pages created:', nextPageNum - (isTotalPortfolio ? 3 : 5));
       }
 
       // Run pagination for tables with many rows, then signal ready
