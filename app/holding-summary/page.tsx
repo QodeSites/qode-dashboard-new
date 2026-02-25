@@ -1471,9 +1471,8 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
           <p>Holdings Summary</p>
         </div>
         <div class="header-right">
-          <div class="date">
-            Generated: ${formatDate(new Date())}${lastUpdatedDate ? ` | Data as of: ${formatDate(lastUpdatedDate)}` : ''}
-          </div>
+          <div class="date">Generated: ${formatDate(new Date())}</div>
+          ${lastUpdatedDate ? `<div class="date">Data as of: ${formatDate(lastUpdatedDate)}</div>` : ''}
         </div>
       </div>
     `;
