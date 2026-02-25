@@ -255,7 +255,7 @@ export function buildPortfolioReportHTML(
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Lato', sans-serif; background-color: #EFECD3; color: #333; line-height: 1.5; font-size: 12px; }
-    .page { width: 210mm; height: 297mm; padding: 5mm; margin: 0; background-color: #EFECD3; page-break-after: always; display: flex; flex-direction: column; position: relative; }
+    .page { width: 297mm; height: 210mm; padding: 5mm; margin: 0; background-color: #EFECD3; page-break-after: always; display: flex; flex-direction: column; position: relative; }
     .page:last-child { page-break-after: auto; }
     .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 3px solid #02422B; }
     .header-left h1 { font-family: 'Playfair Display', serif; font-size: 24px; font-weight: 700; color: #02422B; margin-bottom: 5px; }
@@ -303,7 +303,7 @@ export function buildPortfolioReportHTML(
     .cashflow-section {
       /* allow this section to split across pages when needed */
     }
-    @page { size: A4 portrait; margin: 0; }
+    @page { size: A4 landscape; margin: 0; }
     @media print {
       body, .page, .stat-card, .section, .header, th, .section-header, .header-right .status, .chart-container {
         -webkit-print-color-adjust: exact; print-color-adjust: exact;
@@ -765,7 +765,7 @@ export function buildPortfolioReportHTML(
             Highcharts.chart('chart-container', {
               chart: {
                 zoomType: 'xy',
-                width: 745,
+                width: 1075,
                 height: 400,
                 spacingLeft: 12,
                 spacingRight: 8,
