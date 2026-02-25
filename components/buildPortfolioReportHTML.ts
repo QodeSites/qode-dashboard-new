@@ -759,7 +759,7 @@ export function buildPortfolioReportHTML(
           const sorted = combined.slice().sort((a,b)=>a[0]-b[0]);
           return sorted[sorted.length - 1][0] - sorted[0][0];
         })();
-        const tickInterval = dateRange > 0 ? Math.max(7*24*60*60*1000, Math.ceil(dateRange / 20)) : undefined;
+        const tickInterval = dateRange > 0 ? Math.max(7*24*60*60*1000, Math.ceil(dateRange / 10)) : undefined;
         waitForFonts().then(() => {
           try {
             Highcharts.chart('chart-container', {
@@ -792,7 +792,7 @@ export function buildPortfolioReportHTML(
               xAxis: {
                 type: 'datetime',
                 title: { text: 'Date', style: { color: '#2E8B57', fontSize: '12px', fontFamily: 'Lato, sans-serif' } },
-                labels: { format: '{value:%d-%m-%Y}', style: { color: '#2E8B57', fontSize: '12px', fontFamily: 'Lato, sans-serif' } },
+                labels: { format: '{value:%d-%m-%Y}', rotation: -45, align: 'right', style: { color: '#2E8B57', fontSize: '10px', fontFamily: 'Lato, sans-serif' } },
                 tickInterval,
                 gridLineColor: '#e6e6e6',
                 tickWidth: 1,
