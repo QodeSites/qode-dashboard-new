@@ -993,6 +993,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         isTotalPortfolio,
         isActive: metadata?.isActive ?? true,
         sessionUserName: session?.user?.name || "User",
+        dataAsOfDate: metadata?.dataAsOfDate,
         accountInfo,
         metrics: {
           amountDeposited: parseFloat(convertedStats.amountDeposited) || 0,

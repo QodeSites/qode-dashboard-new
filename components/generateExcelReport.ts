@@ -41,6 +41,7 @@ interface ExcelReportInput {
   isTotalPortfolio: boolean;
   isActive: boolean;
   sessionUserName: string;
+  dataAsOfDate?: string | null;
   accountInfo?: {
     accountName: string;
     accountType: string;
@@ -81,6 +82,7 @@ export function generateExcelReport(input: ExcelReportInput): void {
     isTotalPortfolio,
     isActive,
     sessionUserName,
+    dataAsOfDate,
     accountInfo,
     metrics,
     combinedTrailing,
@@ -108,6 +110,21 @@ export function generateExcelReport(input: ExcelReportInput): void {
     // ========================================================================
     headerRows.push(wsData.length);
     wsData.push(["", "Portfolio Statistics"]);
+
+    // Generated date and Data as of date
+    const now = new Date();
+    const formatDate = (d: Date | string | null): string => {
+      if (!d) return "N/A";
+      const dateObj = typeof d === "string" ? new Date(d) : d;
+      if (isNaN(dateObj.getTime())) return "N/A";
+      const day = String(dateObj.getDate()).padStart(2, "0");
+      const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+      const year = dateObj.getFullYear();
+      return `${day}/${month}/${year}`;
+    };
+    wsData.push(["", "Generated on:", formatDate(now)]);
+    wsData.push(["", "Data as of:", formatDate(dataAsOfDate ?? null)]);
+
     wsData.push(["", "Account Name", accountInfo?.accountName || sessionUserName || strategyName]);
     wsData.push(["", "Account Type", accountInfo?.accountType?.toUpperCase() || "MANAGED_ACCOUNT"]);
     wsData.push(["", "Broker", accountInfo?.broker?.toUpperCase() || "N/A"]);
