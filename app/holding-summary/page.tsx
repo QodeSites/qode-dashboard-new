@@ -1694,16 +1694,16 @@ ${commonStyles}
   <script>
     function paginateLongTable(tableId, sectionTitle, basePageNum) {
         var table = document.getElementById(tableId);
-        if (!table) return;
+        if (!table) return basePageNum;
 
         var currentPage = table.closest('.page');
-        if (!currentPage) return;
+        if (!currentPage) return basePageNum;
 
         var tbody = table.querySelector('tbody');
-        if (!tbody) return;
+        if (!tbody) return basePageNum;
 
         var allRows = Array.from(tbody.querySelectorAll('tr'));
-        if (allRows.length <= 6) return;
+        if (allRows.length <= 6) return basePageNum;
 
         var totalRow = allRows.find(function(row) { return row.classList.contains('total-row'); });
         var dataRows = allRows.filter(function(row) { return !row.classList.contains('total-row'); });
@@ -1771,15 +1771,26 @@ ${commonStyles}
             remainingRows = remainingRows.slice(rowsPerPage);
             pageNum++;
         }
+
+        return pageNum - 1;
     }
 
     function runPagination() {
+        var lastStockPage = 2;
         if (${stocks.length} > 6) {
-            paginateLongTable('stocks-table', 'Stock Holdings', 2);
+            lastStockPage = paginateLongTable('stocks-table', 'Stock Holdings', 2);
         }
-        if (${mutualFunds.length} > 6) {
-            var mfBasePageNum = ${stocks.length} > 0 ? 3 : 2;
-            paginateLongTable('mf-table', 'Mutual Fund Holdings', mfBasePageNum);
+
+        var mfPage = document.getElementById('mf-page');
+        if (mfPage) {
+            var mfPageNum = lastStockPage + 1;
+            var mfFooter = mfPage.querySelector('.footer .page-number');
+            if (mfFooter) {
+                mfFooter.textContent = 'Page ' + mfPageNum + ' | Qode';
+            }
+            if (${mutualFunds.length} > 6) {
+                paginateLongTable('mf-table', 'Mutual Fund Holdings', mfPageNum);
+            }
         }
     }
 
