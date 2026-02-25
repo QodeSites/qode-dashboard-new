@@ -250,24 +250,46 @@ export function buildPortfolioReportHTML(
 <head>
   <meta charset="UTF-8">
   <title>Portfolio Report - ${title}</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"><link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Lato:wght@300;400;500;600&family=Inria+Serif:wght@300;400;700&display=swap" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://code.highcharts.com/highcharts.js"></script>
   <style>
+    @font-face {
+      font-family: 'Plus Jakarta Sans';
+      font-style: normal;
+      font-weight: 200 800;
+      font-display: swap;
+      src: url(/fonts/plus-jakarta-sans-latin.woff2) format('woff2');
+    }
+    @font-face {
+      font-family: 'Playfair Display';
+      font-style: normal;
+      font-weight: 400 900;
+      font-display: swap;
+      src: url(/fonts/playfair-display-latin.woff2) format('woff2');
+    }
+    @font-face {
+      font-family: 'Inria Serif';
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url(/fonts/inria-serif-latin.woff2) format('woff2');
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Lato', sans-serif; background-color: #EFECD3; color: #333; line-height: 1.5; font-size: 12px; }
-    .page { width: 297mm; height: 210mm; padding: 10mm; margin: 0; background-color: #EFECD3; page-break-after: always; display: flex; flex-direction: column; position: relative; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+    body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #EFECD3; color: #333; line-height: 1.5; font-size: 12px; }
+    .page { width: 297mm; height: 210mm; padding: 5mm; margin: 0; background-color: #EFECD3; page-break-after: always; display: flex; flex-direction: column; position: relative; min-height: 180mm; max-height: 200mm; overflow: hidden; }
     .page:last-child { page-break-after: auto; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 3px solid #02422B; }
-    .header-left h1 { font-family: 'Playfair Display', serif; font-size: 24px; font-weight: 700; color: #02422B; margin-bottom: 5px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6mm; padding-bottom: 3mm; border-bottom: 3px solid #2F5233; background: transparent !important; flex-shrink: 0; }
+    .header-left h1 { font-family: 'Playfair Display', Georgia, serif; font-size: 28px; font-weight: 700; color: #2F5233; margin-bottom: 6px; }
     .header-left p { font-size: 14px; color: #666; font-weight: 400; }
     .header-right { text-align: right; }
-    .header-right .date { font-size: 11px; color: #666; margin-bottom: 5px; }
+    .header-right .date { font-size: 12px; color: #666; margin-bottom: 8px; }
     .header-right .status { background-color: #02422B; color: #DABD38; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
-    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
-    .stat-card { background: #EFECD3; border-radius: 8px; padding: 20px; border-left: 4px solid #DABD38; }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .stat-card { background: #EFECD3; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 4px solid #DABD38; }
     .stat-card h3 { font-size: 11px; color: #666; margin-bottom: 8px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
-    .stat-card .value { font-family: 'Inria Serif', 'Lato', sans-serif; font-size: 18px; font-weight: 500; color: #02422B; }
-    .section { background: #EFECD3; border-radius: 8px; margin-bottom: 20px; }
+    .stat-card .value { font-family: 'Inria Serif'; font-size: 18px; font-weight: 500; color: #02422B; }
+    .section { background: #EFECD3; border-radius: 8px; margin-bottom: 6mm; }
     .section table { border-radius: 8px; overflow: hidden; }
     /* NOTE: default page-break-inside avoided for short sections, but we provide a utility to allow splitting */
     .section.no-split { page-break-inside: avoid; -webkit-column-break-inside: avoid; break-inside: avoid; }
@@ -291,7 +313,6 @@ export function buildPortfolioReportHTML(
     .trailing-returns-table td:first-child { text-align: left; font-weight: 500; }
     .note { font-size: 10px; color: #666; margin-top: 10px; font-style: italic; padding: 0 8px 8px; }
     .footer { margin-top: auto; padding-top: 15px; border-top: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #666; }
-    .disclaimer { font-size: 9px; color: #999; line-height: 1.4; max-width: 75%; }
     .page-number { font-family: 'Playfair Display', serif; font-size: 12px; color: #02422B; font-weight: 600; }
     .chart-container { width: 100%; height: 400px; margin-bottom: 20px; margin-top: 20px;}
     .right-align {
@@ -303,11 +324,8 @@ export function buildPortfolioReportHTML(
     .cashflow-section {
       /* allow this section to split across pages when needed */
     }
-    @page { size: A4 landscape; margin: 0; }
+    @page { size: A4 landscape; margin: 0mm; padding: 5mm; }
     @media print {
-      body, .page, .stat-card, .section, .header, th, .section-header, .header-right .status, .chart-container {
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
-      }
       /* allow content splitting for long flows */
       .section.allow-break { page-break-inside: auto; -webkit-column-break-inside: auto; break-inside: auto; }
     }
@@ -432,8 +450,7 @@ export function buildPortfolioReportHTML(
     }
 
     <div class="footer">
-        <div class="disclaimer"></div>
-        <div class="page-number">1 | Qode</div>
+        <div class="page-number">Page 1 | Qode</div>
     </div>
   </div>
 
@@ -461,8 +478,7 @@ export function buildPortfolioReportHTML(
           </div>
 
           <div class="footer">
-            <div class="disclaimer"></div>
-            <div class="page-number">2 | Qode</div>
+            <div class="page-number">Page 2 | Qode</div>
           </div>
         </div>
 
@@ -537,8 +553,7 @@ export function buildPortfolioReportHTML(
           </div>
 
           <div class="footer">
-            <div class="disclaimer"></div>
-            <div class="page-number">3 | Qode</div>
+            <div class="page-number">Page 3 | Qode</div>
           </div>
         </div>
 
@@ -602,8 +617,7 @@ export function buildPortfolioReportHTML(
           </div>
 
           <div class="footer">
-            <div class="disclaimer"></div>
-            <div class="page-number">4 | Qode</div>
+            <div class="page-number">Page 4 | Qode</div>
           </div>
         </div>
       `
@@ -667,8 +681,7 @@ export function buildPortfolioReportHTML(
           </div>
 
           <div class="footer">
-            <div class="disclaimer"></div>
-            <div class="page-number">2 | Qode</div>
+            <div class="page-number">Page 2 | Qode</div>
           </div>
         </div>
       `
@@ -785,7 +798,7 @@ export function buildPortfolioReportHTML(
             Highcharts.chart('chart-container', {
               chart: {
                 zoomType: 'xy',
-                width: 1040,
+                width: 1075,
                 height: 400,
                 spacingLeft: 12,
                 spacingRight: 8,
@@ -911,7 +924,7 @@ export function buildPortfolioReportHTML(
           // Update page number in footer
           const footerPageNum = newPage.querySelector('.footer .page-number');
           if (footerPageNum) {
-            footerPageNum.textContent = pageNum + ' | Qode';
+            footerPageNum.textContent = 'Page ' + pageNum + ' | Qode';
           }
           
           // Update section header to show continuation
