@@ -38,7 +38,7 @@ const HomePage = () => {
           content="Qode blogs, investment strategies, wealth management, market analysis, data-driven investing"
         />
         <meta name="author" content="Qode" />
-        <link rel="canonical" href="https://www.qodeinvest.com/blogs" />
+        <link rel="canonical" href="https://www.qodeinvest.com/insights" />
       </Head>
       <DashboardLayout>
         <div className="sm:p-2 space-y-6">
@@ -98,7 +98,7 @@ const HomePage = () => {
                   <Card
                     key={post.id}
                     className="bg-white/50 backdrop-blur-sm card-shadow border-0 cursor-pointer"
-                    onClick={() => (window.location.href = `https://www.qodeinvest.com/blogs/${post.slug}`)}
+                    onClick={() => (window.location.href = `https://www.qodeinvest.com/insights/${post.slug}`)}
                   >
                     <CardContent className="p-4">
                       <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">{publishedDate}</p>
