@@ -104,6 +104,12 @@ const formatCashAmountWith = (fmt: (x: number) => string) => (v: unknown) => {
   return n === null ? "-" : fmt(n);
 };
 
+const formatCashAmountNoSymbol = (v: unknown) => {
+  const n = num(v);
+  if (n === null) return "-";
+  return n === 0 ? "-" : new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+};
+
 const monthOrderFull = [
   "January","February","March","April","May","June",
   "July","August","September","October","November","December"
@@ -579,27 +585,27 @@ export function buildPortfolioReportHTML(
                 recentCashFlows.length
                   ? `
                     <table class="cash-flows-table" id="cash-flows-table">
-                      <thead><tr><th class="left-align">Date</th><th class="right-align">Amount</th></tr></thead>
+                      <thead><tr><th class="left-align">Date</th><th class="right-align">Amount (₹)</th></tr></thead>
                       <tbody>
                         ${recentCashFlows.map(flow => `
                           <tr>
                             <td class="left-align">${flow.date}</td>
                             <td class="${flow.amount > 0 ? 'cash-flow-positive' : 'cash-flow-negative'} right-align">
-                              ${flow.amount > 0 ? '+' : ''}${formatCashAmount(flow.amount)}
+                              ${formatCashAmountNoSymbol(Math.abs(flow.amount))}
                             </td>
                           </tr>`).join("")}
                         <tr class="summary-row">
                           <td style="font-weight:600;" class="left-align">Total Cash In</td>
-                          <td class="cash-flow-positive right-align">+${formatCashAmount(cashFlowTotals.totalIn)}</td>
+                          <td class="cash-flow-positive right-align">${formatCashAmountNoSymbol(Math.abs(cashFlowTotals.totalIn))}</td>
                         </tr>
                         <tr class="summary-row">
                           <td style="font-weight:600;" class="left-align">Total Cash Out</td>
-                          <td class="cash-flow-negative right-align">${formatCashAmount(cashFlowTotals.totalOut)}</td>
+                          <td class="cash-flow-negative right-align">${formatCashAmountNoSymbol(Math.abs(cashFlowTotals.totalOut))}</td>
                         </tr>
                         <tr class="summary-row">
                           <td style="font-weight:600;" class="left-align">Net Cash Flow</td>
                           <td class="${cashFlowTotals.netFlow >= 0 ? 'cash-flow-positive' : 'cash-flow-negative'} right-align">
-                            ${cashFlowTotals.netFlow >= 0 ? '+' : ''}${formatCashAmount(cashFlowTotals.netFlow)}
+                            ${formatCashAmountNoSymbol(Math.abs(cashFlowTotals.netFlow))}
                           </td>
                         </tr>
                       </tbody>
@@ -643,27 +649,27 @@ export function buildPortfolioReportHTML(
                 recentCashFlows.length
                   ? `
                     <table class="cash-flows-table" id="cash-flows-table">
-                      <thead><tr><th class="left-align">Date</th><th class="right-align">Amount</th></tr></thead>
+                      <thead><tr><th class="left-align">Date</th><th class="right-align">Amount (₹)</th></tr></thead>
                       <tbody>
                         ${recentCashFlows.map(flow => `
                           <tr>
                             <td class="left-align">${flow.date}</td>
                             <td class="right-align ${flow.amount > 0 ? 'cash-flow-positive' : 'cash-flow-negative'}">
-                              ${flow.amount > 0 ? '+' : ''}${formatCashAmount(flow.amount)}
+                              ${formatCashAmountNoSymbol(Math.abs(flow.amount))}
                             </td>
                           </tr>`).join("")}
                         <tr class="summary-row">
                           <td style="font-weight:600;" class="left-align">Total Cash In</td>
-                          <td class="cash-flow-positive right-align">+${formatCashAmount(cashFlowTotals.totalIn)}</td>
+                          <td class="cash-flow-positive right-align">${formatCashAmountNoSymbol(Math.abs(cashFlowTotals.totalIn))}</td>
                         </tr>
                         <tr class="summary-row">
                           <td style="font-weight:600;" class="left-align">Total Cash Out</td>
-                          <td class="cash-flow-negative right-align">${formatCashAmount(cashFlowTotals.totalOut)}</td>
+                          <td class="cash-flow-negative right-align">${formatCashAmountNoSymbol(Math.abs(cashFlowTotals.totalOut))}</td>
                         </tr>
                         <tr class="summary-row">
                           <td style="font-weight:600;" class="left-align">Net Cash Flow</td>
                           <td class="${cashFlowTotals.netFlow >= 0 ? 'cash-flow-positive' : 'cash-flow-negative'} right-align">
-                            ${cashFlowTotals.netFlow >= 0 ? '+' : ''}${formatCashAmount(cashFlowTotals.netFlow)}
+                            ${formatCashAmountNoSymbol(Math.abs(cashFlowTotals.netFlow))}
                           </td>
                         </tr>
                       </tbody>
