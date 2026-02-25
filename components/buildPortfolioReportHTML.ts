@@ -401,12 +401,6 @@ export function buildPortfolioReportHTML(
         </div>
 
 
-        <div class="section-header">Portfolio & Benchmark — Performance and Drawdown</div>
-        <div class="section no-split">
-          <div class="section-content">
-            <div id="chart-container" class="chart-container"></div>
-          </div>
-        </div>
         `
         : `
         <div class="section-header">Quarterly Profit and Loss (₹)</div>
@@ -457,6 +451,12 @@ export function buildPortfolioReportHTML(
               <div class="date">Inception Date: ${inceptionDisp}</div>
               <div class="date">Data as of: ${dataAsOfDisp}</div>
               
+            </div>
+          </div>
+          <div class="section-header">Portfolio & Benchmark — Performance and Drawdown</div>
+          <div class="section no-split">
+            <div class="section-content">
+              <div id="chart-container" class="chart-container"></div>
             </div>
           </div>
           <div class="section-header">Quarterly Profit and Loss (%)</div>
