@@ -897,10 +897,12 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
       const iframe = document.createElement('iframe');
       iframe.id = 'portfolio-print-frame';
       iframe.style.position = 'fixed';
-      iframe.style.width = '0';
-      iframe.style.height = '0';
+      iframe.style.width = '210mm';
+      iframe.style.height = '297mm';
       iframe.style.border = 'none';
       iframe.style.left = '-9999px';
+      iframe.style.top = '-9999px';
+      iframe.style.overflow = 'hidden';
       document.body.appendChild(iframe);
 
       const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;

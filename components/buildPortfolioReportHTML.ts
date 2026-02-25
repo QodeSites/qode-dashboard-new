@@ -264,10 +264,10 @@ export function buildPortfolioReportHTML(
     .header-right .date { font-size: 11px; color: #666; margin-bottom: 5px; }
     .header-right .status { background-color: #02422B; color: #DABD38; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
     .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
-    .stat-card { background: #EFECD3; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 4px solid #DABD38; }
+    .stat-card { background: #EFECD3; border-radius: 8px; padding: 20px; border-left: 4px solid #DABD38; }
     .stat-card h3 { font-size: 11px; color: #666; margin-bottom: 8px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
     .stat-card .value { font-family: 'Inria Serif', 'Lato', sans-serif; font-size: 18px; font-weight: 500; color: #02422B; }
-    .section { background: #EFECD3; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .section { background: #EFECD3; border-radius: 8px; margin-bottom: 20px; }
     .section table { border-radius: 8px; overflow: hidden; }
     /* NOTE: default page-break-inside avoided for short sections, but we provide a utility to allow splitting */
     .section.no-split { page-break-inside: avoid; -webkit-column-break-inside: avoid; break-inside: avoid; }
@@ -765,6 +765,7 @@ export function buildPortfolioReportHTML(
             Highcharts.chart('chart-container', {
               chart: {
                 zoomType: 'xy',
+                width: 745,
                 height: 400,
                 spacingLeft: 12,
                 spacingRight: 8,
