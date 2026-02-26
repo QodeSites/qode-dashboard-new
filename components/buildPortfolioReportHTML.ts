@@ -440,11 +440,11 @@ export function buildPortfolioReportHTML(
                     ? quarterlyDataCash.map(row => `
                       <tr>
                         <td style="font-weight:600;">${row.year}</td>
-                        <td class="${getPnlColorClass(row.q1)}">${formatCashAmount(row.q1)}</td>
-                        <td class="${getPnlColorClass(row.q2)}">${formatCashAmount(row.q2)}</td>
-                        <td class="${getPnlColorClass(row.q3)}">${formatCashAmount(row.q3)}</td>
-                        <td class="${getPnlColorClass(row.q4)}">${formatCashAmount(row.q4)}</td>
-                        <td class="${getPnlColorClass(row.total)}" style="font-weight:600;">${formatCashAmount(row.total)}</td>
+                        <td class="${getPnlColorClass(row.q1)}">${formatCashAmountNoSymbol(row.q1)}</td>
+                        <td class="${getPnlColorClass(row.q2)}">${formatCashAmountNoSymbol(row.q2)}</td>
+                        <td class="${getPnlColorClass(row.q3)}">${formatCashAmountNoSymbol(row.q3)}</td>
+                        <td class="${getPnlColorClass(row.q4)}">${formatCashAmountNoSymbol(row.q4)}</td>
+                        <td class="${getPnlColorClass(row.total)}" style="font-weight:600;">${formatCashAmountNoSymbol(row.total)}</td>
                       </tr>`).join("")
                     : `<tr><td colspan="6" style="text-align:center;">No data available</td></tr>`
                 }
