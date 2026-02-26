@@ -417,8 +417,8 @@ export function buildPortfolioReportHTML(
             <table>
               <thead><tr><th class="left-align">Metric</th><th class="right-align">Current Drawdown</th><th class="right-align">Maximum Drawdown</th></tr></thead>
               <tbody>
-                <tr><td style="font-weight:600;" class="left-align">SCHEME (%)</td><td class="negative right-align">${pctStr(trailingReturnsData.currentDD)}</td><td class="negative right-align">${pctStr(trailingReturnsData.MDD)}</td></tr>
-                <tr><td style="font-weight:600;" class="left-align">BENCHMARK (%)</td><td class="negative right-align">${pctStr(trailingReturnsBenchmark.currentDD)}</td><td class="negative right-align">${pctStr(trailingReturnsBenchmark.MDD)}</td></tr>
+                <tr><td style="font-weight:600;" class="left-align">Scheme (%)</td><td class="negative right-align">${pctStr(trailingReturnsData.currentDD)}</td><td class="negative right-align">${pctStr(trailingReturnsData.MDD)}</td></tr>
+                <tr><td style="font-weight:600;" class="left-align">Benchmark (%)</td><td class="negative right-align">${pctStr(trailingReturnsBenchmark.currentDD)}</td><td class="negative right-align">${pctStr(trailingReturnsBenchmark.MDD)}</td></tr>
               </tbody>
             </table>
           </div>
