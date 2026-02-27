@@ -257,7 +257,7 @@ export function buildPortfolioReportHTML(
   <meta charset="UTF-8">
   <title>Portfolio Report - ${title}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://code.highcharts.com/highcharts.js"></script>
+  <script src="/highcharts.js"></script>
   <style>
     @font-face {
       font-family: 'Plus Jakarta Sans';
