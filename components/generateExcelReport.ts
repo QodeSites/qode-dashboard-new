@@ -126,7 +126,6 @@ export function generateExcelReport(input: ExcelReportInput): void {
     wsData.push(["", "Data as of:", formatDate(dataAsOfDate ?? null)]);
 
     wsData.push(["", "Account Name", accountInfo?.accountName || sessionUserName || strategyName]);
-    wsData.push(["", "Account Type", accountInfo?.accountType?.toUpperCase() || "MANAGED_ACCOUNT"]);
     wsData.push(["", "Broker", accountInfo?.broker?.toUpperCase() || "N/A"]);
     wsData.push(["", "Strategy", strategyName]);
     wsData.push(["", "Status", isActive ? "Active" : "Inactive"]);
