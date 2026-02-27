@@ -69,7 +69,7 @@ interface PortfolioConfig {
   isActive: boolean;
 }
 
-// Dropdown order: Total Portfolio → Scheme QYE → Scheme QAW
+// Dropdown order: Total Portfolio → Scheme QYE++ → Scheme QAW++
 const PORTFOLIO_MAPPING: Record<string, Record<string, PortfolioConfig>> = {
   AC10: {
     "Total Portfolio": {
@@ -78,13 +78,13 @@ const PORTFOLIO_MAPPING: Record<string, Record<string, PortfolioConfig>> = {
       nav: "Total Portfolio Value",
       isActive: true,
     },
-    "Scheme QYE": {
+    "Scheme QYE++": {
       current: "Total Portfolio Value",
       metrics: "Total Portfolio Value",
       nav: "Total Portfolio Value",
       isActive: true,
     },
-    "Scheme QAW": {
+    "Scheme QAW++": {
       current: "QAW Zerodha Total Portfolio",
       metrics: "QAW Zerodha Total Portfolio",
       nav: "QAW Zerodha Total Portfolio",
@@ -95,14 +95,14 @@ const PORTFOLIO_MAPPING: Record<string, Record<string, PortfolioConfig>> = {
 
 export class PortfolioApi {
   private static readonly MANGESH_SYSTEM_TAGS: Record<string, string> = {
-    "Scheme QAW": "QAW Zerodha Total Portfolio",
-    "Scheme QYE": "Total Portfolio Value",
+    "Scheme QAW++": "QAW Zerodha Total Portfolio",
+    "Scheme QYE++": "Total Portfolio Value",
   };
 
   // Deposit/cash flow queries use a different system tag for QYE
   private static readonly MANGESH_DEPOSIT_TAGS: Record<string, string> = {
-    "Scheme QAW": "QAW Zerodha Total Portfolio",
-    "Scheme QYE": "Zerodha Total Portfolio",
+    "Scheme QAW++": "QAW Zerodha Total Portfolio",
+    "Scheme QYE++": "Zerodha Total Portfolio",
   };
 
   // QAW final NAV (for reference)
@@ -111,17 +111,17 @@ export class PortfolioApi {
   private static readonly QYE_START_DATE = new Date("2025-12-09");
 
   private static MANGESH_HARDCODED_DATA: Record<string, PortfolioData & { metadata: Metadata }> = {
-    "Scheme QAW": {
+    "Scheme QAW++": {
       data: {
         amountDeposited: "0.00",
         currentExposure: "0.00",
         return: "5.12",
         totalProfit: "1757504.85",
         trailingReturns: {
-          "5d": 0.34,
-          "10d": 2.09,
-          "15d": 1.16,
-          "1m": 1.98,
+          "5d": 1.01,
+          "10d": 1.53,
+          "15d": 1.05,
+          "1m": 2.37,
           "3m": null,
           "6m": null,
           "1y": null,
@@ -264,16 +264,16 @@ export class PortfolioApi {
           { date: "2025-12-09", amount: -40526354.22, dividend: 0 },
           { date: "2026-01-09", amount: -11232020.62, dividend: 0 },
         ],
-        strategyName: "Scheme QAW",
+        strategyName: "Scheme QAW++",
       },
       metadata: {
-        icode: "Scheme QAW",
+        icode: "Scheme QAW++",
         accountCount: 1,
         lastUpdated: "2026-01-09T00:00:00.000Z",
         filtersApplied: { accountType: null, broker: null, startDate: null, endDate: null },
         inceptionDate: "2025-11-23",
         dataAsOfDate: "2026-01-09",
-        strategyName: "Scheme QAW",
+        strategyName: "Scheme QAW++",
         isActive: false,
       },
     },
@@ -305,7 +305,7 @@ export class PortfolioApi {
 
   private static async getAmountDeposited(qcode: string, scheme: string): Promise<number> {
     // QAW is hardcoded and closed (net 0 for display)
-    if (scheme === "Scheme QAW") {
+    if (scheme === "Scheme QAW++") {
       return 0;
     }
 
@@ -334,8 +334,8 @@ export class PortfolioApi {
     scheme: string
   ): Promise<{ portfolioValue: number; drawdown: number; nav: number; date: Date } | null> {
     // QAW is closed
-    if (scheme === "Scheme QAW") {
-      const hc = this.MANGESH_HARDCODED_DATA["Scheme QAW"];
+    if (scheme === "Scheme QAW++") {
+      const hc = this.MANGESH_HARDCODED_DATA["Scheme QAW++"];
       return {
         portfolioValue: 0,
         drawdown: parseFloat(hc.data.drawdown),
@@ -346,7 +346,7 @@ export class PortfolioApi {
 
     // Total Portfolio: Use QYE current exposure
     if (scheme === "Total Portfolio") {
-      return this.getLatestExposure(qcode, "Scheme QYE");
+      return this.getLatestExposure(qcode, "Scheme QYE++");
     }
 
     // QYE: Fetch from database using deposit-specific tag (only from QYE start date onwards)
@@ -375,8 +375,8 @@ export class PortfolioApi {
     scheme: string
   ): Promise<{ date: Date; nav: number; prevNav: number | null; drawdown: number; pnl: number; capitalInOut: number }[]> {
     // QAW: Return hardcoded data
-    if (scheme === "Scheme QAW") {
-      const hc = this.MANGESH_HARDCODED_DATA["Scheme QAW"];
+    if (scheme === "Scheme QAW++") {
+      const hc = this.MANGESH_HARDCODED_DATA["Scheme QAW++"];
       return hc.data.equityCurve.map((entry) => {
         const drawdownEntry = hc.data.drawdownCurve.find((d) => d.date === entry.date);
         return {
@@ -392,8 +392,8 @@ export class PortfolioApi {
 
     // Total Portfolio: Combine QAW + QYE with NAV rebasing
     if (scheme === "Total Portfolio") {
-      const qawData = await this.getHistoricalData(qcode, "Scheme QAW");
-      const qyeData = await this.getHistoricalData(qcode, "Scheme QYE");
+      const qawData = await this.getHistoricalData(qcode, "Scheme QAW++");
+      const qyeData = await this.getHistoricalData(qcode, "Scheme QYE++");
 
       // Rebase QYE NAV to continue from QAW's final NAV
       const rebaseMultiplier = this.QAW_FINAL_NAV / 100;
@@ -434,14 +434,14 @@ export class PortfolioApi {
 
   private static async getCashFlows(qcode: string, scheme: string): Promise<CashFlow[]> {
     // QAW: Return hardcoded cash flows
-    if (scheme === "Scheme QAW") {
-      return this.MANGESH_HARDCODED_DATA["Scheme QAW"].data.cashFlows;
+    if (scheme === "Scheme QAW++") {
+      return this.MANGESH_HARDCODED_DATA["Scheme QAW++"].data.cashFlows;
     }
 
     // Total Portfolio: Combine QAW + QYE cash flows
     if (scheme === "Total Portfolio") {
-      const qawCashFlows = await this.getCashFlows(qcode, "Scheme QAW");
-      const qyeCashFlows = await this.getCashFlows(qcode, "Scheme QYE");
+      const qawCashFlows = await this.getCashFlows(qcode, "Scheme QAW++");
+      const qyeCashFlows = await this.getCashFlows(qcode, "Scheme QYE++");
       return [...qawCashFlows, ...qyeCashFlows].sort((a, b) => a.date.localeCompare(b.date));
     }
 
@@ -470,14 +470,14 @@ export class PortfolioApi {
 
   private static async getTotalProfit(qcode: string, scheme: string): Promise<number> {
     // QAW: Return hardcoded profit
-    if (scheme === "Scheme QAW") {
-      return parseFloat(this.MANGESH_HARDCODED_DATA["Scheme QAW"].data.totalProfit);
+    if (scheme === "Scheme QAW++") {
+      return parseFloat(this.MANGESH_HARDCODED_DATA["Scheme QAW++"].data.totalProfit);
     }
 
     // Total Portfolio: Combine QAW + QYE profits
     if (scheme === "Total Portfolio") {
-      const qawProfit = await this.getTotalProfit(qcode, "Scheme QAW");
-      const qyeProfit = await this.getTotalProfit(qcode, "Scheme QYE");
+      const qawProfit = await this.getTotalProfit(qcode, "Scheme QAW++");
+      const qyeProfit = await this.getTotalProfit(qcode, "Scheme QYE++");
       return qawProfit + qyeProfit;
     }
 
@@ -523,8 +523,8 @@ export class PortfolioApi {
 
   private static async calculatePortfolioReturns(qcode: string, scheme: string): Promise<number> {
     // QAW: Return hardcoded returns
-    if (scheme === "Scheme QAW") {
-      return parseFloat(this.MANGESH_HARDCODED_DATA["Scheme QAW"].data.return);
+    if (scheme === "Scheme QAW++") {
+      return parseFloat(this.MANGESH_HARDCODED_DATA["Scheme QAW++"].data.return);
     }
 
     const historicalData = await this.getHistoricalData(qcode, scheme);
@@ -536,9 +536,9 @@ export class PortfolioApi {
       (historicalData[historicalData.length - 1].date.getTime() - historicalData[0].date.getTime()) /
       (1000 * 60 * 60 * 24);
 
-    // For Scheme QYE, use prevNav as baseline (matching Dinesh's approach)
+    // For Scheme QYE++, use prevNav as baseline (matching Dinesh's approach)
     // Falls back to 100 if prevNav is not available
-    const firstNav = scheme === "Scheme QYE"
+    const firstNav = scheme === "Scheme QYE++"
       ? (historicalData[0].prevNav ?? 100)
       : originalFirstNav;
 
@@ -556,8 +556,8 @@ export class PortfolioApi {
     drawdownMetrics: { mdd: number; currentDD: number }
   ): Promise<Record<string, number | null | string>> {
     // QAW: Return hardcoded trailing returns
-    if (scheme === "Scheme QAW") {
-      return this.MANGESH_HARDCODED_DATA["Scheme QAW"].data.trailingReturns;
+    if (scheme === "Scheme QAW++") {
+      return this.MANGESH_HARDCODED_DATA["Scheme QAW++"].data.trailingReturns;
     }
 
     const historicalData = await this.getHistoricalData(qcode, scheme);
@@ -628,9 +628,9 @@ export class PortfolioApi {
     for (const [period, targetCount] of Object.entries(periods)) {
       if (period === "sinceInception") {
         const originalFirstNav = normalizedData[0]?.nav;
-        // For Scheme QYE, use prevNav as baseline (matching Dinesh's approach)
+        // For Scheme QYE++, use prevNav as baseline (matching Dinesh's approach)
         // Falls back to 100 if prevNav is not available
-        const firstNav = scheme === "Scheme QYE"
+        const firstNav = scheme === "Scheme QYE++"
           ? (historicalData[0]?.prevNav ?? 100)
           : originalFirstNav;
         returns[period] = firstNav ? ((lastNav / firstNav) - 1) * 100 : null;
@@ -699,8 +699,8 @@ export class PortfolioApi {
 
   private static async calculateMonthlyPnL(qcode: string, scheme: string): Promise<MonthlyPnL> {
     // QAW: Return hardcoded monthly PnL
-    if (scheme === "Scheme QAW") {
-      return this.MANGESH_HARDCODED_DATA["Scheme QAW"].data.monthlyPnl;
+    if (scheme === "Scheme QAW++") {
+      return this.MANGESH_HARDCODED_DATA["Scheme QAW++"].data.monthlyPnl;
     }
 
     // Total Portfolio: Use unified rebased NAV series for percentages,
@@ -711,8 +711,8 @@ export class PortfolioApi {
       const navBasedResult = this.computeMonthlyPnLFromHistoricalData(unifiedHistoricalData, false);
 
       // 2. Get per-scheme cash data
-      const qawMonthlyPnl = this.MANGESH_HARDCODED_DATA["Scheme QAW"].data.monthlyPnl;
-      const qyeMonthlyPnl = await this.calculateMonthlyPnL(qcode, "Scheme QYE");
+      const qawMonthlyPnl = this.MANGESH_HARDCODED_DATA["Scheme QAW++"].data.monthlyPnl;
+      const qyeMonthlyPnl = await this.calculateMonthlyPnL(qcode, "Scheme QYE++");
 
       // 3. Overlay cash/capitalInOut from per-scheme data into the NAV-based result
       for (const year of Object.keys(navBasedResult)) {
@@ -747,7 +747,7 @@ export class PortfolioApi {
 
     // QYE: Calculate from historical data
     const historicalData = await this.getHistoricalData(qcode, scheme);
-    return this.computeMonthlyPnLFromHistoricalData(historicalData, scheme === "Scheme QYE");
+    return this.computeMonthlyPnLFromHistoricalData(historicalData, scheme === "Scheme QYE++");
   }
 
   private static computeMonthlyPnLFromHistoricalData(
@@ -842,8 +842,8 @@ export class PortfolioApi {
 
   private static async calculateQuarterlyPnL(qcode: string, scheme: string): Promise<QuarterlyPnL> {
     // QAW: Return hardcoded quarterly PnL
-    if (scheme === "Scheme QAW") {
-      return this.MANGESH_HARDCODED_DATA["Scheme QAW"].data.quarterlyPnl;
+    if (scheme === "Scheme QAW++") {
+      return this.MANGESH_HARDCODED_DATA["Scheme QAW++"].data.quarterlyPnl;
     }
 
     // Total Portfolio: Use unified rebased NAV series for percentages,
@@ -854,8 +854,8 @@ export class PortfolioApi {
       const navBasedResult = this.computeQuarterlyPnLFromHistoricalData(unifiedHistoricalData, false);
 
       // 2. Get per-scheme cash data
-      const qawQuarterlyPnl = this.MANGESH_HARDCODED_DATA["Scheme QAW"].data.quarterlyPnl;
-      const qyeQuarterlyPnl = await this.calculateQuarterlyPnL(qcode, "Scheme QYE");
+      const qawQuarterlyPnl = this.MANGESH_HARDCODED_DATA["Scheme QAW++"].data.quarterlyPnl;
+      const qyeQuarterlyPnl = await this.calculateQuarterlyPnL(qcode, "Scheme QYE++");
 
       // 3. Overlay cash from per-scheme data into the NAV-based result
       for (const year of Object.keys(navBasedResult)) {
@@ -881,7 +881,7 @@ export class PortfolioApi {
 
     // QYE: Calculate from historical data
     const historicalData = await this.getHistoricalData(qcode, scheme);
-    return this.computeQuarterlyPnLFromHistoricalData(historicalData, scheme === "Scheme QYE");
+    return this.computeQuarterlyPnLFromHistoricalData(historicalData, scheme === "Scheme QYE++");
   }
 
   private static computeQuarterlyPnLFromHistoricalData(
@@ -968,14 +968,14 @@ export class PortfolioApi {
       const url = new URL(request.url);
       const qcode = url.searchParams.get("qcode") || "QAC00064";
 
-      // Order: Total Portfolio → Scheme QYE → Scheme QAW
-      const schemes = ["Total Portfolio", "Scheme QYE", "Scheme QAW"];
+      // Order: Total Portfolio → Scheme QYE++ → Scheme QAW++
+      const schemes = ["Total Portfolio", "Scheme QYE++", "Scheme QAW++"];
 
       for (const scheme of schemes) {
         const portfolioNames = PortfolioApi.getPortfolioNames(accountCode, scheme);
 
         // For hardcoded schemes (QAW), use cached data
-        if (scheme === "Scheme QAW") {
+        if (scheme === "Scheme QAW++") {
           const hardcodedData = PortfolioApi.MANGESH_HARDCODED_DATA[scheme];
           results[scheme] = {
             data: hardcodedData.data,
@@ -1013,9 +1013,9 @@ export class PortfolioApi {
           trailingReturns,
           drawdown: drawdownMetrics.currentDD.toFixed(2),
           maxDrawdown: drawdownMetrics.mdd.toFixed(2),
-          // For Scheme QYE, prepend baseline point with NAV = 100 for display (matching Dinesh's approach)
+          // For Scheme QYE++, prepend baseline point with NAV = 100 for display (matching Dinesh's approach)
           equityCurve: (() => {
-            if (scheme === "Scheme QYE" && rawEquityCurve.length > 0) {
+            if (scheme === "Scheme QYE++" && rawEquityCurve.length > 0) {
               const firstDate = new Date(rawEquityCurve[0].date);
               firstDate.setDate(firstDate.getDate() - 1);
               const baselineDate = firstDate.toISOString().split('T')[0];
@@ -1023,10 +1023,10 @@ export class PortfolioApi {
             }
             return rawEquityCurve;
           })(),
-          // For Scheme QYE, prepend baseline point with drawdown = 0 for display (matching Dinesh's approach)
+          // For Scheme QYE++, prepend baseline point with drawdown = 0 for display (matching Dinesh's approach)
           drawdownCurve: (() => {
             const rawDDCurve = drawdownMetrics.ddCurve.map((d) => ({ date: d.date, drawdown: d.value }));
-            if (scheme === "Scheme QYE" && rawDDCurve.length > 0 && historicalData.length > 0) {
+            if (scheme === "Scheme QYE++" && rawDDCurve.length > 0 && historicalData.length > 0) {
               const firstDate = new Date(historicalData[0].date);
               firstDate.setDate(firstDate.getDate() - 1);
               const baselineDate = firstDate.toISOString().split('T')[0];
