@@ -1409,7 +1409,7 @@ h1, h2, h3 { margin: 0; }
 .table-container {
   flex: 1;
 }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; border-radius: 8px; overflow: hidden; }
 th { background-color: #02422B; color: white; padding: 10px 8px; text-align: center; font-weight: 600; font-size: 10px; letter-spacing: 0.5px; }
 td { padding: 8px; text-align: center; border-bottom: 1px solid #eee; font-weight: 400; }
 thead { display: table-header-group; }
@@ -1471,9 +1471,8 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
           <p>Holdings Summary</p>
         </div>
         <div class="header-right">
-          <div class="date">
-            Generated: ${formatDate(new Date())}${lastUpdatedDate ? ` | Data as of: ${formatDate(lastUpdatedDate)}` : ''}
-          </div>
+          <div class="date">Generated: ${formatDate(new Date())}</div>
+          ${lastUpdatedDate ? `<div class="date">Data as of: ${formatDate(lastUpdatedDate)}</div>` : ''}
         </div>
       </div>
     `;
@@ -1694,16 +1693,16 @@ ${commonStyles}
   <script>
     function paginateLongTable(tableId, sectionTitle, basePageNum) {
         var table = document.getElementById(tableId);
-        if (!table) return;
+        if (!table) return basePageNum;
 
         var currentPage = table.closest('.page');
-        if (!currentPage) return;
+        if (!currentPage) return basePageNum;
 
         var tbody = table.querySelector('tbody');
-        if (!tbody) return;
+        if (!tbody) return basePageNum;
 
         var allRows = Array.from(tbody.querySelectorAll('tr'));
-        if (allRows.length <= 6) return;
+        if (allRows.length <= 6) return basePageNum;
 
         var totalRow = allRows.find(function(row) { return row.classList.contains('total-row'); });
         var dataRows = allRows.filter(function(row) { return !row.classList.contains('total-row'); });
@@ -1771,15 +1770,26 @@ ${commonStyles}
             remainingRows = remainingRows.slice(rowsPerPage);
             pageNum++;
         }
+
+        return pageNum - 1;
     }
 
     function runPagination() {
+        var lastStockPage = 2;
         if (${stocks.length} > 6) {
-            paginateLongTable('stocks-table', 'Stock Holdings', 2);
+            lastStockPage = paginateLongTable('stocks-table', 'Stock Holdings', 2);
         }
-        if (${mutualFunds.length} > 6) {
-            var mfBasePageNum = ${stocks.length} > 0 ? 3 : 2;
-            paginateLongTable('mf-table', 'Mutual Fund Holdings', mfBasePageNum);
+
+        var mfPage = document.getElementById('mf-page');
+        if (mfPage) {
+            var mfPageNum = lastStockPage + 1;
+            var mfFooter = mfPage.querySelector('.footer .page-number');
+            if (mfFooter) {
+                mfFooter.textContent = 'Page ' + mfPageNum + ' | Qode';
+            }
+            if (${mutualFunds.length} > 6) {
+                paginateLongTable('mf-table', 'Mutual Fund Holdings', mfPageNum);
+            }
         }
     }
 

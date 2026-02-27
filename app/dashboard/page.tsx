@@ -12,6 +12,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import StockTable from "@/components/StockTable";
 import { ImpersonationBanner } from "@/components/admin/ImpersonationBanner";
+import { Download } from "lucide-react";
+import { buildPortfolioReportHTML } from "@/components/buildPortfolioReportHTML";
+import { generateExcelReport } from "@/components/generateExcelReport";
 
 // Interfaces for stats
 interface Stats {
@@ -223,6 +226,184 @@ const getGreeting = () => {
   }
 };
 
+// Helper function to fetch and calculate benchmark returns for PDF/Excel export
+interface BenchmarkResult {
+  returns: { [key: string]: string };
+  equityCurve: { date: string; nav: number }[];
+  drawdownCurve: { date: string; value: number }[];
+}
+
+async function fetchBenchmarkReturns(
+  equityCurve: { date: string; value: number }[]
+): Promise<BenchmarkResult> {
+  const emptyResult: BenchmarkResult = {
+    returns: {
+      "5d": "-", "10d": "-", "15d": "-", "1m": "-", "3m": "-", "6m": "-",
+      "1y": "-", "2y": "-", "sinceInception": "-", "MDD": "-", "currentDD": "-"
+    },
+    equityCurve: [],
+    drawdownCurve: [],
+  };
+
+  if (!equityCurve?.length) return emptyResult;
+
+  const benchmarkReturns = { ...emptyResult.returns };
+
+  try {
+    const startDate = equityCurve[0].date;
+    const endDate = equityCurve[equityCurve.length - 1].date;
+
+    const fetchStartDateObj = new Date(startDate);
+    fetchStartDateObj.setDate(fetchStartDateObj.getDate() - 10);
+    const fetchStartDate = fetchStartDateObj.toISOString().split('T')[0];
+
+    const response = await fetch(
+      "https://qode360-backend.qodeinvest.com/api/v1/returns/indices/?downloadNav=true",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          accept: "application/json",
+        },
+        body: JSON.stringify({
+          startDate: fetchStartDate,
+          endDate: endDate,
+          indices: ["NIFTY 50"],
+        }),
+      }
+    );
+    if (!response.ok) return emptyResult;
+
+    const result = await response.json();
+    const rawData = result?.data?.data?.["NIFTY 50"];
+    const rawBenchmarkData: { date: string; nav: string }[] = Array.isArray(rawData)
+      ? rawData.map((d: { date: string; nav: number }) => ({
+          date: d.date,
+          nav: d.nav.toString(),
+        }))
+      : [];
+
+    if (!rawBenchmarkData.length) return emptyResult;
+
+    let effectiveStartDate = startDate;
+    const startDateTime = new Date(startDate).getTime();
+    const startDateExists = rawBenchmarkData.some(
+      (d) => new Date(d.date).getTime() === startDateTime
+    );
+
+    if (!startDateExists) {
+      const previousTradingDays = rawBenchmarkData
+        .filter((d) => new Date(d.date).getTime() < startDateTime)
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+      if (previousTradingDays.length > 0) {
+        effectiveStartDate = previousTradingDays[0].date;
+      }
+    }
+
+    const bse500Data = rawBenchmarkData.filter(
+      (d) => new Date(d.date) >= new Date(effectiveStartDate) && new Date(d.date) <= new Date(endDate)
+    );
+
+    if (!bse500Data.length) return emptyResult;
+
+    const endDateObj = new Date(endDate);
+
+    const findNav = (targetDate: Date): number => {
+      const exactMatch = bse500Data.find(
+        (point) => new Date(point.date).toDateString() === targetDate.toDateString()
+      );
+      if (exactMatch) return parseFloat(exactMatch.nav);
+
+      let closestPrevious: { nav: number } | null = null;
+      let closestPreviousDiff = Infinity;
+
+      bse500Data.forEach((point) => {
+        const pointDate = new Date(point.date);
+        const timeDiff = targetDate.getTime() - pointDate.getTime();
+        if (timeDiff >= 0 && timeDiff < closestPreviousDiff) {
+          closestPreviousDiff = timeDiff;
+          closestPrevious = { nav: parseFloat(point.nav) };
+        }
+      });
+
+      return closestPrevious?.nav || 0;
+    };
+
+    const calculateReturn = (start: Date, end: Date): string => {
+      const startNav = findNav(start);
+      const endNav = findNav(end);
+
+      if (startNav && endNav && startNav !== 0) {
+        const durationYears = (end.getTime() - start.getTime()) / (365 * 24 * 60 * 60 * 1000);
+        let returnValue: number;
+
+        if (durationYears >= 1) {
+          returnValue = (Math.pow(endNav / startNav, 1 / durationYears) - 1) * 100;
+        } else {
+          returnValue = ((endNav - startNav) / startNav) * 100;
+        }
+        return returnValue.toFixed(2);
+      }
+      return "-";
+    };
+
+    const periods = [
+      { key: "5d", days: 5 },
+      { key: "10d", days: 10 },
+      { key: "15d", days: 15 },
+      { key: "1m", days: 30 },
+      { key: "3m", days: 90 },
+      { key: "6m", days: 180 },
+      { key: "1y", days: 365 },
+      { key: "2y", days: 730 },
+    ];
+
+    periods.forEach(({ key, days }) => {
+      const start = new Date(endDateObj);
+      start.setDate(endDateObj.getDate() - days);
+      benchmarkReturns[key] = calculateReturn(start, endDateObj);
+    });
+
+    const inceptionStart = new Date(bse500Data[0].date);
+    benchmarkReturns["sinceInception"] = calculateReturn(inceptionStart, endDateObj);
+
+    let maxDrawdown = 0;
+    let peakNav = -Infinity;
+    const currentNav = parseFloat(bse500Data[bse500Data.length - 1].nav);
+
+    // Build benchmark equity curve and drawdown curve for chart rendering
+    const benchmarkEquityCurve: { date: string; nav: number }[] = [];
+    const benchmarkDrawdownCurve: { date: string; value: number }[] = [];
+
+    bse500Data.forEach((point) => {
+      const nav = parseFloat(point.nav);
+      if (nav > peakNav) peakNav = nav;
+      const drawdownValue = ((nav - peakNav) / peakNav) * 100;
+      if (drawdownValue < maxDrawdown) maxDrawdown = drawdownValue;
+
+      benchmarkEquityCurve.push({ date: point.date, nav });
+      benchmarkDrawdownCurve.push({ date: point.date, value: Math.abs(drawdownValue) });
+    });
+
+    const currentDrawdown = peakNav > 0 ? ((currentNav - peakNav) / peakNav) * 100 : 0;
+
+    benchmarkReturns["MDD"] = (-Math.abs(maxDrawdown)).toFixed(2);
+    benchmarkReturns["currentDD"] = (-Math.abs(currentDrawdown)).toFixed(2);
+
+    return {
+      returns: benchmarkReturns,
+      equityCurve: benchmarkEquityCurve,
+      drawdownCurve: benchmarkDrawdownCurve,
+    };
+
+  } catch (err) {
+    console.error("Error fetching benchmark data for export:", err);
+  }
+
+  return emptyResult;
+}
+
 export default function Portfolio() {
   const { data: session, status, update: updateSession } = useSession();
   const router = useRouter();
@@ -253,6 +434,7 @@ export default function Portfolio() {
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
   const [availableStrategies, setAvailableStrategies] = useState<string[]>([]);
 const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percent");
+  const [exporting, setExporting] = useState(false);
   const hasFetchedRef = useRef(false);
 
   // Exit impersonation handler
@@ -641,6 +823,201 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     return lastUpdated || null;
   };
 
+  // Export handler functions
+  const handleDownloadPDF = async (convertedStats: Stats, strategyName: string, isTotalPortfolio: boolean, exportMetadata?: { inceptionDate?: string | null; dataAsOfDate?: string | null }) => {
+    try {
+      setExporting(true);
+      const cashFlows = convertedStats.cashFlows || [];
+      const cashFlowTotals = cashFlows.reduce(
+        (acc, tx) => {
+          const amount = Number(tx.amount);
+          if (amount > 0) acc.totalIn += amount;
+          else if (amount < 0) acc.totalOut += amount;
+          acc.netFlow += amount;
+          return acc;
+        },
+        { totalIn: 0, totalOut: 0, netFlow: 0 }
+      );
+
+      const tr = convertedStats.trailingReturns as Record<string, unknown>;
+      const getTrailingValue = (longKey: string, shortKey: string) =>
+        tr[longKey] ?? tr[shortKey] ?? null;
+
+      const benchmark = await fetchBenchmarkReturns(convertedStats.equityCurve);
+      const benchmarkReturns = benchmark.returns;
+
+      const html = buildPortfolioReportHTML({
+        transactions: cashFlows,
+        cashFlowTotals,
+        metrics: {
+          amountInvested: parseFloat(convertedStats.amountDeposited) || 0,
+          currentPortfolioValue: parseFloat(convertedStats.currentExposure) || 0,
+          returns: parseFloat(convertedStats.totalProfit) || 0,
+          returns_percent: parseFloat(convertedStats.return) || 0,
+        },
+        equityCurve: convertedStats.equityCurve,
+        drawdownCurve: convertedStats.drawdownCurve,
+        benchmarkEquityCurve: benchmark.equityCurve,
+        benchmarkDrawdownCurve: benchmark.drawdownCurve,
+        combinedTrailing: {
+          fiveDays: { portfolio: getTrailingValue("fiveDays", "5d"), benchmark: benchmarkReturns["5d"] },
+          tenDays: { portfolio: getTrailingValue("tenDays", "10d"), benchmark: benchmarkReturns["10d"] },
+          fifteenDays: { portfolio: getTrailingValue("fifteenDays", "15d"), benchmark: benchmarkReturns["15d"] },
+          oneMonth: { portfolio: getTrailingValue("oneMonth", "1m"), benchmark: benchmarkReturns["1m"] },
+          threeMonths: { portfolio: getTrailingValue("threeMonths", "3m"), benchmark: benchmarkReturns["3m"] },
+          sixMonths: { portfolio: getTrailingValue("sixMonths", "6m"), benchmark: benchmarkReturns["6m"] },
+          oneYear: { portfolio: getTrailingValue("oneYear", "1y"), benchmark: benchmarkReturns["1y"] },
+          twoYears: { portfolio: getTrailingValue("twoYears", "2y"), benchmark: benchmarkReturns["2y"] },
+          sinceInception: { portfolio: getTrailingValue("sinceInception", "sinceInception"), benchmark: benchmarkReturns["sinceInception"] },
+          MDD: { portfolio: getTrailingValue("MDD", "MDD"), benchmark: benchmarkReturns["MDD"] },
+          currentDD: { portfolio: getTrailingValue("currentDD", "currentDD"), benchmark: benchmarkReturns["currentDD"] },
+        },
+        drawdown: convertedStats.drawdown,
+        monthlyPnl: convertedStats.monthlyPnl,
+        quarterlyPnl: convertedStats.quarterlyPnl,
+        strategyName,
+        isTotalPortfolio,
+        isActive: true,
+        dateFormatter,
+        formatter: (v) =>
+          v === 0
+            ? "-"
+            : `₹ ${v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        sessionUserName: session?.user?.name || "User",
+        currentMetadata: {
+          inceptionDate: exportMetadata?.inceptionDate || convertedStats.equityCurve?.[0]?.date || null,
+          dataAsOfDate: exportMetadata?.dataAsOfDate || convertedStats.equityCurve?.[convertedStats.equityCurve.length - 1]?.date || null,
+        },
+      });
+
+      // Use a hidden iframe for printing (matches holdings page pattern)
+      const existingFrame = document.getElementById('portfolio-print-frame') as HTMLIFrameElement;
+      if (existingFrame) existingFrame.remove();
+
+      const iframe = document.createElement('iframe');
+      iframe.id = 'portfolio-print-frame';
+      iframe.style.position = 'fixed';
+      iframe.style.width = '297mm';
+      iframe.style.height = '210mm';
+      iframe.style.border = 'none';
+      iframe.style.left = '-9999px';
+      iframe.style.top = '-9999px';
+      iframe.style.overflow = 'hidden';
+      document.body.appendChild(iframe);
+
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+      const iframeWin = iframe.contentWindow;
+      if (!iframeDoc || !iframeWin) {
+        iframe.remove();
+        throw new Error('Failed to create print frame');
+      }
+
+      iframeDoc.open();
+      iframeDoc.write(html);
+      iframeDoc.close();
+
+      // Wait for fonts + chart/pagination to finish, then print
+      const cleanup = () => {
+        iframe.remove();
+        setExporting(false);
+      };
+
+      const onReady = (e: MessageEvent) => {
+        if (e.data !== 'portfolio-report-ready') return;
+        window.removeEventListener('message', onReady);
+        iframeDoc.fonts.ready.then(() => {
+          try {
+            iframeWin.print();
+          } catch (e) {
+            console.error('Print error:', e);
+          }
+          cleanup();
+        });
+      };
+      window.addEventListener('message', onReady);
+
+      // Fallback if message never arrives (e.g. script error in iframe)
+      setTimeout(() => {
+        window.removeEventListener('message', onReady);
+        try { iframeWin.print(); } catch (_) { /* ignore */ }
+        cleanup();
+      }, 5000);
+      return;
+    } catch (err) {
+      console.error(err);
+      alert("PDF export failed. See console for details.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleDownloadExcel = async (
+    convertedStats: Stats,
+    strategyName: string,
+    isTotalPortfolio: boolean,
+    overrideAccountInfo?: { accountName: string; accountType: string; broker: string },
+    exportMetadata?: { dataAsOfDate?: string | null; isActive?: boolean }
+  ) => {
+    try {
+      setExporting(true);
+
+      const benchmarkReturns = (await fetchBenchmarkReturns(convertedStats.equityCurve)).returns;
+
+      const tr = convertedStats.trailingReturns as Record<string, unknown>;
+      const getTrailingValue = (longKey: string, shortKey: string): string | number | null => {
+        const val = tr[longKey] ?? tr[shortKey];
+        return val !== null && val !== undefined ? val as string | number : null;
+      };
+
+      const combinedTrailing = {
+        fiveDays: { portfolio: getTrailingValue("fiveDays", "5d"), benchmark: benchmarkReturns["5d"] },
+        tenDays: { portfolio: getTrailingValue("tenDays", "10d"), benchmark: benchmarkReturns["10d"] },
+        fifteenDays: { portfolio: getTrailingValue("fifteenDays", "15d"), benchmark: benchmarkReturns["15d"] },
+        oneMonth: { portfolio: getTrailingValue("oneMonth", "1m"), benchmark: benchmarkReturns["1m"] },
+        threeMonths: { portfolio: getTrailingValue("threeMonths", "3m"), benchmark: benchmarkReturns["3m"] },
+        sixMonths: { portfolio: getTrailingValue("sixMonths", "6m"), benchmark: benchmarkReturns["6m"] },
+        oneYear: { portfolio: getTrailingValue("oneYear", "1y"), benchmark: benchmarkReturns["1y"] },
+        twoYears: { portfolio: getTrailingValue("twoYears", "2y"), benchmark: benchmarkReturns["2y"] },
+        fiveYears: { portfolio: getTrailingValue("fiveYears", "5y"), benchmark: benchmarkReturns["5y"] || null },
+        sinceInception: { portfolio: getTrailingValue("sinceInception", "sinceInception"), benchmark: benchmarkReturns["sinceInception"] },
+        MDD: { portfolio: getTrailingValue("MDD", "MDD"), benchmark: benchmarkReturns["MDD"] },
+        currentDD: { portfolio: getTrailingValue("currentDD", "currentDD"), benchmark: benchmarkReturns["currentDD"] },
+      };
+
+      const currentAccount = accounts.find((acc) => acc.qcode === selectedAccount);
+      const accountInfo = overrideAccountInfo || (currentAccount ? {
+        accountName: currentAccount.account_name,
+        accountType: currentAccount.account_type,
+        broker: currentAccount.broker,
+      } : undefined);
+
+      generateExcelReport({
+        strategyName,
+        isTotalPortfolio,
+        isActive: exportMetadata?.isActive ?? metadata?.isActive ?? true,
+        sessionUserName: session?.user?.name || "User",
+        dataAsOfDate: exportMetadata?.dataAsOfDate ?? metadata?.dataAsOfDate,
+        accountInfo,
+        metrics: {
+          amountDeposited: parseFloat(convertedStats.amountDeposited) || 0,
+          currentExposure: parseFloat(convertedStats.currentExposure) || 0,
+          totalProfit: parseFloat(convertedStats.totalProfit) || 0,
+          totalReturn: parseFloat(convertedStats.return) || 0,
+        },
+        combinedTrailing,
+        cashFlows: convertedStats.cashFlows || [],
+        monthlyPnl: convertedStats.monthlyPnl || null,
+        quarterlyPnl: convertedStats.quarterlyPnl || null,
+      });
+
+    } catch (error) {
+      console.error("Error generating Excel:", error);
+      alert("Failed to generate Excel file");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const renderSarlaStrategyTabs = () => {
     if (!(isSarla || isSatidham || isDinesh) || !sarlaData || availableStrategies.length === 0) return null;
 
@@ -704,12 +1081,34 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
     return (
       <div className="space-y-6">
-        <Button
-          variant="outline"
-          className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
-        >
-          {selectedStrategy} {!isActive ? "(Inactive)" : ""}
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
+          >
+            {selectedStrategy} {!isActive ? "(Inactive)" : ""}
+          </Button>
+          <div className="flex gap-2 ml-auto">
+            <Button
+              onClick={() => handleDownloadPDF(convertedStats, selectedStrategy, isTotalPortfolio, { inceptionDate: strategyData.metadata?.inceptionDate, dataAsOfDate: strategyData.metadata?.dataAsOfDate })}
+              disabled={exporting}
+              className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+              variant="default"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              PDF
+            </Button>
+            <Button
+              onClick={() => handleDownloadExcel(convertedStats, selectedStrategy, isTotalPortfolio, undefined, { dataAsOfDate: strategyData.metadata?.dataAsOfDate, isActive })}
+              disabled={exporting}
+              className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+              variant="default"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Excel
+            </Button>
+          </div>
+        </div>
         <StatsCards
   stats={convertedStats}
   accountType="sarla"
@@ -771,12 +1170,34 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
     return (
       <div className="space-y-6">
-        <Button
-          variant="outline"
-          className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
-        >
-          {selectedStrategy} {!isActive ? "(Inactive)" : ""}
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
+          >
+            {selectedStrategy} {!isActive ? "(Inactive)" : ""}
+          </Button>
+          <div className="flex gap-2 ml-auto">
+            <Button
+              onClick={() => handleDownloadPDF(convertedStats, selectedStrategy, isTotalPortfolio, { inceptionDate: strategyData.metadata?.inceptionDate, dataAsOfDate: strategyData.metadata?.dataAsOfDate })}
+              disabled={exporting}
+              className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+              variant="default"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              PDF
+            </Button>
+            <Button
+              onClick={() => handleDownloadExcel(convertedStats, selectedStrategy, isTotalPortfolio, undefined, { dataAsOfDate: strategyData.metadata?.dataAsOfDate, isActive })}
+              disabled={exporting}
+              className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+              variant="default"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Excel
+            </Button>
+          </div>
+        </div>
         <StatsCards
   stats={convertedStats}
   accountType="sarla"
@@ -834,12 +1255,34 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
     return (
       <div className="space-y-6">
-        <Button
-          variant="outline"
-          className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
-        >
-          {selectedStrategy} {!isActive ? "(Inactive)" : ""}
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
+          >
+            {selectedStrategy} {!isActive ? "(Inactive)" : ""}
+          </Button>
+          <div className="flex gap-2 ml-auto">
+            <Button
+              onClick={() => handleDownloadPDF(convertedStats, selectedStrategy, isTotalPortfolio, { inceptionDate: strategyData.metadata?.inceptionDate, dataAsOfDate: strategyData.metadata?.dataAsOfDate })}
+              disabled={exporting}
+              className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+              variant="default"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              PDF
+            </Button>
+            <Button
+              onClick={() => handleDownloadExcel(convertedStats, selectedStrategy, isTotalPortfolio, undefined, { dataAsOfDate: strategyData.metadata?.dataAsOfDate, isActive })}
+              disabled={exporting}
+              className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+              variant="default"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Excel
+            </Button>
+          </div>
+        </div>
         <StatsCards
           stats={convertedStats}
           accountType="sarla"
@@ -964,14 +1407,45 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           )}
         </div>
 
-        {!isSarla && !isSatidham && !isDinesh && currentMetadata?.strategyName && (
-          <Button
-            variant="outline"
-            className={`bg-logo-green mt-4 font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${(isSarla || isSatidham || isDinesh) && !currentMetadata.isActive ? "opacity-70" : ""
-              }`}
-          >
-            {currentMetadata.strategyName} {(isSarla || isSatidham || isDinesh) && !currentMetadata.isActive ? "(Inactive)" : ""}
-          </Button>
+        {!isSarla && !isSatidham && !isDinesh && (currentMetadata?.strategyName || (stats && !Array.isArray(stats))) && (
+          <div className="flex flex-wrap items-center gap-3 mt-4">
+            {currentMetadata?.strategyName && (
+              <Button
+                variant="outline"
+                className="bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full"
+              >
+                {currentMetadata.strategyName}
+              </Button>
+            )}
+            {stats && !Array.isArray(stats) && (
+              <div className="flex gap-2 ml-auto">
+                <Button
+                  onClick={() => {
+                    const convertedStats = isPmsStats(stats) ? convertPmsStatsToStats(stats) : stats;
+                    handleDownloadPDF(convertedStats, currentMetadata?.strategyName || "Portfolio", false, { inceptionDate: metadata?.inceptionDate, dataAsOfDate: metadata?.dataAsOfDate });
+                  }}
+                  disabled={exporting}
+                  className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+                  variant="default"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  PDF
+                </Button>
+                <Button
+                  onClick={() => {
+                    const convertedStats = isPmsStats(stats) ? convertPmsStatsToStats(stats) : stats;
+                    handleDownloadExcel(convertedStats, currentMetadata?.strategyName || "Portfolio", false);
+                  }}
+                  disabled={exporting}
+                  className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+                  variant="default"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Excel
+                </Button>
+              </div>
+            )}
+          </div>
         )}
         {(isSarla || isSatidham || isDinesh) && sarlaData && availableStrategies.length > 0 && (
           <div className="mt-2 text-xs text-card-text-secondary">
@@ -1000,12 +1474,40 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                   <div key={index} className="space-y-6">
                     <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
                       <CardHeader>
-                        <CardTitle className="text-card-text text-sm sm:text-sm">
-                          {item.metadata.account_name} ({item.metadata.account_type.toUpperCase()} - {item.metadata.broker})
-                          {(isSarla || isSatidham || isDinesh) && !item.metadata.isActive ? " (Inactive)" : ""}
-                        </CardTitle>
-                        <div className="text-sm text-card-text-secondary">
-                          Strategy: <strong>{item.metadata.strategyName || "Unknown Strategy"}</strong>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <CardTitle className="text-card-text text-sm sm:text-sm">
+                              {item.metadata.account_name} ({item.metadata.account_type.toUpperCase()} - {item.metadata.broker})
+                              {(isSarla || isSatidham || isDinesh) && !item.metadata.isActive ? " (Inactive)" : ""}
+                            </CardTitle>
+                            <div className="text-sm text-card-text-secondary mt-1">
+                              Strategy: <strong>{item.metadata.strategyName || "Unknown Strategy"}</strong>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={() => handleDownloadPDF(convertedStats, item.metadata.strategyName || "Unknown Strategy", false, { inceptionDate: item.metadata.inceptionDate, dataAsOfDate: item.metadata.dataAsOfDate })}
+                              disabled={exporting}
+                              className="h-8 px-2 text-xs font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+                              variant="default"
+                            >
+                              <Download className="h-3 w-3 mr-1" />
+                              PDF
+                            </Button>
+                            <Button
+                              onClick={() => handleDownloadExcel(convertedStats, item.metadata.strategyName || "Unknown Strategy", false, {
+                                accountName: item.metadata.account_name,
+                                accountType: item.metadata.account_type,
+                                broker: item.metadata.broker,
+                              })}
+                              disabled={exporting}
+                              className="h-8 px-2 text-xs font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
+                              variant="default"
+                            >
+                              <Download className="h-3 w-3 mr-1" />
+                              Excel
+                            </Button>
+                          </div>
                         </div>
                       </CardHeader>
                       <CardContent>
@@ -1049,6 +1551,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                     metadata?.lastUpdated
                   );
                   const lastDate = getLastDate(filteredEquityCurve, metadata?.lastUpdated);
+                  const strategyName = metadata?.strategyName || "Portfolio";
                   return (
                     <>
                       <StatsCards
