@@ -102,7 +102,7 @@ export class PortfolioApi {
   // Deposit/cash flow queries use a different system tag for QYE
   private static readonly MANGESH_DEPOSIT_TAGS: Record<string, string> = {
     "Scheme QAW++": "QAW Zerodha Total Portfolio",
-    "Scheme QYE++": "Zerodha Total Portfolio",
+    "Scheme QYE++": "Total Portfolio Value",
   };
 
   // QAW final NAV (for reference)
@@ -432,6 +432,10 @@ export class PortfolioApi {
       const combined: { date: Date; nav: number; prevNav: number | null; drawdown: number; pnl: number; capitalInOut: number }[] = [];
       let prevCombinedNav = 100; // QAW starts at 100
 
+      // DEBUG: CSV trace for verifying calculations
+      const debugRows: string[] = [];
+      debugRows.push("date,phase,qawNAV,qawDailyPL,qawExposure,qyeNAV,qyeDailyPL,qyeExposure,totalExposure,qawWeight,qyeWeight,weightedReturn,prevCombinedNAV,newCombinedNAV,,qyeRawNAV");
+
       // Process QAW days (Phase 1 + Phase 2)
       for (const qawEntry of qawEquity) {
         const dateStr = qawEntry.date;
@@ -448,14 +452,19 @@ export class PortfolioApi {
             pnl: 0,
             capitalInOut: 0,
           });
+          debugRows.push(`${dateStr},P1,${qawEntry.nav},${qawEntry.dailyPL},${qawEntry.exposure},,,,,,,,,${qawEntry.nav},,`);
           prevCombinedNav = qawEntry.nav;
         } else {
           // Phase 2: Both schemes have exposure — exposure-weighted daily return
           const totalExposure = qawEntry.exposure + qye.exposure;
+          const qawWeight = totalExposure > 0 ? qawEntry.exposure / totalExposure : 0;
+          const qyeWeight = totalExposure > 0 ? qye.exposure / totalExposure : 0;
           const weightedReturn = totalExposure > 0
             ? (qawEntry.dailyPL * qawEntry.exposure + qye.dailyPL * qye.exposure) / totalExposure
             : 0;
           const newCombinedNav = prevCombinedNav * (1 + weightedReturn / 100);
+
+          debugRows.push(`${dateStr},P2,${qawEntry.nav},${qawEntry.dailyPL},${qawEntry.exposure},${qye.nav},${qye.dailyPL},${qye.exposure},${totalExposure},${qawWeight},${qyeWeight},${weightedReturn},${prevCombinedNav},${newCombinedNav},,${qye.nav}`);
 
           combined.push({
             date: new Date(dateStr),
@@ -469,26 +478,31 @@ export class PortfolioApi {
         }
       }
 
-      // Phase 3: Post-overlap — QYE-only days after QAW closes, rebased from combined NAV
-      const lastCombinedNav = prevCombinedNav;
-      // Find the QYE NAV on the last QAW date to compute rebase multiplier
-      const qyeAtQawEnd = qyeByDate.get(qawLastDate);
-      const qyeNavAtQawEnd = qyeAtQawEnd?.nav || 100;
-      const rebaseMultiplier = lastCombinedNav / qyeNavAtQawEnd;
-
+      // Phase 3: Post-overlap — QYE-only days, continue compounding from combined NAV using daily_p_l
       for (const row of qyeDbData) {
         const dateStr = this.normalizeDate(row.date);
         if (dateStr <= qawLastDate) continue; // Already handled in overlap
 
+        const dailyPL = Number(row.daily_p_l) || 0;
+        const newNav = prevCombinedNav * (1 + dailyPL / 100);
+        debugRows.push(`${dateStr},P3,,,,,,${dailyPL},${Number(row.exposure_value) || 0},,,,${prevCombinedNav},${newNav},,${Number(row.nav)}`);
+
         combined.push({
           date: row.date,
-          nav: Number(row.nav) * rebaseMultiplier,
-          prevNav: row.prev_nav ? Number(row.prev_nav) * rebaseMultiplier : null,
+          nav: newNav,
+          prevNav: prevCombinedNav,
           drawdown: Math.abs(Number(row.drawdown) || 0),
           pnl: Number(row.pnl) || 0,
           capitalInOut: Number(row.capital_in_out) || 0,
         });
+        prevCombinedNav = newNav;
       }
+
+      // DEBUG: Print CSV trace to server console
+      console.log("\n=== MANGESH TOTAL PORTFOLIO DEBUG TRACE ===");
+      console.log(`QAW last date: ${qawLastDate} | lastCombinedNav at overlap end: ${combined[combined.length - 1]?.nav}`);
+      console.log(debugRows.join("\n"));
+      console.log("=== END DEBUG TRACE ===\n");
 
       return combined;
     }
