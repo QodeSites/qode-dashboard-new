@@ -134,41 +134,41 @@ export class PortfolioApi {
         drawdown: "0.00",
         maxDrawdown: "-1.23",
         equityCurve: [
-          { date: "2025-11-23", nav: 100 },
-          { date: "2025-11-24", nav: 99.73 },
-          { date: "2025-11-25", nav: 100.57 },
-          { date: "2025-11-26", nav: 100.74 },
-          { date: "2025-11-27", nav: 100.87 },
-          { date: "2025-11-28", nav: 101.13 },
-          { date: "2025-12-01", nav: 101.14 },
-          { date: "2025-12-02", nav: 101.11 },
-          { date: "2025-12-03", nav: 101.11 },
-          { date: "2025-12-04", nav: 100.72 },
-          { date: "2025-12-05", nav: 100.92 },
-          { date: "2025-12-08", nav: 101.10 },
-          { date: "2025-12-09", nav: 103.08 },
-          { date: "2025-12-10", nav: 102.69 },
-          { date: "2025-12-11", nav: 102.56 },
-          { date: "2025-12-12", nav: 103.72 },
-          { date: "2025-12-15", nav: 103.88 },
-          { date: "2025-12-16", nav: 103.24 },
-          { date: "2025-12-17", nav: 103.23 },
-          { date: "2025-12-18", nav: 102.94 },
-          { date: "2025-12-19", nav: 102.61 },
-          { date: "2025-12-22", nav: 103.48 },
-          { date: "2025-12-23", nav: 103.91 },
-          { date: "2025-12-24", nav: 104.03 },
-          { date: "2025-12-26", nav: 104.25 },
-          { date: "2025-12-29", nav: 103.88 },
-          { date: "2025-12-30", nav: 103.54 },
-          { date: "2025-12-31", nav: 102.97 },
-          { date: "2026-01-01", nav: 103.20 },
-          { date: "2026-01-02", nav: 104.07 },
-          { date: "2026-01-05", nav: 104.29 },
-          { date: "2026-01-06", nav: 104.55 },
-          { date: "2026-01-07", nav: 104.53 },
-          { date: "2026-01-08", nav: 104.76 },
-          { date: "2026-01-09", nav: 105.12 },
+          { date: "2025-11-23", nav: 100, dailyPL: 0, exposure: 0 },
+          { date: "2025-11-24", nav: 99.73, dailyPL: -0.27, exposure: 50000870.01 },
+          { date: "2025-11-25", nav: 100.57, dailyPL: 0.84, exposure: 49863661.49 },
+          { date: "2025-11-26", nav: 100.74, dailyPL: 0.17, exposure: 50281459.59 },
+          { date: "2025-11-27", nav: 100.87, dailyPL: 0.13, exposure: 50368407.87 },
+          { date: "2025-11-28", nav: 101.13, dailyPL: 0.26, exposure: 50435357.60 },
+          { date: "2025-12-01", nav: 101.14, dailyPL: 0.01, exposure: 50568928.33 },
+          { date: "2025-12-02", nav: 101.11, dailyPL: -0.03, exposure: 50576050.74 },
+          { date: "2025-12-03", nav: 101.11, dailyPL: 0.00, exposure: 50559205.36 },
+          { date: "2025-12-04", nav: 100.72, dailyPL: -0.39, exposure: 50558541.30 },
+          { date: "2025-12-05", nav: 100.92, dailyPL: 0.20, exposure: 50361440.93 },
+          { date: "2025-12-08", nav: 101.10, dailyPL: 0.18, exposure: 50462229.58 },
+          { date: "2025-12-09", nav: 103.08, dailyPL: 1.96, exposure: 50551431.38 },
+          { date: "2025-12-10", nav: 102.69, dailyPL: -0.38, exposure: 11014145.59 },
+          { date: "2025-12-11", nav: 102.56, dailyPL: -0.13, exposure: 10972146.87 },
+          { date: "2025-12-12", nav: 103.72, dailyPL: 1.13, exposure: 10958384.91 },
+          { date: "2025-12-15", nav: 103.88, dailyPL: 0.16, exposure: 11082176.02 },
+          { date: "2025-12-16", nav: 103.24, dailyPL: -0.61, exposure: 11099473.26 },
+          { date: "2025-12-17", nav: 103.23, dailyPL: -0.01, exposure: 11031458.08 },
+          { date: "2025-12-18", nav: 102.94, dailyPL: -0.28, exposure: 11030247.50 },
+          { date: "2025-12-19", nav: 102.61, dailyPL: -0.31, exposure: 10998904.40 },
+          { date: "2025-12-22", nav: 103.48, dailyPL: 0.84, exposure: 10964444.88 },
+          { date: "2025-12-23", nav: 103.91, dailyPL: 0.42, exposure: 11056587.91 },
+          { date: "2025-12-24", nav: 104.03, dailyPL: 0.11, exposure: 11103068.98 },
+          { date: "2025-12-26", nav: 104.25, dailyPL: 0.22, exposure: 11115394.12 },
+          { date: "2025-12-29", nav: 103.88, dailyPL: -0.36, exposure: 11139539.01 },
+          { date: "2025-12-30", nav: 103.54, dailyPL: -0.33, exposure: 11099672.11 },
+          { date: "2025-12-31", nav: 102.97, dailyPL: -0.55, exposure: 11063028.08 },
+          { date: "2026-01-01", nav: 103.20, dailyPL: 0.23, exposure: 11002448.45 },
+          { date: "2026-01-02", nav: 104.07, dailyPL: 0.84, exposure: 11027492.92 },
+          { date: "2026-01-05", nav: 104.29, dailyPL: 0.21, exposure: 11120262.91 },
+          { date: "2026-01-06", nav: 104.55, dailyPL: 0.24, exposure: 11144011.34 },
+          { date: "2026-01-07", nav: 104.53, dailyPL: -0.01, exposure: 11171025.07 },
+          { date: "2026-01-08", nav: 104.76, dailyPL: 0.21, exposure: 11169712.63 },
+          { date: "2026-01-09", nav: 105.12, dailyPL: 0.34, exposure: 11193624.76 },
         ],
         drawdownCurve: [
           { date: "2025-11-23", drawdown: 0 },
@@ -390,20 +390,107 @@ export class PortfolioApi {
       });
     }
 
-    // Total Portfolio: Combine QAW + QYE with NAV rebasing
+    // Total Portfolio: Exposure-weighted combined NAV for overlap period
     if (scheme === "Total Portfolio") {
-      const qawData = await this.getHistoricalData(qcode, "Scheme QAW++");
-      const qyeData = await this.getHistoricalData(qcode, "Scheme QYE++");
+      const hc = this.MANGESH_HARDCODED_DATA["Scheme QAW++"];
+      const qawEquity = hc.data.equityCurve;
 
-      // Rebase QYE NAV to continue from QAW's final NAV
-      const rebaseMultiplier = this.QAW_FINAL_NAV / 100;
-      const rebasedQyeData = qyeData.map((entry) => ({
-        ...entry,
-        nav: entry.nav * rebaseMultiplier,
-      }));
+      // Fetch QYE data from DB with daily_p_l and exposure_value for weighting
+      const depositTag = this.getDepositSystemTag("Scheme QYE++");
+      const qyeDbData = await prisma.master_sheet_test.findMany({
+        where: {
+          qcode,
+          system_tag: depositTag,
+          date: { gte: this.QYE_START_DATE },
+          nav: { not: null },
+        },
+        select: {
+          date: true, nav: true, prev_nav: true, drawdown: true,
+          pnl: true, capital_in_out: true, daily_p_l: true, exposure_value: true,
+        },
+        orderBy: { date: "asc" },
+      });
 
-      // Combine: QAW data first, then QYE data
-      return [...qawData, ...rebasedQyeData];
+      // Build a map of QYE data by date string for overlap lookups
+      const qyeByDate = new Map<string, { dailyPL: number; exposure: number; nav: number; pnl: number; capitalInOut: number }>();
+      for (const row of qyeDbData) {
+        qyeByDate.set(this.normalizeDate(row.date), {
+          dailyPL: Number(row.daily_p_l) || 0,
+          exposure: Number(row.exposure_value) || 0,
+          nav: Number(row.nav) || 0,
+          pnl: Number(row.pnl) || 0,
+          capitalInOut: Number(row.capital_in_out) || 0,
+        });
+      }
+
+      // Find the last QAW date (when QAW closes)
+      const qawLastDate = qawEquity[qawEquity.length - 1].date;
+
+      // Phase 1: Pre-overlap — QAW-only days (before QYE has exposure in DB)
+      // Phase 2: Overlap — both schemes have exposure, use weighted returns
+      // Phase 3: Post-overlap — QYE-only days (after QAW closes), rebased from combined NAV
+      const combined: { date: Date; nav: number; prevNav: number | null; drawdown: number; pnl: number; capitalInOut: number }[] = [];
+      let prevCombinedNav = 100; // QAW starts at 100
+
+      // Process QAW days (Phase 1 + Phase 2)
+      for (const qawEntry of qawEquity) {
+        const dateStr = qawEntry.date;
+        const qye = qyeByDate.get(dateStr);
+
+        if (!qye || qye.exposure === 0) {
+          // Phase 1: No QYE exposure — combined NAV follows QAW directly
+          const drawdownEntry = hc.data.drawdownCurve.find((d) => d.date === dateStr);
+          combined.push({
+            date: new Date(dateStr),
+            nav: qawEntry.nav,
+            prevNav: null,
+            drawdown: drawdownEntry?.drawdown || 0,
+            pnl: 0,
+            capitalInOut: 0,
+          });
+          prevCombinedNav = qawEntry.nav;
+        } else {
+          // Phase 2: Both schemes have exposure — exposure-weighted daily return
+          const totalExposure = qawEntry.exposure + qye.exposure;
+          const weightedReturn = totalExposure > 0
+            ? (qawEntry.dailyPL * qawEntry.exposure + qye.dailyPL * qye.exposure) / totalExposure
+            : 0;
+          const newCombinedNav = prevCombinedNav * (1 + weightedReturn / 100);
+
+          combined.push({
+            date: new Date(dateStr),
+            nav: newCombinedNav,
+            prevNav: prevCombinedNav,
+            drawdown: 0,
+            pnl: qye.pnl, // QYE pnl for cash overlay; QAW pnl handled via hardcoded monthly data
+            capitalInOut: qye.capitalInOut,
+          });
+          prevCombinedNav = newCombinedNav;
+        }
+      }
+
+      // Phase 3: Post-overlap — QYE-only days after QAW closes, rebased from combined NAV
+      const lastCombinedNav = prevCombinedNav;
+      // Find the QYE NAV on the last QAW date to compute rebase multiplier
+      const qyeAtQawEnd = qyeByDate.get(qawLastDate);
+      const qyeNavAtQawEnd = qyeAtQawEnd?.nav || 100;
+      const rebaseMultiplier = lastCombinedNav / qyeNavAtQawEnd;
+
+      for (const row of qyeDbData) {
+        const dateStr = this.normalizeDate(row.date);
+        if (dateStr <= qawLastDate) continue; // Already handled in overlap
+
+        combined.push({
+          date: row.date,
+          nav: Number(row.nav) * rebaseMultiplier,
+          prevNav: row.prev_nav ? Number(row.prev_nav) * rebaseMultiplier : null,
+          drawdown: Math.abs(Number(row.drawdown) || 0),
+          pnl: Number(row.pnl) || 0,
+          capitalInOut: Number(row.capital_in_out) || 0,
+        });
+      }
+
+      return combined;
     }
 
     // QYE: Fetch from database (only from QYE start date onwards)
