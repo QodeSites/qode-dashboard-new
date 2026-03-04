@@ -321,8 +321,15 @@ function printSummaryTable(
 
 function buildSheetData(
   data: DailyAUM[],
-  accounts: AccountInfo[]
+  accounts: AccountInfo[],
+  verbose: boolean
 ): (string | number)[][] {
+  if (!verbose) {
+    const header = ["Date", "Total AUM"];
+    const rows = data.map((row) => [row.date, row.total] as (string | number)[]);
+    return [header, ...rows];
+  }
+
   const relevantAccounts = accounts.filter((a) =>
     data.some((d) => d.accounts.some((da) => da.qcode === a.qcode))
   );
@@ -344,8 +351,11 @@ function buildSheetData(
   return [header, ...rows];
 }
 
+const verbose = process.argv.includes("--verbose");
+
 async function main() {
   printHeader("AUM EXTRACTION - Managed Accounts");
+  console.log(`Mode: ${verbose ? "verbose (per-account columns in Excel)" : "summary (total AUM only, use --verbose for per-account)"}`);
   console.log(`Primary Tag: "${PRIMARY_TAG}" (uses portfolio_value)`);
   console.log(`Fallback 1:  "${FALLBACK_TAG_1}" (uses portfolio_value)`);
   console.log(`Fallback 2:  "${FALLBACK_TAG_2}" (uses exposure_value)`);
@@ -468,13 +478,13 @@ async function main() {
   const wb = XLSX.utils.book_new();
 
   const dailySheet = XLSX.utils.aoa_to_sheet(
-    buildSheetData(managedDailyAUM, managedOnly)
+    buildSheetData(managedDailyAUM, managedOnly, verbose)
   );
   const monthlySheet = XLSX.utils.aoa_to_sheet(
-    buildSheetData(managedMonthlyAUM, managedOnly)
+    buildSheetData(managedMonthlyAUM, managedOnly, verbose)
   );
   const quarterlySheet = XLSX.utils.aoa_to_sheet(
-    buildSheetData(managedQuarterlyAUM, managedOnly)
+    buildSheetData(managedQuarterlyAUM, managedOnly, verbose)
   );
 
   XLSX.utils.book_append_sheet(wb, dailySheet, "Daily");
