@@ -16,6 +16,12 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+import * as fs from "fs";
+import * as path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const prisma = new PrismaClient();
 
@@ -310,6 +316,33 @@ function printSummaryTable(
   }
 }
 
+function writeAUMCsv(
+  filePath: string,
+  data: DailyAUM[],
+  accounts: AccountInfo[]
+) {
+  const relevantAccounts = accounts.filter((a) =>
+    data.some((d) => d.accounts.some((da) => da.qcode === a.qcode))
+  );
+
+  const header = [
+    "Date",
+    "Total AUM",
+    ...relevantAccounts.map((a) => `${a.qcode} (${a.account_name})`),
+  ].join(",");
+
+  const rows = data.map((row) => {
+    const accountValues = relevantAccounts.map((a) => {
+      const acc = row.accounts.find((da) => da.qcode === a.qcode);
+      return acc ? acc.value.toFixed(2) : "";
+    });
+    return [row.date, row.total.toFixed(2), ...accountValues].join(",");
+  });
+
+  fs.writeFileSync(filePath, [header, ...rows].join("\n"), "utf-8");
+  console.log(`  Saved: ${filePath}`);
+}
+
 async function main() {
   printHeader("AUM EXTRACTION - Managed Accounts");
   console.log(`Primary Tag: "${PRIMARY_TAG}" (uses portfolio_value)`);
@@ -396,6 +429,43 @@ async function main() {
   const recentDaily = dailyAUM.slice(-30);
   printHeader(`DAILY AUM (last 30 trading days of ${dailyAUM.length} total)`);
   printSummaryTable(recentDaily, accountsWithData, "daily");
+
+  // Step 7: Export CSV for managed_account classified accounts only
+  const managedOnly = accountsWithData.filter(
+    (a) => a.classification === "managed_account"
+  );
+  const managedDataMap = new Map<string, Map<string, number>>();
+  for (const acc of managedOnly) {
+    const data = accountDataMap.get(acc.qcode);
+    if (data) managedDataMap.set(acc.qcode, data);
+  }
+
+  const managedDailyAUM = buildDailyAUM(managedOnly, managedDataMap);
+  const managedMonthlyAUM = deriveMonthlyAUM(managedDailyAUM);
+  const managedQuarterlyAUM = deriveQuarterlyAUM(managedDailyAUM);
+
+  const outputDir = path.join(__dirname, "output");
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+
+  printHeader("CSV EXPORT (managed_account only)");
+  console.log(`  Accounts included: ${managedOnly.length}`);
+  writeAUMCsv(
+    path.join(outputDir, "managed_aum_daily.csv"),
+    managedDailyAUM,
+    managedOnly
+  );
+  writeAUMCsv(
+    path.join(outputDir, "managed_aum_monthly.csv"),
+    managedMonthlyAUM,
+    managedOnly
+  );
+  writeAUMCsv(
+    path.join(outputDir, "managed_aum_quarterly.csv"),
+    managedQuarterlyAUM,
+    managedOnly
+  );
 
   console.log(
     "\n" +
