@@ -23,12 +23,54 @@ const PRIMARY_TAG = "Zerodha Total Portfolio";
 const FALLBACK_TAG_1 = "Total Portfolio Exposure";
 const FALLBACK_TAG_2 = "Total Portfolio Value";
 
+type AccountClassification = "managed_account" | "prop" | "pms";
+
+// Actual classification of accounts (all have account_type 'managed_account' in DB)
+const ACCOUNT_CLASSIFICATION: Record<string, AccountClassification> = {
+  // Managed accounts
+  QAC00022: "managed_account", // Deepti Parikh
+  QAC00026: "managed_account", // Harsh Munshaw
+  QAC00040: "managed_account", // Shilpa Poddar
+  QAC00041: "managed_account", // Sarla Performance Fibers
+  QAC00043: "managed_account", // Vikram Trading Company
+  QAC00046: "managed_account", // Satidham Industries
+  QAC00053: "managed_account", // Dinesh Goel
+  QAC00055: "managed_account", // Krishnan Iyer HUF
+  QAC00056: "managed_account", // Bharat Shah
+  QAC00064: "managed_account", // Mangesh Hirve
+  QAC00065: "managed_account", // Radiance FPI
+  QAC00066: "managed_account", // Satidham Industries Private Limited
+  QAC00069: "managed_account", // Sakshi Maheshwari
+  QAC00070: "managed_account", // sati
+  QAC00071: "managed_account", // Arwani Research Services Pvt Ltd
+  QAC00072: "managed_account", // Suresh Somani
+  QAC00073: "managed_account", // Ashika Prop
+  QAC00074: "managed_account", // Ashit Jhaveri
+  QAC00083: "managed_account", // Ashwin Agarwal
+
+  // Prop accounts
+  QAC00063: "prop", // Affluence Prop
+  QAC00067: "prop", // Affluence High Risk
+  QAC00068: "prop", // Affluence High Risk 2
+  QAC00075: "prop", // Affluence High Risk 3
+  QAC00076: "prop", // Swan Prop Live XTS 4
+  QAC00077: "prop", // Swan Team
+  QAC00079: "prop", // Salecha Capital
+  QAC00080: "prop", // Marwadi FPI
+  QAC00081: "prop", // Kavan Marwadi Prop
+  QAC00082: "prop", // Qode Advisors PMS Zerodha
+
+  // PMS (classified as managed_account in DB)
+  QAC00058: "pms", // QodePMS
+};
+
 interface AccountInfo {
   qcode: string;
   account_name: string;
   broker: string;
   strategy: string | null;
   aumTag?: string; // which system_tag was used for this account
+  classification?: AccountClassification;
 }
 
 interface DailyAccountAUM {
@@ -280,9 +322,14 @@ async function main() {
   const accounts = await getManagedAccounts();
   console.log(`Found ${accounts.length} managed accounts:\n`);
 
+  // Attach classification
+  for (const acc of accounts) {
+    acc.classification = ACCOUNT_CLASSIFICATION[acc.qcode] || "managed_account";
+  }
+
   for (const acc of accounts) {
     console.log(
-      `  ${acc.qcode} | ${acc.account_name} | ${acc.broker} | ${acc.strategy || "-"}`
+      `  ${acc.qcode} | ${acc.account_name} | ${acc.classification} | ${acc.broker} | ${acc.strategy || "-"}`
     );
   }
 
@@ -299,12 +346,12 @@ async function main() {
       accountsWithData.push({ ...account, aumTag: tag! });
       const dates = Array.from(dateMap.keys()).sort();
       console.log(
-        `  ${account.qcode}: ${dateMap.size} days (${dates[0]} to ${dates[dates.length - 1]}) [${tag}]`
+        `  ${account.qcode} (${account.classification}): ${dateMap.size} days (${dates[0]} to ${dates[dates.length - 1]}) [${tag}]`
       );
     } else {
       accountsWithNoData.push(account);
       console.log(
-        `  ${account.qcode}: No data with any AUM tag`
+        `  ${account.qcode} (${account.classification}): No data with any AUM tag`
       );
     }
   }
@@ -316,7 +363,7 @@ async function main() {
     );
     for (const acc of accountsWithNoData) {
       console.log(
-        `  ${acc.qcode} | ${acc.account_name} | ${acc.broker} | ${acc.strategy || "-"}`
+        `  ${acc.qcode} | ${acc.account_name} | ${acc.classification} | ${acc.broker} | ${acc.strategy || "-"}`
       );
     }
   }
