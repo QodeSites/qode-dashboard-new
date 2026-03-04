@@ -19,6 +19,7 @@ import { PrismaClient } from "@prisma/client";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
+import * as XLSX from "xlsx";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -316,11 +317,10 @@ function printSummaryTable(
   }
 }
 
-function writeAUMCsv(
-  filePath: string,
+function buildSheetData(
   data: DailyAUM[],
   accounts: AccountInfo[]
-) {
+): (string | number)[][] {
   const relevantAccounts = accounts.filter((a) =>
     data.some((d) => d.accounts.some((da) => da.qcode === a.qcode))
   );
@@ -329,18 +329,17 @@ function writeAUMCsv(
     "Date",
     "Total AUM",
     ...relevantAccounts.map((a) => `${a.qcode} (${a.account_name})`),
-  ].join(",");
+  ];
 
   const rows = data.map((row) => {
     const accountValues = relevantAccounts.map((a) => {
       const acc = row.accounts.find((da) => da.qcode === a.qcode);
-      return acc ? acc.value.toFixed(2) : "";
+      return acc ? acc.value : "";
     });
-    return [row.date, row.total.toFixed(2), ...accountValues].join(",");
+    return [row.date, row.total, ...accountValues] as (string | number)[];
   });
 
-  fs.writeFileSync(filePath, [header, ...rows].join("\n"), "utf-8");
-  console.log(`  Saved: ${filePath}`);
+  return [header, ...rows];
 }
 
 async function main() {
@@ -449,23 +448,28 @@ async function main() {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  printHeader("CSV EXPORT (managed_account only)");
+  printHeader("EXCEL EXPORT (managed_account only)");
   console.log(`  Accounts included: ${managedOnly.length}`);
-  writeAUMCsv(
-    path.join(outputDir, "managed_aum_daily.csv"),
-    managedDailyAUM,
-    managedOnly
+
+  const wb = XLSX.utils.book_new();
+
+  const dailySheet = XLSX.utils.aoa_to_sheet(
+    buildSheetData(managedDailyAUM, managedOnly)
   );
-  writeAUMCsv(
-    path.join(outputDir, "managed_aum_monthly.csv"),
-    managedMonthlyAUM,
-    managedOnly
+  const monthlySheet = XLSX.utils.aoa_to_sheet(
+    buildSheetData(managedMonthlyAUM, managedOnly)
   );
-  writeAUMCsv(
-    path.join(outputDir, "managed_aum_quarterly.csv"),
-    managedQuarterlyAUM,
-    managedOnly
+  const quarterlySheet = XLSX.utils.aoa_to_sheet(
+    buildSheetData(managedQuarterlyAUM, managedOnly)
   );
+
+  XLSX.utils.book_append_sheet(wb, dailySheet, "Daily");
+  XLSX.utils.book_append_sheet(wb, monthlySheet, "Monthly");
+  XLSX.utils.book_append_sheet(wb, quarterlySheet, "Quarterly");
+
+  const excelPath = path.join(outputDir, "managed_aum.xlsx");
+  XLSX.writeFile(wb, excelPath);
+  console.log(`  Saved: ${excelPath}`);
 
   console.log(
     "\n" +
