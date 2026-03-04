@@ -26,6 +26,8 @@ const __dirname = path.dirname(__filename);
 
 const prisma = new PrismaClient();
 
+const EXCLUDED_QCODES = new Set(["QAC00066"]); // Exclude from AUM calculations
+
 const PRIMARY_TAG = "Zerodha Total Portfolio";
 const FALLBACK_TAG_1 = "Total Portfolio Exposure";
 const FALLBACK_TAG_2 = "Total Portfolio Value";
@@ -354,15 +356,27 @@ async function main() {
   const accounts = await getManagedAccounts();
   console.log(`Found ${accounts.length} managed accounts:\n`);
 
-  // Attach classification
+  // Attach classification and filter out excluded qcodes
   for (const acc of accounts) {
     acc.classification = ACCOUNT_CLASSIFICATION[acc.qcode] || "managed_account";
   }
 
-  for (const acc of accounts) {
+  const excluded = accounts.filter((a) => EXCLUDED_QCODES.has(a.qcode));
+  const activeAccounts = accounts.filter((a) => !EXCLUDED_QCODES.has(a.qcode));
+
+  for (const acc of activeAccounts) {
     console.log(
       `  ${acc.qcode} | ${acc.account_name} | ${acc.classification} | ${acc.broker} | ${acc.strategy || "-"}`
     );
+  }
+
+  if (excluded.length > 0) {
+    console.log(`\nEXCLUDED FROM AUM (${excluded.length}):`);
+    for (const acc of excluded) {
+      console.log(
+        `  ${acc.qcode} | ${acc.account_name} | ${acc.classification}`
+      );
+    }
   }
 
   // Step 2: Fetch daily AUM data per account
@@ -371,7 +385,7 @@ async function main() {
   const accountsWithData: AccountInfo[] = [];
   const accountsWithNoData: AccountInfo[] = [];
 
-  for (const account of accounts) {
+  for (const account of activeAccounts) {
     const { dateMap, tag } = await getAccountAUMData(account.qcode);
     if (dateMap.size > 0) {
       accountDataMap.set(account.qcode, dateMap);
