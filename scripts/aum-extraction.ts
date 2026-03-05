@@ -319,14 +319,33 @@ function printSummaryTable(
   }
 }
 
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+function monthLabel(dateStr: string): string {
+  const d = new Date(dateStr);
+  return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function quarterLabel(dateStr: string): string {
+  const d = new Date(dateStr);
+  const q = getQuarter(d.getMonth() + 1);
+  return `${q} ${d.getFullYear()}`;
+}
+
 function buildSheetData(
   data: DailyAUM[],
   accounts: AccountInfo[],
-  verbose: boolean
+  verbose: boolean,
+  labelFn?: (dateStr: string) => string
 ): (string | number)[][] {
+  const periodLabel = labelFn || ((d: string) => d);
+
   if (!verbose) {
-    const header = ["Date", "Total AUM"];
-    const rows = data.map((row) => [row.date, row.total] as (string | number)[]);
+    const header = ["Period", "Total AUM"];
+    const rows = data.map((row) => [periodLabel(row.date), row.total] as (string | number)[]);
     return [header, ...rows];
   }
 
@@ -335,7 +354,7 @@ function buildSheetData(
   );
 
   const header = [
-    "Date",
+    "Period",
     "Total AUM",
     ...relevantAccounts.map((a) => `${a.qcode} (${a.account_name})`),
   ];
@@ -345,7 +364,7 @@ function buildSheetData(
       const acc = row.accounts.find((da) => da.qcode === a.qcode);
       return acc ? acc.value : "";
     });
-    return [row.date, row.total, ...accountValues] as (string | number)[];
+    return [periodLabel(row.date), row.total, ...accountValues] as (string | number)[];
   });
 
   return [header, ...rows];
@@ -481,10 +500,10 @@ async function main() {
     buildSheetData(managedDailyAUM, managedOnly, verbose)
   );
   const monthlySheet = XLSX.utils.aoa_to_sheet(
-    buildSheetData(managedMonthlyAUM, managedOnly, verbose)
+    buildSheetData(managedMonthlyAUM, managedOnly, verbose, monthLabel)
   );
   const quarterlySheet = XLSX.utils.aoa_to_sheet(
-    buildSheetData(managedQuarterlyAUM, managedOnly, verbose)
+    buildSheetData(managedQuarterlyAUM, managedOnly, verbose, quarterLabel)
   );
 
   XLSX.utils.book_append_sheet(wb, dailySheet, "Daily");
