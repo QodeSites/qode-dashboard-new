@@ -99,11 +99,14 @@ export class PortfolioApi {
     "Scheme QYE++": "Total Portfolio Value",
   };
 
-  // Deposit/cash flow queries use a different system tag for QYE
+  // Deposit/cash flow/exposure queries use the original system tag for QYE (matching portfolio-utils behavior)
   private static readonly MANGESH_DEPOSIT_TAGS: Record<string, string> = {
     "Scheme QAW++": "QAW Zerodha Total Portfolio",
-    "Scheme QYE++": "Total Portfolio Value",
+    "Scheme QYE++": "Zerodha Total Portfolio",
   };
+
+  // Overlap NAV calculation uses this tag for QYE daily_p_l and exposure_value
+  private static readonly MANGESH_OVERLAP_TAG = "Total Portfolio Value";
 
   // QAW final NAV (for reference)
   private static readonly QAW_FINAL_NAV = 105.12;
@@ -315,13 +318,12 @@ export class PortfolioApi {
       return cashFlows.reduce((sum, flow) => sum + flow.amount, 0);
     }
 
-    // QYE: Fetch from database using deposit-specific tag (only from QYE start date onwards)
+    // QYE: Fetch from database using deposit-specific tag (no date filter, matching portfolio-utils behavior)
     const systemTag = this.getDepositSystemTag(scheme);
     const depositSum = await prisma.master_sheet_test.aggregate({
       where: {
         qcode,
         system_tag: systemTag,
-        date: { gte: this.QYE_START_DATE },
         capital_in_out: { not: null },
       },
       _sum: { capital_in_out: true },
@@ -349,13 +351,12 @@ export class PortfolioApi {
       return this.getLatestExposure(qcode, "Scheme QYE++");
     }
 
-    // QYE: Fetch from database using deposit-specific tag (only from QYE start date onwards)
+    // QYE: Fetch from database using deposit-specific tag (no date filter, matching portfolio-utils behavior)
     const systemTag = this.getDepositSystemTag(scheme);
     const record = await prisma.master_sheet_test.findFirst({
       where: {
         qcode,
         system_tag: systemTag,
-        date: { gte: this.QYE_START_DATE },
       },
       orderBy: { date: "desc" },
       select: { portfolio_value: true, drawdown: true, nav: true, date: true },
@@ -396,11 +397,11 @@ export class PortfolioApi {
       const qawEquity = hc.data.equityCurve;
 
       // Fetch QYE data from DB with daily_p_l and exposure_value for weighting
-      const depositTag = this.getDepositSystemTag("Scheme QYE++");
+      // Uses dedicated overlap tag, decoupled from deposit/exposure queries
       const qyeDbData = await prisma.master_sheet_test.findMany({
         where: {
           qcode,
-          system_tag: depositTag,
+          system_tag: this.MANGESH_OVERLAP_TAG,
           date: { gte: this.QYE_START_DATE },
           nav: { not: null },
         },
@@ -546,13 +547,12 @@ export class PortfolioApi {
       return [...qawCashFlows, ...qyeCashFlows].sort((a, b) => a.date.localeCompare(b.date));
     }
 
-    // QYE: Fetch from database using deposit-specific tag (only from QYE start date onwards)
+    // QYE: Fetch from database using deposit-specific tag (no date filter, matching portfolio-utils behavior)
     const systemTag = this.getDepositSystemTag(scheme);
     const data = await prisma.master_sheet_test.findMany({
       where: {
         qcode,
         system_tag: systemTag,
-        date: { gte: this.QYE_START_DATE },
         AND: [
           { capital_in_out: { not: null } },
           { capital_in_out: { not: new Decimal(0) } },
