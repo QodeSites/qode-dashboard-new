@@ -273,7 +273,9 @@ class BifurcatedPortfolioEngine {
       where: {
         qcode,
         system_tag: this.config.depositSystemTag,
-        date: { gte: this.config.newStartDate },
+        // Shared tags: no date filter — all capital movements belong to this
+        // continuous account. Different tags: date filter isolates new scheme.
+        ...(this.sharedDepositTag ? {} : { date: { gte: this.config.newStartDate } }),
         capital_in_out: { not: null },
       },
       _sum: { capital_in_out: true },
@@ -476,7 +478,9 @@ class BifurcatedPortfolioEngine {
       where: {
         qcode,
         system_tag: this.config.depositSystemTag,
-        date: { gte: this.config.newStartDate },
+        // Shared tags: no date filter — all capital movements belong to this
+        // continuous account. Different tags: date filter isolates new scheme.
+        ...(this.sharedDepositTag ? {} : { date: { gte: this.config.newStartDate } }),
         AND: [
           { capital_in_out: { not: null } },
           { capital_in_out: { not: new Decimal(0) } },
@@ -632,10 +636,11 @@ class BifurcatedPortfolioEngine {
         historicalData[0].date.getTime()) /
       (1000 * 60 * 60 * 24);
 
+    // All schemes start at NAV 100 by convention. For shared-tag clients
+    // (Shilpa/Vikram), prevNav of the first entry after newStartDate is the
+    // old scheme's final NAV (~110/~106), NOT 100. Always use 100.
     const firstNav =
-      scheme === this.config.newSchemeName
-        ? (historicalData[0].prevNav ?? 100)
-        : originalFirstNav;
+      scheme === this.config.newSchemeName ? 100 : originalFirstNav;
 
     if (days < 365) {
       return (lastNav / firstNav - 1) * 100;
@@ -740,10 +745,8 @@ class BifurcatedPortfolioEngine {
 
     for (const [period, targetCount] of Object.entries(periods)) {
       if (period === "sinceInception") {
-        const firstNav =
-          scheme === this.config.newSchemeName
-            ? (historicalData?.[0]?.prevNav ?? 100)
-            : 100; // For "Total Portfolio" and others, use 100 (matching old flow)
+        // All schemes start at NAV 100 by convention
+        const firstNav = 100;
         if (!firstNav) {
           returns[period] = null;
         } else if (dataRangeDays > 365) {
@@ -924,7 +927,9 @@ class BifurcatedPortfolioEngine {
       if (!grouped[year][month]) {
         let startNav: number;
         if (!isFirstMonthSet && useFirstPrevNav) {
-          startNav = historicalData[0]?.prevNav ?? 100;
+          // All schemes start at NAV 100 by convention. Don't use prevNav
+          // as it may be the old scheme's final NAV for shared-tag clients.
+          startNav = 100;
           isFirstMonthSet = true;
         } else if (i > 0) {
           startNav = historicalData[i - 1]?.nav || entry.nav;
@@ -1076,7 +1081,9 @@ class BifurcatedPortfolioEngine {
       if (!grouped[year][quarter]) {
         let startNav: number;
         if (!isFirstQuarterSet && useFirstPrevNav) {
-          startNav = historicalData[0]?.prevNav ?? 100;
+          // All schemes start at NAV 100 by convention. Don't use prevNav
+          // as it may be the old scheme's final NAV for shared-tag clients.
+          startNav = 100;
           isFirstQuarterSet = true;
         } else if (i > 0) {
           startNav = historicalData[i - 1]?.nav || entry.nav;
