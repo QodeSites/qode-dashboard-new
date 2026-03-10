@@ -437,17 +437,39 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
-      const oldCashFlows = await this.getCashFlows(
-        qcode,
-        this.config.oldSchemeName
-      );
-      const newCashFlows = await this.getCashFlows(
-        qcode,
-        this.config.newSchemeName
-      );
-      return [...oldCashFlows, ...newCashFlows].sort((a, b) =>
-        a.date.localeCompare(b.date)
-      );
+      if (this.sharedDepositTag) {
+        // Tags match — single DB query covers both periods (Shilpa/Vikram)
+        const data = await prisma.master_sheet.findMany({
+          where: {
+            qcode,
+            system_tag: this.config.depositSystemTag,
+            AND: [
+              { capital_in_out: { not: null } },
+              { capital_in_out: { not: new Decimal(0) } },
+            ],
+          },
+          select: { date: true, capital_in_out: true },
+          orderBy: { date: "asc" },
+        });
+        return data.map((entry) => ({
+          date: this.normalizeDate(entry.date),
+          amount: entry.capital_in_out?.toNumber() || 0,
+          dividend: 0,
+        }));
+      } else {
+        // Tags differ — combine frozen old + DB new (Dinesh)
+        const oldCashFlows = await this.getCashFlows(
+          qcode,
+          this.config.oldSchemeName
+        );
+        const newCashFlows = await this.getCashFlows(
+          qcode,
+          this.config.newSchemeName
+        );
+        return [...oldCashFlows, ...newCashFlows].sort((a, b) =>
+          a.date.localeCompare(b.date)
+        );
+      }
     }
 
     const data = await prisma.master_sheet.findMany({
