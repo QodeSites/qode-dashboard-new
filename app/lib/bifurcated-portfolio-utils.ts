@@ -230,8 +230,16 @@ class BifurcatedPortfolioEngine {
     if (scheme === this.config.oldSchemeName) return 0;
 
     if (scheme === "Total Portfolio") {
-      const cashFlows = await this.getCashFlows(qcode, "Total Portfolio");
-      return cashFlows.reduce((sum, flow) => sum + flow.amount, 0);
+      // Mirror old flow: single DB aggregate, no date filter
+      const depositSum = await prisma.master_sheet.aggregate({
+        where: {
+          qcode,
+          system_tag: this.config.depositSystemTag,
+          capital_in_out: { not: null },
+        },
+        _sum: { capital_in_out: true },
+      });
+      return Number(depositSum._sum.capital_in_out) || 0;
     }
 
     const depositSum = await prisma.master_sheet.aggregate({
@@ -265,7 +273,27 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
-      return this.getLatestExposure(qcode, this.config.newSchemeName);
+      // Mirror old flow: no date filter, get latest record
+      const record = await prisma.master_sheet.findFirst({
+        where: {
+          qcode,
+          system_tag: this.config.depositSystemTag,
+        },
+        orderBy: { date: "desc" },
+        select: {
+          portfolio_value: true,
+          drawdown: true,
+          nav: true,
+          date: true,
+        },
+      });
+      if (!record) return null;
+      return {
+        portfolioValue: Number(record.portfolio_value) || 0,
+        drawdown: Math.abs(Number(record.drawdown) || 0),
+        nav: Number(record.nav) || 0,
+        date: record.date,
+      };
     }
 
     const record = await prisma.master_sheet.findFirst({
@@ -420,21 +448,22 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
-      const oldProfit = await this.getTotalProfit(
-        qcode,
-        this.config.oldSchemeName
-      );
-      const newProfit = await this.getTotalProfit(
-        qcode,
-        this.config.newSchemeName
-      );
-      return oldProfit + newProfit;
+      // Mirror old flow: single DB aggregate with navSystemTag, no date filter
+      const profitSum = await prisma.master_sheet.aggregate({
+        where: {
+          qcode,
+          system_tag: this.config.navSystemTag,
+          pnl: { not: null },
+        },
+        _sum: { pnl: true },
+      });
+      return Number(profitSum._sum.pnl) || 0;
     }
 
     const profitSum = await prisma.master_sheet.aggregate({
       where: {
         qcode,
-        system_tag: this.config.depositSystemTag,
+        system_tag: this.config.navSystemTag,
         date: { gte: this.config.newStartDate },
         pnl: { not: null },
       },
@@ -479,6 +508,34 @@ class BifurcatedPortfolioEngine {
       return parseFloat(this.frozenData.data.return);
     }
 
+    if (scheme === "Total Portfolio") {
+      // Mirror old flow: query DB directly for first/last NAV, no date filter
+      const firstNavRecord = await prisma.master_sheet.findFirst({
+        where: { qcode, system_tag: this.config.navSystemTag, nav: { not: null } },
+        orderBy: { date: "asc" },
+        select: { nav: true, date: true },
+      });
+      const latestNavRecord = await prisma.master_sheet.findFirst({
+        where: { qcode, system_tag: this.config.navSystemTag, nav: { not: null } },
+        orderBy: { date: "desc" },
+        select: { nav: true, date: true },
+      });
+
+      if (!firstNavRecord || !latestNavRecord) return 0;
+
+      const initialNav = 100; // Force to 100, matching old flow
+      const finalNav = Number(latestNavRecord.nav) || 0;
+      const days =
+        (latestNavRecord.date.getTime() - firstNavRecord.date.getTime()) /
+        (1000 * 60 * 60 * 24);
+
+      if (days < 365) {
+        return (finalNav / initialNav - 1) * 100;
+      } else {
+        return (Math.pow(finalNav / initialNav, 365 / days) - 1) * 100;
+      }
+    }
+
     const historicalData = await this.getHistoricalData(qcode, scheme);
     if (historicalData.length < 2) return 0;
 
@@ -501,6 +558,39 @@ class BifurcatedPortfolioEngine {
     }
   }
 
+  // Raw DB NAV data for "Total Portfolio" trailing returns — mirrors old flow's getHistoricalData
+  private async getRawHistoricalNav(
+    qcode: string
+  ): Promise<{ date: string; nav: number }[]> {
+    const data = await prisma.master_sheet.findMany({
+      where: {
+        qcode,
+        system_tag: this.config.navSystemTag,
+        nav: { not: null },
+        drawdown: { not: null },
+      },
+      select: { date: true, nav: true },
+      orderBy: { date: "asc" },
+    });
+
+    const result = data.map((entry) => ({
+      date: this.normalizeDate(entry.date),
+      nav: Number(entry.nav) || 0,
+    }));
+
+    // Prepend NAV=100 if first entry isn't 100, matching old flow
+    if (result.length > 0 && result[0].nav !== 100) {
+      const firstDate = new Date(result[0].date);
+      firstDate.setUTCDate(firstDate.getUTCDate() - 1);
+      result.unshift({
+        date: firstDate.toISOString().split("T")[0],
+        nav: 100,
+      });
+    }
+
+    return result;
+  }
+
   private async calculateTrailingReturns(
     qcode: string,
     scheme: string,
@@ -510,7 +600,15 @@ class BifurcatedPortfolioEngine {
       return this.frozenData.data.trailingReturns;
     }
 
-    const historicalData = await this.getHistoricalData(qcode, scheme);
+    // For "Total Portfolio", use raw DB NAV data (no rebasing) to match old flow
+    const historicalData = scheme === "Total Portfolio"
+      ? null
+      : await this.getHistoricalData(qcode, scheme);
+    const normalizedData = scheme === "Total Portfolio"
+      ? await this.getRawHistoricalNav(qcode)
+      : (historicalData || []).map((entry) => ({ date: this.normalizeDate(entry.date), nav: entry.nav }))
+          .filter((entry) => entry.date)
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     const emptyReturns = {
       "5d": null,
       "10d": null,
@@ -525,15 +623,6 @@ class BifurcatedPortfolioEngine {
       MDD: drawdownMetrics.mdd,
       currentDD: drawdownMetrics.currentDD,
     };
-
-    if (historicalData.length === 0) return emptyReturns;
-
-    const normalizedData = historicalData
-      .map((entry) => ({ date: this.normalizeDate(entry.date), nav: entry.nav }))
-      .filter((entry) => entry.date)
-      .sort(
-        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-      );
 
     if (normalizedData.length === 0) return emptyReturns;
 
@@ -562,14 +651,18 @@ class BifurcatedPortfolioEngine {
 
     for (const [period, targetCount] of Object.entries(periods)) {
       if (period === "sinceInception") {
-        const originalFirstNav = normalizedData[0]?.nav;
         const firstNav =
           scheme === this.config.newSchemeName
-            ? (historicalData[0]?.prevNav ?? 100)
-            : originalFirstNav;
-        returns[period] = firstNav
-          ? (lastNav / firstNav - 1) * 100
-          : null;
+            ? (historicalData?.[0]?.prevNav ?? 100)
+            : 100; // For "Total Portfolio" and others, use 100 (matching old flow)
+        if (!firstNav) {
+          returns[period] = null;
+        } else if (dataRangeDays > 365) {
+          // Use CAGR for sinceInception when > 1 year, matching old flow
+          returns[period] = (Math.pow(lastNav / firstNav, 365 / dataRangeDays) - 1) * 100;
+        } else {
+          returns[period] = (lastNav / firstNav - 1) * 100;
+        }
         continue;
       }
 
