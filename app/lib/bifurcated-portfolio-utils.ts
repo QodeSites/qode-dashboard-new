@@ -93,6 +93,11 @@ interface ClientConfig {
   newStartDate: Date;
   depositSystemTag: string;
   navSystemTag: string;
+  // Old scheme's DB system tags — when these match depositSystemTag/navSystemTag,
+  // the DB has continuous data under one tag and "Total Portfolio" can use a single
+  // query. When they differ (e.g. Dinesh), we must combine frozen + DB data.
+  oldSchemeDepositTag: string;
+  oldSchemeNavTag: string;
   portfolioMapping: Record<string, PortfolioConfig>;
 }
 
@@ -108,6 +113,8 @@ const DINESH_CONFIG: ClientConfig = {
   newStartDate: new Date("2026-01-12"),
   depositSystemTag: "Zerodha Total Portfolio",
   navSystemTag: "Zerodha Total Portfolio",
+  oldSchemeDepositTag: "QTF Zerodha Total Portfolio",
+  oldSchemeNavTag: "QTF Zerodha Total Portfolio",
   portfolioMapping: {
     "Total Portfolio": {
       current: "Total Portfolio",
@@ -140,6 +147,8 @@ const SHILPA_CONFIG: ClientConfig = {
   newStartDate: new Date("2026-02-05"),
   depositSystemTag: "Zerodha Total Portfolio",
   navSystemTag: "Total Portfolio Value",
+  oldSchemeDepositTag: "Zerodha Total Portfolio",
+  oldSchemeNavTag: "Total Portfolio Value",
   portfolioMapping: {
     "Total Portfolio": {
       current: "Total Portfolio",
@@ -172,6 +181,8 @@ const VIKRAM_CONFIG: ClientConfig = {
   newStartDate: new Date("2026-01-14"),
   depositSystemTag: "Zerodha Total Portfolio",
   navSystemTag: "Total Portfolio Value",
+  oldSchemeDepositTag: "Zerodha Total Portfolio",
+  oldSchemeNavTag: "Total Portfolio Value",
   portfolioMapping: {
     "Total Portfolio": {
       current: "Total Portfolio",
@@ -205,6 +216,16 @@ class BifurcatedPortfolioEngine {
     this.frozenData = frozenData;
   }
 
+  // Whether old+new schemes share the same DB deposit tag (single query covers both periods)
+  private get sharedDepositTag(): boolean {
+    return this.config.oldSchemeDepositTag === this.config.depositSystemTag;
+  }
+
+  // Whether old+new schemes share the same DB NAV tag (single query covers both periods)
+  private get sharedNavTag(): boolean {
+    return this.config.oldSchemeNavTag === this.config.navSystemTag;
+  }
+
   private normalizeDate(date: Date | string): string {
     if (typeof date === "string") return date.split("T")[0];
     return date.toISOString().split("T")[0];
@@ -230,16 +251,22 @@ class BifurcatedPortfolioEngine {
     if (scheme === this.config.oldSchemeName) return 0;
 
     if (scheme === "Total Portfolio") {
-      // Mirror old flow: single DB aggregate, no date filter
-      const depositSum = await prisma.master_sheet.aggregate({
-        where: {
-          qcode,
-          system_tag: this.config.depositSystemTag,
-          capital_in_out: { not: null },
-        },
-        _sum: { capital_in_out: true },
-      });
-      return Number(depositSum._sum.capital_in_out) || 0;
+      if (this.sharedDepositTag) {
+        // Tags match — single DB query covers both periods (Shilpa/Vikram)
+        const depositSum = await prisma.master_sheet.aggregate({
+          where: {
+            qcode,
+            system_tag: this.config.depositSystemTag,
+            capital_in_out: { not: null },
+          },
+          _sum: { capital_in_out: true },
+        });
+        return Number(depositSum._sum.capital_in_out) || 0;
+      } else {
+        // Tags differ — combine frozen old + DB new (Dinesh)
+        const cashFlows = await this.getCashFlows(qcode, "Total Portfolio");
+        return cashFlows.reduce((sum, flow) => sum + flow.amount, 0);
+      }
     }
 
     const depositSum = await prisma.master_sheet.aggregate({
@@ -273,27 +300,32 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
-      // Mirror old flow: no date filter, get latest record
-      const record = await prisma.master_sheet.findFirst({
-        where: {
-          qcode,
-          system_tag: this.config.depositSystemTag,
-        },
-        orderBy: { date: "desc" },
-        select: {
-          portfolio_value: true,
-          drawdown: true,
-          nav: true,
-          date: true,
-        },
-      });
-      if (!record) return null;
-      return {
-        portfolioValue: Number(record.portfolio_value) || 0,
-        drawdown: Math.abs(Number(record.drawdown) || 0),
-        nav: Number(record.nav) || 0,
-        date: record.date,
-      };
+      if (this.sharedDepositTag) {
+        // Tags match — no date filter needed (Shilpa/Vikram)
+        const record = await prisma.master_sheet.findFirst({
+          where: {
+            qcode,
+            system_tag: this.config.depositSystemTag,
+          },
+          orderBy: { date: "desc" },
+          select: {
+            portfolio_value: true,
+            drawdown: true,
+            nav: true,
+            date: true,
+          },
+        });
+        if (!record) return null;
+        return {
+          portfolioValue: Number(record.portfolio_value) || 0,
+          drawdown: Math.abs(Number(record.drawdown) || 0),
+          nav: Number(record.nav) || 0,
+          date: record.date,
+        };
+      } else {
+        // Tags differ — delegate to new scheme (Dinesh)
+        return this.getLatestExposure(qcode, this.config.newSchemeName);
+      }
     }
 
     const record = await prisma.master_sheet.findFirst({
@@ -448,16 +480,29 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
-      // Mirror old flow: single DB aggregate with navSystemTag, no date filter
-      const profitSum = await prisma.master_sheet.aggregate({
-        where: {
+      if (this.sharedNavTag) {
+        // Tags match — single DB query covers both periods (Shilpa/Vikram)
+        const profitSum = await prisma.master_sheet.aggregate({
+          where: {
+            qcode,
+            system_tag: this.config.navSystemTag,
+            pnl: { not: null },
+          },
+          _sum: { pnl: true },
+        });
+        return Number(profitSum._sum.pnl) || 0;
+      } else {
+        // Tags differ — combine frozen old + DB new (Dinesh)
+        const oldProfit = await this.getTotalProfit(
           qcode,
-          system_tag: this.config.navSystemTag,
-          pnl: { not: null },
-        },
-        _sum: { pnl: true },
-      });
-      return Number(profitSum._sum.pnl) || 0;
+          this.config.oldSchemeName
+        );
+        const newProfit = await this.getTotalProfit(
+          qcode,
+          this.config.newSchemeName
+        );
+        return oldProfit + newProfit;
+      }
     }
 
     const profitSum = await prisma.master_sheet.aggregate({
@@ -509,30 +554,49 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
-      // Mirror old flow: query DB directly for first/last NAV, no date filter
-      const firstNavRecord = await prisma.master_sheet.findFirst({
-        where: { qcode, system_tag: this.config.navSystemTag, nav: { not: null } },
-        orderBy: { date: "asc" },
-        select: { nav: true, date: true },
-      });
-      const latestNavRecord = await prisma.master_sheet.findFirst({
-        where: { qcode, system_tag: this.config.navSystemTag, nav: { not: null } },
-        orderBy: { date: "desc" },
-        select: { nav: true, date: true },
-      });
+      if (this.sharedNavTag) {
+        // Tags match — query DB directly for first/last NAV (Shilpa/Vikram)
+        const firstNavRecord = await prisma.master_sheet.findFirst({
+          where: { qcode, system_tag: this.config.navSystemTag, nav: { not: null } },
+          orderBy: { date: "asc" },
+          select: { nav: true, date: true },
+        });
+        const latestNavRecord = await prisma.master_sheet.findFirst({
+          where: { qcode, system_tag: this.config.navSystemTag, nav: { not: null } },
+          orderBy: { date: "desc" },
+          select: { nav: true, date: true },
+        });
 
-      if (!firstNavRecord || !latestNavRecord) return 0;
+        if (!firstNavRecord || !latestNavRecord) return 0;
 
-      const initialNav = 100; // Force to 100, matching old flow
-      const finalNav = Number(latestNavRecord.nav) || 0;
-      const days =
-        (latestNavRecord.date.getTime() - firstNavRecord.date.getTime()) /
-        (1000 * 60 * 60 * 24);
+        const initialNav = 100;
+        const finalNav = Number(latestNavRecord.nav) || 0;
+        const days =
+          (latestNavRecord.date.getTime() - firstNavRecord.date.getTime()) /
+          (1000 * 60 * 60 * 24);
 
-      if (days < 365) {
-        return (finalNav / initialNav - 1) * 100;
+        if (days < 365) {
+          return (finalNav / initialNav - 1) * 100;
+        } else {
+          return (Math.pow(finalNav / initialNav, 365 / days) - 1) * 100;
+        }
       } else {
-        return (Math.pow(finalNav / initialNav, 365 / days) - 1) * 100;
+        // Tags differ — use rebased combined data (Dinesh)
+        const historicalData = await this.getHistoricalData(qcode, scheme);
+        if (historicalData.length < 2) return 0;
+
+        const firstNav = historicalData[0].nav;
+        const lastNav = historicalData[historicalData.length - 1].nav;
+        const days =
+          (historicalData[historicalData.length - 1].date.getTime() -
+            historicalData[0].date.getTime()) /
+          (1000 * 60 * 60 * 24);
+
+        if (days < 365) {
+          return (lastNav / firstNav - 1) * 100;
+        } else {
+          return (Math.pow(lastNav / firstNav, 365 / days) - 1) * 100;
+        }
       }
     }
 
@@ -600,11 +664,14 @@ class BifurcatedPortfolioEngine {
       return this.frozenData.data.trailingReturns;
     }
 
-    // For "Total Portfolio", use raw DB NAV data (no rebasing) to match old flow
-    const historicalData = scheme === "Total Portfolio"
+    // For "Total Portfolio" with shared tags: use raw DB NAV (no rebasing) to match old flow
+    // For "Total Portfolio" with different tags: use rebased combined data (Dinesh)
+    const useRawDbNav = scheme === "Total Portfolio" && this.sharedNavTag;
+    const useRebasedData = scheme === "Total Portfolio" && !this.sharedNavTag;
+    const historicalData = (useRawDbNav)
       ? null
       : await this.getHistoricalData(qcode, scheme);
-    const normalizedData = scheme === "Total Portfolio"
+    const normalizedData = useRawDbNav
       ? await this.getRawHistoricalNav(qcode)
       : (historicalData || []).map((entry) => ({ date: this.normalizeDate(entry.date), nav: entry.nav }))
           .filter((entry) => entry.date)
