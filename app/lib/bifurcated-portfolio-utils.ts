@@ -636,11 +636,17 @@ class BifurcatedPortfolioEngine {
         historicalData[0].date.getTime()) /
       (1000 * 60 * 60 * 24);
 
-    // All schemes start at NAV 100 by convention. For shared-tag clients
-    // (Shilpa/Vikram), prevNav of the first entry after newStartDate is the
-    // old scheme's final NAV (~110/~106), NOT 100. Always use 100.
+    // For different-tag clients (Dinesh), the new scheme's DB tag starts
+    // fresh at NAV ~100, so use 100 as base. For shared-tag clients
+    // (Shilpa/Vikram), the DB NAV continues from the old scheme's final
+    // value (~110/~106), so use the actual first NAV to get the new
+    // scheme's own return.
     const firstNav =
-      scheme === this.config.newSchemeName ? 100 : originalFirstNav;
+      scheme === this.config.newSchemeName && this.sharedNavTag
+        ? originalFirstNav
+        : scheme === this.config.newSchemeName
+          ? 100
+          : originalFirstNav;
 
     if (days < 365) {
       return (lastNav / firstNav - 1) * 100;
@@ -745,8 +751,12 @@ class BifurcatedPortfolioEngine {
 
     for (const [period, targetCount] of Object.entries(periods)) {
       if (period === "sinceInception") {
-        // All schemes start at NAV 100 by convention
-        const firstNav = 100;
+        // For shared-tag new scheme, use actual first NAV (DB continues from
+        // old scheme). For everything else, use 100 (scheme starts at NAV 100).
+        const firstNav =
+          scheme === this.config.newSchemeName && this.sharedNavTag
+            ? normalizedData[0].nav
+            : 100;
         if (!firstNav) {
           returns[period] = null;
         } else if (dataRangeDays > 365) {
@@ -927,9 +937,11 @@ class BifurcatedPortfolioEngine {
       if (!grouped[year][month]) {
         let startNav: number;
         if (!isFirstMonthSet && useFirstPrevNav) {
-          // All schemes start at NAV 100 by convention. Don't use prevNav
-          // as it may be the old scheme's final NAV for shared-tag clients.
-          startNav = 100;
+          // For different-tag (Dinesh): prevNav is null → falls back to 100.
+          // For shared-tag (Shilpa/Vikram): prevNav is the old scheme's
+          // final NAV (~110/~106), which is the correct base for the new
+          // scheme's first period.
+          startNav = historicalData[0]?.prevNav ?? 100;
           isFirstMonthSet = true;
         } else if (i > 0) {
           startNav = historicalData[i - 1]?.nav || entry.nav;
@@ -1081,9 +1093,11 @@ class BifurcatedPortfolioEngine {
       if (!grouped[year][quarter]) {
         let startNav: number;
         if (!isFirstQuarterSet && useFirstPrevNav) {
-          // All schemes start at NAV 100 by convention. Don't use prevNav
-          // as it may be the old scheme's final NAV for shared-tag clients.
-          startNav = 100;
+          // For different-tag (Dinesh): prevNav is null → falls back to 100.
+          // For shared-tag (Shilpa/Vikram): prevNav is the old scheme's
+          // final NAV (~110/~106), which is the correct base for the new
+          // scheme's first period.
+          startNav = historicalData[0]?.prevNav ?? 100;
           isFirstQuarterSet = true;
         } else if (i > 0) {
           startNav = historicalData[i - 1]?.nav || entry.nav;
@@ -1209,6 +1223,21 @@ class BifurcatedPortfolioEngine {
               const firstDate = new Date(rawEquityCurve[0].date);
               firstDate.setDate(firstDate.getDate() - 1);
               const baselineDate = firstDate.toISOString().split("T")[0];
+
+              if (this.sharedNavTag) {
+                // Shared-tag: DB NAV continues from old scheme (~110/~106).
+                // Rebase to start at 100 so chart matches new scheme perspective.
+                const rebaseFactor = 100 / rawEquityCurve[0].nav;
+                const rebasedCurve = rawEquityCurve.map((p) => ({
+                  date: p.date,
+                  nav: Number((p.nav * rebaseFactor).toFixed(2)),
+                }));
+                return [
+                  { date: baselineDate, nav: 100 },
+                  ...rebasedCurve,
+                ];
+              }
+
               return [
                 { date: baselineDate, nav: 100 },
                 ...rawEquityCurve,
