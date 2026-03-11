@@ -46,24 +46,30 @@ const PersonalDetailsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const hasFetched = useRef(false);
-const router = useRouter();
+  const router = useRouter();
+
+  // Resolve effective icode: admin impersonating uses impersonating.icode, regular client uses user.icode
+  const effectiveIcode = session?.user?.accessType === "admin"
+    ? session?.user?.impersonating?.icode
+    : session?.user?.icode;
+
   useEffect(() => {
      if (status === "unauthenticated") {
       router.push("/");
       return;
     }
 
-    // Only fetch data once when session is authenticated and we haven't fetched yet
-    if (status === 'authenticated' && session?.user?.icode && !hasFetched.current) {
+    // Only fetch data once when session is authenticated and we have an effective icode
+    if (status === 'authenticated' && effectiveIcode && !hasFetched.current) {
       fetchClientData();
       hasFetched.current = true;
     } else if (status === 'unauthenticated') {
       setLoading(false);
     }
-  }, [status, session?.user?.icode]);
+  }, [status, effectiveIcode]);
 
   const fetchClientData = async () => {
-    if (!session?.user?.icode) {
+    if (!effectiveIcode) {
       setError('No ICode found in session');
       setLoading(false);
       return;
@@ -87,7 +93,7 @@ const router = useRouter();
 
       console.log('API Response:', result);
       console.log('Total records:', result.data?.length || 0);
-      console.log('Looking for icode:', session.user.icode);
+      console.log('Looking for icode:', effectiveIcode);
 
       // Log available icodes for debugging
       if (result.data && result.data.length > 0) {
@@ -97,13 +103,13 @@ const router = useRouter();
         console.log('First record structure:', Object.keys(result.data[0]));
       }
 
-      // Find the specific client data based on session.user.icode
+      // Find the specific client data based on effective icode
       let clientInfo = result.data.find(
-        client => client.iQode === session.user.icode
+        client => client.iQode === effectiveIcode
       );
 
       // Satidham (QUS0010) fallback: also check linked account QUS00081
-      if (!clientInfo && session.user.icode === "QUS0010") {
+      if (!clientInfo && effectiveIcode === "QUS0010") {
         clientInfo = result.data.find(
           client => client.iQode === "QUS00081"
         );
@@ -113,7 +119,7 @@ const router = useRouter();
         console.log('Client data found:', clientInfo);
         setClientData(clientInfo);
       } else {
-        const errorMsg = `No client data found for icode: ${session.user.icode}. Total records in database: ${result.data?.length || 0}`;
+        const errorMsg = `No client data found for icode: ${effectiveIcode}. Total records in database: ${result.data?.length || 0}`;
         console.error(errorMsg);
         setError(errorMsg);
       }
