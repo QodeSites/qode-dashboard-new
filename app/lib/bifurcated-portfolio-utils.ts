@@ -478,9 +478,9 @@ class BifurcatedPortfolioEngine {
       where: {
         qcode,
         system_tag: this.config.depositSystemTag,
-        // Shared tags: no date filter — all capital movements belong to this
-        // continuous account. Different tags: date filter isolates new scheme.
-        ...(this.sharedDepositTag ? {} : { date: { gte: this.config.newStartDate } }),
+        // Always filter by date for the active scheme's cash flow table —
+        // only show entries from the new scheme period onwards.
+        date: { gte: this.config.newStartDate },
         AND: [
           { capital_in_out: { not: null } },
           { capital_in_out: { not: new Decimal(0) } },
