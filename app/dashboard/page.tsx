@@ -437,6 +437,12 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   const [exporting, setExporting] = useState(false);
   const hasFetchedRef = useRef(false);
 
+  // System tag override state for managed accounts
+  const [availableSystemTags, setAvailableSystemTags] = useState<string[]>([]);
+  const [depositTag, setDepositTag] = useState<string | null>(null);
+  const [navTag, setNavTag] = useState<string | null>(null);
+  const [cashflowTag, setCashflowTag] = useState<string | null>(null);
+
   // Exit impersonation handler
   const handleExitImpersonation = async () => {
     await updateSession({ impersonating: null });
@@ -565,6 +571,38 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, router, isSarla, isSatidham, isDinesh, accountCode, isAdmin, isImpersonating]);
 
+  // Fetch available system tags when account selection changes
+  useEffect(() => {
+    // Reset tags on account change
+    setDepositTag(null);
+    setNavTag(null);
+    setCashflowTag(null);
+    setAvailableSystemTags([]);
+
+    if (!selectedAccount || selectedAccount === "all" || isSarla || isSatidham || isDinesh) {
+      return;
+    }
+
+    const selectedAccountData = accounts.find((acc) => acc.qcode === selectedAccount);
+    if (!selectedAccountData || selectedAccountData.account_type === "pms") {
+      return;
+    }
+
+    const fetchSystemTags = async () => {
+      try {
+        const res = await fetch(`/api/system-tags?qcode=${selectedAccount}`, { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          setAvailableSystemTags(data.tags || []);
+        }
+      } catch (err) {
+        console.error("Error fetching system tags:", err);
+      }
+    };
+
+    fetchSystemTags();
+  }, [selectedAccount, accounts, isSarla, isSatidham, isDinesh]);
+
   useEffect(() => {
     if (selectedAccount && status === "authenticated" && !isSarla && !isSatidham && !isDinesh) {
       const fetchAccountData = async () => {
@@ -576,10 +614,17 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
             throw new Error("Selected account not found");
           }
 
+          // Build system tag override params for managed accounts
+          const tagParams = [
+            depositTag && `depositTag=${encodeURIComponent(depositTag)}`,
+            navTag && `navTag=${encodeURIComponent(navTag)}`,
+            cashflowTag && `cashflowTag=${encodeURIComponent(cashflowTag)}`,
+          ].filter(Boolean).join("&");
+
           const endpoint =
             selectedAccountData.account_type === "pms"
               ? `/api/pms-data?qcode=${selectedAccount}&viewMode=${viewMode}&accountCode=${accountCode}`
-              : `/api/portfolio?viewMode=${viewMode}${selectedAccount !== "all" ? `&qcode=${selectedAccount}` : ""}&accountCode=${accountCode}`;
+              : `/api/portfolio?viewMode=${viewMode}${selectedAccount !== "all" ? `&qcode=${selectedAccount}` : ""}&accountCode=${accountCode}${tagParams ? `&${tagParams}` : ""}`;
 
           const res = await fetch(endpoint, { credentials: "include" });
           if (!res.ok) {
@@ -686,7 +731,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
       fetchAccountData();
     }
-  }, [selectedAccount, accounts, status, viewMode, isSarla, isSatidham, accountCode]);
+  }, [selectedAccount, accounts, status, viewMode, isSarla, isSatidham, accountCode, depositTag, navTag, cashflowTag]);
 
   const renderCashFlowsTable = () => {
     let transactions: { date: string; amount: number }[] = [];
@@ -1552,8 +1597,55 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                   );
                   const lastDate = getLastDate(filteredEquityCurve, metadata?.lastUpdated);
                   const strategyName = metadata?.strategyName || "Portfolio";
+                  const showTagDropdowns = availableSystemTags.length > 1 && (metadata?.isActive ?? true);
                   return (
                     <>
+                      {showTagDropdowns && (
+                        <div className="flex flex-wrap gap-3 items-end">
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs font-heading-bold text-card-text-secondary">Deposit / Value Tag</label>
+                            <Select value={depositTag || "__default__"} onValueChange={(v) => setDepositTag(v === "__default__" ? null : v)}>
+                              <SelectTrigger className="w-[220px] border-0 card-shadow text-sm h-9">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__default__">Default</SelectItem>
+                                {availableSystemTags.map((tag) => (
+                                  <SelectItem key={tag} value={tag}>{tag}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs font-heading-bold text-card-text-secondary">Returns / P&L Tag</label>
+                            <Select value={navTag || "__default__"} onValueChange={(v) => setNavTag(v === "__default__" ? null : v)}>
+                              <SelectTrigger className="w-[220px] border-0 card-shadow text-sm h-9">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__default__">Default</SelectItem>
+                                {availableSystemTags.map((tag) => (
+                                  <SelectItem key={tag} value={tag}>{tag}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs font-heading-bold text-card-text-secondary">Cash Flow Tag</label>
+                            <Select value={cashflowTag || "__default__"} onValueChange={(v) => setCashflowTag(v === "__default__" ? null : v)}>
+                              <SelectTrigger className="w-[220px] border-0 card-shadow text-sm h-9">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__default__">Default</SelectItem>
+                                {availableSystemTags.map((tag) => (
+                                  <SelectItem key={tag} value={tag}>{tag}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      )}
                       <StatsCards
                         stats={convertedStats}
                         accountType={accounts.find((acc) => acc.qcode === selectedAccount)?.account_type || "unknown"}

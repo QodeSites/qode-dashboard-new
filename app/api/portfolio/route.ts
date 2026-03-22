@@ -90,6 +90,14 @@ export async function GET(request: Request) {
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
 
+    // Parse optional system tag overrides
+    const depositTag = searchParams.get("depositTag") || undefined;
+    const navTag = searchParams.get("navTag") || undefined;
+    const cashflowTag = searchParams.get("cashflowTag") || undefined;
+    const tagOverrides = (depositTag || navTag || cashflowTag)
+      ? { depositTag, navTag, cashflowTag }
+      : undefined;
+
     // Fetch qcodes with filters
     let qcodes = await getUserQcodes(icode);
     if (accountType) {
@@ -104,7 +112,7 @@ export async function GET(request: Request) {
     }
 
     // Calculate metrics
-    const metrics = await calculatePortfolioMetrics(qcodes);
+    const metrics = await calculatePortfolioMetrics(qcodes, tagOverrides);
     if (!metrics) {
       return NextResponse.json({ error: "Failed to calculate portfolio metrics" }, { status: 500 });
     }

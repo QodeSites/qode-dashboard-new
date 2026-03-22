@@ -106,32 +106,34 @@ interface Stats {
 
 // Interface for data fetching strategy
 interface DataFetchingStrategy {
-  getAmountDeposited(qcode: string): Promise<number>;
-  getLatestExposure(qcode: string): Promise<{ portfolioValue: number; drawdown: number; nav: number; date: Date } | null>;
-  getPortfolioReturns(qcode: string, strategy?: string): Promise<number>;
-  getTotalProfit(qcode: string, strategy?: string): Promise<number>;
-  getHistoricalData(qcode: string, strategy?: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]>;
-  getFirstNav(qcode: string, strategy?: string): Promise<{ nav: number; date: Date } | null>;
-  getNavAtDate(qcode: string, targetDate: Date, direction: 'before' | 'after' | 'closest', strategy?: string): Promise<{ nav: number; date: Date } | null>;
-  getCashFlows?(qcode: string): Promise<{ date: Date; amount: number }[]>;
+  getAmountDeposited(qcode: string, tagOverride?: string): Promise<number>;
+  getLatestExposure(qcode: string, tagOverride?: string): Promise<{ portfolioValue: number; drawdown: number; nav: number; date: Date } | null>;
+  getPortfolioReturns(qcode: string, strategy?: string, tagOverride?: string): Promise<number>;
+  getTotalProfit(qcode: string, strategy?: string, tagOverride?: string): Promise<number>;
+  getHistoricalData(qcode: string, strategy?: string, tagOverride?: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]>;
+  getFirstNav(qcode: string, strategy?: string, tagOverride?: string): Promise<{ nav: number; date: Date } | null>;
+  getNavAtDate(qcode: string, targetDate: Date, direction: 'before' | 'after' | 'closest', strategy?: string, tagOverride?: string): Promise<{ nav: number; date: Date } | null>;
+  getCashFlows?(qcode: string, tagOverride?: string): Promise<{ date: Date; amount: number }[]>;
   getStrategyName(strategy?: string): string;
   getHoldings(qcode: string): Promise<Holding[]>; // Add this method
 }
 
 // Strategy for Managed Accounts (Jainam)
 class JainamManagedStrategy implements DataFetchingStrategy {
-  async getAmountDeposited(qcode: string): Promise<number> {
+  async getAmountDeposited(qcode: string, tagOverride?: string): Promise<number> {
+    const systemTag = tagOverride ?? "Jainam Total Portfolio Deposit";
     const depositRecords = await prisma.master_sheet.findFirst({
-      where: { qcode, system_tag: "Jainam Total Portfolio Deposit" },
+      where: { qcode, system_tag: systemTag },
       orderBy: { date: "desc" },
       select: { portfolio_value: true },
     });
     return Number(depositRecords?.portfolio_value) || 0;
   }
 
-  async getLatestExposure(qcode: string): Promise<{ portfolioValue: number; drawdown: number; nav: number; date: Date } | null> {
+  async getLatestExposure(qcode: string, tagOverride?: string): Promise<{ portfolioValue: number; drawdown: number; nav: number; date: Date } | null> {
+    const systemTag = tagOverride ?? "Jainam Total Portfolio Exposure";
     const record = await prisma.master_sheet.findFirst({
-      where: { qcode, system_tag: "Jainam Total Portfolio Exposure" },
+      where: { qcode, system_tag: systemTag },
       orderBy: { date: "desc" },
       select: { portfolio_value: true, drawdown: true, nav: true, date: true },
     });
@@ -144,16 +146,17 @@ class JainamManagedStrategy implements DataFetchingStrategy {
     };
   }
 
-  async getPortfolioReturns(qcode: string): Promise<number> {
+  async getPortfolioReturns(qcode: string, strategy?: string, tagOverride?: string): Promise<number> {
     try {
+      const systemTag = tagOverride ?? "Jainam Total Portfolio Exposure";
       const firstNavRecord = await prisma.master_sheet.findFirst({
-        where: { qcode, system_tag: "Jainam Total Portfolio Exposure", nav: { not: null } },
+        where: { qcode, system_tag: systemTag, nav: { not: null } },
         orderBy: { date: "asc" },
         select: { nav: true, date: true },
       });
 
       const latestNavRecord = await prisma.master_sheet.findFirst({
-        where: { qcode, system_tag: "Jainam Total Portfolio Exposure", nav: { not: null } },
+        where: { qcode, system_tag: systemTag, nav: { not: null } },
         orderBy: { date: "desc" },
         select: { nav: true, date: true },
       });
@@ -186,19 +189,21 @@ class JainamManagedStrategy implements DataFetchingStrategy {
     }
   }
 
-  async getTotalProfit(qcode: string): Promise<number> {
+  async getTotalProfit(qcode: string, strategy?: string, tagOverride?: string): Promise<number> {
+    const systemTag = tagOverride ?? "Jainam Total Portfolio Exposure";
     const profitSum = await prisma.master_sheet.aggregate({
-      where: { qcode, system_tag: "Jainam Total Portfolio Exposure" },
+      where: { qcode, system_tag: systemTag },
       _sum: { pnl: true },
     });
     return Number(profitSum._sum.pnl) || 0;
   }
 
-  async getCashFlows(qcode: string): Promise<{ date: Date; amount: number }[]> {
+  async getCashFlows(qcode: string, tagOverride?: string): Promise<{ date: Date; amount: number }[]> {
+    const systemTag = tagOverride ?? "Jainam Total Portfolio Deposit";
     const rows = await prisma.master_sheet.findMany({
       where: {
         qcode,
-        system_tag: "Jainam Total Portfolio Deposit",
+        system_tag: systemTag,
         capital_in_out: { not: null, not: new Decimal(0) },
       },
       select: { date: true, capital_in_out: true },
@@ -210,9 +215,10 @@ class JainamManagedStrategy implements DataFetchingStrategy {
     }));
   }
 
-  async getHistoricalData(qcode: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]> {
+  async getHistoricalData(qcode: string, strategy?: string, tagOverride?: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]> {
+    const systemTag = tagOverride ?? "Jainam Total Portfolio Exposure";
     const data = await prisma.master_sheet.findMany({
-      where: { qcode, system_tag: "Jainam Total Portfolio Exposure", nav: { not: null }, drawdown: { not: null } },
+      where: { qcode, system_tag: systemTag, nav: { not: null }, drawdown: { not: null } },
       select: { date: true, nav: true, drawdown: true, pnl: true, capital_in_out: true },
       orderBy: { date: "asc" },
     });
@@ -225,9 +231,10 @@ class JainamManagedStrategy implements DataFetchingStrategy {
     }));
   }
 
-  async getFirstNav(qcode: string): Promise<{ nav: number; date: Date } | null> {
+  async getFirstNav(qcode: string, strategy?: string, tagOverride?: string): Promise<{ nav: number; date: Date } | null> {
+    const systemTag = tagOverride ?? "Jainam Total Portfolio Exposure";
     const record = await prisma.master_sheet.findFirst({
-      where: { qcode, system_tag: "Jainam Total Portfolio Exposure", nav: { not: null } },
+      where: { qcode, system_tag: systemTag, nav: { not: null } },
       orderBy: { date: "asc" },
       select: { nav: true, date: true },
     });
@@ -235,8 +242,9 @@ class JainamManagedStrategy implements DataFetchingStrategy {
     return { nav: Number(record.nav), date: record.date };
   }
 
-  async getNavAtDate(qcode: string, targetDate: Date, direction: 'before' | 'after' | 'closest'): Promise<{ nav: number; date: Date } | null> {
-    let whereClause: any = { qcode, system_tag: "Jainam Total Portfolio Exposure", nav: { not: null } };
+  async getNavAtDate(qcode: string, targetDate: Date, direction: 'before' | 'after' | 'closest', strategy?: string, tagOverride?: string): Promise<{ nav: number; date: Date } | null> {
+    const systemTag = tagOverride ?? "Jainam Total Portfolio Exposure";
+    let whereClause: any = { qcode, system_tag: systemTag, nav: { not: null } };
     let orderBy: any = { date: "desc" };
 
     if (direction === 'before') {
@@ -250,8 +258,8 @@ class JainamManagedStrategy implements DataFetchingStrategy {
     const result = await prisma.master_sheet.findFirst({ where: whereClause, orderBy, select: { nav: true, date: true } });
     if (!result) {
       if (direction === 'closest') {
-        const beforeResult = await this.getNavAtDate(qcode, targetDate, 'before');
-        const afterResult = await this.getNavAtDate(qcode, targetDate, 'after');
+        const beforeResult = await this.getNavAtDate(qcode, targetDate, 'before', strategy, tagOverride);
+        const afterResult = await this.getNavAtDate(qcode, targetDate, 'after', strategy, tagOverride);
         if (!beforeResult && !afterResult) return null;
         if (!beforeResult) return afterResult;
         if (!afterResult) return beforeResult;
@@ -340,8 +348,8 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
     return strategy && strategyMap[strategy] ? strategyMap[strategy] : 'Zerodha Total Portfolio';
   }
 
-  async getAmountDeposited(qcode: string): Promise<number> {
-    const systemTag = this.broker.toLowerCase() === 'radiance' ? 'Total Portfolio Exposure' : 'Zerodha Total Portfolio';
+  async getAmountDeposited(qcode: string, tagOverride?: string): Promise<number> {
+    const systemTag = tagOverride ?? (this.broker.toLowerCase() === 'radiance' ? 'Total Portfolio Exposure' : 'Zerodha Total Portfolio');
     const depositSum = await prisma.master_sheet.aggregate({
       where: { qcode, system_tag: systemTag, capital_in_out: { not: null } },
       _sum: { capital_in_out: true },
@@ -349,8 +357,8 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
     return Number(depositSum._sum.capital_in_out) || 0;
   }
 
-  async getLatestExposure(qcode: string): Promise<{ portfolioValue: number; drawdown: number; nav: number; date: Date } | null> {
-    const systemTag = this.broker.toLowerCase() === 'radiance' ? 'Total Portfolio Exposure' : 'Zerodha Total Portfolio';
+  async getLatestExposure(qcode: string, tagOverride?: string): Promise<{ portfolioValue: number; drawdown: number; nav: number; date: Date } | null> {
+    const systemTag = tagOverride ?? (this.broker.toLowerCase() === 'radiance' ? 'Total Portfolio Exposure' : 'Zerodha Total Portfolio');
     const record = await prisma.master_sheet.findFirst({
       where: { qcode, system_tag: systemTag },
       orderBy: { date: "desc" },
@@ -365,9 +373,9 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
     };
   }
 
-  async getPortfolioReturns(qcode: string, strategy?: string): Promise<number> {
+  async getPortfolioReturns(qcode: string, strategy?: string, tagOverride?: string): Promise<number> {
   try {
-    const systemTag = this.getSystemTag(strategy);
+    const systemTag = tagOverride ?? this.getSystemTag(strategy);
     const firstNavRecord = await prisma.master_sheet.findFirst({
       where: { qcode, system_tag: systemTag, nav: { not: null } },
       orderBy: { date: "asc" },
@@ -411,8 +419,8 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
 }
 
 
-  async getTotalProfit(qcode: string, strategy?: string): Promise<number> {
-    const systemTag = this.getSystemTag(strategy);
+  async getTotalProfit(qcode: string, strategy?: string, tagOverride?: string): Promise<number> {
+    const systemTag = tagOverride ?? this.getSystemTag(strategy);
     const profitSum = await prisma.master_sheet.aggregate({
       where: { qcode, system_tag: systemTag },
       _sum: { pnl: true },
@@ -420,8 +428,8 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
     return Number(profitSum._sum.pnl) || 0;
   }
 
-  async getHistoricalData(qcode: string, strategy?: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]> {
-    const systemTag = this.getSystemTag(strategy);
+  async getHistoricalData(qcode: string, strategy?: string, tagOverride?: string): Promise<{ date: Date; nav: number; drawdown: number; pnl: number; capitalInOut: number }[]> {
+    const systemTag = tagOverride ?? this.getSystemTag(strategy);
     const data = await prisma.master_sheet.findMany({
       where: { qcode, system_tag: systemTag, nav: { not: null }, drawdown: { not: null } },
       select: { date: true, nav: true, drawdown: true, pnl: true, capital_in_out: true },
@@ -455,8 +463,8 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
     return result;
   }
 
-  async getCashFlows(qcode: string): Promise<{ date: Date; amount: number }[]> {
-    const systemTag = this.broker.toLowerCase() === 'radiance' ? 'Total Portfolio Exposure' : 'Zerodha Total Portfolio';
+  async getCashFlows(qcode: string, tagOverride?: string): Promise<{ date: Date; amount: number }[]> {
+    const systemTag = tagOverride ?? (this.broker.toLowerCase() === 'radiance' ? 'Total Portfolio Exposure' : 'Zerodha Total Portfolio');
     const cashFlows = await prisma.master_sheet.findMany({
       where: {
         qcode,
@@ -473,14 +481,14 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
     }));
   }
 
-  async getFirstNav(qcode: string, strategy?: string): Promise<{ nav: number; date: Date } | null> {
+  async getFirstNav(qcode: string, strategy?: string, tagOverride?: string): Promise<{ nav: number; date: Date } | null> {
     // Check for inception date override first
     const inceptionOverride = ACCOUNT_INCEPTION_OVERRIDES[qcode];
     if (inceptionOverride) {
       return { nav: inceptionOverride.nav, date: inceptionOverride.date };
     }
 
-    const systemTag = this.getSystemTag(strategy);
+    const systemTag = tagOverride ?? this.getSystemTag(strategy);
     const record = await prisma.master_sheet.findFirst({
       where: { qcode, system_tag: systemTag, nav: { not: null } },
       orderBy: { date: "asc" },
@@ -490,8 +498,8 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
     return { nav: Number(record.nav), date: record.date };
   }
 
-  async getNavAtDate(qcode: string, targetDate: Date, direction: 'before' | 'after' | 'closest', strategy?: string): Promise<{ nav: number; date: Date } | null> {
-    const systemTag = this.getSystemTag(strategy);
+  async getNavAtDate(qcode: string, targetDate: Date, direction: 'before' | 'after' | 'closest', strategy?: string, tagOverride?: string): Promise<{ nav: number; date: Date } | null> {
+    const systemTag = tagOverride ?? this.getSystemTag(strategy);
     let whereClause: any = { qcode, system_tag: systemTag, nav: { not: null } };
     let orderBy: any = { date: "desc" };
 
@@ -506,8 +514,8 @@ class ZerodhaManagedStrategy implements DataFetchingStrategy {
     const result = await prisma.master_sheet.findFirst({ where: whereClause, orderBy, select: { nav: true, date: true } });
     if (!result) {
       if (direction === 'closest') {
-        const beforeResult = await this.getNavAtDate(qcode, targetDate, 'before', strategy);
-        const afterResult = await this.getNavAtDate(qcode, targetDate, 'after', strategy);
+        const beforeResult = await this.getNavAtDate(qcode, targetDate, 'before', strategy, tagOverride);
+        const afterResult = await this.getNavAtDate(qcode, targetDate, 'after', strategy, tagOverride);
         if (!beforeResult && !afterResult) return null;
         if (!beforeResult) return afterResult;
         if (!afterResult) return beforeResult;
@@ -1012,7 +1020,7 @@ function getNavEntriesAgo(
   return { date: pick.date.toISOString().slice(0, 10), value: pick.value };
 }
 // Calculate portfolio metrics
-export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: string; account_type: string; broker: string; strategy?: string }[]): Promise<Stats | null> {
+export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: string; account_type: string; broker: string; strategy?: string }[], tagOverrides?: { depositTag?: string; navTag?: string; cashflowTag?: string }): Promise<Stats | null> {
   try {
     if (!qcodesWithDetails.length) {
       console.log("No qcodes provided for portfolio metrics calculation");
@@ -1062,11 +1070,11 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
       }
 
       // 1. Amount Deposited
-      const accountDeposited = await dataStrategy.getAmountDeposited(qcode);
+      const accountDeposited = await dataStrategy.getAmountDeposited(qcode, tagOverrides?.depositTag);
       amountDeposited += accountDeposited;
 
       // 2. Current Exposure and Drawdown
-      const latestExposure = await dataStrategy.getLatestExposure(qcode);
+      const latestExposure = await dataStrategy.getLatestExposure(qcode, tagOverrides?.depositTag);
       if (latestExposure) {
         currentExposure += latestExposure.portfolioValue;
         portfolioValues[qcode] = latestExposure.portfolioValue;
@@ -1074,14 +1082,14 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
       }
 
       // 3. Portfolio Returns
-      totalReturn = await dataStrategy.getPortfolioReturns(qcode, strategy);
+      totalReturn = await dataStrategy.getPortfolioReturns(qcode, strategy, tagOverrides?.navTag);
 
       // 4. Total Profit
-      totalProfit += await dataStrategy.getTotalProfit(qcode, strategy);
+      totalProfit += await dataStrategy.getTotalProfit(qcode, strategy, tagOverrides?.navTag);
 
       // 5. Cash Flows
       if (dataStrategy.getCashFlows) {
-        const flows = await dataStrategy.getCashFlows(qcode);
+        const flows = await dataStrategy.getCashFlows(qcode, tagOverrides?.cashflowTag);
         flows.forEach(f =>
           allCashFlows.push({
             date: f.date.toISOString().split("T")[0],
@@ -1091,7 +1099,7 @@ export async function calculatePortfolioMetrics(qcodesWithDetails: { qcode: stri
       }
 
       // 6. Historical Data for NAV and Drawdown Curves
-      const historicalData = await dataStrategy.getHistoricalData(qcode, strategy);
+      const historicalData = await dataStrategy.getHistoricalData(qcode, strategy, tagOverrides?.navTag);
       historicalData.sort((a, b) => a.date.getTime() - b.date.getTime());
 
       if (historicalData.length === 0) {
