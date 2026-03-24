@@ -579,7 +579,24 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     setCashflowTag(null);
     setAvailableSystemTags([]);
 
-    if (!selectedAccount || selectedAccount === "all" || isSarla || isSatidham || isDinesh) {
+    // Dinesh: fetch tags for his fixed qcode
+    if (isDinesh && status === "authenticated") {
+      const fetchTags = async () => {
+        try {
+          const res = await fetch(`/api/system-tags?qcode=QAC00053`, { credentials: "include" });
+          if (res.ok) {
+            const data = await res.json();
+            setAvailableSystemTags(data.tags || []);
+          }
+        } catch (err) {
+          console.error("Error fetching system tags:", err);
+        }
+      };
+      fetchTags();
+      return;
+    }
+
+    if (!selectedAccount || selectedAccount === "all" || isSarla || isSatidham) {
       return;
     }
 
@@ -601,7 +618,38 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     };
 
     fetchSystemTags();
-  }, [selectedAccount, accounts, isSarla, isSatidham, isDinesh]);
+  }, [selectedAccount, accounts, isSarla, isSatidham, isDinesh, status]);
+
+  // Re-fetch Dinesh data when tag overrides change
+  useEffect(() => {
+    if (!isDinesh || status !== "authenticated") return;
+    if (!depositTag && !navTag && !cashflowTag) return;
+
+    const refetchDineshData = async () => {
+      setIsLoading(true);
+      try {
+        const tagParams = [
+          depositTag && `depositTag=${encodeURIComponent(depositTag)}`,
+          navTag && `navTag=${encodeURIComponent(navTag)}`,
+          cashflowTag && `cashflowTag=${encodeURIComponent(cashflowTag)}`,
+        ].filter(Boolean).join("&");
+
+        const res = await fetch(
+          `/api/dinesh-api?qcode=QAC00053&accountCode=AC9${tagParams ? `&${tagParams}` : ""}`,
+          { credentials: "include" }
+        );
+        if (!res.ok) throw new Error("Failed to refetch Dinesh data");
+        const data: SarlaApiResponse = await res.json();
+        setSarlaData(data);
+        setIsLoading(false);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "An unexpected error occurred");
+        setIsLoading(false);
+      }
+    };
+
+    refetchDineshData();
+  }, [isDinesh, status, depositTag, navTag, cashflowTag]);
 
   useEffect(() => {
     if (selectedAccount && status === "authenticated" && !isSarla && !isSatidham && !isDinesh) {
@@ -1298,6 +1346,8 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     const isTotalPortfolio = selectedStrategy === "Total Portfolio";
     const isActive = strategyData.metadata.isActive;
 
+    const showDineshTagDropdowns = availableSystemTags.length > 1 && isActive;
+
     return (
       <div className="space-y-6">
         <div className="flex flex-wrap items-center gap-3">
@@ -1328,6 +1378,52 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
             </Button>
           </div>
         </div>
+        {showDineshTagDropdowns && (
+          <div className="flex flex-wrap gap-3 items-end">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-heading-bold text-card-text-secondary">Deposit / Value Tag</label>
+              <Select value={depositTag || "__default__"} onValueChange={(v) => setDepositTag(v === "__default__" ? null : v)}>
+                <SelectTrigger className="w-[220px] border-0 card-shadow text-sm h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__default__">Default</SelectItem>
+                  {availableSystemTags.map((tag) => (
+                    <SelectItem key={tag} value={tag}>{tag}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-heading-bold text-card-text-secondary">Returns / P&L Tag</label>
+              <Select value={navTag || "__default__"} onValueChange={(v) => setNavTag(v === "__default__" ? null : v)}>
+                <SelectTrigger className="w-[220px] border-0 card-shadow text-sm h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__default__">Default</SelectItem>
+                  {availableSystemTags.map((tag) => (
+                    <SelectItem key={tag} value={tag}>{tag}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-heading-bold text-card-text-secondary">Cash Flow Tag</label>
+              <Select value={cashflowTag || "__default__"} onValueChange={(v) => setCashflowTag(v === "__default__" ? null : v)}>
+                <SelectTrigger className="w-[220px] border-0 card-shadow text-sm h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__default__">Default</SelectItem>
+                  {availableSystemTags.map((tag) => (
+                    <SelectItem key={tag} value={tag}>{tag}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
         <StatsCards
           stats={convertedStats}
           accountType="sarla"

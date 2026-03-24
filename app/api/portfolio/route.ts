@@ -100,6 +100,10 @@ export async function GET(request: Request) {
 
     // Fetch qcodes with filters
     let qcodes = await getUserQcodes(icode);
+    const qcode = searchParams.get("qcode");
+    if (qcode && qcode !== "all") {
+      qcodes = qcodes.filter(account => account.qcode === qcode);
+    }
     if (accountType) {
       qcodes = qcodes.filter(account => account.account_type === accountType);
     }

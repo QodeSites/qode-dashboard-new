@@ -399,8 +399,8 @@ export class PortfolioApi {
     };
   }
 
-  private static getSystemTag(scheme: string): string {
-    return this.DINESH_SYSTEM_TAGS[scheme] || "Zerodha Total Portfolio";
+  private static getSystemTag(scheme: string, tagOverride?: string): string {
+    return tagOverride ?? (this.DINESH_SYSTEM_TAGS[scheme] || "Zerodha Total Portfolio");
   }
 
   private static normalizeDate(date: Date | string): string {
@@ -410,7 +410,7 @@ export class PortfolioApi {
 
   // ==================== Database Fetching Methods (READ-ONLY) ====================
 
-  private static async getAmountDeposited(qcode: string, scheme: string): Promise<number> {
+  private static async getAmountDeposited(qcode: string, scheme: string, tagOverride?: string): Promise<number> {
     // QTF is hardcoded and closed (net 0 for display)
     if (scheme === "Scheme QTF") {
       return 0;
@@ -418,12 +418,12 @@ export class PortfolioApi {
 
     // Total Portfolio: Net flow from all cash flows (QTF + QAW++)
     if (scheme === "Total Portfolio") {
-      const cashFlows = await this.getCashFlows(qcode, "Total Portfolio");
+      const cashFlows = await this.getCashFlows(qcode, "Total Portfolio", tagOverride);
       return cashFlows.reduce((sum, flow) => sum + flow.amount, 0);
     }
 
     // QAW++: Fetch from database (only from QAW start date onwards)
-    const systemTag = this.getSystemTag(scheme);
+    const systemTag = this.getSystemTag(scheme, tagOverride);
     const depositSum = await prisma.master_sheet.aggregate({
       where: {
         qcode,
@@ -438,7 +438,8 @@ export class PortfolioApi {
 
   private static async getLatestExposure(
     qcode: string,
-    scheme: string
+    scheme: string,
+    tagOverride?: string
   ): Promise<{ portfolioValue: number; drawdown: number; nav: number; date: Date } | null> {
     // QTF is closed
     if (scheme === "Scheme QTF") {
@@ -453,11 +454,11 @@ export class PortfolioApi {
 
     // Total Portfolio: Use QAW++ current exposure
     if (scheme === "Total Portfolio") {
-      return this.getLatestExposure(qcode, "Scheme QAW++");
+      return this.getLatestExposure(qcode, "Scheme QAW++", tagOverride);
     }
 
     // QAW++: Fetch from database (only from QAW start date onwards)
-    const systemTag = this.getSystemTag(scheme);
+    const systemTag = this.getSystemTag(scheme, tagOverride);
     const record = await prisma.master_sheet.findFirst({
       where: { qcode, system_tag: systemTag, date: { gte: this.QAW_START_DATE } },
       orderBy: { date: "desc" },
@@ -475,7 +476,8 @@ export class PortfolioApi {
 
   private static async getHistoricalData(
     qcode: string,
-    scheme: string
+    scheme: string,
+    tagOverride?: string
   ): Promise<{ date: Date; nav: number; prevNav: number | null; drawdown: number; pnl: number; capitalInOut: number }[]> {
     // QTF: Return hardcoded data
     if (scheme === "Scheme QTF") {
@@ -496,7 +498,7 @@ export class PortfolioApi {
     // Total Portfolio: Combine QTF + QAW++ with NAV rebasing
     if (scheme === "Total Portfolio") {
       const qtfData = await this.getHistoricalData(qcode, "Scheme QTF");
-      const qawData = await this.getHistoricalData(qcode, "Scheme QAW++");
+      const qawData = await this.getHistoricalData(qcode, "Scheme QAW++", tagOverride);
 
       // Rebase QAW++ NAV to continue from QTF's final NAV
       const rebaseMultiplier = this.QTF_FINAL_NAV / 100;
@@ -510,7 +512,7 @@ export class PortfolioApi {
     }
 
     // QAW++: Fetch from database (only from QAW start date onwards)
-    const systemTag = this.getSystemTag(scheme);
+    const systemTag = this.getSystemTag(scheme, tagOverride);
     const data = await prisma.master_sheet.findMany({
       where: {
         qcode,
@@ -535,7 +537,7 @@ export class PortfolioApi {
     return result;
   }
 
-  private static async getCashFlows(qcode: string, scheme: string): Promise<CashFlow[]> {
+  private static async getCashFlows(qcode: string, scheme: string, tagOverride?: string): Promise<CashFlow[]> {
     // QTF: Return hardcoded cash flows
     if (scheme === "Scheme QTF") {
       return this.DINESH_HARDCODED_DATA["Scheme QTF"].data.cashFlows;
@@ -544,12 +546,12 @@ export class PortfolioApi {
     // Total Portfolio: Combine QTF + QAW++ cash flows
     if (scheme === "Total Portfolio") {
       const qtfCashFlows = await this.getCashFlows(qcode, "Scheme QTF");
-      const qawCashFlows = await this.getCashFlows(qcode, "Scheme QAW++");
+      const qawCashFlows = await this.getCashFlows(qcode, "Scheme QAW++", tagOverride);
       return [...qtfCashFlows, ...qawCashFlows].sort((a, b) => a.date.localeCompare(b.date));
     }
 
     // QAW++: Fetch from database (only from QAW start date onwards)
-    const systemTag = this.getSystemTag(scheme);
+    const systemTag = this.getSystemTag(scheme, tagOverride);
     const data = await prisma.master_sheet.findMany({
       where: {
         qcode,
@@ -571,7 +573,7 @@ export class PortfolioApi {
     }));
   }
 
-  private static async getTotalProfit(qcode: string, scheme: string): Promise<number> {
+  private static async getTotalProfit(qcode: string, scheme: string, tagOverride?: string): Promise<number> {
     // QTF: Return hardcoded profit
     if (scheme === "Scheme QTF") {
       return parseFloat(this.DINESH_HARDCODED_DATA["Scheme QTF"].data.totalProfit);
@@ -580,12 +582,12 @@ export class PortfolioApi {
     // Total Portfolio: Combine QTF + QAW++ profits
     if (scheme === "Total Portfolio") {
       const qtfProfit = await this.getTotalProfit(qcode, "Scheme QTF");
-      const qawProfit = await this.getTotalProfit(qcode, "Scheme QAW++");
+      const qawProfit = await this.getTotalProfit(qcode, "Scheme QAW++", tagOverride);
       return qtfProfit + qawProfit;
     }
 
     // QAW++: Calculate from database (only from QAW start date onwards)
-    const systemTag = this.getSystemTag(scheme);
+    const systemTag = this.getSystemTag(scheme, tagOverride);
     const profitSum = await prisma.master_sheet.aggregate({
       where: {
         qcode,
@@ -624,13 +626,13 @@ export class PortfolioApi {
     return { mdd, currentDD, ddCurve };
   }
 
-  private static async calculatePortfolioReturns(qcode: string, scheme: string): Promise<number> {
+  private static async calculatePortfolioReturns(qcode: string, scheme: string, tagOverride?: string): Promise<number> {
     // QTF: Return hardcoded returns
     if (scheme === "Scheme QTF") {
       return parseFloat(this.DINESH_HARDCODED_DATA["Scheme QTF"].data.return);
     }
 
-    const historicalData = await this.getHistoricalData(qcode, scheme);
+    const historicalData = await this.getHistoricalData(qcode, scheme, tagOverride);
     if (historicalData.length < 2) return 0;
 
     const originalFirstNav = historicalData[0].nav;
@@ -656,14 +658,15 @@ export class PortfolioApi {
   private static async calculateTrailingReturns(
     qcode: string,
     scheme: string,
-    drawdownMetrics: { mdd: number; currentDD: number }
+    drawdownMetrics: { mdd: number; currentDD: number },
+    tagOverride?: string
   ): Promise<Record<string, number | null | string>> {
     // QTF: Return hardcoded trailing returns
     if (scheme === "Scheme QTF") {
       return this.DINESH_HARDCODED_DATA["Scheme QTF"].data.trailingReturns;
     }
 
-    const historicalData = await this.getHistoricalData(qcode, scheme);
+    const historicalData = await this.getHistoricalData(qcode, scheme, tagOverride);
     if (historicalData.length === 0) {
       return {
         "5d": null,
@@ -797,7 +800,7 @@ export class PortfolioApi {
     return returns;
   }
 
-  private static async calculateMonthlyPnL(qcode: string, scheme: string): Promise<MonthlyPnL> {
+  private static async calculateMonthlyPnL(qcode: string, scheme: string, tagOverride?: string): Promise<MonthlyPnL> {
     // QTF: Return hardcoded monthly PnL
     if (scheme === "Scheme QTF") {
       return this.DINESH_HARDCODED_DATA["Scheme QTF"].data.monthlyPnl;
@@ -807,12 +810,12 @@ export class PortfolioApi {
     // overlay per-scheme cash/capitalInOut (since QTF historical data has pnl=0)
     if (scheme === "Total Portfolio") {
       // 1. Get NAV-based percentages from the unified rebased series
-      const unifiedHistoricalData = await this.getHistoricalData(qcode, "Total Portfolio");
+      const unifiedHistoricalData = await this.getHistoricalData(qcode, "Total Portfolio", tagOverride);
       const navBasedResult = this.computeMonthlyPnLFromHistoricalData(unifiedHistoricalData, false);
 
       // 2. Get per-scheme cash data
       const qtfMonthlyPnl = this.DINESH_HARDCODED_DATA["Scheme QTF"].data.monthlyPnl;
-      const qawMonthlyPnl = await this.calculateMonthlyPnL(qcode, "Scheme QAW++");
+      const qawMonthlyPnl = await this.calculateMonthlyPnL(qcode, "Scheme QAW++", tagOverride);
 
       // 3. Overlay cash/capitalInOut from per-scheme data into the NAV-based result
       for (const year of Object.keys(navBasedResult)) {
@@ -846,7 +849,7 @@ export class PortfolioApi {
     }
 
     // QAW++: Calculate from historical data
-    const historicalData = await this.getHistoricalData(qcode, scheme);
+    const historicalData = await this.getHistoricalData(qcode, scheme, tagOverride);
     return this.computeMonthlyPnLFromHistoricalData(historicalData, scheme === "Scheme QAW++");
   }
 
@@ -940,7 +943,7 @@ export class PortfolioApi {
     return monthlyPnl;
   }
 
-  private static async calculateQuarterlyPnL(qcode: string, scheme: string): Promise<QuarterlyPnL> {
+  private static async calculateQuarterlyPnL(qcode: string, scheme: string, tagOverride?: string): Promise<QuarterlyPnL> {
     // QTF: Return hardcoded quarterly PnL
     if (scheme === "Scheme QTF") {
       return this.DINESH_HARDCODED_DATA["Scheme QTF"].data.quarterlyPnl;
@@ -950,12 +953,12 @@ export class PortfolioApi {
     // overlay per-scheme cash (since QTF historical data has pnl=0)
     if (scheme === "Total Portfolio") {
       // 1. Get NAV-based percentages from the unified rebased series
-      const unifiedHistoricalData = await this.getHistoricalData(qcode, "Total Portfolio");
+      const unifiedHistoricalData = await this.getHistoricalData(qcode, "Total Portfolio", tagOverride);
       const navBasedResult = this.computeQuarterlyPnLFromHistoricalData(unifiedHistoricalData, false);
 
       // 2. Get per-scheme cash data
       const qtfQuarterlyPnl = this.DINESH_HARDCODED_DATA["Scheme QTF"].data.quarterlyPnl;
-      const qawQuarterlyPnl = await this.calculateQuarterlyPnL(qcode, "Scheme QAW++");
+      const qawQuarterlyPnl = await this.calculateQuarterlyPnL(qcode, "Scheme QAW++", tagOverride);
 
       // 3. Overlay cash from per-scheme data into the NAV-based result
       for (const year of Object.keys(navBasedResult)) {
@@ -980,7 +983,7 @@ export class PortfolioApi {
     }
 
     // QAW++: Calculate from historical data
-    const historicalData = await this.getHistoricalData(qcode, scheme);
+    const historicalData = await this.getHistoricalData(qcode, scheme, tagOverride);
     return this.computeQuarterlyPnLFromHistoricalData(historicalData, scheme === "Scheme QAW++");
   }
 
@@ -1068,6 +1071,11 @@ export class PortfolioApi {
       const url = new URL(request.url);
       const qcode = url.searchParams.get("qcode") || "QAC00053";
 
+      // Parse optional system tag overrides
+      const depositTag = url.searchParams.get("depositTag") || undefined;
+      const navTag = url.searchParams.get("navTag") || undefined;
+      const cashflowTag = url.searchParams.get("cashflowTag") || undefined;
+
       // Order: Total Portfolio → Scheme QAW++ → Scheme QTF
       const schemes = ["Total Portfolio", "Scheme QAW++", "Scheme QTF"];
 
@@ -1088,12 +1096,12 @@ export class PortfolioApi {
         }
 
         // For dynamic schemes (QAW++, Total Portfolio), fetch/calculate data
-        const investedAmount = await PortfolioApi.getAmountDeposited(qcode, scheme);
-        const latestExposure = await PortfolioApi.getLatestExposure(qcode, scheme);
-        const totalProfit = await PortfolioApi.getTotalProfit(qcode, scheme);
-        const returns = await PortfolioApi.calculatePortfolioReturns(qcode, scheme);
-        const historicalData = await PortfolioApi.getHistoricalData(qcode, scheme);
-        const cashFlows = await PortfolioApi.getCashFlows(qcode, scheme);
+        const investedAmount = await PortfolioApi.getAmountDeposited(qcode, scheme, depositTag);
+        const latestExposure = await PortfolioApi.getLatestExposure(qcode, scheme, depositTag);
+        const totalProfit = await PortfolioApi.getTotalProfit(qcode, scheme, navTag);
+        const returns = await PortfolioApi.calculatePortfolioReturns(qcode, scheme, navTag);
+        const historicalData = await PortfolioApi.getHistoricalData(qcode, scheme, navTag);
+        const cashFlows = await PortfolioApi.getCashFlows(qcode, scheme, cashflowTag);
 
         const rawEquityCurve = historicalData.map((d) => ({
           date: PortfolioApi.normalizeDate(d.date),
@@ -1101,9 +1109,9 @@ export class PortfolioApi {
         }));
 
         const drawdownMetrics = PortfolioApi.calculateDrawdownMetrics(rawEquityCurve);
-        const trailingReturns = await PortfolioApi.calculateTrailingReturns(qcode, scheme, drawdownMetrics);
-        const monthlyPnl = await PortfolioApi.calculateMonthlyPnL(qcode, scheme);
-        const quarterlyPnl = await PortfolioApi.calculateQuarterlyPnL(qcode, scheme);
+        const trailingReturns = await PortfolioApi.calculateTrailingReturns(qcode, scheme, drawdownMetrics, navTag);
+        const monthlyPnl = await PortfolioApi.calculateMonthlyPnL(qcode, scheme, navTag);
+        const quarterlyPnl = await PortfolioApi.calculateQuarterlyPnL(qcode, scheme, navTag);
 
         const portfolioData: PortfolioData = {
           amountDeposited: investedAmount.toFixed(2),
