@@ -1,3 +1,27 @@
+import { NextResponse } from "next/server";
 import { PortfolioApi } from '@/app/lib/dinesh-utils';
+import { getPrecomputedMonthlyPnl, getPrecomputedQuarterlyPnl } from "@/app/lib/precomputed-pnl";
 
-export const GET = PortfolioApi.GET;
+const QCODE_TO_ICODE: Record<string, string> = {
+  "QAC00053": "QUS00072",  // Dinesh
+};
+
+export async function GET(request: Request) {
+  const response = await PortfolioApi.GET(request);
+  const data = await response.json();
+
+  const qcode = new URL(request.url).searchParams.get("qcode") || "QAC00053";
+  const icode = QCODE_TO_ICODE[qcode];
+
+  if (icode) {
+    for (const scheme of Object.keys(data)) {
+      if (!data[scheme]?.data) continue;
+      const preMonthly = getPrecomputedMonthlyPnl(icode, scheme);
+      const preQuarterly = getPrecomputedQuarterlyPnl(icode, scheme);
+      if (preMonthly) data[scheme].data.monthlyPnl = preMonthly;
+      if (preQuarterly) data[scheme].data.quarterlyPnl = preQuarterly;
+    }
+  }
+
+  return NextResponse.json(data);
+}

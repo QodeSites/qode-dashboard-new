@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { getUserQcodes, calculatePortfolioMetrics, formatPortfolioStats } from "@/app/lib/portfolio-utils";
 import { getEffectiveIcode } from "@/app/lib/admin-utils";
+import { getPrecomputedMonthlyPnl, getPrecomputedQuarterlyPnl } from "@/app/lib/precomputed-pnl";
 
 // Interface for Stats (updated to include strategyName)
 interface Stats {
@@ -108,6 +109,12 @@ export async function GET(request: Request) {
     if (!metrics) {
       return NextResponse.json({ error: "Failed to calculate portfolio metrics" }, { status: 500 });
     }
+
+    // Replace PnL with pre-computed CSV data if available
+    const preMonthly = getPrecomputedMonthlyPnl(icode, metrics.strategyName);
+    const preQuarterly = getPrecomputedQuarterlyPnl(icode, metrics.strategyName);
+    if (preMonthly) metrics.monthlyPnl = preMonthly;
+    if (preQuarterly) metrics.quarterlyPnl = preQuarterly;
 
     // Get inception and data as of dates before applying date filters
     const { inceptionDate, dataAsOfDate } = getEquityCurveDates(metrics.equityCurve);
