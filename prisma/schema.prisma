@@ -723,3 +723,49 @@ model refresh_tokens {
 
   @@schema("public")
 }
+
+model monthly_pnl {
+  id                 Int       @id @default(autoincrement())
+  identifier         String    @db.VarChar(20)
+  scheme_or_strategy String    @db.VarChar(100)
+  year               Int
+  month              Int
+  percent            Decimal?  @db.Decimal(10, 4)
+  cash               Decimal?  @db.Decimal(20, 2)
+  capital_in_out     Decimal?  @db.Decimal(20, 2)
+  created_at         DateTime? @default(now()) @db.Timestamp(6)
+
+  @@unique([identifier, scheme_or_strategy, year, month], map: "uq_monthly_pnl")
+  @@index([identifier, year, month], map: "idx_monthly_lookup")
+  @@schema("public")
+}
+
+model quarterly_pnl {
+  id                 Int       @id @default(autoincrement())
+  identifier         String    @db.VarChar(20)
+  scheme_or_strategy String    @db.VarChar(100)
+  year               Int
+  quarter            Int
+  percent            Decimal?  @db.Decimal(10, 4)
+  cash               Decimal?  @db.Decimal(20, 2)
+  created_at         DateTime? @default(now()) @db.Timestamp(6)
+
+  @@unique([identifier, scheme_or_strategy, year, quarter], map: "uq_quarterly_pnl")
+  @@index([identifier, year, quarter], map: "idx_quarterly_lookup")
+  @@schema("public")
+}
+
+model yearly_performance {
+  id                   Int       @id @default(autoincrement())
+  identifier           String    @db.VarChar(20)
+  scheme_or_strategy   String    @db.VarChar(100)
+  year                 Int
+  total_percent        Decimal?  @db.Decimal(10, 4)
+  total_cash           Decimal?  @db.Decimal(20, 2)
+  total_capital_in_out Decimal?  @db.Decimal(20, 2)
+  created_at           DateTime? @default(now()) @db.Timestamp(6)
+
+  @@unique([identifier, scheme_or_strategy, year], map: "uq_yearly_pnl")
+  @@index([identifier, year], map: "idx_yearly_lookup")
+  @@schema("public")
+}

@@ -16,8 +16,8 @@ export async function GET(request: Request) {
   if (icode) {
     for (const scheme of Object.keys(data)) {
       if (!data[scheme]?.data) continue;
-      const preMonthly = getPrecomputedMonthlyPnl(icode, scheme);
-      const preQuarterly = getPrecomputedQuarterlyPnl(icode, scheme);
+      const preMonthly = await getPrecomputedMonthlyPnl(icode, scheme);
+      const preQuarterly = await getPrecomputedQuarterlyPnl(icode, scheme);
       if (preMonthly) data[scheme].data.monthlyPnl = preMonthly;
       if (preQuarterly) data[scheme].data.quarterlyPnl = preQuarterly;
     }

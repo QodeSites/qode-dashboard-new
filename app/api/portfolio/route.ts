@@ -110,9 +110,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Failed to calculate portfolio metrics" }, { status: 500 });
     }
 
-    // Replace PnL with pre-computed CSV data if available
-    const preMonthly = getPrecomputedMonthlyPnl(icode, metrics.strategyName);
-    const preQuarterly = getPrecomputedQuarterlyPnl(icode, metrics.strategyName);
+    // Replace PnL with pre-computed data from DB if available
+    const preMonthly = await getPrecomputedMonthlyPnl(icode, metrics.strategyName);
+    const preQuarterly = await getPrecomputedQuarterlyPnl(icode, metrics.strategyName);
     if (preMonthly) metrics.monthlyPnl = preMonthly;
     if (preQuarterly) metrics.quarterlyPnl = preQuarterly;
 
