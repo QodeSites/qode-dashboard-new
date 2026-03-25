@@ -1,5 +1,5 @@
 // Auto-generated frozen scheme data for bifurcated portfolios.
-// Generated: 2026-03-06T07:29:18.774Z
+// Generated: 2026-03-25T05:54:02.863Z
 // Source CSVs: dinesh_qtf_only_masterhseet.csv, shilpa_old_mastersheet.csv, vikramtrading_old_mastersheet.csv
 //
 // DO NOT EDIT MANUALLY. Regenerate with: node scripts/generate-bifurcated-data.js > app/lib/bifurcated-portfolio-data.ts
@@ -419,7 +419,7 @@ export const SHILPA_FROZEN_DATA: FrozenSchemeData = {
     amountDeposited: "0.00",
     currentExposure: "0.00",
     return: "10.43",
-    totalProfit: "3465439.24",
+    totalProfit: "5161296.73",
     trailingReturns: {
       "5d": 4.02,
       "10d": 2.39,
@@ -946,7 +946,7 @@ export const VIKRAM_FROZEN_DATA: FrozenSchemeData = {
     amountDeposited: "0.00",
     currentExposure: "0.00",
     return: "6.02",
-    totalProfit: "-3607993.99",
+    totalProfit: "2951532.37",
     trailingReturns: {
       "5d": -0.2,
       "10d": 0.45,

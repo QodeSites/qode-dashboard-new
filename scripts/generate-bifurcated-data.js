@@ -127,7 +127,7 @@ function extract(config) {
   const dc = [{ date: bd, drawdown: 0 }, ...navRows.map((r) => ({ date: r.date, drawdown: Number(r.drawdown.toFixed(2)) }))];
   const hist = [{ date: bd, nav: 100, prevNav: 0, drawdown: 0, pnl: 0, capitalInOut: 0 }, ...navRows.map((r) => ({ date: r.date, nav: Number(r.nav.toFixed(2)), prevNav: Number(r.prevNav.toFixed(2)), drawdown: Number(r.drawdown.toFixed(2)), pnl: Number(r.pnl.toFixed(2)), capitalInOut: Number(r.capitalInOut.toFixed(2)) }))];
   const cf = depositRows.filter((r) => r.capitalInOut !== 0).map((r) => ({ date: r.date, amount: Number(r.capitalInOut.toFixed(2)), dividend: 0 }));
-  const tp = Number(depositRows.reduce((s, r) => s + r.pnl, 0).toFixed(2));
+  const tp = Number(navRows.reduce((s, r) => s + r.pnl, 0).toFixed(2));
   const lastNav = ec[ec.length - 1].nav, lastDate = navRows[navRows.length - 1].date;
   const days = (new Date(lastDate) - new Date(bd)) / 864e5;
   const ret = Number((days < 365 ? ((lastNav / 100) - 1) * 100 : (Math.pow(lastNav / 100, 365 / days) - 1) * 100).toFixed(2));
