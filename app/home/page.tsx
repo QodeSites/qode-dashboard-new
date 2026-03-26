@@ -82,7 +82,7 @@ const HomePage = () => {
                 At Qode, while practicing the future of investing, we&apos;re
                 enabling the{" "}
                 <em className="text-button-text">
-                  Code of Wealth Generation.
+                  Qode of Wealth Generation.
                 </em>
               </p>
             </div>
@@ -104,7 +104,7 @@ const HomePage = () => {
               </p>
               <p>
                 Rooted in transparency, discipline, and deep research, our
-                strategies are optimised, resilient, and calibrated — ensuring
+                strategies are optimised, resilient, and calibrated, ensuring
                 rationality prevails over panic, and long-term wealth is built
                 with clarity and conviction.
               </p>
