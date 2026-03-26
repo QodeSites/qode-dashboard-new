@@ -21,6 +21,13 @@ function getResizedImage(url: string | null, width: number = 600): string | null
   );
 }
 
+function getBlogUrl(ghostUrl: string): string {
+  return ghostUrl.replace(
+    "https://blogs.qodeinvest.com/",
+    "https://qodeinvest.com/quicktakes/"
+  );
+}
+
 const HomePage = () => {
   const [posts, setPosts] = useState<BlogPost[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -68,15 +75,9 @@ const HomePage = () => {
           </div>
 
           {/* Two-column layout */}
-          <div className="grid grid-cols-1 md:grid-cols-[2fr_3fr] gap-12 md:gap-16">
+          <div className="grid grid-cols-1 md:grid-cols-[2fr_3fr] gap-12 md:gap-16 md:items-center">
             {/* Left column */}
-            <div className="space-y-8">
-              <div className="flex items-center gap-2">
-                <span className="block w-1.5 h-1.5 rounded-full bg-button-text shrink-0" />
-                <h2 className="text-2xl md:text-3xl font-bold font-serif text-card-text">
-                  Brand Narrative
-                </h2>
-              </div>
+            <div>
 
               <p className="text-xl md:text-2xl font-serif text-card-text leading-relaxed">
                 At Qode, while practicing the future of investing, we&apos;re
@@ -88,7 +89,7 @@ const HomePage = () => {
             </div>
 
             {/* Right column */}
-            <div className="space-y-6 text-card-text-secondary leading-relaxed">
+            <div className="space-y-6 text-card-text-secondary leading-relaxed text-justify">
               <p>
                 In a world where investment decisions are often shaped by
                 intuition, instinct, and speculation, we follow a more thoughtful
@@ -118,7 +119,7 @@ const HomePage = () => {
         <div className="px-4 sm:px-8 md:px-12 pt-8 pb-16">
           <div className="max-w-5xl mx-auto">
             <div className="bg-[#E8E5CC] rounded-2xl p-6 md:p-10">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
                 {/* Left: Feature Image */}
                 <div className="bg-white rounded-xl shadow-sm overflow-hidden aspect-[4/3]">
                   {currentPost.feature_image ? (
@@ -139,7 +140,7 @@ const HomePage = () => {
                 </div>
 
                 {/* Right: Content */}
-                <div className="space-y-5">
+                <div className="flex flex-col justify-between gap-4">
                   {/* Navigation */}
                   <div className="flex items-center gap-3">
                     <button
@@ -192,8 +193,9 @@ const HomePage = () => {
                   </p>
 
                   {/* Know More Button */}
+                  <div>
                   <a
-                    href={currentPost.url}
+                    href={getBlogUrl(currentPost.url)}
                     target="_blank"
                     rel="noreferrer noopener"
                     className="inline-flex items-center gap-2 px-6 py-3 bg-logo-green text-white text-sm font-medium rounded-full hover:opacity-90 transition-opacity"
@@ -213,6 +215,7 @@ const HomePage = () => {
                       <polyline points="12 5 19 12 12 19" />
                     </svg>
                   </a>
+                  </div>
                 </div>
               </div>
             </div>
