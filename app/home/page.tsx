@@ -120,17 +120,17 @@ const HomePage = () => {
             <div className="bg-[#E8E5CC] rounded-2xl p-6 md:p-10">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
                 {/* Left: Feature Image */}
-                <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+                <div className="bg-white rounded-xl shadow-sm overflow-hidden aspect-[4/3]">
                   {currentPost.feature_image ? (
                     <img
                       key={currentPost.id}
                       src={getResizedImage(currentPost.feature_image)!}
                       alt={currentPost.title}
-                      className="w-full h-auto object-cover"
+                      className="w-full h-full object-cover"
                       loading="eager"
                     />
                   ) : (
-                    <div className="w-full h-64 flex items-center justify-center bg-gray-100">
+                    <div className="w-full h-full flex items-center justify-center bg-gray-100">
                       <span className="text-2xl font-serif text-card-text-secondary">
                         Qode
                       </span>
