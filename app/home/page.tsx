@@ -12,6 +12,15 @@ interface BlogPost {
   url: string;
 }
 
+function getResizedImage(url: string | null, width: number = 600): string | null {
+  if (!url) return null;
+  // Ghost CDN supports /size/w{width}/ for on-the-fly resizing
+  return url.replace(
+    "/content/images/",
+    `/content/images/size/w${width}/`
+  );
+}
+
 const HomePage = () => {
   const [posts, setPosts] = useState<BlogPost[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -22,7 +31,7 @@ const HomePage = () => {
   useEffect(() => {
     axios
       .get(
-        `https://blogs.qodeinvest.com/ghost/api/content/posts/?key=${key}&filter=tag:hash-blog-quicktakes&limit=all&include=tags`
+        `https://blogs.qodeinvest.com/ghost/api/content/posts/?key=${key}&filter=tag:hash-blog-quicktakes&limit=all&fields=id,title,feature_image,excerpt,url`
       )
       .then((response) => {
         setPosts(response.data.posts);
@@ -43,6 +52,8 @@ const HomePage = () => {
   };
 
   const currentPost = posts[currentIndex];
+  const prevIndex = currentIndex === 0 ? posts.length - 1 : currentIndex - 1;
+  const nextIndex = currentIndex === posts.length - 1 ? 0 : currentIndex + 1;
 
   return (
     <DashboardLayout>
@@ -112,9 +123,11 @@ const HomePage = () => {
                 <div className="bg-white rounded-xl shadow-sm overflow-hidden">
                   {currentPost.feature_image ? (
                     <img
-                      src={currentPost.feature_image}
+                      key={currentPost.id}
+                      src={getResizedImage(currentPost.feature_image)!}
                       alt={currentPost.title}
                       className="w-full h-auto object-cover"
+                      loading="eager"
                     />
                   ) : (
                     <div className="w-full h-64 flex items-center justify-center bg-gray-100">
@@ -204,6 +217,22 @@ const HomePage = () => {
               </div>
             </div>
           </div>
+
+          {/* Preload adjacent slide images */}
+          {posts[prevIndex]?.feature_image && (
+            <link
+              rel="prefetch"
+              href={getResizedImage(posts[prevIndex].feature_image)!}
+              as="image"
+            />
+          )}
+          {posts[nextIndex]?.feature_image && (
+            <link
+              rel="prefetch"
+              href={getResizedImage(posts[nextIndex].feature_image)!}
+              as="image"
+            />
+          )}
         </div>
       )}
     </DashboardLayout>
