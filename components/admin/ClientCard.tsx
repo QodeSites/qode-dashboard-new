@@ -4,6 +4,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EyeIcon } from "@heroicons/react/24/outline";
+import { Download } from "lucide-react";
+import { useState } from "react";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
 interface Account {
   qcode: string;
@@ -31,6 +34,42 @@ export function ClientCard({
   onImpersonate,
   isImpersonating,
 }: ClientCardProps) {
+  const [exporting, setExporting] = useState(false);
+
+  // Export handler functions
+  const handleDownloadCsv = async (qcode: string[]) => {
+    try {
+      setExporting(true);
+
+      const res = await fetch("/api/export-csv", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ qcodes: qcode }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Download failed");
+      }
+
+      const blob = await res.blob();
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${qcode}-data.csv`;
+      a.click();
+
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert("Something went wrong");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <Card className="bg-white/50 border border-card-text-secondary/20 hover:shadow-md transition-shadow">
       <CardContent className="p-5">
@@ -52,22 +91,59 @@ export function ClientCard({
         </div>
 
         {accounts.length > 0 && (
-          <div className="mb-4 space-y-1">
-            {accounts.slice(0, 3).map((account) => (
-              <div
-                key={account.qcode}
+          <div className="flex justify-between">
+            <div className="mb-4 space-y-1">
+              {accounts.slice(0, 3).map((account) => (
+                <div 
+                key={account.qcode} 
                 className="text-xs"
-              >
-                <span className="text-card-text-secondary truncate">
-                  {account.qcode}
-                </span>
-              </div>
-            ))}
-            {accounts.length > 3 && (
-              <p className="text-xs text-card-text-secondary">
-                +{accounts.length - 3} more
-              </p>
-            )}
+                >
+                <div className="flex w-full justify-between">
+                    <span className="text-card-text-secondary truncate">
+                      {account.qcode}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {accounts.length > 3 && (
+                <p className="text-xs text-card-text-secondary">
+                  +{accounts.length - 3} more
+                </p>
+              )}
+            </div>
+            <span className="text-card-text-secondary truncate">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    disabled={exporting}
+                    className="h-6 w-[90px] px-2 text-xs font-medium bg-logo-green text-button-text hover:bg-logo-green/90 flex items-center justify-center"
+                  >
+                    {exporting ? (
+                      <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
+                    ) : (
+                      <>
+                        <Download className="h-4 w-4 mr-1" />
+                        CSV
+                      </>
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+
+                <DropdownMenuContent className="w-30 bg-white border border-gray-200 shadow-md rounded-md">
+                  {accounts.map((acc) => (
+                    <DropdownMenuItem
+                      className="text-sm font-bold cursor-pointer px-3 py-2 rounded-sm 
+                      hover:bg-logo-green/10 focus:bg-logo-green/10 
+                      hover:text-gray-700 focus:text-gray-700 text-gray-700"
+                      key={acc.qcode}
+                      onClick={() => handleDownloadCsv([acc.qcode])}
+                    >
+                      <Download className="h-2 w-2 mr-1" />{acc.qcode}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </span>
           </div>
         )}
 
