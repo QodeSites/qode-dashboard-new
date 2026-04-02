@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem} from "@/components/ui/dropdown-menu";
 import {
   MagnifyingGlassIcon,
   Squares2X2Icon,
@@ -12,6 +13,7 @@ import {
 import { ClientCard } from "./ClientCard";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Download } from "lucide-react";
 
 interface Account {
   qcode: string;
@@ -40,6 +42,7 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
   const [isLoading, setIsLoading] = useState(true);
+  const [exportingSet, setExportingSet] = useState<Set<string>>(new Set());
 
   // Debounce search input
   useEffect(() => {
@@ -74,6 +77,44 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
 
   const handleRefresh = () => {
     fetchClients(debouncedSearch);
+  };
+
+  // Export handler functions
+  const handleDownloadCsv = async (qcode: string[], icode: string) => {
+    try {
+      // add to set
+      setExportingSet((prev) => new Set(prev).add(icode));
+
+      const res = await fetch("/api/export-csv", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ qcodes: qcode }),
+      });
+
+      if (!res.ok) throw new Error("Download failed");
+
+      const blob = await res.blob();
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${qcode}-data.csv`;
+      a.click();
+
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert("Something went wrong");
+    } finally {
+      // remove from set
+      setExportingSet((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(icode);
+        return newSet;
+      });
+    }
   };
 
   return (
@@ -176,6 +217,7 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
                 <TableHead>Email</TableHead>
                 <TableHead>ICode</TableHead>
                 <TableHead className="text-center">Accounts</TableHead>
+                <TableHead className="text-center">Download</TableHead>
                 <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
@@ -195,6 +237,42 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
                   </TableCell>
                   <TableCell className="text-center">
                     {client.accountCount}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          disabled={exportingSet.has(client.icode)}
+                          className="h-6 w-[90px] px-2 text-xs font-medium bg-logo-green text-button-text hover:bg-logo-green/90 flex items-center justify-center"
+                        >
+                          {exportingSet.has(client.icode) ? (
+                            <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
+                          ) : (
+                            <>
+                              <Download className="h-4 w-4 mr-1" />
+                              CSV
+                            </>
+                          )}
+                        </Button>
+                      </DropdownMenuTrigger>
+
+                      <DropdownMenuContent className="w-30 bg-white border border-gray-200 shadow-md rounded-md">
+                        {client.accounts.map((acc) => (
+                          <DropdownMenuItem
+                            className="text-sm font-bold cursor-pointer px-3 py-2 rounded-sm 
+                            hover:bg-logo-green/10 focus:bg-logo-green/10 
+                            hover:text-gray-700 focus:text-gray-700 text-gray-700"
+                            key={acc.qcode}
+                            onClick={() =>
+                              handleDownloadCsv([acc.qcode], client.icode)
+                            }
+                          >
+                            <Download className="h-2 w-2 mr-1" />
+                            {acc.qcode}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                   <TableCell className="text-right">
                     <Button
