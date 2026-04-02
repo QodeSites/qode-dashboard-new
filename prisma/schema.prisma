@@ -212,6 +212,8 @@ model master_sheet {
   system_tag           String?   @db.VarChar(50)
   created_at           DateTime? @default(now()) @db.Date
 
+  @@unique([date, id], map: "date_id")
+  @@index([qcode, date, id], map: "idx_master_sheet_qcode_date_id")
   @@schema("public")
 }
 
