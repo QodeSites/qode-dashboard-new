@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/app/lib/admin-utils";
-import { updateAccountAUMs } from "@/app/lib/aum-utils";
+import { EXCLUDED_QCODES, updateAccountAUMs } from "@/app/lib/aum-utils";
 
-// simple in-memory lock
-let isUpdatingAUM = false;
-
+/** 🔹 Check same day in IST */
 function isSameDayIST(date: Date) {
   const now = new Date();
 
@@ -24,6 +22,7 @@ function isSameDayIST(date: Date) {
   );
 }
 
+/** 🔹 After 6PM IST */
 function isAfter6PM(): boolean {
   const now = new Date();
   const istTime = new Date(
@@ -31,48 +30,65 @@ function isAfter6PM(): boolean {
   );
   return istTime.getHours() >= 18;
 }
+
 export async function GET() {
   const { error } = await requireAdmin();
   if (error) return error;
 
-  // 1. Check if AUM is stale
+  // 1. Check last update
   const latest = await prisma.account_aum.findFirst({
     orderBy: { aum_updated_at: "desc" },
   });
 
-  const lastUpdated =
-    latest?.aum_updated_at != null
-      ? new Date(latest.aum_updated_at)
-      : null;
+  const lastUpdated = latest?.aum_updated_at
+    ? new Date(latest.aum_updated_at)
+    : null;
 
-  const needsUpdate = isAfter6PM() && (!lastUpdated || !isSameDayIST(lastUpdated));
+  const isEmpty = !latest;
 
-  // 2. Run update ONLY once
-  if (needsUpdate && !isUpdatingAUM) {
+  const needsUpdate =
+    isEmpty || !lastUpdated || !isSameDayIST(lastUpdated);
+
+  // const shouldRun = true;
+  const shouldRun = isAfter6PM() && needsUpdate;
+
+  // 2. Safe update (race-condition protected)
+  if (shouldRun) {
     try {
-      isUpdatingAUM = true;
-      console.log("Updating AUM (lazy trigger)...");
-      await updateAccountAUMs();
+      // 🔁 recheck inside to prevent double execution
+      const recheck = await prisma.account_aum.findFirst({
+        orderBy: { aum_updated_at: "desc" },
+      });
+
+      const recheckDate = recheck?.aum_updated_at
+        ? new Date(recheck.aum_updated_at)
+        : null;
+
+      const stillNeedsUpdate =
+        !recheckDate || !isSameDayIST(recheckDate);
+
+      if (stillNeedsUpdate) {
+        console.log("Updating AUM (lazy trigger)...");
+        await updateAccountAUMs();
+      }
     } catch (err) {
       console.error("AUM update failed:", err);
-    } finally {
-      isUpdatingAUM = false;
     }
   }
 
-  //  3. Clients count
+  // 3. Clients count
   const clientsWithAccounts = await prisma.pooled_account_users.findMany({
     distinct: ["icode"],
     select: { icode: true },
   });
 
-  //  4. Accounts count
+  // 4. Accounts count
   const totalAccounts = await prisma.accounts.count();
 
-  //  5. Fetch precomputed AUM
+  // 5. Fetch AUM data
   const aumData = await prisma.account_aum.findMany({
     include: {
-      accounts: { 
+      accounts: {
         select: {
           account_name: true,
         },
@@ -83,11 +99,14 @@ export async function GET() {
     },
   });
 
-  const aumAccounts = aumData.map((row) => ({
-    qcode: row.qcode,
-    name: row.accounts?.account_name || row.qcode,
-    aum: Number(row.aum) || 0,
-  }));
+
+  const aumAccounts = aumData
+    .filter((row) => !EXCLUDED_QCODES.includes(row.qcode))
+    .map((row) => ({
+      qcode: row.qcode,
+      name: row.accounts?.account_name || row.qcode,
+      aum: Number(row.aum) || 0,
+    }));
 
   // 6. Total AUM
   const totalAumManaged = aumAccounts.reduce(
