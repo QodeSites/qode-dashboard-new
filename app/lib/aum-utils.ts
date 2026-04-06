@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { PortfolioApi } from "@/app/lib/sarla-utils";
+import { Prisma } from "@prisma/client";
 
 /** 🔹 Special handling */
 export const SPECIAL_QCODES = ["QAC00041", "QAC00046"];
@@ -73,27 +74,27 @@ export async function updateAccountAUMs(): Promise<void> {
 
   let valueMap = new Map<string, number>();
 
-  if (tagMap.length > 0) {
-    // 3. Fetch latest values in ONE RAW QUERY
-    const latestValues: {
-      qcode: string;
-      system_tag: string;
-      portfolio_value: number;
-    }[] = await prisma.$queryRawUnsafe(`
+if (tagMap.length > 0) {
+  const conditions = tagMap.map(
+    (t) =>
+      Prisma.sql`(m.qcode = ${t.qcode} AND m.system_tag = ${t.system_tag})`
+  );
+
+  const latestValues: {
+    qcode: string;
+    system_tag: string;
+    portfolio_value: number;
+  }[] = await prisma.$queryRaw(
+    Prisma.sql`
       SELECT DISTINCT ON (m.qcode, m.system_tag)
         m.qcode,
         m.system_tag,
         m.portfolio_value
       FROM master_sheet m
-      WHERE (m.qcode, m.system_tag) IN (
-        ${tagMap
-          .map(
-            (t) => `('${t.qcode}', '${t.system_tag.replace(/'/g, "''")}')`
-          )
-          .join(",")}
-      )
+      WHERE ${Prisma.join(conditions, " OR ")}
       ORDER BY m.qcode, m.system_tag, m.date DESC
-    `);
+    `
+  );
 
     // 4. Convert to map
     latestValues.forEach((row) => {
