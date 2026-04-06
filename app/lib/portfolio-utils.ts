@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { Decimal } from "@prisma/client/runtime/library";
+import { getSystemTagForManagedAccountAUM } from "./aum-utils";
+import { MANAGED_ACCOUNTS_LIST } from "./aum-utils";
 const strategyNameMap: { [key: string]: string } = {
   'QAW+': 'Qode All Weather+',
   'QAW++': 'Qode All Weather++',
@@ -15,6 +17,7 @@ const ACCOUNT_INCEPTION_OVERRIDES: { [qcode: string]: { date: Date; nav: number 
   // Arwani Research Services Pvt Ltd - Account started 14-01-2026, first trading day was 16-01-2026
   'QAC00071': { date: new Date('2026-01-14'), nav: 100 },
 };
+
 interface Holding {
   symbol: string;
   exchange: string;
@@ -952,6 +955,66 @@ function getDataFetchingStrategy(account: { account_type: string; broker: string
     return new ZerodhaManagedStrategy(account.broker);
   }
   throw new Error(`Unsupported account type: ${account.account_type} or broker: ${account.broker}`);
+}
+
+/**
+ * Sum of latest `portfolio_value` per managed account (master_sheet), using broker/strategy tag rules
+ */
+export async function calculateManagedAccountsAUM(): Promise<number> {
+  const accounts = await prisma.accounts.findMany({
+    where: {
+      account_type: "managed_account",
+      qcode: { in: MANAGED_ACCOUNTS_LIST },
+      broker: { in: ["jainam", "zerodha", "radiance"] },
+    },
+    select: { qcode: true, broker: true, strategy: true },
+  });
+
+  // Step 1: Build (qcode + systemTag)
+  const tagMap = accounts.map((account) => ({
+    qcode: account.qcode,
+    systemTag: getSystemTagForManagedAccountAUM(account),
+  }));
+
+  // Step 2: ONE query instead of N
+  const records = await prisma.master_sheet.findMany({
+    where: {
+      OR: tagMap.map((t) => ({
+        qcode: t.qcode,
+        system_tag: t.systemTag,
+      })),
+    },
+    orderBy: {
+      date: "desc", // important for latest selection
+    },
+    select: {
+      qcode: true,
+      system_tag: true,
+      portfolio_value: true,
+      date: true,
+    },
+  });
+
+  // Step 3: pick latest per (qcode + tag)
+  const latestMap = new Map<string, number>();
+
+  for (const row of records) {
+    const key = `${row.qcode}-${row.system_tag}`;
+
+    if (!latestMap.has(key)) {
+      latestMap.set(key, Number(row.portfolio_value) || 0);
+    }
+  }
+
+  // Step 4: sum
+  let total = 0;
+
+  for (const { qcode, systemTag } of tagMap) {
+    const key = `${qcode}-${systemTag}`;
+    total += latestMap.get(key) || 0;
+  }
+
+  return total;
 }
 
 export async function getUserQcodes(icode: string): Promise<{ qcode: string; account_type: string; broker: string; strategy?: string }[]> {

@@ -43,6 +43,7 @@ model accounts {
   strategy                                                  String?
   account_access_account_access_source_account_idToaccounts account_access[]             @relation("account_access_source_account_idToaccounts")
   account_access_account_access_target_account_idToaccounts account_access[]             @relation("account_access_target_account_idToaccounts")
+  account_aum                                               account_aum?
   account_custodian_codes                                   account_custodian_codes[]
   pooled_account_allocations                                pooled_account_allocations[]
   pooled_account_users                                      pooled_account_users[]
@@ -723,5 +724,15 @@ model refresh_tokens {
   created_at  DateTime? @default(now()) @db.Timestamp(6)
   replaced_by String?   @db.Uuid
 
+  @@schema("public")
+}
+
+model account_aum {
+  qcode          String    @id
+  aum            Decimal   @default(0) @db.Decimal
+  aum_updated_at DateTime? @default(now()) @db.Timestamp(6)
+  accounts       accounts  @relation(fields: [qcode], references: [qcode], onDelete: Cascade, onUpdate: NoAction, map: "fk_account_qcode")
+
+  @@index([aum(sort: Desc)], map: "idx_account_aum_value")
   @@schema("public")
 }
