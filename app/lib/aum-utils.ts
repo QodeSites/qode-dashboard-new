@@ -28,6 +28,18 @@ export const MANAGED_ACCOUNTS_LIST: string[] = [
   "QAC00094",
 ];
 
+const different_cases: Record<string, string> = {
+   "QAC00056": "Zerodha Total Portfolio" ,
+   "QAC00022": "Zerodha Total Portfolio" ,
+   "QAC00043": "Zerodha Total Portfolio" ,
+   "QAC00040": "Zerodha Total Portfolio" ,
+   "QAC00064": "Zerodha Total Portfolio" ,
+   "QAC00069": "Zerodha Total Portfolio" ,
+   "QAC00071": "Zerodha Total Portfolio" ,
+   "QAC00072": "Zerodha Total Portfolio" ,
+   "QAC00074": "Zerodha Total Portfolio" ,
+   "QAC00083": "Zerodha Total Portfolio" ,
+  };
 /** 🔹 Resolve correct system_tag for NORMAL accounts only */
 export function getSystemTagForManagedAccountAUM(account: {
   qcode: string;
@@ -36,6 +48,11 @@ export function getSystemTagForManagedAccountAUM(account: {
 }): string {
   const broker = account.broker.toLowerCase();
   const strategy = account.strategy ?? "";
+
+  const tag = different_cases[account.qcode];
+  if (tag) {
+    return tag;
+  }
 
   if (broker === "jainam") return "Jainam Total Portfolio Exposure";
   if (broker === "radiance") return "Total Portfolio Exposure";
@@ -71,6 +88,8 @@ export async function updateAccountAUMs(): Promise<void> {
     qcode: acc.qcode,
     system_tag: getSystemTagForManagedAccountAUM(acc),
   }));
+
+  
 
   let valueMap = new Map<string, number>();
 
@@ -133,7 +152,7 @@ if (tagMap.length > 0) {
     // ✅ Sarla
     const sarla = await PortfolioApi.getLatestExposure(
       "QAC00041",
-      "Total Portfolio"
+      "Scheme B"
     );
     if (sarla) {
       specialUpdates.push(
