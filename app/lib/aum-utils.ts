@@ -174,7 +174,7 @@ if (tagMap.length > 0) {
     // ✅ Satidham
     const satidham = await PortfolioApi.getLatestExposure(
       "QAC00046",
-      "Total Portfolio"
+      "Scheme QAW++"
     );
     if (satidham) {
       specialUpdates.push(
