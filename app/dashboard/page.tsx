@@ -420,7 +420,8 @@ export default function Portfolio() {
   const isDinesh = effectiveIcode === "QUS00072";
   const isShilpa = effectiveIcode === "QUS00067";
   const isVikram = effectiveIcode === "QUS00068";
-  const isBifurcatedClient = isDinesh || isShilpa || isVikram;
+  const isArwani = effectiveIcode === "QUS00085";
+  const isBifurcatedClient = isDinesh || isShilpa || isVikram || isArwani;
   // Read URL params directly to avoid useSearchParams() which triggers a Suspense boundary
   // and causes a loading flicker (Suspense fallback → page loading state).
   // Safe because during SSR status="loading" so the loading UI renders regardless of param values.
@@ -518,6 +519,8 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           ? { api: "/api/dinesh-api", qcode: "QAC00053", name: "Dinesh" }
           : isShilpa
           ? { api: "/api/shilpa-api", qcode: "QAC00040", name: "Shilpa" }
+          : isArwani
+          ? { api: "/api/arwani-api", qcode: "QAC00071", name: "Arwani" }
           : { api: "/api/vikram-api", qcode: "QAC00043", name: "Vikram Trading" };
 
         const fetchBifurcatedData = async () => {
