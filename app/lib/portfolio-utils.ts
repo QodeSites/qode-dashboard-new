@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/prisma";
 import { Decimal } from "@prisma/client/runtime/library";
-
 const strategyNameMap: { [key: string]: string } = {
   'QAW+': 'Qode All Weather+',
   'QAW++': 'Qode All Weather++',
@@ -16,7 +15,6 @@ const ACCOUNT_INCEPTION_OVERRIDES: { [qcode: string]: { date: Date; nav: number 
   // Arwani Research Services Pvt Ltd - Account started 14-01-2026, first trading day was 16-01-2026
   'QAC00071': { date: new Date('2026-01-14'), nav: 100 },
 };
-
 interface Holding {
   symbol: string;
   exchange: string;
@@ -956,9 +954,6 @@ function getDataFetchingStrategy(account: { account_type: string; broker: string
   throw new Error(`Unsupported account type: ${account.account_type} or broker: ${account.broker}`);
 }
 
-/**
- * Sum of latest `portfolio_value` per managed account (master_sheet), using broker/strategy tag rules
- */
 
 export async function getUserQcodes(icode: string): Promise<{ qcode: string; account_type: string; broker: string; strategy?: string }[]> {
   try {

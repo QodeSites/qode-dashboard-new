@@ -50,7 +50,7 @@ export async function GET() {
     isEmpty || !lastUpdated || !isSameDayIST(lastUpdated);
 
   // const shouldRun = true;
-  const shouldRun = isAfter6PM() && needsUpdate;
+  const shouldRun = isAfter6PM() || needsUpdate;
 
   // 2. Safe update (race-condition protected)
   if (shouldRun) {
