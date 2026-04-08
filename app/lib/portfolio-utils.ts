@@ -954,7 +954,6 @@ function getDataFetchingStrategy(account: { account_type: string; broker: string
   throw new Error(`Unsupported account type: ${account.account_type} or broker: ${account.broker}`);
 }
 
-
 export async function getUserQcodes(icode: string): Promise<{ qcode: string; account_type: string; broker: string; strategy?: string }[]> {
   try {
     const accounts = await prisma.accounts.findMany({
