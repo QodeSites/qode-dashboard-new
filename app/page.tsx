@@ -36,6 +36,16 @@ export default function Home() {
     );
   }
 
+  // Redirect distributor users to distributor dashboard
+  if (session?.user?.accessType === "distributor") {
+    router.push("/distributor");
+    return (
+      <div className="min-h-screen bg-primary-bg flex items-center justify-center w-full max-w-full overflow-x-hidden">
+        <div className="text-logo-green text-xl font-heading">Loading...</div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full max-w-full overflow-x-hidden">
       <HomePage />
