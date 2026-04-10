@@ -505,7 +505,7 @@ export async function getQyeStats(): Promise<DistributorPortfolioResponse> {
     data: stats,
     metadata: {
       strategyName: "QYE++ Strategy",
-      displayName: "QYE++ Strategy",
+      displayName: "Client A",
       inceptionDate,
       dataAsOfDate,
       lastUpdated: new Date().toISOString(),
@@ -660,7 +660,7 @@ export async function getQawStats(): Promise<DistributorPortfolioResponse> {
     data: stats,
     metadata: {
       strategyName: "QAW++ Strategy",
-      displayName: "QAW++ Strategy",
+      displayName: "Client B",
       inceptionDate,
       dataAsOfDate,
       lastUpdated: new Date().toISOString(),

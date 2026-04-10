@@ -7,7 +7,6 @@ import { RevenueChart } from "@/components/revenue-chart";
 import { DistributorStatsSummary } from "@/components/distributor/DistributorStatsSummary";
 import { DistributorPnlTable } from "@/components/distributor/DistributorPnlTable";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   ArrowLeftIcon,
@@ -57,6 +56,32 @@ interface DistributorResponse {
 }
 
 const VALID_STRATEGIES = ["qye", "qaw"] as const;
+
+// Static labels per strategy so the header is stable during loading.
+const STRATEGY_LABELS: Record<string, { client: string; strategy: string }> = {
+  qye: { client: "Client A", strategy: "QYE++ Strategy" },
+  qaw: { client: "Client B", strategy: "QAW++ Strategy" },
+};
+
+// IST-aware greeting, mirrors the regular dashboard's `getGreeting()`.
+function getGreeting(): string {
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istTime = new Date(now.getTime() + istOffset);
+  const hours = istTime.getUTCHours();
+  if (hours >= 0 && hours < 12) return "Good Morning";
+  if (hours >= 12 && hours < 17) return "Good Afternoon";
+  return "Good Evening";
+}
+
+// Date formatter matching the regular dashboard (DD/MM/YYYY, en-IN).
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
 
 export default function DistributorStrategyPage() {
   const { data: session, status } = useSession();
@@ -148,38 +173,27 @@ export default function DistributorStrategyPage() {
     return null;
   }
 
-  const headerTitle = response?.metadata.displayName ?? `${rawStrategy.toUpperCase()}++ Strategy`;
+  const fallbackLabels = STRATEGY_LABELS[rawStrategy] ?? {
+    client: "Client",
+    strategy: `${rawStrategy.toUpperCase()}++ Strategy`,
+  };
+  const clientName = response?.metadata.displayName ?? fallbackLabels.client;
+  const strategyLabel =
+    response?.metadata.strategyName ?? fallbackLabels.strategy;
 
   return (
     <div className="space-y-6 pb-8">
-      {/* Header */}
-      <div className="flex items-center justify-between py-4 mb-2">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => router.push("/distributor")}
-            className="gap-2 text-card-text-secondary hover:text-logo-green"
-          >
-            <ArrowLeftIcon className="h-4 w-4" />
-            Back
-          </Button>
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-heading font-bold text-logo-green">
-                {headerTitle}
-              </h1>
-              <Badge className="bg-logo-green/10 text-logo-green border-logo-green/30">
-                Live Returns
-              </Badge>
-            </div>
-            {response?.metadata.dataAsOfDate && (
-              <p className="text-sm text-card-text-secondary mt-1">
-                Data as of {response.metadata.dataAsOfDate}
-              </p>
-            )}
-          </div>
-        </div>
+      {/* Top bar: back + logout */}
+      <div className="flex items-center justify-between pt-4">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => router.push("/distributor")}
+          className="gap-2 text-card-text-secondary hover:text-logo-green"
+        >
+          <ArrowLeftIcon className="h-4 w-4" />
+          Back
+        </Button>
         <Button
           variant="outline"
           size="sm"
@@ -189,6 +203,43 @@ export default function DistributorStrategyPage() {
           <ArrowRightOnRectangleIcon className="h-4 w-4" />
           Logout
         </Button>
+      </div>
+
+      {/* Greeting + metadata — mirrors the regular dashboard's look */}
+      <div>
+        <h1 className="text-xl font-semibold text-card-text-secondary font-heading">
+          {getGreeting()}, {clientName}
+        </h1>
+        {response?.metadata && (
+          <div className="flex flex-wrap items-center gap-2 text-sm mt-2 text-card-text-secondary font-heading-bold">
+            <span>
+              Inception Date:{" "}
+              <strong>
+                {response.metadata.inceptionDate
+                  ? formatDate(response.metadata.inceptionDate)
+                  : "N/A"}
+              </strong>
+            </span>
+            <span>|</span>
+            <span>
+              Data as of:{" "}
+              <strong>
+                {response.metadata.dataAsOfDate
+                  ? formatDate(response.metadata.dataAsOfDate)
+                  : "N/A"}
+              </strong>
+            </span>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3 mt-4">
+          <Button
+            variant="outline"
+            className="bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full cursor-default"
+          >
+            {strategyLabel}
+          </Button>
+        </div>
       </div>
 
       {/* States */}
