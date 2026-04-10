@@ -49,12 +49,13 @@ export async function GET() {
   const needsUpdate =
     isEmpty || !lastUpdated || !isSameDayIST(lastUpdated);
 
-  // const shouldRun = true;
-  const shouldRun = isAfter6PM() || needsUpdate;
+  const shouldRun = true;
+  // const shouldRun = isAfter6PM() || needsUpdate;
 
   // 2. Safe update (race-condition protected)
   if (shouldRun) {
     try {
+      console.log("updating table...")
       // 🔁 recheck inside to prevent double execution
       const recheck = await prisma.account_aum.findFirst({
         orderBy: { aum_updated_at: "desc" },
