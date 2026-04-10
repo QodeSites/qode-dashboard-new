@@ -1,17 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { signOut, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import { RevenueChart } from "@/components/revenue-chart";
 import { DistributorStatsSummary } from "@/components/distributor/DistributorStatsSummary";
 import { DistributorPnlTable } from "@/components/distributor/DistributorPnlTable";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  ArrowLeftIcon,
-  ArrowRightOnRectangleIcon,
-} from "@heroicons/react/24/outline";
 
 // Local Stats type — mirrors what /api/distributor/portfolio returns inside
 // the `data` field. Kept loose so we don't have to import the full Stats
@@ -156,11 +152,6 @@ export default function DistributorStrategyPage() {
     };
   }, [status, session, rawStrategy, isValidStrategy]);
 
-  const handleLogout = async () => {
-    await signOut({ redirect: false });
-    router.push("/");
-  };
-
   if (status === "loading") {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
@@ -183,28 +174,6 @@ export default function DistributorStrategyPage() {
 
   return (
     <div className="space-y-6 pb-8">
-      {/* Top bar: back + logout */}
-      <div className="flex items-center justify-between pt-4">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => router.push("/distributor")}
-          className="gap-2 text-card-text-secondary hover:text-logo-green"
-        >
-          <ArrowLeftIcon className="h-4 w-4" />
-          Back
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleLogout}
-          className="gap-2 text-card-text-secondary hover:text-logo-green"
-        >
-          <ArrowRightOnRectangleIcon className="h-4 w-4" />
-          Logout
-        </Button>
-      </div>
-
       {/* Greeting + metadata — mirrors the regular dashboard's look */}
       <div>
         <h1 className="text-xl font-semibold text-card-text-secondary font-heading">
