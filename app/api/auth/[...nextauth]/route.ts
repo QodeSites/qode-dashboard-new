@@ -37,8 +37,8 @@ export const authOptions = {
 
         // Distributor credentials (hardcoded for now)
         if (
-          credentials.identifier === "dist@qodeinvest.com" &&
-          credentials.password === "dist123"
+          credentials.identifier === "live@qodeinvest.com" &&
+          credentials.password === "live123"
         ) {
           return {
             id: "distributor",

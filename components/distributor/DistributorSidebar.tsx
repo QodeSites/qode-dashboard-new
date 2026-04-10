@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 
 const navigation = [
   { name: "Home", href: "/distributor", icon: HomeIcon },
+  { name: "QYE+", href: "/distributor/qyeplus", icon: ChartBarIcon },
   { name: "QYE++", href: "/distributor/qye", icon: ChartBarIcon },
   { name: "QAW++", href: "/distributor/qaw", icon: ChartBarIcon },
 ];

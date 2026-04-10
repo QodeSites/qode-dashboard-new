@@ -8,6 +8,11 @@ import { ArrowRightIcon } from "@heroicons/react/24/outline";
 
 const STRATEGIES = [
   {
+    id: "qyeplus",
+    title: "QYE+",
+    fullName: "Qode Yield Enhancer+",
+  },
+  {
     id: "qye",
     title: "QYE++",
     fullName: "Qode Yield Enhancer++",

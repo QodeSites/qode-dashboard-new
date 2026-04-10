@@ -3,8 +3,11 @@ import { requireDistributor } from "@/app/lib/admin-utils";
 import {
   getQyeStats,
   getQawStats,
+  getQyePlusStats,
   type DistributorStrategy,
 } from "@/app/lib/distributor-utils";
+
+const VALID_STRATEGIES = new Set<string>(["qye", "qaw", "qyeplus"]);
 
 export async function GET(request: Request) {
   const { error } = await requireDistributor();
@@ -13,18 +16,22 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const strategyParam = searchParams.get("strategy");
 
-  if (strategyParam !== "qye" && strategyParam !== "qaw") {
+  if (!strategyParam || !VALID_STRATEGIES.has(strategyParam)) {
     return NextResponse.json(
-      { error: "Invalid or missing strategy. Expected 'qye' or 'qaw'." },
+      { error: "Invalid or missing strategy. Expected 'qye', 'qaw', or 'qyeplus'." },
       { status: 400 }
     );
   }
 
-  const strategy: DistributorStrategy = strategyParam;
+  const strategy = strategyParam as DistributorStrategy;
 
   try {
-    const response =
-      strategy === "qye" ? await getQyeStats() : await getQawStats();
+    const handlers: Record<DistributorStrategy, () => ReturnType<typeof getQyeStats>> = {
+      qye: getQyeStats,
+      qaw: getQawStats,
+      qyeplus: getQyePlusStats,
+    };
+    const response = await handlers[strategy]();
     return NextResponse.json(response);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

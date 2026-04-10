@@ -51,10 +51,11 @@ interface DistributorResponse {
   };
 }
 
-const VALID_STRATEGIES = ["qye", "qaw"] as const;
+const VALID_STRATEGIES = ["qye", "qaw", "qyeplus"] as const;
 
 // Static labels per strategy so the header is stable during loading.
 const STRATEGY_LABELS: Record<string, { client: string; strategy: string }> = {
+  qyeplus: { client: "Client C", strategy: "QYE+ Strategy" },
   qye: { client: "Client A", strategy: "QYE++ Strategy" },
   qaw: { client: "Client B", strategy: "QAW++ Strategy" },
 };

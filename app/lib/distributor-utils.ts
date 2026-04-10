@@ -1,6 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { calculatePortfolioMetrics, formatPortfolioStats } from "@/app/lib/portfolio-utils";
 import { DineshApi } from "@/app/lib/bifurcated-portfolio-utils";
+// PortfolioApi from sarla-utils is intentionally NOT used because
+// PortfolioApi.GET fetches ALL Sarla schemes (5-6), which is slow.
+// Instead, getQyePlusStats queries master_sheet directly for Scheme B only.
 
 /**
  * Distributor view data utilities.
@@ -29,8 +32,9 @@ import { DineshApi } from "@/app/lib/bifurcated-portfolio-utils";
 const QYE_QCODE = "QAC00022"; // Deepti Parikh
 const QAW_KRISHNAN_QCODE = "QAC00055"; // Krishnan Iyer
 const QAW_DINESH_QCODE = "QAC00053"; // Dinesh Goel (bifurcated; QAW++ scheme only)
+const SARLA_QCODE = "QAC00041"; // Sarla Performance Fibers (Scheme B → QYE+)
 
-export type DistributorStrategy = "qye" | "qaw";
+export type DistributorStrategy = "qye" | "qaw" | "qyeplus";
 
 export interface DistributorPortfolioResponse {
   data: ReturnType<typeof formatPortfolioStats>;
@@ -506,6 +510,75 @@ export async function getQyeStats(): Promise<DistributorPortfolioResponse> {
     metadata: {
       strategyName: "QYE++ Strategy",
       displayName: "Client A",
+      inceptionDate,
+      dataAsOfDate,
+      lastUpdated: new Date().toISOString(),
+    },
+  };
+}
+
+/**
+ * QYE+ branch — Sarla Performance Fibers, Scheme B (QAC00041).
+ *
+ * Queries master_sheet directly for Scheme B's NAV curve instead of calling
+ * PortfolioApi.GET, which would fetch ALL Sarla schemes (~5-6, each with
+ * multiple DB queries) and is very slow. The direct query is a single
+ * findMany — same system_tag and qcode that getHistoricalData would use if
+ * it reached the DB path.
+ *
+ * System tag: "Total Portfolio Value" (from SARLA_SYSTEM_TAGS["Scheme B"])
+ * Qcode: QAC00041 (no override for Scheme B)
+ */
+export async function getQyePlusStats(): Promise<DistributorPortfolioResponse> {
+  const SCHEME_B_SYSTEM_TAG = "Total Portfolio Value";
+
+  const data = await prisma.master_sheet.findMany({
+    where: {
+      qcode: SARLA_QCODE,
+      system_tag: SCHEME_B_SYSTEM_TAG,
+      nav: { not: null },
+    },
+    select: { date: true, nav: true },
+    orderBy: { date: "asc" },
+  });
+
+  if (data.length === 0) {
+    throw new Error(
+      "Distributor view: no Scheme B NAV data found for Sarla (QAC00041)"
+    );
+  }
+
+  // Convert Prisma rows to the standard NavPoint format.
+  const navCurve: NavPoint[] = data.map((row) => ({
+    date: row.date.toISOString().split("T")[0],
+    value: Number(row.nav) || 0,
+  }));
+
+  // Compute all downstream metrics from the NAV curve.
+  const derived = computeDerivedMetrics(navCurve);
+
+  const stats: ReturnType<typeof formatPortfolioStats> = {
+    amountDeposited: "0",
+    currentExposure: "0",
+    return: derived.returnPct.toFixed(2),
+    totalProfit: "0",
+    trailingReturns: derived.trailingReturns,
+    drawdown: derived.maxDrawdownPct.toFixed(2),
+    equityCurve: navCurve,
+    drawdownCurve: derived.drawdownCurve,
+    quarterlyPnl: derived.quarterlyPnl,
+    monthlyPnl: derived.monthlyPnl,
+    cashFlows: [],
+    strategyName: "QYE+ Strategy",
+  };
+
+  const { inceptionDate, dataAsOfDate } = getCurveDateRange(navCurve);
+
+  return {
+    data: stats,
+    metadata: {
+      strategyName: "QYE+ Strategy",
+      displayName: "Client C",
       inceptionDate,
       dataAsOfDate,
       lastUpdated: new Date().toISOString(),
