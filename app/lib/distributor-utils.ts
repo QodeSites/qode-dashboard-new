@@ -643,24 +643,39 @@ export async function getQawStats(): Promise<DistributorPortfolioResponse> {
     );
   }
 
-  // ---- 3. Splice point = Dinesh's QAW++ inception ----------------------------
-  // Source this from the metadata (canonical) rather than hardcoding it,
-  // so it always tracks DINESH_CONFIG.newStartDate.
-  const spliceDate: string = dineshScheme.metadata.inceptionDate;
+  // ---- 3. Splice point -------------------------------------------------------
+  // Per team requirement: use Krishnan's data up to and including 2026-01-20,
+  // then switch to Dinesh from 2026-01-21 onwards. Dinesh's scheme inception
+  // is 2026-01-12, but his first ~8 days are skipped in favour of Krishnan's
+  // data for that period.
+  const spliceDate = "2026-01-21";
 
-  // ---- 4. Strip the bifurcated engine's chart-baseline row -------------------
-  // The bifurcated engine prepends a synthetic {date: spliceDate-1d, nav: 100}
-  // row to its equityCurve for chart display purposes. We don't want it in
-  // the splice (it would corrupt the rebase math). Filtering by date >= the
-  // real inception cleanly drops it and keeps every real row.
+  // ---- 4. Prepare Dinesh's curve segments ------------------------------------
   const dineshCurveRaw: { date: string; nav: number }[] =
     dineshScheme.data.equityCurve;
+  const dineshInception: string = dineshScheme.metadata.inceptionDate;
+
+  // Dinesh's data FROM the splice date onwards (what we actually splice in).
   const dineshCurveClean = dineshCurveRaw.filter((p) => p.date >= spliceDate);
   if (dineshCurveClean.length === 0) {
     throw new Error(
-      "Distributor view: Dinesh's QAW++ curve is empty after baseline strip"
+      "Distributor view: Dinesh's QAW++ curve is empty after splice-date filter"
     );
   }
+
+  // Dinesh's data BEFORE the splice date (between his real inception and the
+  // splice). We need the last entry here as the rebase anchor — it's the
+  // "previous day" NAV so that Dinesh's daily return on the splice date is
+  // preserved in the rebased curve.
+  const dineshPreSplice = dineshCurveRaw.filter(
+    (p) => p.date >= dineshInception && p.date < spliceDate
+  );
+  if (dineshPreSplice.length === 0) {
+    throw new Error(
+      "Distributor view: Dinesh has no data between his inception and the splice date"
+    );
+  }
+  const dineshPrevDayNav = dineshPreSplice[dineshPreSplice.length - 1].nav;
 
   // ---- 5. Find Krishnan's last NAV strictly before the splice date -----------
   const krishnanBeforeSplice = krishnanCurve.filter((p) => p.date < spliceDate);
@@ -671,15 +686,22 @@ export async function getQawStats(): Promise<DistributorPortfolioResponse> {
   }
   const krishnanLastNavBeforeSplice =
     krishnanBeforeSplice[krishnanBeforeSplice.length - 1].value;
-  const dineshFirstNav = dineshCurveClean[0].nav;
-  if (dineshFirstNav <= 0) {
+
+  if (dineshPrevDayNav <= 0) {
     throw new Error(
-      "Distributor view: Dinesh's first NAV is not positive — cannot rebase"
+      "Distributor view: Dinesh's pre-splice NAV is not positive — cannot rebase"
     );
   }
 
-  // ---- 6. Rebase multiplier (same pattern as bifurcated:352-368) -------------
-  const rebaseMultiplier = krishnanLastNavBeforeSplice / dineshFirstNav;
+  // ---- 6. Rebase multiplier -------------------------------------------------
+  // Divide by Dinesh's NAV on the day BEFORE the splice (not the splice day
+  // itself). This ensures Dinesh's actual daily return on the splice date is
+  // carried into the rebased curve:
+  //
+  //   rebased_jan21 = dinesh_jan21 × (krishnan_jan20 / dinesh_jan20)
+  //                 = krishnan_jan20 × (dinesh_jan21 / dinesh_jan20)
+  //                 = Krishnan's last value + Dinesh's real daily PnL
+  const rebaseMultiplier = krishnanLastNavBeforeSplice / dineshPrevDayNav;
 
   // ---- 7. Build the rebased Dinesh segment in the standard {date, value}
   //         shape so it can be concatenated with Krishnan's curve.
@@ -690,22 +712,6 @@ export async function getQawStats(): Promise<DistributorPortfolioResponse> {
 
   // ---- 8. Splice into a single continuous NAV curve --------------------------
   const splicedCurve: NavPoint[] = [...krishnanBeforeSplice, ...dineshRebased];
-
-  // ---- 9. Sanity diagnostic: a clean rebase should make the seam-day delta
-  //         essentially zero (Krishnan and Dinesh are in the same strategy).
-  //         A large delta would indicate they're not actually tracking each
-  //         other, which would be worth knowing.
-  const seamPct =
-    ((dineshRebased[0].value / krishnanLastNavBeforeSplice) - 1) * 100;
-  if (Math.abs(seamPct) > 0.01) {
-    console.warn(
-      `Distributor QAW++: rebased seam delta = ${seamPct.toFixed(
-        4
-      )}% (expected ≈0). Krishnan last=${krishnanLastNavBeforeSplice}, Dinesh first(rebased)=${
-        dineshRebased[0].value
-      }.`
-    );
-  }
 
   // ---- 10. Recompute all downstream metrics from the spliced curve ----------
   const derived = computeDerivedMetrics(splicedCurve);
