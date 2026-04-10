@@ -17,9 +17,6 @@ interface DistributorStatsSummaryProps {
   // Returns over the strategy's inception period, as a percentage string
   // (e.g. "13.57"). Same shape as `Stats.return` from portfolio-utils.
   returnPercent: string;
-  // Maximum drawdown over the strategy's history, as a percentage string
-  // (e.g. "-2.53"). Same shape as `Stats.drawdown`.
-  drawdownPercent: string;
 }
 
 function formatPercent(raw: string): string {
@@ -31,42 +28,24 @@ function formatPercent(raw: string): string {
 
 export function DistributorStatsSummary({
   returnPercent,
-  drawdownPercent,
 }: DistributorStatsSummaryProps) {
-  const items = [
-    {
-      label: "Returns",
-      value: formatPercent(returnPercent),
-      tooltip: "Annualised for periods over 1 year, absolute for shorter periods.",
-    },
-    {
-      label: "Max Drawdown",
-      value: formatPercent(drawdownPercent),
-    },
-  ];
-
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 overflow-visible">
-      {items.map((item) => (
-        <div
-          key={item.label}
-          className="bg-white/50 rounded-md backdrop-blur-sm card-shadow overflow-visible"
-        >
-          <div className="pt-2 px-5 pb-2 relative flex flex-col h-24">
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-normal text-card-text truncate">
-                {item.label}
-              </div>
+    <div className="flex justify-center overflow-visible">
+      <div className="w-full sm:w-1/2 lg:w-1/3 bg-white/50 rounded-md backdrop-blur-sm card-shadow overflow-visible">
+        <div className="pt-2 px-5 pb-2 relative flex flex-col h-24">
+          <div className="flex items-center justify-center">
+            <div className="text-sm font-normal text-card-text truncate">
+              Returns
             </div>
-            <div className="mt-4" />
-            <div className="flex items-baseline justify-between">
-              <div className="flex items-baseline text-3xl font-[500] text-card-text-secondary font-heading">
-                {item.value}
-              </div>
+          </div>
+          <div className="mt-4" />
+          <div className="flex items-baseline justify-center">
+            <div className="flex items-baseline text-3xl font-[500] text-card-text-secondary font-heading">
+              {formatPercent(returnPercent)}
             </div>
           </div>
         </div>
-      ))}
+      </div>
     </div>
   );
 }

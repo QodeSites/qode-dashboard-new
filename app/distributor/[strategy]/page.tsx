@@ -221,10 +221,7 @@ export default function DistributorStrategyPage() {
 
       {!loading && !notImplemented && !error && response && (
         <>
-          <DistributorStatsSummary
-            returnPercent={response.data.return}
-            drawdownPercent={response.data.drawdown}
-          />
+          <DistributorStatsSummary returnPercent={response.data.return} />
 
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
             <div className="flex-1 min-w-0 sm:w-5/6">
