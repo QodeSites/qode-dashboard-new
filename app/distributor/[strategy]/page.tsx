@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
-import { StatsCards } from "@/components/stats-cards";
 import { RevenueChart } from "@/components/revenue-chart";
-import { PnlTable } from "@/components/PnlTable";
+import { DistributorStatsSummary } from "@/components/distributor/DistributorStatsSummary";
+import { DistributorPnlTable } from "@/components/distributor/DistributorPnlTable";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -54,10 +54,6 @@ interface DistributorResponse {
     dataAsOfDate: string | null;
     lastUpdated: string;
   };
-  displayConfig: {
-    showRupeeCards: boolean;
-    pnlMode: "percent" | "both";
-  };
 }
 
 const VALID_STRATEGIES = ["qye", "qaw"] as const;
@@ -75,9 +71,6 @@ export default function DistributorStrategyPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notImplemented, setNotImplemented] = useState(false);
-  const [returnViewType, setReturnViewType] = useState<"percent" | "cash">(
-    "percent"
-  );
 
   // Auth gate: redirect non-distributors
   useEffect(() => {
@@ -228,15 +221,10 @@ export default function DistributorStrategyPage() {
 
       {!loading && !notImplemented && !error && response && (
         <>
-          {response.displayConfig.showRupeeCards && (
-            <StatsCards
-              stats={response.data}
-              accountType="managed_account"
-              broker="zerodha"
-              returnViewType={returnViewType}
-              setReturnViewType={setReturnViewType}
-            />
-          )}
+          <DistributorStatsSummary
+            returnPercent={response.data.return}
+            drawdownPercent={response.data.drawdown}
+          />
 
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
             <div className="flex-1 min-w-0 sm:w-5/6">
@@ -251,10 +239,9 @@ export default function DistributorStrategyPage() {
             </div>
           </div>
 
-          <PnlTable
+          <DistributorPnlTable
             quarterlyPnl={response.data.quarterlyPnl}
             monthlyPnl={response.data.monthlyPnl}
-            showPmsQawView={response.displayConfig.pnlMode === "percent"}
           />
         </>
       )}
