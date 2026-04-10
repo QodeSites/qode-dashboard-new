@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,15 +16,11 @@ const STRATEGIES = [
     id: "qye",
     title: "QYE++",
     fullName: "Qode Yield Enhancer++",
-    description:
-      "Live returns from a real client account, refreshed daily.",
   },
   {
     id: "qaw",
     title: "QAW++",
     fullName: "Qode All Weather++",
-    description:
-      "Live returns from a real client account, refreshed daily.",
   },
 ] as const;
 
@@ -108,9 +104,6 @@ export default function DistributorPage() {
                 {strategy.fullName}
               </p>
             </CardHeader>
-            <CardContent>
-              <p className="text-sm text-card-text">{strategy.description}</p>
-            </CardContent>
           </Card>
         ))}
       </div>
