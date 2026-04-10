@@ -13,6 +13,17 @@ export async function requireAdmin() {
   return { error: null, session };
 }
 
+export async function requireDistributor() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user || session.user.accessType !== "distributor") {
+    return {
+      error: NextResponse.json({ error: "Distributor access required" }, { status: 403 }),
+      session: null,
+    };
+  }
+  return { error: null, session };
+}
+
 /**
  * Resolves the effective icode from a session, supporting admin impersonation.
  * - For regular clients: returns session.user.icode

@@ -35,6 +35,19 @@ export const authOptions = {
           };
         }
 
+        // Distributor credentials (hardcoded for now)
+        if (
+          credentials.identifier === "live@qodeinvest.com" &&
+          credentials.password === "live123"
+        ) {
+          return {
+            id: "distributor",
+            name: "Distributor",
+            email: "dist@qodeinvest.com",
+            accessType: "distributor" as const,
+          };
+        }
+
         // Regular client auth
         const user = await prisma.clients.findFirst({
           where: {
