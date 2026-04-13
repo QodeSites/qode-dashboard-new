@@ -289,8 +289,17 @@ function computeAllTrailingReturns(
  *
  * Year totals are computed by compounding the constituent monthly returns
  * (geometric, not arithmetic).
+ *
+ * If `pnlByDate` is provided (a map from YYYY-MM-DD → daily pnl), the
+ * function also populates the `cash` field in each month with the summed
+ * rupee P&L for that bucket, and `totalCash` with the year sum. If omitted,
+ * cash values stay at "0" (appropriate for synthetic spliced curves like
+ * QAW++ where per-day pnl has no single meaning).
  */
-function computeMonthlyPercentPnl(sortedCurve: NavPoint[]): DerivedMonthlyPnl {
+function computeMonthlyPnl(
+  sortedCurve: NavPoint[],
+  pnlByDate?: Record<string, number>
+): DerivedMonthlyPnl {
   if (sortedCurve.length === 0) return {};
 
   // For each YYYY-MM bucket, remember the LAST NAV seen in that bucket.
@@ -342,14 +351,64 @@ function computeMonthlyPercentPnl(sortedCurve: NavPoint[]): DerivedMonthlyPnl {
     result[year].totalPercent = parseFloat(yearTotal.toFixed(2));
   }
 
+  // Inject rupee cash P&L per bucket if daily pnl data is available.
+  if (pnlByDate) {
+    const cashByMonth: Record<string, number> = {};
+    for (const date of Object.keys(pnlByDate)) {
+      const yearMonth = date.substring(0, 7);
+      cashByMonth[yearMonth] = (cashByMonth[yearMonth] ?? 0) + pnlByDate[date];
+    }
+
+    for (const yearMonth of Object.keys(cashByMonth)) {
+      const year = yearMonth.substring(0, 4);
+      const monthIndex = parseInt(yearMonth.substring(5, 7), 10) - 1;
+      const monthName = MONTH_NAMES[monthIndex];
+      const cashValue = cashByMonth[yearMonth];
+
+      if (!result[year]) {
+        result[year] = {
+          months: {},
+          totalPercent: 0,
+          totalCash: 0,
+          totalCapitalInOut: 0,
+        };
+      }
+      if (!result[year].months[monthName]) {
+        // Rare: a month with pnl data but no NAV bucket. Add a stub row so
+        // the cash value still shows up in the P&L table.
+        result[year].months[monthName] = {
+          percent: "-",
+          cash: cashValue.toFixed(2),
+          capitalInOut: "0",
+        };
+      } else {
+        result[year].months[monthName].cash = cashValue.toFixed(2);
+      }
+    }
+
+    // Recompute year cash total as a simple sum of month cash values.
+    for (const year of Object.keys(result)) {
+      let yearCash = 0;
+      for (const month of Object.values(result[year].months)) {
+        const c = parseFloat(month.cash);
+        if (!Number.isNaN(c)) yearCash += c;
+      }
+      result[year].totalCash = yearCash;
+    }
+  }
+
   return result;
 }
 
 /**
  * Same idea as the monthly variant, but bucketed by year-quarter.
+ *
+ * Supports the same optional `pnlByDate` parameter — when provided, cash
+ * values are populated per quarter from the summed daily pnl.
  */
-function computeQuarterlyPercentPnl(
-  sortedCurve: NavPoint[]
+function computeQuarterlyPnl(
+  sortedCurve: NavPoint[],
+  pnlByDate?: Record<string, number>
 ): DerivedQuarterlyPnl {
   if (sortedCurve.length === 0) return {};
 
@@ -404,6 +463,47 @@ function computeQuarterlyPercentPnl(
     }
   }
 
+  // Inject rupee cash P&L per quarter bucket if daily pnl data is available.
+  if (pnlByDate) {
+    const cashByQuarter: Record<string, number> = {};
+    for (const date of Object.keys(pnlByDate)) {
+      const year = date.substring(0, 4);
+      const month = parseInt(date.substring(5, 7), 10);
+      const quarter = Math.ceil(month / 3);
+      const qKey = `${year}-Q${quarter}`;
+      cashByQuarter[qKey] = (cashByQuarter[qKey] ?? 0) + pnlByDate[date];
+    }
+
+    for (const key of Object.keys(cashByQuarter)) {
+      const year = key.substring(0, 4);
+      const quarter = parseInt(key.substring(6, 7), 10); // "2024-Q1" → 1
+      const qKey = `q${quarter}` as "q1" | "q2" | "q3" | "q4";
+      const cashValue = cashByQuarter[key];
+
+      if (!result[year]) {
+        result[year] = {
+          percent: { q1: "-", q2: "-", q3: "-", q4: "-", total: "-" },
+          cash: { q1: "-", q2: "-", q3: "-", q4: "-", total: "-" },
+          yearCash: "0",
+        };
+      }
+      result[year].cash[qKey] = cashValue.toFixed(2);
+    }
+
+    // Year cash total = sum of non-dash quarter cash values.
+    for (const year of Object.keys(result)) {
+      let yearCash = 0;
+      for (const q of ["q1", "q2", "q3", "q4"] as const) {
+        const raw = result[year].cash[q];
+        if (raw === "-") continue;
+        const parsed = parseFloat(raw);
+        if (!Number.isNaN(parsed)) yearCash += parsed;
+      }
+      result[year].cash.total = yearCash.toFixed(2);
+      result[year].yearCash = yearCash.toFixed(2);
+    }
+  }
+
   return result;
 }
 
@@ -411,8 +511,15 @@ function computeQuarterlyPercentPnl(
  * Take a NAV curve and produce all the derived metrics that the dashboard
  * components need: drawdown curve, return %, max drawdown %, trailing
  * returns, monthly P&L %, quarterly P&L %.
+ *
+ * If `pnlByDate` is provided, monthlyPnl and quarterlyPnl will also contain
+ * real rupee cash values; otherwise cash values stay at "0" (for synthetic
+ * spliced curves where daily pnl has no single meaning).
  */
-function computeDerivedMetrics(curve: NavPoint[]): DerivedMetrics {
+function computeDerivedMetrics(
+  curve: NavPoint[],
+  pnlByDate?: Record<string, number>
+): DerivedMetrics {
   if (curve.length === 0) {
     return {
       drawdownCurve: [],
@@ -467,8 +574,8 @@ function computeDerivedMetrics(curve: NavPoint[]): DerivedMetrics {
     currentDrawdownPct
   );
 
-  const monthlyPnl = computeMonthlyPercentPnl(sorted);
-  const quarterlyPnl = computeQuarterlyPercentPnl(sorted);
+  const monthlyPnl = computeMonthlyPnl(sorted, pnlByDate);
+  const quarterlyPnl = computeQuarterlyPnl(sorted, pnlByDate);
 
   return {
     drawdownCurve,
@@ -520,48 +627,104 @@ export async function getQyeStats(): Promise<DistributorPortfolioResponse> {
 /**
  * QYE+ branch — Sarla Performance Fibers, Scheme B (QAC00041).
  *
- * Queries master_sheet directly for Scheme B's NAV curve instead of calling
- * PortfolioApi.GET, which would fetch ALL Sarla schemes (~5-6, each with
- * multiple DB queries) and is very slow. The direct query is a single
- * findMany — same system_tag and qcode that getHistoricalData would use if
- * it reached the DB path.
+ * Queries master_sheet directly instead of going through PortfolioApi.GET
+ * (which would fetch all ~5 Sarla schemes with dozens of queries and is
+ * very slow).
  *
- * System tag: "Total Portfolio Value" (from SARLA_SYSTEM_TAGS["Scheme B"])
- * Qcode: QAC00041 (no override for Scheme B)
+ * IMPORTANT: Sarla Scheme B splits its data across TWO system tags — NAV
+ * and pnl live under "Total Portfolio Value" while capital_in_out and
+ * portfolio_value live under "Zerodha Total Portfolio". This mirrors the
+ * behavior in sarla-utils.ts:
+ *
+ *   - getHistoricalData (line 2256) → getSystemTag → "Total Portfolio Value"
+ *   - getTotalProfit    (line 2213) → getSystemTag → "Total Portfolio Value"
+ *   - getAmountDeposited (line 1928) → "Zerodha Total Portfolio" (override)
+ *   - getLatestExposure  (line 2045) → "Zerodha Total Portfolio" (override)
+ *
+ * If we used a single tag for everything, the rupee values would be
+ * wildly wrong (zero or nonsense). Four focused queries are correct and
+ * still fast because they all target the same qcode.
  */
 export async function getQyePlusStats(): Promise<DistributorPortfolioResponse> {
-  const SCHEME_B_SYSTEM_TAG = "Total Portfolio Value";
+  const SCHEME_B_NAV_TAG = "Total Portfolio Value"; // NAV + pnl
+  const SCHEME_B_RUPEE_TAG = "Zerodha Total Portfolio"; // deposits + portfolio_value
 
-  const data = await prisma.master_sheet.findMany({
-    where: {
-      qcode: SARLA_QCODE,
-      system_tag: SCHEME_B_SYSTEM_TAG,
-      nav: { not: null },
-    },
-    select: { date: true, nav: true },
-    orderBy: { date: "asc" },
-  });
+  // Run the three queries in parallel — they're independent.
+  // Note: pnl comes from the navRows query (same system_tag), so we don't
+  // need a separate profitSum aggregate — totalProfit is computed client-side
+  // from navRows.pnl values. This is cheaper and ensures the total always
+  // matches the per-month cash values derived from the same rows.
+  const [navRows, depositSum, latestExposureRow] = await Promise.all([
+    prisma.master_sheet.findMany({
+      where: {
+        qcode: SARLA_QCODE,
+        system_tag: SCHEME_B_NAV_TAG,
+      },
+      select: { date: true, nav: true, pnl: true },
+      orderBy: { date: "asc" },
+    }),
+    prisma.master_sheet.aggregate({
+      where: {
+        qcode: SARLA_QCODE,
+        system_tag: SCHEME_B_RUPEE_TAG,
+        capital_in_out: { not: null },
+      },
+      _sum: { capital_in_out: true },
+    }),
+    prisma.master_sheet.findFirst({
+      where: {
+        qcode: SARLA_QCODE,
+        system_tag: SCHEME_B_RUPEE_TAG,
+      },
+      orderBy: { date: "desc" },
+      select: { portfolio_value: true, date: true },
+    }),
+  ]);
 
-  if (data.length === 0) {
+  if (navRows.length === 0) {
     throw new Error(
-      "Distributor view: no Scheme B NAV data found for Sarla (QAC00041)"
+      "Distributor view: no Scheme B data found for Sarla (QAC00041)"
     );
   }
 
-  // Convert Prisma rows to the standard NavPoint format.
-  const navCurve: NavPoint[] = data.map((row) => ({
-    date: row.date.toISOString().split("T")[0],
-    value: Number(row.nav) || 0,
-  }));
+  // NAV curve: only rows where nav is populated.
+  const navCurve: NavPoint[] = navRows
+    .filter((r) => r.nav !== null)
+    .map((r) => ({
+      date: r.date.toISOString().split("T")[0],
+      value: Number(r.nav) || 0,
+    }));
 
-  // Compute all downstream metrics from the NAV curve.
-  const derived = computeDerivedMetrics(navCurve);
+  if (navCurve.length === 0) {
+    throw new Error(
+      "Distributor view: no Scheme B NAV entries for Sarla (QAC00041)"
+    );
+  }
+
+  // Per-date pnl map (for month/quarter cash P&L) + total.
+  const pnlByDate: Record<string, number> = {};
+  let totalProfit = 0;
+  for (const r of navRows) {
+    if (r.pnl === null) continue;
+    const dateStr = r.date.toISOString().split("T")[0];
+    const pnlVal = Number(r.pnl) || 0;
+    pnlByDate[dateStr] = (pnlByDate[dateStr] ?? 0) + pnlVal;
+    totalProfit += pnlVal;
+  }
+
+  const amountDeposited = Number(depositSum._sum.capital_in_out) || 0;
+  const currentExposure = latestExposureRow
+    ? Number(latestExposureRow.portfolio_value) || 0
+    : 0;
+
+  // Compute percentage + cash metrics from the NAV curve and per-day pnl.
+  const derived = computeDerivedMetrics(navCurve, pnlByDate);
 
   const stats: ReturnType<typeof formatPortfolioStats> = {
-    amountDeposited: "0",
-    currentExposure: "0",
+    amountDeposited: amountDeposited.toFixed(2),
+    currentExposure: currentExposure.toFixed(2),
     return: derived.returnPct.toFixed(2),
-    totalProfit: "0",
+    totalProfit: totalProfit.toFixed(2),
     trailingReturns: derived.trailingReturns,
     drawdown: derived.maxDrawdownPct.toFixed(2),
     equityCurve: navCurve,

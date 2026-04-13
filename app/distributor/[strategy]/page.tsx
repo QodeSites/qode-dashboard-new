@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import { RevenueChart } from "@/components/revenue-chart";
+import { StatsCards } from "@/components/stats-cards";
+import { PnlTable } from "@/components/PnlTable";
 import { DistributorStatsSummary } from "@/components/distributor/DistributorStatsSummary";
 import { DistributorPnlTable } from "@/components/distributor/DistributorPnlTable";
 import { Button } from "@/components/ui/button";
@@ -93,6 +95,9 @@ export default function DistributorStrategyPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notImplemented, setNotImplemented] = useState(false);
+  const [returnViewType, setReturnViewType] = useState<"percent" | "cash">(
+    "percent"
+  );
 
   // Auth gate: redirect non-distributors
   useEffect(() => {
@@ -242,7 +247,25 @@ export default function DistributorStrategyPage() {
 
       {!loading && !notImplemented && !error && response && (
         <>
-          <DistributorStatsSummary returnPercent={response.data.return} />
+          {rawStrategy === "qaw" ? (
+            // QAW++ is a spliced synthetic curve (Krishnan + Dinesh) — rupee
+            // values have no single real meaning, so only show the CAGR card.
+            <DistributorStatsSummary returnPercent={response.data.return} />
+          ) : (
+            // Single-client strategies (QYE+ and QYE++) show the full regular
+            // dashboard StatsCards layout: Amount Invested, Current Portfolio
+            // Value, and Returns (with percent/cash toggle). accountType and
+            // broker are hardcoded because StatsCards only uses them to
+            // choose between standard vs Jainam labels — neither strategy is
+            // Jainam, so "managed_account"/"zerodha" gives the right labels.
+            <StatsCards
+              stats={response.data as unknown as Parameters<typeof StatsCards>[0]["stats"]}
+              accountType="managed_account"
+              broker="zerodha"
+              returnViewType={returnViewType}
+              setReturnViewType={setReturnViewType}
+            />
+          )}
 
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
             <div className="flex-1 min-w-0 sm:w-5/6">
@@ -257,10 +280,21 @@ export default function DistributorStrategyPage() {
             </div>
           </div>
 
-          <DistributorPnlTable
-            quarterlyPnl={response.data.quarterlyPnl}
-            monthlyPnl={response.data.monthlyPnl}
-          />
+          {rawStrategy === "qaw" ? (
+            // QAW++ is a spliced synthetic curve — no meaningful cash P&L,
+            // so keep the percent-only distributor-specific table.
+            <DistributorPnlTable
+              quarterlyPnl={response.data.quarterlyPnl}
+              monthlyPnl={response.data.monthlyPnl}
+            />
+          ) : (
+            // Single-client strategies get the full regular PnlTable with
+            // percent/cash toggle, matching the non-distributor dashboard.
+            <PnlTable
+              quarterlyPnl={response.data.quarterlyPnl}
+              monthlyPnl={response.data.monthlyPnl}
+            />
+          )}
         </>
       )}
     </div>
