@@ -12,7 +12,7 @@ export const MANAGED_ACCOUNTS_LIST: string[] = [
   "QAC00046",
   "QAC00041",
   "QAC00065",
-  "QAC00055",
+  // "QAC00055",
   "QAC00056",
   "QAC00064",
   "QAC00043",
@@ -26,6 +26,8 @@ export const MANAGED_ACCOUNTS_LIST: string[] = [
   "QAC00083",
   "QAC00092",
   "QAC00094",
+  "QAC00095",
+  "QAC00096",
 ];
 
 const different_cases: Record<string, string> = {
@@ -39,6 +41,8 @@ const different_cases: Record<string, string> = {
    "QAC00072": "Zerodha Total Portfolio" ,
    "QAC00074": "Zerodha Total Portfolio" ,
    "QAC00083": "Zerodha Total Portfolio" ,
+   "QAC00095": "Zerodha Total Portfolio" ,
+   "QAC00096": "Zerodha Total Portfolio" ,
   };
 /** 🔹 Resolve correct system_tag for NORMAL accounts only */
 export function getSystemTagForManagedAccountAUM(account: {
@@ -69,6 +73,13 @@ export function getSystemTagForManagedAccountAUM(account: {
  */
 export async function updateAccountAUMs(): Promise<void> {
   console.log("Updating Account AUMs...");
+
+  // 🔥 0. TRUNCATE TABLE FIRST
+  await prisma.$executeRaw(
+    Prisma.sql`TRUNCATE TABLE account_aum`
+  );
+
+  console.log("Truncated account_aum table");
 
   // 1. Fetch ONLY regular accounts
   const accounts = await prisma.accounts.findMany({
