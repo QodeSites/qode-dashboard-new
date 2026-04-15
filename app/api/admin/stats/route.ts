@@ -65,8 +65,9 @@ export async function GET() {
         ? new Date(recheck.aum_updated_at)
         : null;
 
-      const stillNeedsUpdate =
-        !recheckDate || !isSameDayIST(recheckDate);
+      // const stillNeedsUpdate =
+      //   !recheckDate || !isSameDayIST(recheckDate);
+      const stillNeedsUpdate = true
 
       if (stillNeedsUpdate) {
         console.log("Updating AUM (lazy trigger)...");
