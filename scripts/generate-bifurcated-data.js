@@ -28,6 +28,13 @@ const CLIENTS = {
     cutoffDate: "2026-01-13",
     schemeName: "Scheme QYE+",
   },
+  suresh: {
+    csvPath: "data/sureshsomani_old_mastersheet.csv",
+    navTag: "Total Portfolio Value",
+    depositTag: "Zerodha Total Portfolio",
+    cutoffDate: "2026-03-31",
+    schemeName: "Scheme QYE+",
+  },
 };
 
 function parseCSV(filePath) {
@@ -186,10 +193,11 @@ function fmt(clientKey, data) {
 const d = extract(CLIENTS.dinesh);
 const s = extract(CLIENTS.shilpa);
 const v = extract(CLIENTS.vikram);
+const ss = extract(CLIENTS.suresh);
 
 const header = `// Auto-generated frozen scheme data for bifurcated portfolios.
 // Generated: ${new Date().toISOString()}
-// Source CSVs: dinesh_qtf_only_masterhseet.csv, shilpa_old_mastersheet.csv, vikramtrading_old_mastersheet.csv
+// Source CSVs: dinesh_qtf_only_masterhseet.csv, shilpa_old_mastersheet.csv, vikramtrading_old_mastersheet.csv, sureshsomani_old_mastersheet.csv
 //
 // DO NOT EDIT MANUALLY. Regenerate with: node scripts/generate-bifurcated-data.js > app/lib/bifurcated-portfolio-data.ts
 
@@ -206,6 +214,10 @@ ${fmt("shilpa", s)}
 // Vikram Trading (QUS00068 / QAC00043) - Scheme QYE+
 // Inception: ${v.bd}, Last Data: ${v.lastDate}, Final NAV: ${v.lastNav}
 ${fmt("vikram", v)}
+
+// Suresh Somani (QUS00086 / QAC00072) - Scheme QYE+
+// Inception: ${ss.bd}, Last Data: ${ss.lastDate}, Final NAV: ${ss.lastNav}
+${fmt("suresh", ss)}
 `;
 
 process.stdout.write(header);

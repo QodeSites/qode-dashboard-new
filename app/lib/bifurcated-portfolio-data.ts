@@ -1,6 +1,6 @@
 // Auto-generated frozen scheme data for bifurcated portfolios.
-// Generated: 2026-03-25T05:54:02.863Z
-// Source CSVs: dinesh_qtf_only_masterhseet.csv, shilpa_old_mastersheet.csv, vikramtrading_old_mastersheet.csv
+// Generated: 2026-04-15T09:13:36.450Z
+// Source CSVs: dinesh_qtf_only_masterhseet.csv, shilpa_old_mastersheet.csv, vikramtrading_old_mastersheet.csv, sureshsomani_old_mastersheet.csv
 //
 // DO NOT EDIT MANUALLY. Regenerate with: node scripts/generate-bifurcated-data.js > app/lib/bifurcated-portfolio-data.ts
 
@@ -1431,6 +1431,239 @@ export const VIKRAM_FROZEN_DATA: FrozenSchemeData = {
     filtersApplied: { accountType: null, broker: null, startDate: null, endDate: null },
     inceptionDate: "2025-06-25",
     dataAsOfDate: "2026-01-13",
+    strategyName: "Scheme QYE+",
+    isActive: false,
+  },
+};
+
+// Suresh Somani (QUS00086 / QAC00072) - Scheme QYE+
+// Inception: 2026-01-19, Last Data: 2026-03-30, Final NAV: 113.63
+export const SURESH_FROZEN_DATA: FrozenSchemeData = {
+  data: {
+    amountDeposited: "0.00",
+    currentExposure: "0.00",
+    return: "13.63",
+    totalProfit: "6595491.91",
+    trailingReturns: {
+      "5d": 1.47,
+      "10d": 1.27,
+      "15d": 0.27,
+      "1m": 8.82,
+      "3m": null,
+      "6m": null,
+      "1y": null,
+      "2y": null,
+      "5y": null,
+      "sinceInception": 13.63,
+      "MDD": -1.63,
+      "currentDD": 0,
+    },
+    drawdown: "0",
+    maxDrawdown: "-1.63",
+    equityCurve: [
+      { date: "2026-01-19", nav: 100 },
+      { date: "2026-01-20", nav: 101.7 },
+      { date: "2026-01-21", nav: 101.37 },
+      { date: "2026-01-22", nav: 101.22 },
+      { date: "2026-01-23", nav: 101.92 },
+      { date: "2026-01-27", nav: 101.3 },
+      { date: "2026-01-28", nav: 100.95 },
+      { date: "2026-01-29", nav: 101.06 },
+      { date: "2026-01-30", nav: 100.26 },
+      { date: "2026-02-01", nav: 100.65 },
+      { date: "2026-02-02", nav: 101.21 },
+      { date: "2026-02-03", nav: 104.18 },
+      { date: "2026-02-04", nav: 104.24 },
+      { date: "2026-02-05", nav: 103.68 },
+      { date: "2026-02-06", nav: 103.59 },
+      { date: "2026-02-09", nav: 103.53 },
+      { date: "2026-02-10", nav: 103.54 },
+      { date: "2026-02-11", nav: 103.49 },
+      { date: "2026-02-12", nav: 103.36 },
+      { date: "2026-02-13", nav: 103.77 },
+      { date: "2026-02-16", nav: 104.42 },
+      { date: "2026-02-17", nav: 103.63 },
+      { date: "2026-02-18", nav: 103.72 },
+      { date: "2026-02-19", nav: 105.32 },
+      { date: "2026-02-20", nav: 104.9 },
+      { date: "2026-02-23", nav: 104.85 },
+      { date: "2026-02-24", nav: 104.62 },
+      { date: "2026-02-25", nav: 104.45 },
+      { date: "2026-02-26", nav: 103.93 },
+      { date: "2026-02-27", nav: 104.42 },
+      { date: "2026-03-02", nav: 106.72 },
+      { date: "2026-03-04", nav: 106.68 },
+      { date: "2026-03-05", nav: 107.14 },
+      { date: "2026-03-06", nav: 106.86 },
+      { date: "2026-03-09", nav: 110.27 },
+      { date: "2026-03-10", nav: 110.38 },
+      { date: "2026-03-11", nav: 111.04 },
+      { date: "2026-03-12", nav: 112.18 },
+      { date: "2026-03-13", nav: 113.32 },
+      { date: "2026-03-16", nav: 113.17 },
+      { date: "2026-03-17", nav: 113.07 },
+      { date: "2026-03-18", nav: 113.36 },
+      { date: "2026-03-19", nav: 113.39 },
+      { date: "2026-03-20", nav: 112.2 },
+      { date: "2026-03-23", nav: 113.21 },
+      { date: "2026-03-24", nav: 111.96 },
+      { date: "2026-03-25", nav: 111.98 },
+      { date: "2026-03-27", nav: 112.11 },
+      { date: "2026-03-30", nav: 113.63 },
+    ],
+    drawdownCurve: [
+      { date: "2026-01-19", drawdown: 0 },
+      { date: "2026-01-20", drawdown: 0 },
+      { date: "2026-01-21", drawdown: -0.32 },
+      { date: "2026-01-22", drawdown: -0.47 },
+      { date: "2026-01-23", drawdown: 0 },
+      { date: "2026-01-27", drawdown: -0.61 },
+      { date: "2026-01-28", drawdown: -0.95 },
+      { date: "2026-01-29", drawdown: -0.84 },
+      { date: "2026-01-30", drawdown: -1.63 },
+      { date: "2026-02-01", drawdown: -1.25 },
+      { date: "2026-02-02", drawdown: -0.7 },
+      { date: "2026-02-03", drawdown: 0 },
+      { date: "2026-02-04", drawdown: 0 },
+      { date: "2026-02-05", drawdown: -0.54 },
+      { date: "2026-02-06", drawdown: -0.62 },
+      { date: "2026-02-09", drawdown: -0.68 },
+      { date: "2026-02-10", drawdown: -0.67 },
+      { date: "2026-02-11", drawdown: -0.72 },
+      { date: "2026-02-12", drawdown: -0.84 },
+      { date: "2026-02-13", drawdown: -0.45 },
+      { date: "2026-02-16", drawdown: 0 },
+      { date: "2026-02-17", drawdown: -0.76 },
+      { date: "2026-02-18", drawdown: -0.67 },
+      { date: "2026-02-19", drawdown: 0 },
+      { date: "2026-02-20", drawdown: -0.4 },
+      { date: "2026-02-23", drawdown: -0.45 },
+      { date: "2026-02-24", drawdown: -0.66 },
+      { date: "2026-02-25", drawdown: -0.83 },
+      { date: "2026-02-26", drawdown: -1.32 },
+      { date: "2026-02-27", drawdown: -0.85 },
+      { date: "2026-03-02", drawdown: 0 },
+      { date: "2026-03-04", drawdown: -0.04 },
+      { date: "2026-03-05", drawdown: 0 },
+      { date: "2026-03-06", drawdown: -0.26 },
+      { date: "2026-03-09", drawdown: 0 },
+      { date: "2026-03-10", drawdown: 0 },
+      { date: "2026-03-11", drawdown: 0 },
+      { date: "2026-03-12", drawdown: 0 },
+      { date: "2026-03-13", drawdown: 0 },
+      { date: "2026-03-16", drawdown: -0.13 },
+      { date: "2026-03-17", drawdown: -0.22 },
+      { date: "2026-03-18", drawdown: 0 },
+      { date: "2026-03-19", drawdown: 0 },
+      { date: "2026-03-20", drawdown: -1.05 },
+      { date: "2026-03-23", drawdown: -0.16 },
+      { date: "2026-03-24", drawdown: -1.26 },
+      { date: "2026-03-25", drawdown: -1.24 },
+      { date: "2026-03-27", drawdown: -1.13 },
+      { date: "2026-03-30", drawdown: 0 },
+    ],
+    quarterlyPnl: {
+          "2026": {
+                "percent": {
+                      "q1": "13.63",
+                      "q2": "0",
+                      "q3": "0",
+                      "q4": "0",
+                      "total": "13.63"
+                },
+                "cash": {
+                      "q1": "6595491.91",
+                      "q2": "0",
+                      "q3": "0",
+                      "q4": "0",
+                      "total": "6595491.91"
+                },
+                "yearCash": "6595491.91"
+          }
+    },
+    monthlyPnl: {
+          "2026": {
+                "months": {
+                      "January": {
+                            "percent": "0.26",
+                            "cash": "161141.71",
+                            "capitalInOut": "5402738.48"
+                      },
+                      "February": {
+                            "percent": "4.15",
+                            "cash": "1953510.21",
+                            "capitalInOut": "-794205.71"
+                      },
+                      "March": {
+                            "percent": "8.82",
+                            "cash": "4480839.99",
+                            "capitalInOut": "-3589475.87"
+                      },
+                      "April": {
+                            "percent": "-",
+                            "cash": "-",
+                            "capitalInOut": "-"
+                      },
+                      "May": {
+                            "percent": "-",
+                            "cash": "-",
+                            "capitalInOut": "-"
+                      },
+                      "June": {
+                            "percent": "-",
+                            "cash": "-",
+                            "capitalInOut": "-"
+                      },
+                      "July": {
+                            "percent": "-",
+                            "cash": "-",
+                            "capitalInOut": "-"
+                      },
+                      "August": {
+                            "percent": "-",
+                            "cash": "-",
+                            "capitalInOut": "-"
+                      },
+                      "September": {
+                            "percent": "-",
+                            "cash": "-",
+                            "capitalInOut": "-"
+                      },
+                      "October": {
+                            "percent": "-",
+                            "cash": "-",
+                            "capitalInOut": "-"
+                      },
+                      "November": {
+                            "percent": "-",
+                            "cash": "-",
+                            "capitalInOut": "-"
+                      },
+                      "December": {
+                            "percent": "-",
+                            "cash": "-",
+                            "capitalInOut": "-"
+                      }
+                },
+                "totalPercent": 13.63,
+                "totalCash": 6595491.91,
+                "totalCapitalInOut": 1019056.8999999994
+          }
+    },
+    cashFlows: [
+      { date: "2026-01-20", amount: 47970595.95, dividend: 0 },
+      { date: "2026-02-18", amount: 1460050, dividend: 0 },
+      { date: "2026-02-19", amount: 251625, dividend: 0 },
+    ],
+    strategyName: "Scheme QYE+",
+  },
+  metadata: {
+    icode: "Scheme QYE+",
+    accountCount: 1,
+    lastUpdated: "2026-03-30T00:00:00.000Z",
+    filtersApplied: { accountType: null, broker: null, startDate: null, endDate: null },
+    inceptionDate: "2026-01-19",
+    dataAsOfDate: "2026-03-30",
     strategyName: "Scheme QYE+",
     isActive: false,
   },

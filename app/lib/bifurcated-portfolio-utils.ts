@@ -5,6 +5,7 @@ import {
   DINESH_FROZEN_DATA,
   SHILPA_FROZEN_DATA,
   VIKRAM_FROZEN_DATA,
+  SURESH_FROZEN_DATA,
 } from "./bifurcated-portfolio-data";
 
 // ==================== Interfaces ====================
@@ -179,6 +180,40 @@ const VIKRAM_CONFIG: ClientConfig = {
   newSchemeName: "Scheme QYE++",
   oldFinalNav: 106.02,
   newStartDate: new Date("2026-01-14"),
+  depositSystemTag: "Zerodha Total Portfolio",
+  navSystemTag: "Total Portfolio Value",
+  oldSchemeDepositTag: "Zerodha Total Portfolio",
+  oldSchemeNavTag: "Total Portfolio Value",
+  portfolioMapping: {
+    "Total Portfolio": {
+      current: "Total Portfolio",
+      metrics: "Total Portfolio",
+      nav: "Total Portfolio",
+      isActive: true,
+    },
+    "Scheme QYE++": {
+      current: "Total Portfolio Value",
+      metrics: "Total Portfolio Value",
+      nav: "Total Portfolio Value",
+      isActive: true,
+    },
+    "Scheme QYE+": {
+      current: "Total Portfolio Value",
+      metrics: "Total Portfolio Value",
+      nav: "Total Portfolio Value",
+      isActive: false,
+    },
+  },
+};
+
+const SURESH_CONFIG: ClientConfig = {
+  clientName: "Suresh Somani",
+  defaultQcode: "QAC00072",
+  accountCode: "AC12",
+  oldSchemeName: "Scheme QYE+",
+  newSchemeName: "Scheme QYE++",
+  oldFinalNav: 113.63,
+  newStartDate: new Date("2026-04-01"),
   depositSystemTag: "Zerodha Total Portfolio",
   navSystemTag: "Total Portfolio Value",
   oldSchemeDepositTag: "Zerodha Total Portfolio",
@@ -1263,6 +1298,10 @@ const vikramEngine = new BifurcatedPortfolioEngine(
   VIKRAM_CONFIG,
   VIKRAM_FROZEN_DATA
 );
+const sureshEngine = new BifurcatedPortfolioEngine(
+  SURESH_CONFIG,
+  SURESH_FROZEN_DATA
+);
 
 export const DineshApi = {
   GET: (req: Request) => dineshEngine.handleGET(req),
@@ -1272,4 +1311,7 @@ export const ShilpaApi = {
 };
 export const VikramApi = {
   GET: (req: Request) => vikramEngine.handleGET(req),
+};
+export const SureshApi = {
+  GET: (req: Request) => sureshEngine.handleGET(req),
 };
