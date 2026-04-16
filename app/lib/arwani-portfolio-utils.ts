@@ -137,7 +137,7 @@ let cachedIndex: MasterSheetIndex | null = null;
 function parseCsv(): MasterSheetIndex {
   if (cachedIndex) return cachedIndex;
 
-  const csvPath = path.join(process.cwd(), "data", "arwani_prebifurcated.csv");
+  const csvPath = path.join(process.cwd(), "data", "arwani_bifurcated2.csv");
   const raw = fs.readFileSync(csvPath, "utf-8");
   const lines = raw.split("\n").filter((l) => l.trim());
 
@@ -283,6 +283,97 @@ function getCashFlows(depositTag: string): CashFlow[] {
 function getTotalProfit(navTag: string): number {
   const rows = getTagRows(navTag);
   return rows.reduce((sum, r) => sum + r.pnl, 0);
+}
+
+// ==================== Unified Historical Data (for Total Portfolio) ====================
+
+// Builds an exposure-weighted synthetic NAV curve from QYE++ and QAW++ per-scheme
+// data, mirroring the overlap-handling pattern used for Mangesh. Each day is
+// either Phase 1 (only QYE++ active → combined NAV follows QYE++ directly) or
+// Phase 2 (both active → compound by exposure-weighted daily return).
+//
+// Daily P/L % and Exposure Value for each scheme come from its navTag, matching
+// what the per-scheme views use. The combined capital_in_out for each date is
+// pulled from the Zerodha Total Portfolio tag so monthly capitalInOut reflects
+// actual combined capital movements.
+function computeUnifiedHistoricalData(): {
+  date: Date;
+  dateStr: string;
+  nav: number;
+  prevNav: number;
+  drawdown: number;
+  pnl: number;
+  capitalInOut: number;
+}[] {
+  const qyeRows = getTagRows("QYE++ Total Portfolio Value");
+  const qawRows = getTagRows("QAW++ Zerodha Total Portfolio");
+  const totalRows = getTagRows("Zerodha Total Portfolio");
+
+  const qawByDate = new Map<string, MasterSheetRow>();
+  for (const row of qawRows) qawByDate.set(row.dateStr, row);
+
+  const totalByDate = new Map<string, MasterSheetRow>();
+  for (const row of totalRows) totalByDate.set(row.dateStr, row);
+
+  const combined: {
+    date: Date;
+    dateStr: string;
+    nav: number;
+    prevNav: number;
+    drawdown: number;
+    pnl: number;
+    capitalInOut: number;
+  }[] = [];
+
+  let prevCombinedNav = 100;
+
+  for (const qyeRow of qyeRows) {
+    if (qyeRow.nav === 0) continue;
+
+    const dateStr = qyeRow.dateStr;
+    const qawRow = qawByDate.get(dateStr);
+    const totalRow = totalByDate.get(dateStr);
+    const combinedCapitalInOut = totalRow?.cashInOut ?? 0;
+
+    if (!qawRow || qawRow.exposureValue === 0) {
+      // Phase 1: QYE++ only → combined NAV follows QYE++ directly.
+      combined.push({
+        date: qyeRow.date,
+        dateStr,
+        nav: qyeRow.nav,
+        prevNav: prevCombinedNav,
+        drawdown: 0,
+        pnl: qyeRow.pnl,
+        capitalInOut: combinedCapitalInOut,
+      });
+      prevCombinedNav = qyeRow.nav;
+    } else {
+      // Phase 2: Both active → exposure-weighted daily return.
+      const qyeExposure = qyeRow.exposureValue;
+      const qawExposure = qawRow.exposureValue;
+      const totalExposure = qyeExposure + qawExposure;
+      const weightedReturn =
+        totalExposure > 0
+          ? (qyeRow.dailyPLPercent * qyeExposure +
+              qawRow.dailyPLPercent * qawExposure) /
+            totalExposure
+          : 0;
+      const newCombinedNav = prevCombinedNav * (1 + weightedReturn / 100);
+
+      combined.push({
+        date: qyeRow.date,
+        dateStr,
+        nav: newCombinedNav,
+        prevNav: prevCombinedNav,
+        drawdown: 0,
+        pnl: qyeRow.pnl + qawRow.pnl,
+        capitalInOut: combinedCapitalInOut,
+      });
+      prevCombinedNav = newCombinedNav;
+    }
+  }
+
+  return combined;
 }
 
 // ==================== Calculation Methods ====================
@@ -846,6 +937,66 @@ function calculateHoldingsSummary(holdings: Holding[]): HoldingsSummary {
   };
 }
 
+// ==================== Total Portfolio Aggregation Helpers ====================
+
+// For "Total Portfolio", cash/profit values are computed as the sum of per-scheme
+// values (not from the combined `Zerodha Total Portfolio` pnl column). This
+// mirrors the pattern in bifurcated-portfolio-utils.ts. Percent values stay
+// based on the combined NAV curve.
+
+function mergeQuarterlyPnlCash(
+  base: QuarterlyPnL,
+  schemes: QuarterlyPnL[]
+): QuarterlyPnL {
+  const result = JSON.parse(JSON.stringify(base)) as QuarterlyPnL;
+
+  for (const year of Object.keys(result)) {
+    let yearTotalCash = 0;
+    for (const q of ["q1", "q2", "q3", "q4"] as const) {
+      let totalCash = 0;
+      for (const scheme of schemes) {
+        const cashStr = scheme[year]?.cash[q];
+        if (cashStr) totalCash += parseFloat(cashStr) || 0;
+      }
+      result[year].cash[q] = totalCash.toFixed(2);
+      yearTotalCash += totalCash;
+    }
+    result[year].cash.total = yearTotalCash.toFixed(2);
+    result[year].yearCash = yearTotalCash.toFixed(2);
+  }
+
+  return result;
+}
+
+function mergeMonthlyPnlCash(
+  base: MonthlyPnL,
+  schemes: MonthlyPnL[]
+): MonthlyPnL {
+  const result = JSON.parse(JSON.stringify(base)) as MonthlyPnL;
+
+  for (const year of Object.keys(result)) {
+    let yearTotalCash = 0;
+    for (const month of Object.keys(result[year].months)) {
+      let totalCash = 0;
+      let hasData = false;
+      for (const scheme of schemes) {
+        const monthData = scheme[year]?.months[month];
+        if (monthData && monthData.cash !== "-") {
+          totalCash += parseFloat(monthData.cash) || 0;
+          hasData = true;
+        }
+      }
+      if (hasData && result[year].months[month].percent !== "-") {
+        result[year].months[month].cash = totalCash.toFixed(2);
+        yearTotalCash += totalCash;
+      }
+    }
+    result[year].totalCash = Number(yearTotalCash.toFixed(2));
+  }
+
+  return result;
+}
+
 // ==================== Main GET Handler ====================
 
 async function handleGET(request: Request): Promise<NextResponse> {
@@ -866,7 +1017,13 @@ async function handleGET(request: Request): Promise<NextResponse> {
       const investedAmount = getAmountDeposited(scheme.depositTag);
       const latestExposure = getLatestExposure(scheme.depositTag);
       const totalProfit = getTotalProfit(scheme.navTag);
-      const historicalData = getHistoricalData(scheme.navTag);
+      // Total Portfolio uses an exposure-weighted synthetic NAV built from the
+      // per-scheme daily P/L and exposure (mirrors Mangesh overlap handling).
+      // Per-scheme views use their own navTag's raw NAV as before.
+      const historicalData =
+        scheme.name === "Total Portfolio"
+          ? computeUnifiedHistoricalData()
+          : getHistoricalData(scheme.navTag);
       const cashFlows = getCashFlows(scheme.depositTag);
 
       const rawEquityCurve = historicalData.map((d) => ({
@@ -947,6 +1104,28 @@ async function handleGET(request: Request): Promise<NextResponse> {
       };
 
       results[scheme.name] = { data: portfolioData, metadata };
+    }
+
+    // For "Total Portfolio", replace cash/profit values with the sum of
+    // per-scheme values. Percent values (NAV-based) stay as-is. This mirrors
+    // the bifurcated-portfolio-utils.ts pattern where Total Portfolio's cash
+    // is the sum of old + new scheme cash, not a single tag's pnl column.
+    const totalData = results["Total Portfolio"]?.data;
+    const qyeData = results["Scheme QYE++"]?.data;
+    const qawData = results["Scheme QAW++"]?.data;
+
+    if (totalData && qyeData && qawData) {
+      totalData.totalProfit = (
+        parseFloat(qyeData.totalProfit) + parseFloat(qawData.totalProfit)
+      ).toFixed(2);
+      totalData.quarterlyPnl = mergeQuarterlyPnlCash(totalData.quarterlyPnl, [
+        qyeData.quarterlyPnl,
+        qawData.quarterlyPnl,
+      ]);
+      totalData.monthlyPnl = mergeMonthlyPnlCash(totalData.monthlyPnl, [
+        qyeData.monthlyPnl,
+        qawData.monthlyPnl,
+      ]);
     }
 
     return NextResponse.json(results, { status: 200 });
