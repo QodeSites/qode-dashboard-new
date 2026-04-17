@@ -562,7 +562,7 @@ const HoldingsSummaryPage = () => {
 
     const fetchArwaniHoldings = async () => {
         try {
-            const res = await fetch(`/api/arwani-api`, { credentials: "include" });
+            const res = await fetch(`/api/arwani-holdings-api`, { credentials: "include" });
             if (!res.ok) {
                 const errorData = await res.json();
                 throw new Error(errorData.error || "Failed to load Arwani holdings");
