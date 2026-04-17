@@ -28,6 +28,8 @@ export const MANAGED_ACCOUNTS_LIST: string[] = [
   "QAC00094",
   "QAC00095",
   "QAC00096",
+  "QAC00098",
+  "QAC00099",
 ];
 
 const different_cases: Record<string, string> = {
@@ -43,6 +45,8 @@ const different_cases: Record<string, string> = {
    "QAC00083": "Zerodha Total Portfolio" ,
    "QAC00095": "Zerodha Total Portfolio" ,
    "QAC00096": "Zerodha Total Portfolio" ,
+   "QAC00098": "Total Portfolio Exposure" ,
+   "QAC00099": "Zerodha Total Portfolio"
   };
 /** 🔹 Resolve correct system_tag for NORMAL accounts only */
 export function getSystemTagForManagedAccountAUM(account: {
