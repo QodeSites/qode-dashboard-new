@@ -2045,14 +2045,13 @@ ${commonStyles}
                 </div>
 
                 {availableStrategies.length > 0 && (
-                    <div className="flex items-center gap-3">
-                        <span className="text-sm text-card-text-secondary">Strategy</span>
+                    <div className="flex justify-end">
                         <Select value={selectedStrategy} onValueChange={setSelectedStrategy}>
                             <SelectTrigger className="w-[240px] bg-white/50 border-0 card-shadow">
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="ALL">All Strategies</SelectItem>
+                                <SelectItem value="ALL">Total Portfolio</SelectItem>
                                 {availableStrategies.map(s => (
                                     <SelectItem key={s} value={s}>{s}</SelectItem>
                                 ))}
