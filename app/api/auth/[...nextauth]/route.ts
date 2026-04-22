@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
+import { BLOCKED_ICODES } from "@/lib/blocked-icodes";
 
 export const authOptions = {
   providers: [
@@ -62,6 +63,10 @@ export const authOptions = {
         });
 
         if (!user || user.password !== credentials.password) {
+          return null;
+        }
+
+        if (user.icode && BLOCKED_ICODES.has(user.icode)) {
           return null;
         }
 
