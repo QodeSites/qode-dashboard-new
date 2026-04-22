@@ -1,15 +1,7 @@
 import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
-
-const BLOCKED_ICODES = new Set<string>([
-  "QUS00078",
-  "QUS00089",
-  "QUS00098",
-  "QUS00082",
-  "QUS00083",
-  "QUS00114",
-]);
+import { BLOCKED_ICODES } from "@/lib/blocked-icodes";
 
 export const authOptions = {
   providers: [
