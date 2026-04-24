@@ -98,6 +98,13 @@ interface ClientConfig {
   // query. When they differ (e.g. Dinesh), we must combine frozen + DB data.
   oldSchemeDepositTag: string;
   oldSchemeNavTag: string;
+  // When set, the client's master_sheet queries are redirected to
+  // bifurcated_master_sheet_test (a superset with the same columns), and the
+  // "Total Portfolio" view's NAV curve + PnL are sourced from this system_tag —
+  // an authoritative single continuous curve that replaces the frozen+rebased
+  // splice. Cash flows, amount deposited, latest exposure, and individual
+  // scheme views keep their existing tags.
+  qodeTotalPortfolioTag?: string;
   portfolioMapping: Record<string, PortfolioConfig>;
 }
 
@@ -115,6 +122,7 @@ const DINESH_CONFIG: ClientConfig = {
   navSystemTag: "Zerodha Total Portfolio",
   oldSchemeDepositTag: "QTF Zerodha Total Portfolio",
   oldSchemeNavTag: "QTF Zerodha Total Portfolio",
+  qodeTotalPortfolioTag: "Qode Total Portfolio",
   portfolioMapping: {
     "Total Portfolio": {
       current: "Total Portfolio",
@@ -226,6 +234,17 @@ class BifurcatedPortfolioEngine {
     return this.config.oldSchemeNavTag === this.config.navSystemTag;
   }
 
+  // Redirects master_sheet reads to bifurcated_master_sheet_test when the client
+  // opts in via qodeTotalPortfolioTag. The bifurcated table is a superset (same
+  // columns, same rows + the "Qode Total Portfolio" authoritative curve). `any`
+  // sidesteps the minor Decimal-precision type differences between the two
+  // Prisma models — we only read columns that exist in both.
+  private get msTable(): any {
+    return this.config.qodeTotalPortfolioTag
+      ? prisma.bifurcated_master_sheet_test
+      : prisma.master_sheet;
+  }
+
   private normalizeDate(date: Date | string): string {
     if (typeof date === "string") return date.split("T")[0];
     return date.toISOString().split("T")[0];
@@ -258,7 +277,7 @@ class BifurcatedPortfolioEngine {
       return cashFlows.reduce((sum, flow) => sum + flow.amount, 0);
     }
 
-    const depositSum = await prisma.master_sheet.aggregate({
+    const depositSum = await this.msTable.aggregate({
       where: {
         qcode,
         system_tag: this.config.depositSystemTag,
@@ -296,7 +315,7 @@ class BifurcatedPortfolioEngine {
       return this.getLatestExposure(qcode, this.config.newSchemeName);
     }
 
-    const record = await prisma.master_sheet.findFirst({
+    const record = await this.msTable.findFirst({
       where: {
         qcode,
         system_tag: this.config.depositSystemTag,
@@ -350,6 +369,54 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
+      if (this.config.qodeTotalPortfolioTag) {
+        // Authoritative single continuous curve — no frozen splice, no rebasing.
+        // Prepend a NAV=100 baseline one day before the first row because Qode's
+        // day-1 row has prev_nav=100 (the inception baseline). This keeps the
+        // equity curve's visual "starts at 100" convention and anchors the
+        // sinceInception day-count correctly.
+        const rows = await this.msTable.findMany({
+          where: {
+            qcode,
+            system_tag: this.config.qodeTotalPortfolioTag,
+            nav: { not: null },
+          },
+          select: {
+            date: true,
+            nav: true,
+            prev_nav: true,
+            drawdown: true,
+            pnl: true,
+            capital_in_out: true,
+          },
+          orderBy: { date: "asc" },
+        });
+
+        const result = rows.map((entry: any) => ({
+          date: entry.date as Date,
+          nav: Number(entry.nav) || 0,
+          prevNav: entry.prev_nav != null ? Number(entry.prev_nav) : null,
+          drawdown: Math.abs(Number(entry.drawdown) || 0),
+          pnl: Number(entry.pnl) || 0,
+          capitalInOut: Number(entry.capital_in_out) || 0,
+        }));
+
+        if (result.length > 0) {
+          const baselineDate = new Date(result[0].date);
+          baselineDate.setUTCDate(baselineDate.getUTCDate() - 1);
+          result.unshift({
+            date: baselineDate,
+            nav: 100,
+            prevNav: null,
+            drawdown: 0,
+            pnl: 0,
+            capitalInOut: 0,
+          });
+        }
+
+        return result;
+      }
+
       const oldData = await this.getHistoricalData(
         qcode,
         this.config.oldSchemeName
@@ -368,7 +435,7 @@ class BifurcatedPortfolioEngine {
       return [...oldData, ...rebasedNewData];
     }
 
-    const data = await prisma.master_sheet.findMany({
+    const data = await this.msTable.findMany({
       where: {
         qcode,
         system_tag: this.config.navSystemTag,
@@ -386,7 +453,7 @@ class BifurcatedPortfolioEngine {
       orderBy: { date: "asc" },
     });
 
-    return data.map((entry) => ({
+    return data.map((entry: any) => ({
       date: entry.date,
       nav: Number(entry.nav) || 0,
       prevNav: entry.prev_nav ? Number(entry.prev_nav) : null,
@@ -420,7 +487,7 @@ class BifurcatedPortfolioEngine {
       );
     }
 
-    const data = await prisma.master_sheet.findMany({
+    const data = await this.msTable.findMany({
       where: {
         qcode,
         system_tag: this.config.depositSystemTag,
@@ -436,7 +503,7 @@ class BifurcatedPortfolioEngine {
       orderBy: { date: "asc" },
     });
 
-    return data.map((entry) => ({
+    return data.map((entry: any) => ({
       date: this.normalizeDate(entry.date),
       amount: entry.capital_in_out?.toNumber() || 0,
       dividend: 0,
@@ -452,6 +519,20 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
+      if (this.config.qodeTotalPortfolioTag) {
+        // Qode Total Portfolio's pnl column is authoritative for the combined
+        // view — no need to merge frozen + DB.
+        const profitSum = await this.msTable.aggregate({
+          where: {
+            qcode,
+            system_tag: this.config.qodeTotalPortfolioTag,
+            pnl: { not: null },
+          },
+          _sum: { pnl: true },
+        });
+        return Number(profitSum._sum.pnl) || 0;
+      }
+
       // Always combine frozen old + DB new — the DB may not have old
       // period PnL entries even when NAV tags are shared.
       const oldProfit = await this.getTotalProfit(
@@ -465,7 +546,7 @@ class BifurcatedPortfolioEngine {
       return oldProfit + newProfit;
     }
 
-    const profitSum = await prisma.master_sheet.aggregate({
+    const profitSum = await this.msTable.aggregate({
       where: {
         qcode,
         system_tag: this.config.navSystemTag,
@@ -514,14 +595,58 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
+      if (this.config.qodeTotalPortfolioTag) {
+        // Qode's first row has prev_nav=100 (the inception baseline) and
+        // represents day 1 of the account. Use prev_nav as the return
+        // denominator and anchor the day-count to inception (one day before
+        // first row) so day-1 NAV moves are captured and the span matches
+        // the prepended baseline in the equity curve.
+        const firstNavRecord = await this.msTable.findFirst({
+          where: {
+            qcode,
+            system_tag: this.config.qodeTotalPortfolioTag,
+            nav: { not: null },
+          },
+          orderBy: { date: "asc" },
+          select: { nav: true, prev_nav: true, date: true },
+        });
+        const latestNavRecord = await this.msTable.findFirst({
+          where: {
+            qcode,
+            system_tag: this.config.qodeTotalPortfolioTag,
+            nav: { not: null },
+          },
+          orderBy: { date: "desc" },
+          select: { nav: true, date: true },
+        });
+
+        if (!firstNavRecord || !latestNavRecord) return 0;
+
+        const initialNav =
+          firstNavRecord.prev_nav != null
+            ? Number(firstNavRecord.prev_nav)
+            : 100;
+        const finalNav = Number(latestNavRecord.nav) || 0;
+        const inceptionDate = new Date(firstNavRecord.date);
+        inceptionDate.setUTCDate(inceptionDate.getUTCDate() - 1);
+        const days =
+          (latestNavRecord.date.getTime() - inceptionDate.getTime()) /
+          (1000 * 60 * 60 * 24);
+
+        if (days < 365) {
+          return (finalNav / initialNav - 1) * 100;
+        }
+        return (Math.pow(finalNav / initialNav, 365 / days) - 1) * 100;
+      }
+
       if (this.sharedNavTag) {
         // Tags match — query DB directly for first/last NAV (Shilpa/Vikram)
-        const firstNavRecord = await prisma.master_sheet.findFirst({
+        const firstNavRecord = await this.msTable.findFirst({
           where: { qcode, system_tag: this.config.navSystemTag, nav: { not: null } },
           orderBy: { date: "asc" },
           select: { nav: true, date: true },
         });
-        const latestNavRecord = await prisma.master_sheet.findFirst({
+        const latestNavRecord = await this.msTable.findFirst({
           where: { qcode, system_tag: this.config.navSystemTag, nav: { not: null } },
           orderBy: { date: "desc" },
           select: { nav: true, date: true },
@@ -593,7 +718,7 @@ class BifurcatedPortfolioEngine {
   private async getRawHistoricalNav(
     qcode: string
   ): Promise<{ date: string; nav: number }[]> {
-    const data = await prisma.master_sheet.findMany({
+    const data = await this.msTable.findMany({
       where: {
         qcode,
         system_tag: this.config.navSystemTag,
@@ -604,7 +729,7 @@ class BifurcatedPortfolioEngine {
       orderBy: { date: "asc" },
     });
 
-    const result = data.map((entry) => ({
+    const result = data.map((entry: any) => ({
       date: this.normalizeDate(entry.date),
       nav: Number(entry.nav) || 0,
     }));
@@ -775,6 +900,11 @@ class BifurcatedPortfolioEngine {
         false
       );
 
+      // When Qode Total Portfolio is authoritative, percent and cash (pnl) are
+      // already correct from the unified Qode curve — only capitalInOut needs
+      // the frozen-old + DB-new merge because Qode's capital_in_out column is
+      // zero by design (cash movements are tracked on the original tags).
+      const cashFromQodeTag = !!this.config.qodeTotalPortfolioTag;
       const oldMonthlyPnl = this.frozenData.data.monthlyPnl;
       const newMonthlyPnl = await this.calculateMonthlyPnL(
         qcode,
@@ -790,14 +920,6 @@ class BifurcatedPortfolioEngine {
 
           const oldMonth = oldMonthlyPnl[year]?.months[month];
           const newMonth = newMonthlyPnl[year]?.months[month];
-          const oldCash =
-            oldMonth && oldMonth.cash !== "-"
-              ? parseFloat(oldMonth.cash)
-              : 0;
-          const newCash =
-            newMonth && newMonth.cash !== "-"
-              ? parseFloat(newMonth.cash)
-              : 0;
           const oldCapitalInOut =
             oldMonth && oldMonth.capitalInOut !== "-"
               ? parseFloat(oldMonth.capitalInOut)
@@ -806,14 +928,26 @@ class BifurcatedPortfolioEngine {
             newMonth && newMonth.capitalInOut !== "-"
               ? parseFloat(newMonth.capitalInOut)
               : 0;
-
-          const totalCash = oldCash + newCash;
           const totalCapitalInOut = oldCapitalInOut + newCapitalInOut;
 
-          navBasedResult[year].months[month].cash = totalCash.toFixed(2);
+          if (!cashFromQodeTag) {
+            const oldCash =
+              oldMonth && oldMonth.cash !== "-"
+                ? parseFloat(oldMonth.cash)
+                : 0;
+            const newCash =
+              newMonth && newMonth.cash !== "-"
+                ? parseFloat(newMonth.cash)
+                : 0;
+            navBasedResult[year].months[month].cash =
+              (oldCash + newCash).toFixed(2);
+          }
           navBasedResult[year].months[month].capitalInOut =
             totalCapitalInOut.toFixed(2);
-          yearTotalCash += totalCash;
+
+          yearTotalCash += parseFloat(
+            navBasedResult[year].months[month].cash
+          ) || 0;
           yearTotalCapitalInOut += totalCapitalInOut;
         }
 
@@ -958,6 +1092,21 @@ class BifurcatedPortfolioEngine {
         unifiedHistoricalData,
         false
       );
+
+      // When Qode Total Portfolio is authoritative, per-quarter cash (pnl) is
+      // already correct from the unified Qode curve — just recompute year totals.
+      if (this.config.qodeTotalPortfolioTag) {
+        for (const year of Object.keys(navBasedResult)) {
+          let yearTotalCash = 0;
+          for (const q of ["q1", "q2", "q3", "q4"] as const) {
+            yearTotalCash +=
+              parseFloat(navBasedResult[year].cash[q] || "0") || 0;
+          }
+          navBasedResult[year].cash.total = yearTotalCash.toFixed(2);
+          navBasedResult[year].yearCash = yearTotalCash.toFixed(2);
+        }
+        return navBasedResult;
+      }
 
       const oldQuarterlyPnl = this.frozenData.data.quarterlyPnl;
       const newQuarterlyPnl = await this.calculateQuarterlyPnL(
