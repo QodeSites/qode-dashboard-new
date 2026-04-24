@@ -71,11 +71,21 @@ interface PortfolioResponse {
   metadata: Metadata;
 }
 
+interface SchemeTagConfig {
+  depositTag: string;
+  navTag: string;
+  startDate: Date;
+}
+
 interface PortfolioConfig {
   current: string;
   metrics: string;
   nav: string;
   isActive: boolean;
+  // When set, this scheme uses its own system tags + inception date instead of
+  // the client-level depositSystemTag/navSystemTag/newStartDate. Required for
+  // parallel-running active schemes (e.g. Dinesh's QYE++ alongside QAW++).
+  tags?: SchemeTagConfig;
 }
 
 export interface FrozenSchemeData {
@@ -131,10 +141,26 @@ const DINESH_CONFIG: ClientConfig = {
       isActive: true,
     },
     "Scheme QAW++": {
-      current: "Zerodha Total Portfolio",
-      metrics: "Zerodha Total Portfolio",
-      nav: "Zerodha Total Portfolio",
+      current: "QAW++ Zerodha Total Portfolio",
+      metrics: "QAW++ Zerodha Total Portfolio",
+      nav: "QAW++ Total Portfolio Value",
       isActive: true,
+      tags: {
+        depositTag: "QAW++ Zerodha Total Portfolio",
+        navTag: "QAW++ Total Portfolio Value",
+        startDate: new Date("2026-01-12"),
+      },
+    },
+    "Scheme QYE++": {
+      current: "QYE++ Zerodha Total Portfolio",
+      metrics: "QYE++ Zerodha Total Portfolio",
+      nav: "QYE++ Total Portfolio Value",
+      isActive: true,
+      tags: {
+        depositTag: "QYE++ Zerodha Total Portfolio",
+        navTag: "QYE++ Total Portfolio Value",
+        startDate: new Date("2026-04-08"),
+      },
     },
     "Scheme QTF": {
       current: "QTF Zerodha Total Portfolio",
@@ -261,6 +287,50 @@ class BifurcatedPortfolioEngine {
     );
   }
 
+  // Returns per-scheme tags when configured (e.g. Dinesh's QYE++), else falls
+  // back to client-level defaults. Enables parallel-running active schemes
+  // under one client — each with its own tags and inception date.
+  private getSchemeTagsAndDate(scheme: string): SchemeTagConfig {
+    const pm = this.config.portfolioMapping[scheme];
+    if (pm?.tags) return pm.tags;
+    return {
+      depositTag: this.config.depositSystemTag,
+      navTag: this.config.navSystemTag,
+      startDate: this.config.newStartDate,
+    };
+  }
+
+  // True when the scheme has its own per-scheme tags — always requires a date
+  // filter on queries (isolated parallel scheme, not a shared client-level tag
+  // that spans both old and new periods).
+  private hasPerSchemeTags(scheme: string): boolean {
+    return !!this.config.portfolioMapping[scheme]?.tags;
+  }
+
+  // Active, non-aggregate, non-frozen scheme keys — excludes "Total Portfolio"
+  // and the old (frozen) scheme. Used to aggregate Total Portfolio's cash
+  // flows and per-month capital-in/out across every concurrent active scheme.
+  private getActiveSchemeKeys(): string[] {
+    return Object.keys(this.config.portfolioMapping).filter((k) => {
+      const pm = this.config.portfolioMapping[k];
+      return (
+        k !== "Total Portfolio" &&
+        k !== this.config.oldSchemeName &&
+        !!pm?.isActive
+      );
+    });
+  }
+
+  // Whether the scheme should be treated as a "fresh active scheme" — i.e.
+  // start from NAV=100 with a prepended baseline day. Covers newSchemeName
+  // (today's QAW++ for Dinesh, QYE++ for Shilpa/Vikram) and any additional
+  // parallel scheme with its own per-scheme tags (Dinesh's QYE++).
+  private isFreshActiveScheme(scheme: string): boolean {
+    return (
+      scheme === this.config.newSchemeName || this.hasPerSchemeTags(scheme)
+    );
+  }
+
   // ==================== Database Fetching Methods (READ-ONLY) ====================
 
   private async getAmountDeposited(
@@ -277,13 +347,19 @@ class BifurcatedPortfolioEngine {
       return cashFlows.reduce((sum, flow) => sum + flow.amount, 0);
     }
 
+    const schemeTags = this.getSchemeTagsAndDate(scheme);
+    const hasOwnTags = this.hasPerSchemeTags(scheme);
     const depositSum = await this.msTable.aggregate({
       where: {
         qcode,
-        system_tag: this.config.depositSystemTag,
-        // Shared tags: no date filter — all capital movements belong to this
-        // continuous account. Different tags: date filter isolates new scheme.
-        ...(this.sharedDepositTag ? {} : { date: { gte: this.config.newStartDate } }),
+        system_tag: schemeTags.depositTag,
+        // Per-scheme tags (QYE++): always date-filter — it's an isolated
+        // parallel scheme. Client-level tag shared with old scheme
+        // (Shilpa/Vikram): no date filter. Client-level tag not shared
+        // (Dinesh's QAW++): date-filter.
+        ...(hasOwnTags || !this.sharedDepositTag
+          ? { date: { gte: schemeTags.startDate } }
+          : {}),
         capital_in_out: { not: null },
       },
       _sum: { capital_in_out: true },
@@ -315,11 +391,12 @@ class BifurcatedPortfolioEngine {
       return this.getLatestExposure(qcode, this.config.newSchemeName);
     }
 
+    const schemeTags = this.getSchemeTagsAndDate(scheme);
     const record = await this.msTable.findFirst({
       where: {
         qcode,
-        system_tag: this.config.depositSystemTag,
-        date: { gte: this.config.newStartDate },
+        system_tag: schemeTags.depositTag,
+        date: { gte: schemeTags.startDate },
       },
       orderBy: { date: "desc" },
       select: {
@@ -435,11 +512,12 @@ class BifurcatedPortfolioEngine {
       return [...oldData, ...rebasedNewData];
     }
 
+    const schemeTags = this.getSchemeTagsAndDate(scheme);
     const data = await this.msTable.findMany({
       where: {
         qcode,
-        system_tag: this.config.navSystemTag,
-        date: { gte: this.config.newStartDate },
+        system_tag: schemeTags.navTag,
+        date: { gte: schemeTags.startDate },
         nav: { not: null },
       },
       select: {
@@ -472,28 +550,29 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
-      // Always combine frozen old + DB new — the DB may not have old
-      // period capital_in_out entries even when deposit tags are shared.
+      // Combine frozen old scheme + every active parallel scheme. This
+      // picks up QYE++'s seed deposit in addition to QAW++'s cash flows
+      // for Dinesh; unchanged for Shilpa/Vikram (one active scheme each).
       const oldCashFlows = await this.getCashFlows(
         qcode,
         this.config.oldSchemeName
       );
-      const newCashFlows = await this.getCashFlows(
-        qcode,
-        this.config.newSchemeName
+      const activeSchemeFlows = await Promise.all(
+        this.getActiveSchemeKeys().map((s) => this.getCashFlows(qcode, s))
       );
-      return [...oldCashFlows, ...newCashFlows].sort((a, b) =>
-        a.date.localeCompare(b.date)
+      return ([oldCashFlows, ...activeSchemeFlows].flat() as CashFlow[]).sort(
+        (a, b) => a.date.localeCompare(b.date)
       );
     }
 
+    const schemeTags = this.getSchemeTagsAndDate(scheme);
     const data = await this.msTable.findMany({
       where: {
         qcode,
-        system_tag: this.config.depositSystemTag,
-        // Always filter by date for the active scheme's cash flow table —
-        // only show entries from the new scheme period onwards.
-        date: { gte: this.config.newStartDate },
+        system_tag: schemeTags.depositTag,
+        // Always filter by date — only show cash flows from the scheme's
+        // inception onwards.
+        date: { gte: schemeTags.startDate },
         AND: [
           { capital_in_out: { not: null } },
           { capital_in_out: { not: new Decimal(0) } },
@@ -546,11 +625,12 @@ class BifurcatedPortfolioEngine {
       return oldProfit + newProfit;
     }
 
+    const schemeTags = this.getSchemeTagsAndDate(scheme);
     const profitSum = await this.msTable.aggregate({
       where: {
         qcode,
-        system_tag: this.config.navSystemTag,
-        date: { gte: this.config.newStartDate },
+        system_tag: schemeTags.navTag,
+        date: { gte: schemeTags.startDate },
         pnl: { not: null },
       },
       _sum: { pnl: true },
@@ -695,15 +775,16 @@ class BifurcatedPortfolioEngine {
         historicalData[0].date.getTime()) /
       (1000 * 60 * 60 * 24);
 
-    // For different-tag clients (Dinesh), the new scheme's DB tag starts
-    // fresh at NAV ~100, so use 100 as base. For shared-tag clients
-    // (Shilpa/Vikram), the DB NAV continues from the old scheme's final
-    // value (~110/~106), so use prevNav (previous day's close) as the
-    // base — using the first day's close would drop day 1's return.
+    // For different-tag clients (Dinesh's QAW++) and per-scheme parallel
+    // schemes (Dinesh's QYE++), the DB tag starts fresh at NAV ~100, so use
+    // 100 as base. For shared-tag clients (Shilpa/Vikram), the DB NAV
+    // continues from the old scheme's final value (~110/~106), so use
+    // prevNav (previous day's close) as the base — using the first day's
+    // close would drop day 1's return.
     const firstNav =
       scheme === this.config.newSchemeName && this.sharedNavTag
         ? (historicalData[0].prevNav ?? originalFirstNav)
-        : scheme === this.config.newSchemeName
+        : this.isFreshActiveScheme(scheme)
           ? 100
           : originalFirstNav;
 
@@ -902,14 +983,26 @@ class BifurcatedPortfolioEngine {
 
       // When Qode Total Portfolio is authoritative, percent and cash (pnl) are
       // already correct from the unified Qode curve — only capitalInOut needs
-      // the frozen-old + DB-new merge because Qode's capital_in_out column is
-      // zero by design (cash movements are tracked on the original tags).
+      // the frozen-old + per-active-scheme merge because Qode's capital_in_out
+      // column is zero by design (cash movements are tracked on the original
+      // tags, including each parallel scheme's own tag).
       const cashFromQodeTag = !!this.config.qodeTotalPortfolioTag;
       const oldMonthlyPnl = this.frozenData.data.monthlyPnl;
-      const newMonthlyPnl = await this.calculateMonthlyPnL(
-        qcode,
-        this.config.newSchemeName
+      const activeMonthlyPnls = await Promise.all(
+        this.getActiveSchemeKeys().map((s) =>
+          this.calculateMonthlyPnL(qcode, s)
+        )
       );
+
+      const getMonthValue = (
+        pnl: MonthlyPnL,
+        year: string,
+        month: string,
+        field: "cash" | "capitalInOut"
+      ): number => {
+        const m = pnl[year]?.months[month];
+        return m && m[field] !== "-" ? parseFloat(m[field]) : 0;
+      };
 
       for (const year of Object.keys(navBasedResult)) {
         let yearTotalCash = 0;
@@ -918,36 +1011,33 @@ class BifurcatedPortfolioEngine {
         for (const month of Object.keys(navBasedResult[year].months)) {
           if (navBasedResult[year].months[month].percent === "-") continue;
 
-          const oldMonth = oldMonthlyPnl[year]?.months[month];
-          const newMonth = newMonthlyPnl[year]?.months[month];
-          const oldCapitalInOut =
-            oldMonth && oldMonth.capitalInOut !== "-"
-              ? parseFloat(oldMonth.capitalInOut)
-              : 0;
-          const newCapitalInOut =
-            newMonth && newMonth.capitalInOut !== "-"
-              ? parseFloat(newMonth.capitalInOut)
-              : 0;
-          const totalCapitalInOut = oldCapitalInOut + newCapitalInOut;
+          const oldCapitalInOut = getMonthValue(
+            oldMonthlyPnl,
+            year,
+            month,
+            "capitalInOut"
+          );
+          const activeCapitalInOut = activeMonthlyPnls.reduce(
+            (sum, pnl) => sum + getMonthValue(pnl, year, month, "capitalInOut"),
+            0
+          );
+          const totalCapitalInOut = oldCapitalInOut + activeCapitalInOut;
 
           if (!cashFromQodeTag) {
-            const oldCash =
-              oldMonth && oldMonth.cash !== "-"
-                ? parseFloat(oldMonth.cash)
-                : 0;
-            const newCash =
-              newMonth && newMonth.cash !== "-"
-                ? parseFloat(newMonth.cash)
-                : 0;
-            navBasedResult[year].months[month].cash =
-              (oldCash + newCash).toFixed(2);
+            const oldCash = getMonthValue(oldMonthlyPnl, year, month, "cash");
+            const activeCash = activeMonthlyPnls.reduce(
+              (sum, pnl) => sum + getMonthValue(pnl, year, month, "cash"),
+              0
+            );
+            navBasedResult[year].months[month].cash = (
+              oldCash + activeCash
+            ).toFixed(2);
           }
           navBasedResult[year].months[month].capitalInOut =
             totalCapitalInOut.toFixed(2);
 
-          yearTotalCash += parseFloat(
-            navBasedResult[year].months[month].cash
-          ) || 0;
+          yearTotalCash +=
+            parseFloat(navBasedResult[year].months[month].cash) || 0;
           yearTotalCapitalInOut += totalCapitalInOut;
         }
 
@@ -959,9 +1049,11 @@ class BifurcatedPortfolioEngine {
     }
 
     const historicalData = await this.getHistoricalData(qcode, scheme);
+    // Fresh active schemes (newSchemeName + per-scheme parallel schemes like
+    // QYE++) use prevNav=100 on day 1 as the month-1 starting baseline.
     return this.computeMonthlyPnLFromHistoricalData(
       historicalData,
-      scheme === this.config.newSchemeName
+      this.isFreshActiveScheme(scheme)
     );
   }
 
@@ -1143,9 +1235,11 @@ class BifurcatedPortfolioEngine {
     }
 
     const historicalData = await this.getHistoricalData(qcode, scheme);
+    // Fresh active schemes (newSchemeName + per-scheme parallel schemes like
+    // QYE++) use prevNav=100 on day 1 as the quarter-1 starting baseline.
     return this.computeQuarterlyPnLFromHistoricalData(
       historicalData,
-      scheme === this.config.newSchemeName
+      this.isFreshActiveScheme(scheme)
     );
   }
 
@@ -1245,11 +1339,10 @@ class BifurcatedPortfolioEngine {
       const qcode =
         url.searchParams.get("qcode") || this.config.defaultQcode;
 
-      const schemes = [
-        "Total Portfolio",
-        this.config.newSchemeName,
-        this.config.oldSchemeName,
-      ];
+      // Drive the scheme list + response order from the portfolio mapping
+      // (JS preserves insertion order), so adding a parallel scheme like
+      // Dinesh's QYE++ auto-includes it without touching the engine.
+      const schemes = Object.keys(this.config.portfolioMapping);
 
       for (const scheme of schemes) {
         const portfolioNames = this.getPortfolioNames(scheme);
@@ -1299,19 +1392,28 @@ class BifurcatedPortfolioEngine {
           drawdown: drawdownMetrics.currentDD.toFixed(2),
           maxDrawdown: drawdownMetrics.mdd.toFixed(2),
           equityCurve: (() => {
+            // Prepend NAV=100 baseline for any fresh active scheme: the
+            // newSchemeName (QAW++ for Dinesh, QYE++ for Shilpa/Vikram) and
+            // any parallel per-scheme scheme (Dinesh's QYE++). Each of those
+            // has a day-1 prev_nav of 100 that represents the inception.
             if (
-              scheme === this.config.newSchemeName &&
+              this.isFreshActiveScheme(scheme) &&
               rawEquityCurve.length > 0
             ) {
               const firstDate = new Date(rawEquityCurve[0].date);
               firstDate.setDate(firstDate.getDate() - 1);
               const baselineDate = firstDate.toISOString().split("T")[0];
 
-              if (this.sharedNavTag) {
-                // Shared-tag: DB NAV continues from old scheme (~110/~106).
-                // Rebase relative to prevNav (previous day's close) so
-                // day 1's return is visible on the chart.
-                const baseNav = historicalData[0]?.prevNav ?? rawEquityCurve[0].nav;
+              // Only rebase when using the client-level shared NAV tag whose
+              // DB NAV continues from the old scheme's final value
+              // (Shilpa/Vikram). Per-scheme tag schemes start fresh at
+              // NAV ~100 — no rebase needed.
+              if (
+                scheme === this.config.newSchemeName &&
+                this.sharedNavTag
+              ) {
+                const baseNav =
+                  historicalData[0]?.prevNav ?? rawEquityCurve[0].nav;
                 const rebaseFactor = 100 / baseNav;
                 const rebasedCurve = rawEquityCurve.map((p) => ({
                   date: p.date,
@@ -1336,7 +1438,7 @@ class BifurcatedPortfolioEngine {
               drawdown: d.value,
             }));
             if (
-              scheme === this.config.newSchemeName &&
+              this.isFreshActiveScheme(scheme) &&
               rawDDCurve.length > 0 &&
               historicalData.length > 0
             ) {
