@@ -6,6 +6,57 @@
 
 import type { FrozenSchemeData } from "./bifurcated-portfolio-utils";
 
+// Placeholder for clients with no inactive (frozen) scheme — e.g. Arwani.
+// The engine reads frozenData.data.{cashFlows,monthlyPnl,quarterlyPnl} when
+// aggregating Total Portfolio; empty arrays/objects make those merges no-ops.
+// Never appears as a scheme key in portfolioMapping, so frozen-scheme branches
+// in the engine never fire for these clients.
+export const EMPTY_FROZEN_DATA: FrozenSchemeData = {
+  data: {
+    amountDeposited: "0",
+    currentExposure: "0",
+    return: "0",
+    totalProfit: "0",
+    trailingReturns: {
+      "5d": null,
+      "10d": null,
+      "15d": null,
+      "1m": null,
+      "3m": null,
+      "6m": null,
+      "1y": null,
+      "2y": null,
+      "5y": null,
+      sinceInception: null,
+      MDD: 0,
+      currentDD: 0,
+    },
+    drawdown: "0",
+    maxDrawdown: "0",
+    equityCurve: [],
+    drawdownCurve: [],
+    quarterlyPnl: {},
+    monthlyPnl: {},
+    cashFlows: [],
+    strategyName: "",
+  },
+  metadata: {
+    icode: "",
+    accountCount: 0,
+    lastUpdated: "",
+    filtersApplied: {
+      accountType: null,
+      broker: null,
+      startDate: null,
+      endDate: null,
+    },
+    inceptionDate: "",
+    dataAsOfDate: "",
+    strategyName: "",
+    isActive: false,
+  },
+};
+
 // Dinesh (QUS00072 / QAC00053) - Scheme QTF
 // Inception: 2025-08-25, Last Data: 2026-01-09, Final NAV: 113.57
 export const DINESH_FROZEN_DATA: FrozenSchemeData = {
