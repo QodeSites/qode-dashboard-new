@@ -143,11 +143,11 @@ const DINESH_CONFIG: ClientConfig = {
     "Scheme QAW++": {
       current: "QAW++ Zerodha Total Portfolio",
       metrics: "QAW++ Zerodha Total Portfolio",
-      nav: "QAW++ Total Portfolio Value",
+      nav: "QAW++ Zerodha Total Portfolio",
       isActive: true,
       tags: {
         depositTag: "QAW++ Zerodha Total Portfolio",
-        navTag: "QAW++ Total Portfolio Value",
+        navTag: "QAW++ Zerodha Total Portfolio",
         startDate: new Date("2026-01-12"),
       },
     },
@@ -386,8 +386,39 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
-      // Delegate to new scheme — the latest exposure is always from
-      // the current active period.
+      if (this.config.qodeTotalPortfolioTag) {
+        // For clients on the Qode Total Portfolio tag (Dinesh), use its
+        // latest row's exposure_value as the authoritative combined
+        // current portfolio value — same source of truth as the NAV/PnL
+        // metrics. exposure_value reflects deployed capital across all
+        // strategies (~₹17Cr), whereas portfolio_value on this tag is a
+        // smaller derived figure not suitable for the "Current Portfolio
+        // Value" card.
+        const record = await this.msTable.findFirst({
+          where: {
+            qcode,
+            system_tag: this.config.qodeTotalPortfolioTag,
+          },
+          orderBy: { date: "desc" },
+          select: {
+            exposure_value: true,
+            drawdown: true,
+            nav: true,
+            date: true,
+          },
+        });
+        if (!record) return null;
+        return {
+          portfolioValue: Number(record.exposure_value) || 0,
+          drawdown: Math.abs(Number(record.drawdown) || 0),
+          nav: Number(record.nav) || 0,
+          date: record.date,
+        };
+      }
+
+      // Fallback for clients without a Qode Total Portfolio tag
+      // (Shilpa/Vikram): delegate to the new scheme — the latest exposure
+      // is from the current active period.
       return this.getLatestExposure(qcode, this.config.newSchemeName);
     }
 
