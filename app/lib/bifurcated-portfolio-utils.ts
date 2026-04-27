@@ -1401,8 +1401,47 @@ class BifurcatedPortfolioEngine {
           nav: d.nav,
         }));
 
-        const drawdownMetrics =
-          this.calculateDrawdownMetrics(rawEquityCurve);
+        // Build the canonical equity curve once — used for both the displayed
+        // chart and as the input to drawdown computation, so MDD/currentDD
+        // anchor to the inception baseline (NAV=100) instead of the day-1
+        // close. Without this, schemes that drop on day 1 (e.g. QYE++ NAV
+        // 99.01 from prev_nav=100) had their peak initialized to 99.01 and
+        // missed the day-1 dip itself.
+        const equityCurveForDisplay = (() => {
+          if (
+            this.isFreshActiveScheme(scheme) &&
+            rawEquityCurve.length > 0
+          ) {
+            const firstDate = new Date(rawEquityCurve[0].date);
+            firstDate.setDate(firstDate.getDate() - 1);
+            const baselineDate = firstDate.toISOString().split("T")[0];
+
+            // Only rebase when using the client-level shared NAV tag whose
+            // DB NAV continues from the old scheme's final value
+            // (Shilpa/Vikram). Per-scheme tag schemes start fresh at
+            // NAV ~100 — no rebase needed.
+            if (
+              scheme === this.config.newSchemeName &&
+              this.sharedNavTag
+            ) {
+              const baseNav =
+                historicalData[0]?.prevNav ?? rawEquityCurve[0].nav;
+              const rebaseFactor = 100 / baseNav;
+              const rebasedCurve = rawEquityCurve.map((p) => ({
+                date: p.date,
+                nav: Number((p.nav * rebaseFactor).toFixed(2)),
+              }));
+              return [{ date: baselineDate, nav: 100 }, ...rebasedCurve];
+            }
+
+            return [{ date: baselineDate, nav: 100 }, ...rawEquityCurve];
+          }
+          return rawEquityCurve;
+        })();
+
+        const drawdownMetrics = this.calculateDrawdownMetrics(
+          equityCurveForDisplay
+        );
         const trailingReturns = await this.calculateTrailingReturns(
           qcode,
           scheme,
@@ -1422,67 +1461,13 @@ class BifurcatedPortfolioEngine {
           trailingReturns,
           drawdown: drawdownMetrics.currentDD.toFixed(2),
           maxDrawdown: drawdownMetrics.mdd.toFixed(2),
-          equityCurve: (() => {
-            // Prepend NAV=100 baseline for any fresh active scheme: the
-            // newSchemeName (QAW++ for Dinesh, QYE++ for Shilpa/Vikram) and
-            // any parallel per-scheme scheme (Dinesh's QYE++). Each of those
-            // has a day-1 prev_nav of 100 that represents the inception.
-            if (
-              this.isFreshActiveScheme(scheme) &&
-              rawEquityCurve.length > 0
-            ) {
-              const firstDate = new Date(rawEquityCurve[0].date);
-              firstDate.setDate(firstDate.getDate() - 1);
-              const baselineDate = firstDate.toISOString().split("T")[0];
-
-              // Only rebase when using the client-level shared NAV tag whose
-              // DB NAV continues from the old scheme's final value
-              // (Shilpa/Vikram). Per-scheme tag schemes start fresh at
-              // NAV ~100 — no rebase needed.
-              if (
-                scheme === this.config.newSchemeName &&
-                this.sharedNavTag
-              ) {
-                const baseNav =
-                  historicalData[0]?.prevNav ?? rawEquityCurve[0].nav;
-                const rebaseFactor = 100 / baseNav;
-                const rebasedCurve = rawEquityCurve.map((p) => ({
-                  date: p.date,
-                  nav: Number((p.nav * rebaseFactor).toFixed(2)),
-                }));
-                return [
-                  { date: baselineDate, nav: 100 },
-                  ...rebasedCurve,
-                ];
-              }
-
-              return [
-                { date: baselineDate, nav: 100 },
-                ...rawEquityCurve,
-              ];
-            }
-            return rawEquityCurve;
-          })(),
-          drawdownCurve: (() => {
-            const rawDDCurve = drawdownMetrics.ddCurve.map((d) => ({
-              date: d.date,
-              drawdown: d.value,
-            }));
-            if (
-              this.isFreshActiveScheme(scheme) &&
-              rawDDCurve.length > 0 &&
-              historicalData.length > 0
-            ) {
-              const firstDate = new Date(historicalData[0].date);
-              firstDate.setDate(firstDate.getDate() - 1);
-              const baselineDate = firstDate.toISOString().split("T")[0];
-              return [
-                { date: baselineDate, drawdown: 0 },
-                ...rawDDCurve,
-              ];
-            }
-            return rawDDCurve;
-          })(),
+          equityCurve: equityCurveForDisplay,
+          // ddCurve already includes the baseline day (drawdown=0) because it
+          // was computed from the prepended equity curve — no extra prepend.
+          drawdownCurve: drawdownMetrics.ddCurve.map((d) => ({
+            date: d.date,
+            drawdown: d.value,
+          })),
           quarterlyPnl,
           monthlyPnl,
           cashFlows,
