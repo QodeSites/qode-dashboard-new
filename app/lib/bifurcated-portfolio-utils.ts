@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Decimal } from "@prisma/client/runtime/library";
 import {
-  DINESH_FROZEN_DATA,
   EMPTY_FROZEN_DATA,
   SHILPA_FROZEN_DATA,
   VIKRAM_FROZEN_DATA,
@@ -87,6 +86,12 @@ interface PortfolioConfig {
   // the client-level depositSystemTag/navSystemTag/newStartDate. Required for
   // parallel-running active schemes (e.g. Dinesh's QYE++ alongside QAW++).
   tags?: SchemeTagConfig;
+  // When true, the scheme card's "Amount Invested" displays 0 regardless of
+  // the live computed value. Used for fully-wound-down schemes where the
+  // closing withdrawal nets the historical seed deposit (e.g. Dinesh's QTF).
+  // Does NOT affect Total Portfolio aggregation — those still use real cash
+  // flows from this scheme.
+  displayAmountInvestedAsZero?: boolean;
 }
 
 export interface FrozenSchemeData {
@@ -125,14 +130,20 @@ const DINESH_CONFIG: ClientConfig = {
   clientName: "Dinesh",
   defaultQcode: "QAC00053",
   accountCode: "AC9",
-  oldSchemeName: "Scheme QTF",
+  // QTF was migrated from frozen-data-file to live DB queries (sourced from
+  // bifurcated_master_sheet_test under "QTF Zerodha Total Portfolio"). The
+  // engine's frozen-scheme branches now never fire for Dinesh because
+  // oldSchemeName is a sentinel that doesn't match any portfolioMapping key.
+  oldSchemeName: "__no_old_scheme__",
   newSchemeName: "Scheme QAW++",
-  oldFinalNav: 113.57,
+  oldFinalNav: 100,
   newStartDate: new Date("2026-01-12"),
   depositSystemTag: "Zerodha Total Portfolio",
   navSystemTag: "Zerodha Total Portfolio",
-  oldSchemeDepositTag: "QTF Zerodha Total Portfolio",
-  oldSchemeNavTag: "QTF Zerodha Total Portfolio",
+  // Sentinels different from depositSystemTag/navSystemTag — irrelevant after
+  // QTF migration but kept consistent with Arwani's pattern.
+  oldSchemeDepositTag: "__no_old_deposit_tag__",
+  oldSchemeNavTag: "__no_old_nav_tag__",
   qodeTotalPortfolioTag: "Qode Total Portfolio",
   portfolioMapping: {
     "Total Portfolio": {
@@ -168,6 +179,16 @@ const DINESH_CONFIG: ClientConfig = {
       metrics: "QTF Zerodha Total Portfolio",
       nav: "QTF Zerodha Total Portfolio",
       isActive: false,
+      tags: {
+        depositTag: "QTF Zerodha Total Portfolio",
+        navTag: "QTF Zerodha Total Portfolio",
+        startDate: new Date("2025-08-26"),
+      },
+      // Net cash flow on QTF is negative (closing withdrawal of ~₹5.68 Cr
+      // exceeded the ~₹4.99 Cr seed because the withdrawal moved the grown
+      // portfolio out to QAW++). Team prefers to show 0 on the inactive
+      // card rather than expose this accounting artifact.
+      displayAmountInvestedAsZero: true,
     },
   },
 };
@@ -362,17 +383,15 @@ class BifurcatedPortfolioEngine {
     return !!this.config.portfolioMapping[scheme]?.tags;
   }
 
-  // Active, non-aggregate, non-frozen scheme keys — excludes "Total Portfolio"
-  // and the old (frozen) scheme. Used to aggregate Total Portfolio's cash
-  // flows and per-month capital-in/out across every concurrent active scheme.
-  private getActiveSchemeKeys(): string[] {
+  // Non-aggregate, non-frozen scheme keys — excludes "Total Portfolio" (the
+  // aggregate view) and oldSchemeName (the frozen-data sentinel/old scheme).
+  // Used to aggregate Total Portfolio's cash flows and per-month capital-in/out
+  // across every scheme. Inactive schemes (e.g. Dinesh's QTF, now sourced
+  // live from the DB) ARE included — their historical cash flows still
+  // belong to the portfolio's lifetime totals.
+  private getAggregatedSchemeKeys(): string[] {
     return Object.keys(this.config.portfolioMapping).filter((k) => {
-      const pm = this.config.portfolioMapping[k];
-      return (
-        k !== "Total Portfolio" &&
-        k !== this.config.oldSchemeName &&
-        !!pm?.isActive
-      );
+      return k !== "Total Portfolio" && k !== this.config.oldSchemeName;
     });
   }
 
@@ -643,12 +662,14 @@ class BifurcatedPortfolioEngine {
         qcode,
         this.config.oldSchemeName
       );
-      const activeSchemeFlows = await Promise.all(
-        this.getActiveSchemeKeys().map((s) => this.getCashFlows(qcode, s))
+      const aggregatedSchemeFlows = await Promise.all(
+        this.getAggregatedSchemeKeys().map((s) =>
+          this.getCashFlows(qcode, s)
+        )
       );
-      return ([oldCashFlows, ...activeSchemeFlows].flat() as CashFlow[]).sort(
-        (a, b) => a.date.localeCompare(b.date)
-      );
+      return (
+        [oldCashFlows, ...aggregatedSchemeFlows].flat() as CashFlow[]
+      ).sort((a, b) => a.date.localeCompare(b.date));
     }
 
     const schemeTags = this.getSchemeTagsAndDate(scheme);
@@ -1074,8 +1095,8 @@ class BifurcatedPortfolioEngine {
       // tags, including each parallel scheme's own tag).
       const cashFromQodeTag = !!this.config.qodeTotalPortfolioTag;
       const oldMonthlyPnl = this.frozenData.data.monthlyPnl;
-      const activeMonthlyPnls = await Promise.all(
-        this.getActiveSchemeKeys().map((s) =>
+      const aggregatedMonthlyPnls = await Promise.all(
+        this.getAggregatedSchemeKeys().map((s) =>
           this.calculateMonthlyPnL(qcode, s)
         )
       );
@@ -1103,20 +1124,20 @@ class BifurcatedPortfolioEngine {
             month,
             "capitalInOut"
           );
-          const activeCapitalInOut = activeMonthlyPnls.reduce(
+          const aggregatedCapitalInOut = aggregatedMonthlyPnls.reduce(
             (sum, pnl) => sum + getMonthValue(pnl, year, month, "capitalInOut"),
             0
           );
-          const totalCapitalInOut = oldCapitalInOut + activeCapitalInOut;
+          const totalCapitalInOut = oldCapitalInOut + aggregatedCapitalInOut;
 
           if (!cashFromQodeTag) {
             const oldCash = getMonthValue(oldMonthlyPnl, year, month, "cash");
-            const activeCash = activeMonthlyPnls.reduce(
+            const aggregatedCash = aggregatedMonthlyPnls.reduce(
               (sum, pnl) => sum + getMonthValue(pnl, year, month, "cash"),
               0
             );
             navBasedResult[year].months[month].cash = (
-              oldCash + activeCash
+              oldCash + aggregatedCash
             ).toFixed(2);
           }
           navBasedResult[year].months[month].capitalInOut =
@@ -1508,8 +1529,16 @@ class BifurcatedPortfolioEngine {
           scheme
         );
 
+        // Per-scheme display override: e.g. Dinesh's QTF shows 0 instead of
+        // its real net (negative) historical cash flow. Total Portfolio's
+        // own amountDeposited is unaffected — it's derived from getCashFlows
+        // ("Total Portfolio") which still includes this scheme's real flows.
+        const displayedInvestedAmount = portfolioNames.displayAmountInvestedAsZero
+          ? 0
+          : investedAmount;
+
         const portfolioData: PortfolioData = {
-          amountDeposited: investedAmount.toFixed(2),
+          amountDeposited: displayedInvestedAmount.toFixed(2),
           currentExposure: latestExposure?.portfolioValue.toFixed(2) || "0",
           return: returns.toFixed(2),
           totalProfit: totalProfit.toFixed(2),
@@ -1573,9 +1602,11 @@ class BifurcatedPortfolioEngine {
 
 // ==================== Engine Instances & Exports ====================
 
+// Dinesh's QTF (formerly frozen) is now live-DB-sourced; engine receives
+// EMPTY_FROZEN_DATA so the frozen-scheme branches stay dormant.
 const dineshEngine = new BifurcatedPortfolioEngine(
   DINESH_CONFIG,
-  DINESH_FROZEN_DATA
+  EMPTY_FROZEN_DATA
 );
 const shilpaEngine = new BifurcatedPortfolioEngine(
   SHILPA_CONFIG,
