@@ -272,8 +272,13 @@ const ARWANI_CONFIG: ClientConfig = {
     "Scheme QYE++": {
       current: "QYE++ Zerodha Total Portfolio",
       metrics: "QYE++ Zerodha Total Portfolio",
-      nav: "QYE++ Zerodha Total Portfolio",
+      nav: "QYE++ Total Portfolio Value",
       isActive: true,
+      tags: {
+        depositTag: "QYE++ Zerodha Total Portfolio",
+        navTag: "QYE++ Total Portfolio Value",
+        startDate: new Date("2026-01-16"),
+      },
     },
     "Scheme QAW++": {
       current: "QAW++ Zerodha Total Portfolio",
