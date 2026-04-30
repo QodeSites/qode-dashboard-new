@@ -461,32 +461,35 @@ class BifurcatedPortfolioEngine {
 
     if (scheme === "Total Portfolio") {
       if (this.config.qodeTotalPortfolioTag) {
-        // For clients on the Qode Total Portfolio tag (Dinesh), use its
-        // latest row's exposure_value as the authoritative combined
-        // current portfolio value — same source of truth as the NAV/PnL
-        // metrics. exposure_value reflects deployed capital across all
-        // strategies (~₹17Cr), whereas portfolio_value on this tag is a
-        // smaller derived figure not suitable for the "Current Portfolio
-        // Value" card.
-        const record = await this.msTable.findFirst({
-          where: {
-            qcode,
-            system_tag: this.config.qodeTotalPortfolioTag,
-          },
-          orderBy: { date: "desc" },
-          select: {
-            exposure_value: true,
-            drawdown: true,
-            nav: true,
-            date: true,
-          },
-        });
-        if (!record) return null;
+        // For Dinesh/Arwani, "Current Portfolio Value" sources from the
+        // literal "Zerodha Total Portfolio" tag's latest portfolio_value
+        // column (NOT this.config.depositSystemTag — Arwani's deposit tag is
+        // "QYE++ Zerodha Total Portfolio"). NAV and drawdown still come from
+        // the Qode Total Portfolio curve, read separately.
+        const [zerodhaRecord, qtpRecord] = await Promise.all([
+          this.msTable.findFirst({
+            where: {
+              qcode,
+              system_tag: "Zerodha Total Portfolio",
+            },
+            orderBy: { date: "desc" },
+            select: { portfolio_value: true, date: true },
+          }),
+          this.msTable.findFirst({
+            where: {
+              qcode,
+              system_tag: this.config.qodeTotalPortfolioTag,
+            },
+            orderBy: { date: "desc" },
+            select: { drawdown: true, nav: true, date: true },
+          }),
+        ]);
+        if (!zerodhaRecord && !qtpRecord) return null;
         return {
-          portfolioValue: Number(record.exposure_value) || 0,
-          drawdown: Math.abs(Number(record.drawdown) || 0),
-          nav: Number(record.nav) || 0,
-          date: record.date,
+          portfolioValue: Number(zerodhaRecord?.portfolio_value) || 0,
+          drawdown: Math.abs(Number(qtpRecord?.drawdown) || 0),
+          nav: Number(qtpRecord?.nav) || 0,
+          date: zerodhaRecord?.date || qtpRecord?.date || new Date(),
         };
       }
 
