@@ -517,6 +517,7 @@ const HoldingsSummaryPage = () => {
     const isSarla = session?.user?.icode === "QUS0007";
     const isSatidham = session?.user?.icode === "QUS0010";
     const isArwani = session?.user?.icode === "QUS00085";
+    const isDinesh = session?.user?.icode === "QUS00072";
 
     useEffect(() => {
         if (status === "unauthenticated") {
@@ -528,18 +529,20 @@ const HoldingsSummaryPage = () => {
 
         if (isArwani) {
             fetchArwaniHoldings();
+        } else if (isDinesh) {
+            fetchDineshHoldings();
         } else if (isSarla || isSatidham) {
             fetchHoldingsForSpecialAccounts();
         } else {
             fetchAccounts();
         }
-    }, [status, router, isSarla, isSatidham, isArwani, accountCode]);
+    }, [status, router, isSarla, isSatidham, isArwani, isDinesh, accountCode]);
 
     useEffect(() => {
-        if (selectedAccount && !isSarla && !isSatidham && !isArwani) {
+        if (selectedAccount && !isSarla && !isSatidham && !isArwani && !isDinesh) {
             fetchHoldingsData();
         }
-    }, [selectedAccount, isSarla, isSatidham, isArwani]);
+    }, [selectedAccount, isSarla, isSatidham, isArwani, isDinesh]);
 
     const fetchAccounts = async () => {
         try {
@@ -566,6 +569,32 @@ const HoldingsSummaryPage = () => {
             if (!res.ok) {
                 const errorData = await res.json();
                 throw new Error(errorData.error || "Failed to load Arwani holdings");
+            }
+            const data: {
+                holdingsSummary: HoldingsSummary;
+                availableStrategies: string[];
+                dataAsOfDate: string | null;
+            } = await res.json();
+
+            setHoldingsData(data.holdingsSummary);
+            setAvailableStrategies(data.availableStrategies || []);
+            if (data.dataAsOfDate) {
+                const d = new Date(data.dataAsOfDate);
+                if (!isNaN(d.getTime())) setLastUpdatedDate(d);
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to load holdings data");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const fetchDineshHoldings = async () => {
+        try {
+            const res = await fetch(`/api/dinesh-holdings-api`, { credentials: "include" });
+            if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.error || "Failed to load Dinesh holdings");
             }
             const data: {
                 holdingsSummary: HoldingsSummary;

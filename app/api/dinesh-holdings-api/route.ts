@@ -5,9 +5,9 @@ import { getEffectiveIcode } from "@/app/lib/admin-utils";
 import fs from "fs";
 import path from "path";
 
-const ARWANI_ICODE = "QUS00085";
-const STOCK_CSV = "arwani_equity_20260429.csv";
-const MF_CSV = "arwani_mf_20260429.csv";
+const DINESH_ICODE = "QUS00072";
+const STOCK_CSV = "dinesh_equity_20260429.csv";
+const MF_CSV = "dinesh_mf_20260429.csv";
 
 interface Holding {
   symbol: string;
@@ -109,7 +109,7 @@ export async function GET() {
     const session = await getServerSession(authOptions);
     const icode = getEffectiveIcode(session);
     if (!icode) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (icode !== ARWANI_ICODE) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (icode !== DINESH_ICODE) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const dataDir = path.join(process.cwd(), "data");
     const stockPath = path.join(dataDir, STOCK_CSV);
@@ -175,7 +175,7 @@ export async function GET() {
       { status: 200 }
     );
   } catch (error) {
-    console.error("Arwani holdings API error:", error);
+    console.error("Dinesh holdings API error:", error);
     return NextResponse.json(
       { error: "Internal server error", message: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
