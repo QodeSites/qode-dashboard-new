@@ -1264,6 +1264,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     const lastDate = getLastDate(filteredEquityCurve, strategyData.metadata?.lastUpdated);
     const isTotalPortfolio = selectedStrategy === "Total Portfolio";
     const isActive = strategyData.metadata.isActive;
+    const hasNavBasedTotalPortfolio = isDinesh || isArwani;
 
     return (
       <div className="space-y-6">
@@ -1303,8 +1304,9 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           isActive={isActive}
           returnViewType={returnViewType}
           setReturnViewType={setReturnViewType}
+          hasNavBasedTotalPortfolio={hasNavBasedTotalPortfolio}
         />
-        {!isTotalPortfolio && (
+        {(!isTotalPortfolio || hasNavBasedTotalPortfolio) && (
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
             <div className="flex-1 min-w-0 sm:w-5/6">
               <RevenueChart
