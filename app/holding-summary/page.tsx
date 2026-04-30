@@ -27,6 +27,7 @@ interface Holding {
     date: Date;
     type?: 'equity' | 'mutual_fund';
     isin?: string;
+    strategy?: string;
 }
 
 interface HoldingsSummary {
@@ -199,12 +200,14 @@ const HoldingsTable = ({
     title,
     holdings,
     showTotals = true,
-    isMutualFund = false
+    isMutualFund = false,
+    showStrategy = false,
 }: {
     title: string;
     holdings: Holding[];
     showTotals?: boolean;
     isMutualFund?: boolean;
+    showStrategy?: boolean;
 }) => {
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState<number>(10);
@@ -326,6 +329,7 @@ const HoldingsTable = ({
                                     { key: 'pnlAmount' as keyof Holding, label: 'Profit & Loss (₹)', align: 'right' },
                                     { key: 'percentPnl' as keyof Holding, label: 'Profit & Loss (%)', align: 'right' },
                                     { key: 'debtEquity' as keyof Holding, label: 'Category', align: 'left' },
+                                    ...(showStrategy ? [{ key: 'strategy' as keyof Holding, label: 'Strategy', align: 'left' as const }] : []),
                                 ]).map(({ key, label, align }) => (
                                     <TableHead
                                         key={key}
@@ -392,6 +396,17 @@ const HoldingsTable = ({
                                             </span>
                                         </div>
                                     </TableCell>
+                                    {showStrategy && (
+                                        <TableCell className="py-3 text-sm text-gray-600">
+                                            {holding.strategy ? (
+                                                <span className="px-2 py-1 rounded text-xs bg-logo-green/10 text-logo-green font-medium">
+                                                    {holding.strategy}
+                                                </span>
+                                            ) : (
+                                                <span className="text-gray-400">—</span>
+                                            )}
+                                        </TableCell>
+                                    )}
                                 </TableRow>
                             ))}
                         </TableBody>
@@ -419,6 +434,7 @@ const HoldingsTable = ({
                                         {totals.investedAmount > 0 ? `${(totals.pnl / totals.investedAmount * 100).toFixed(2)}%` : '0.00%'}
                                     </TableCell>
                                     <TableCell></TableCell>
+                                    {showStrategy && <TableCell></TableCell>}
                                 </TableRow>
                             </tfoot>
                         )}
@@ -494,10 +510,13 @@ const HoldingsSummaryPage = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+    const [availableStrategies, setAvailableStrategies] = useState<string[]>([]);
+    const [selectedStrategy, setSelectedStrategy] = useState<string>("ALL");
 
 
     const isSarla = session?.user?.icode === "QUS0007";
     const isSatidham = session?.user?.icode === "QUS0010";
+    const isArwani = session?.user?.icode === "QUS00085";
 
     useEffect(() => {
         if (status === "unauthenticated") {
@@ -505,18 +524,22 @@ const HoldingsSummaryPage = () => {
             return;
         }
 
-        if (status === "authenticated" && !isSarla && !isSatidham) {
-            fetchAccounts();
+        if (status !== "authenticated") return;
+
+        if (isArwani) {
+            fetchArwaniHoldings();
         } else if (isSarla || isSatidham) {
             fetchHoldingsForSpecialAccounts();
+        } else {
+            fetchAccounts();
         }
-    }, [status, router, isSarla, isSatidham, accountCode]);
+    }, [status, router, isSarla, isSatidham, isArwani, accountCode]);
 
     useEffect(() => {
-        if (selectedAccount && !isSarla && !isSatidham) {
+        if (selectedAccount && !isSarla && !isSatidham && !isArwani) {
             fetchHoldingsData();
         }
-    }, [selectedAccount, isSarla, isSatidham]);
+    }, [selectedAccount, isSarla, isSatidham, isArwani]);
 
     const fetchAccounts = async () => {
         try {
@@ -532,6 +555,32 @@ const HoldingsSummaryPage = () => {
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : "An unexpected error occurred");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const fetchArwaniHoldings = async () => {
+        try {
+            const res = await fetch(`/api/arwani-holdings-api`, { credentials: "include" });
+            if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.error || "Failed to load Arwani holdings");
+            }
+            const data: {
+                holdingsSummary: HoldingsSummary;
+                availableStrategies: string[];
+                dataAsOfDate: string | null;
+            } = await res.json();
+
+            setHoldingsData(data.holdingsSummary);
+            setAvailableStrategies(data.availableStrategies || []);
+            if (data.dataAsOfDate) {
+                const d = new Date(data.dataAsOfDate);
+                if (!isNaN(d.getTime())) setLastUpdatedDate(d);
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to load holdings data");
         } finally {
             setIsLoading(false);
         }
@@ -694,14 +743,15 @@ const HoldingsSummaryPage = () => {
             ...(holdingsData.equityHoldings || []),
             ...(holdingsData.debtHoldings || []),
             ...(holdingsData.mutualFundHoldings || [])
-        ];
+        ].filter(h => selectedStrategy === "ALL" || h.strategy === selectedStrategy);
 
         all.forEach(holding => {
             const isMutualFund = holding.type === 'mutual_fund';
+            const strategyPart = holding.strategy ? `-${holding.strategy}` : '';
 
             const key = isMutualFund
-                ? `${holding.symbol}-${holding.isin || 'no-isin'}-${holding.broker}-${holding.avgPrice.toFixed(4)}`
-                : `${holding.symbol}-${holding.exchange}-${holding.broker}`;
+                ? `${holding.symbol}-${holding.isin || 'no-isin'}-${holding.broker}-${holding.avgPrice.toFixed(4)}${strategyPart}`
+                : `${holding.symbol}-${holding.exchange}-${holding.broker}${strategyPart}`;
 
             if (!seen.has(key)) {
                 seen.add(key);
@@ -713,6 +763,33 @@ const HoldingsSummaryPage = () => {
         return {
             stocks: uniqueHoldings.filter(h => h.type !== 'mutual_fund').sort(sortAlpha),
             mutualFunds: uniqueHoldings.filter(h => h.type === 'mutual_fund').sort(sortAlpha)
+        };
+    };
+
+    const getFilteredSummary = () => {
+        if (!holdingsData) {
+            return { totalBuyValue: 0, totalCurrentValue: 0, totalPnl: 0, totalPnlPercent: 0, holdingsCount: 0 };
+        }
+        if (selectedStrategy === "ALL") {
+            return {
+                totalBuyValue: holdingsData.totalBuyValue,
+                totalCurrentValue: holdingsData.totalCurrentValue,
+                totalPnl: holdingsData.totalPnl,
+                totalPnlPercent: holdingsData.totalPnlPercent,
+                holdingsCount: holdingsData.holdingsCount,
+            };
+        }
+        const { stocks, mutualFunds } = separateHoldings();
+        const rows = [...stocks, ...mutualFunds];
+        const totalBuyValue = rows.reduce((s, h) => s + h.buyValue, 0);
+        const totalCurrentValue = rows.reduce((s, h) => s + h.valueAsOfToday, 0);
+        const totalPnl = rows.reduce((s, h) => s + h.pnlAmount, 0);
+        return {
+            totalBuyValue,
+            totalCurrentValue,
+            totalPnl,
+            totalPnlPercent: totalBuyValue > 0 ? (totalPnl / totalBuyValue) * 100 : 0,
+            holdingsCount: rows.length,
         };
     };
 
@@ -766,12 +843,16 @@ const HoldingsSummaryPage = () => {
 
             csvData.push(['', '']);
 
+            const summary = getFilteredSummary();
             csvData.push(['Portfolio Statistics', '']);
-            csvData.push(['Total Investment Value (₹)', formatCurrency(holdingsData.totalBuyValue)]);
-            csvData.push(['Current Portfolio Value (₹)', formatCurrency(holdingsData.totalCurrentValue)]);
-            csvData.push(['Total Profit/Loss Amount (₹)', formatCurrency(holdingsData.totalPnl)]);
-            csvData.push(['Total Profit/Loss Percentage', formatPercentage(holdingsData.totalPnlPercent)]);
-            csvData.push(['Total Holdings Count', holdingsData.holdingsCount || 0]);
+            if (selectedStrategy !== "ALL") {
+                csvData.push(['Strategy Filter', selectedStrategy]);
+            }
+            csvData.push(['Total Investment Value (₹)', formatCurrency(summary.totalBuyValue)]);
+            csvData.push(['Current Portfolio Value (₹)', formatCurrency(summary.totalCurrentValue)]);
+            csvData.push(['Total Profit/Loss Amount (₹)', formatCurrency(summary.totalPnl)]);
+            csvData.push(['Total Profit/Loss Percentage', formatPercentage(summary.totalPnlPercent)]);
+            csvData.push(['Total Holdings Count', summary.holdingsCount || 0]);
             csvData.push(['', '']);
 
             const assetAllocation = getAssetAllocation();
@@ -827,6 +908,8 @@ const HoldingsSummaryPage = () => {
 
             const { stocks, mutualFunds } = separateHoldings();
 
+            const hasStrategy = availableStrategies.length > 0;
+
             if (stocks && stocks.length > 0) {
                 csvData.push(['Stock Holdings Detail', '']);
                 csvData.push([
@@ -834,6 +917,7 @@ const HoldingsSummaryPage = () => {
                     'Average Price (₹)', 'Current Price (₹)',
                     'Invested Amount (₹)', 'Current Value (₹)',
                     'Profit & Loss Amount (₹)', 'Profit & Loss (%)', 'Category',
+                    ...(hasStrategy ? ['Strategy'] : []),
                 ]);
 
                 stocks.forEach(holding => {
@@ -844,6 +928,7 @@ const HoldingsSummaryPage = () => {
                         formatCurrency(holding.buyValue), formatCurrency(holding.valueAsOfToday),
                         formatCurrency(holding.pnlAmount), formatPercentage(holding.percentPnl),
                         holding.debtEquity || 'N/A',
+                        ...(hasStrategy ? [holding.strategy || 'N/A'] : []),
                     ]);
                 });
 
@@ -859,7 +944,8 @@ const HoldingsSummaryPage = () => {
                     formatCurrency(stockTotals.currentValue),
                     formatCurrency(stockTotals.pnl),
                     formatPercentage(stockTotals.investedAmount > 0 ? (stockTotals.pnl / stockTotals.investedAmount) * 100 : 0),
-                    ''
+                    '',
+                    ...(hasStrategy ? [''] : []),
                 ]);
                 csvData.push(['', '']);
             }
@@ -871,7 +957,8 @@ const HoldingsSummaryPage = () => {
                     'Average Cost (₹)', 'Current Price (₹)',
                     'Invested Amount (₹)', 'Current Value (₹)',
                     'P&L Amount (₹)', 'P&L Percentage (%)',
-                    'Category', 'Sub Category'
+                    'Category', 'Sub Category',
+                    ...(hasStrategy ? ['Strategy'] : []),
                 ]);
 
                 mutualFunds.forEach(holding => {
@@ -881,7 +968,8 @@ const HoldingsSummaryPage = () => {
                         formatCurrency(holding.avgPrice), formatCurrency(holding.ltp),
                         formatCurrency(holding.buyValue), formatCurrency(holding.valueAsOfToday),
                         formatCurrency(holding.pnlAmount), formatPercentage(holding.percentPnl),
-                        holding.debtEquity || 'N/A', holding.subCategory || 'N/A'
+                        holding.debtEquity || 'N/A', holding.subCategory || 'N/A',
+                        ...(hasStrategy ? [holding.strategy || 'N/A'] : []),
                     ]);
                 });
 
@@ -897,7 +985,8 @@ const HoldingsSummaryPage = () => {
                     formatCurrency(mfTotals.currentValue),
                     formatCurrency(mfTotals.pnl),
                     formatPercentage(mfTotals.investedAmount > 0 ? (mfTotals.pnl / mfTotals.investedAmount) * 100 : 0),
-                    '', ''
+                    '', '',
+                    ...(hasStrategy ? [''] : []),
                 ]);
                 csvData.push(['', '']);
             }
@@ -958,13 +1047,18 @@ const HoldingsSummaryPage = () => {
             wsData.push(["", 'Account:', session?.user?.name || 'N/A']);
             wsData.push([]);
 
+            const summary = getFilteredSummary();
+            const hasStrategy = availableStrategies.length > 0;
             headerRowIndices.push(wsData.length);
             wsData.push(["", 'Portfolio Statistics']);
-            wsData.push(["", 'Total Buy Value (₹)', parseFloat(String(holdingsData.totalBuyValue)) || 0]);
-            wsData.push(["", 'Total Current Value (₹)', parseFloat(String(holdingsData.totalCurrentValue)) || 0]);
-            wsData.push(["", 'Total P&L (₹)', parseFloat(String(holdingsData.totalPnl)) || 0]);
-            wsData.push(["", 'Total P&L (%)', parseFloat(String(holdingsData.totalPnlPercent)) || 0]);
-            wsData.push(["", 'Total Holdings Count', parseFloat(String(holdingsData.holdingsCount)) || 0]);
+            if (selectedStrategy !== "ALL") {
+                wsData.push(["", 'Strategy Filter', selectedStrategy]);
+            }
+            wsData.push(["", 'Total Buy Value (₹)', parseFloat(String(summary.totalBuyValue)) || 0]);
+            wsData.push(["", 'Total Current Value (₹)', parseFloat(String(summary.totalCurrentValue)) || 0]);
+            wsData.push(["", 'Total P&L (₹)', parseFloat(String(summary.totalPnl)) || 0]);
+            wsData.push(["", 'Total P&L (%)', parseFloat(String(summary.totalPnlPercent)) || 0]);
+            wsData.push(["", 'Total Holdings Count', parseFloat(String(summary.holdingsCount)) || 0]);
             wsData.push([]);
 
             headerRowIndices.push(wsData.length);
@@ -997,7 +1091,8 @@ const HoldingsSummaryPage = () => {
             subHeaderRowIndices.push(wsData.length);
             wsData.push([
                 "", 'Symbol', 'Exchange', 'Quantity', 'Avg Price (₹)', 'LTP (₹)',
-                'Buy Value (₹)', 'Current Value (₹)', 'P&L Amount (₹)', 'P&L (%)', 'Broker', 'Category'
+                'Buy Value (₹)', 'Current Value (₹)', 'P&L Amount (₹)', 'P&L (%)', 'Broker', 'Category',
+                ...(hasStrategy ? ['Strategy'] : []),
             ]);
             stocks.forEach(holding => {
                 wsData.push([
@@ -1009,7 +1104,8 @@ const HoldingsSummaryPage = () => {
                     parseFloat(String(holding.valueAsOfToday)) || 0,
                     parseFloat(String(holding.pnlAmount)) || 0,
                     parseFloat(String(holding.percentPnl)) || 0,
-                    holding.broker, holding.debtEquity
+                    holding.broker, holding.debtEquity,
+                    ...(hasStrategy ? [holding.strategy || 'N/A'] : []),
                 ]);
             });
             wsData.push([]);
@@ -1019,7 +1115,8 @@ const HoldingsSummaryPage = () => {
             subHeaderRowIndices.push(wsData.length);
             wsData.push([
                 "", 'Symbol', 'ISIN', 'Quantity', 'Avg Price (₹)', 'LTP (₹)',
-                'Buy Value (₹)', 'Current Value (₹)', 'P&L Amount (₹)', 'P&L (%)', 'Broker', 'Category'
+                'Buy Value (₹)', 'Current Value (₹)', 'P&L Amount (₹)', 'P&L (%)', 'Broker', 'Category',
+                ...(hasStrategy ? ['Strategy'] : []),
             ]);
             mutualFunds.forEach(holding => {
                 wsData.push([
@@ -1031,7 +1128,8 @@ const HoldingsSummaryPage = () => {
                     parseFloat(String(holding.valueAsOfToday)) || 0,
                     parseFloat(String(holding.pnlAmount)) || 0,
                     parseFloat(String(holding.percentPnl)) || 0,
-                    holding.broker, holding.debtEquity
+                    holding.broker, holding.debtEquity,
+                    ...(hasStrategy ? [holding.strategy || 'N/A'] : []),
                 ]);
             });
 
@@ -1229,6 +1327,8 @@ const HoldingsSummaryPage = () => {
         try {
             const assetAllocation = getAssetAllocation();
             const { stocks, mutualFunds } = separateHoldings();
+            const summary = getFilteredSummary();
+            const hasStrategy = availableStrategies.length > 0;
             const total = assetAllocation.equity + assetAllocation.debt + assetAllocation.hybrid;
 
             const fmtNum = (num: number) =>
@@ -1479,25 +1579,26 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
 
             const executiveSummaryHTML = `
       <div class="section summary">
+        ${selectedStrategy !== "ALL" ? `<div style="font-size:12px;color:#666;margin-bottom:6px;">Strategy: <strong>${selectedStrategy}</strong></div>` : ''}
         <div class="summary-grid">
           <div class="summary-item stat-card">
             <div class="label">Total Investment</div>
-            <div class="value">₹ ${fmtNum(holdingsData.totalBuyValue)}</div>
+            <div class="value">₹ ${fmtNum(summary.totalBuyValue)}</div>
           </div>
           <div class="summary-item stat-card">
             <div class="label">Current Value</div>
-            <div class="value">₹ ${fmtNum(holdingsData.totalCurrentValue)}</div>
+            <div class="value">₹ ${fmtNum(summary.totalCurrentValue)}</div>
           </div>
           <div class="summary-item stat-card">
             <div class="label">Return (₹)</div>
-            <div class="value ${holdingsData.totalPnl >= 0 ? 'positive' : 'negative'}">
-              ${holdingsData.totalPnl >= 0 ? '' : '-'}₹ ${fmtNum(Math.abs(holdingsData.totalPnl))}
+            <div class="value ${summary.totalPnl >= 0 ? 'positive' : 'negative'}">
+              ${summary.totalPnl >= 0 ? '' : '-'}₹ ${fmtNum(Math.abs(summary.totalPnl))}
             </div>
           </div>
           <div class="summary-item stat-card">
             <div class="label">Return (%)</div>
-            <div class="value ${holdingsData.totalPnlPercent >= 0 ? 'positive' : 'negative'}">
-              ${fmtNum(holdingsData.totalPnlPercent)}%
+            <div class="value ${summary.totalPnlPercent >= 0 ? 'positive' : 'negative'}">
+              ${fmtNum(summary.totalPnlPercent)}%
             </div>
           </div>
         </div>
@@ -1558,6 +1659,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
           <th class="text-right">Profit & Loss (₹)</th>
           <th class="text-right">Profit & Loss (%)</th>
           <th>Category</th>
+          ${hasStrategy ? '<th>Strategy</th>' : ''}
         </tr>
       </thead>
     `;
@@ -1575,6 +1677,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
         <td class="text-right value-col ${h.pnlAmount >= 0 ? 'profit' : 'loss'}">${fmtNum(h.pnlAmount)}</td>
         <td class="text-right value-col ${h.percentPnl >= 0 ? 'profit' : 'loss'}">${fmtNum(h.percentPnl)}%</td>
         <td><span class="category-badge ${h.debtEquity.toLowerCase() === 'equity' ? 'category-equity' : h.debtEquity.toLowerCase() === 'hybrid' ? 'category-hybrid' : 'category-debt'}">${h.debtEquity}</span></td>
+        ${hasStrategy ? `<td>${h.strategy || '—'}</td>` : ''}
       </tr>
     `).join('');
 
@@ -1593,6 +1696,7 @@ tr:nth-child(even) { background-color: rgba(255,255,255,0.3); }
           <td class="text-right ${pnlCls}"><strong>${fmtNum(pnl)}</strong></td>
           <td class="text-right ${pnlCls}"><strong>${fmtNum(pnlPct)}%</strong></td>
           <td></td>
+          ${hasStrategy ? '<td></td>' : ''}
         </tr>
       `;
             };
@@ -1873,6 +1977,32 @@ ${commonStyles}
     const assetAllocation = getAssetAllocation();
     const { stocks, mutualFunds } = separateHoldings();
 
+    // When a specific strategy is selected, recompute totals from the filtered rows
+    // shown in the tables. When "ALL", fall back to the server's aggregated summary.
+    const filteredTotals = (() => {
+        if (!holdingsData) return null;
+        if (selectedStrategy === "ALL") {
+            return {
+                totalBuyValue: holdingsData.totalBuyValue,
+                totalCurrentValue: holdingsData.totalCurrentValue,
+                totalPnl: holdingsData.totalPnl,
+                totalPnlPercent: holdingsData.totalPnlPercent,
+                holdingsCount: holdingsData.holdingsCount,
+            };
+        }
+        const rows = [...stocks, ...mutualFunds];
+        const totalBuyValue = rows.reduce((s, h) => s + h.buyValue, 0);
+        const totalCurrentValue = rows.reduce((s, h) => s + h.valueAsOfToday, 0);
+        const totalPnl = rows.reduce((s, h) => s + h.pnlAmount, 0);
+        return {
+            totalBuyValue,
+            totalCurrentValue,
+            totalPnl,
+            totalPnlPercent: totalBuyValue > 0 ? (totalPnl / totalBuyValue) * 100 : 0,
+            holdingsCount: rows.length,
+        };
+    })();
+
     return (
         <DashboardLayout>
             <div className="space-y-6">
@@ -1914,7 +2044,23 @@ ${commonStyles}
                     </div>
                 </div>
 
-                {holdingsData && (
+                {availableStrategies.length > 0 && (
+                    <div className="flex justify-end">
+                        <Select value={selectedStrategy} onValueChange={setSelectedStrategy}>
+                            <SelectTrigger className="w-[240px] bg-white/50 border-0 card-shadow">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="ALL">Total Portfolio</SelectItem>
+                                {availableStrategies.map(s => (
+                                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                )}
+
+                {holdingsData && filteredTotals && (
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 overflow-visible font-heading">
                         <div className="bg-white/50 backdrop-blur-sm card-shadow border-0 rounded-md overflow-visible">
                             <div className="pt-2 px-5 pb-2 relative flex flex-col h-24">
@@ -1924,7 +2070,7 @@ ${commonStyles}
                                 <div className="mt-4" />
                                 <div className="flex items-baseline justify-between">
                                     <div className="flex items-baseline text-3xl font-[500] text-card-text-secondary font-heading">
-                                        ₹ {formatter.format(holdingsData.totalBuyValue)}
+                                        ₹ {formatter.format(filteredTotals.totalBuyValue)}
                                     </div>
                                 </div>
                             </div>
@@ -1938,7 +2084,7 @@ ${commonStyles}
                                 <div className="mt-4" />
                                 <div className="flex items-baseline justify-between">
                                     <div className="flex items-baseline text-3xl font-[500] text-card-text-secondary font-heading">
-                                        ₹ {formatter.format(holdingsData.totalCurrentValue)}
+                                        ₹ {formatter.format(filteredTotals.totalCurrentValue)}
                                     </div>
                                 </div>
                             </div>
@@ -1951,10 +2097,10 @@ ${commonStyles}
                                 </div>
                                 <div className="mt-4" />
                                 <div className="flex items-baseline justify-between">
-                                    <div className={`flex items-baseline text-3xl font-[500] font-heading ${holdingsData.totalPnl >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                                        ₹ {formatter.format(holdingsData.totalPnl)}
-                                        <span className={`text-base ml-2 ${holdingsData.totalPnl >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                                            ({holdingsData.totalPnlPercent.toFixed(2)}%)
+                                    <div className={`flex items-baseline text-3xl font-[500] font-heading ${filteredTotals.totalPnl >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                                        ₹ {formatter.format(filteredTotals.totalPnl)}
+                                        <span className={`text-base ml-2 ${filteredTotals.totalPnl >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                                            ({filteredTotals.totalPnlPercent.toFixed(2)}%)
                                         </span>
                                     </div>
                                 </div>
@@ -1974,6 +2120,7 @@ ${commonStyles}
                     holdings={stocks}
                     showTotals={true}
                     isMutualFund={false}
+                    showStrategy={availableStrategies.length > 0}
                 />
 
                 <HoldingsTable
@@ -1981,6 +2128,7 @@ ${commonStyles}
                     holdings={mutualFunds}
                     showTotals={true}
                     isMutualFund={true}
+                    showStrategy={availableStrategies.length > 0}
                 />
             </div>
         </DashboardLayout>
