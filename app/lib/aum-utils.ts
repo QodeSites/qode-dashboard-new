@@ -48,7 +48,7 @@ const different_cases: Record<string, string> = {
    "QAC00096": "Zerodha Total Portfolio" ,
    "QAC00097": "Total Portfolio Exposure" ,
    "QAC00098": "Total Portfolio Exposure" ,
-   "QAC00099": "Zerodha Total Portfolio"
+   "QAC00099": "Total Portfolio Exposure"
   };
 /** 🔹 Resolve correct system_tag for NORMAL accounts only */
 export function getSystemTagForManagedAccountAUM(account: {
