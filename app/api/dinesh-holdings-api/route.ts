@@ -2,12 +2,10 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { getEffectiveIcode } from "@/app/lib/admin-utils";
-import fs from "fs";
-import path from "path";
+import { prisma } from "@/lib/prisma";
 
 const DINESH_ICODE = "QUS00072";
-const STOCK_CSV = "dinesh_equity_20260429.csv";
-const MF_CSV = "dinesh_mf_20260429.csv";
+const DINESH_QCODE = "QAC00053";
 
 interface Holding {
   symbol: string;
@@ -41,23 +39,9 @@ interface HoldingsSummary {
   brokerBreakdown: Record<string, { buyValue: number; currentValue: number; pnl: number; count: number }>;
 }
 
-function parseCsv(content: string): Record<string, string>[] {
-  const lines = content.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  if (lines.length < 2) return [];
-  const headers = lines[0].split(",").map((h) => h.trim());
-  return lines.slice(1).map((line) => {
-    const cells = line.split(",");
-    const row: Record<string, string> = {};
-    headers.forEach((h, i) => {
-      row[h] = (cells[i] ?? "").trim();
-    });
-    return row;
-  });
-}
-
-function num(v: string | undefined): number {
-  if (!v) return 0;
-  const n = parseFloat(v);
+function num(v: unknown): number {
+  if (v == null) return 0;
+  const n = typeof v === "bigint" ? Number(v) : Number(v);
   return Number.isFinite(n) ? n : 0;
 }
 
@@ -111,52 +95,63 @@ export async function GET() {
     if (!icode) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     if (icode !== DINESH_ICODE) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const dataDir = path.join(process.cwd(), "data");
-    const stockPath = path.join(dataDir, STOCK_CSV);
-    const mfPath = path.join(dataDir, MF_CSV);
+    const latestEquity = await prisma.bifurcated_equity_holding_test.findFirst({
+      where: { qcode: DINESH_QCODE },
+      orderBy: { date: "desc" },
+      select: { date: true },
+    });
+    const latestMf = await prisma.bifurcated_mutual_fund_holding_sheet_test.findFirst({
+      where: { qcode: DINESH_QCODE },
+      orderBy: { as_of_date: "desc" },
+      select: { as_of_date: true },
+    });
 
-    const stockRows = parseCsv(fs.readFileSync(stockPath, "utf-8"));
-    const mfRows = parseCsv(fs.readFileSync(mfPath, "utf-8"));
+    const equityRows = latestEquity
+      ? await prisma.bifurcated_equity_holding_test.findMany({
+          where: { qcode: DINESH_QCODE, date: latestEquity.date },
+        })
+      : [];
+    const mfRows = latestMf
+      ? await prisma.bifurcated_mutual_fund_holding_sheet_test.findMany({
+          where: { qcode: DINESH_QCODE, as_of_date: latestMf.as_of_date },
+        })
+      : [];
 
-    const stockMtime = fs.statSync(stockPath).mtime;
-    const mfMtime = fs.statSync(mfPath).mtime;
-    const asOf = new Date(Math.max(stockMtime.getTime(), mfMtime.getTime()));
-
-    const stockHoldings: Holding[] = stockRows.map((r) => ({
-      symbol: r["Symbol"] || "",
-      exchange: r["Exchange"] || "",
-      quantity: num(r["Quantity"]),
-      avgPrice: num(r["Avg Price"]),
-      ltp: num(r["LTP"]),
-      buyValue: num(r["Buy Value"]),
-      valueAsOfToday: num(r["Value as of Today"]),
-      pnlAmount: num(r["PNL Amount"]),
-      percentPnl: num(r["% PNL"]),
-      broker: r["Broker"] || "",
-      debtEquity: r["Debt/Equity"] || "",
-      subCategory: r["Sub Category"] || "",
-      date: asOf,
+    const stockHoldings: Holding[] = equityRows.map((r) => ({
+      symbol: r.symbol || "",
+      exchange: r.exchange || "",
+      quantity: num(r.quantity),
+      avgPrice: num(r.avg_price),
+      ltp: num(r.ltp),
+      buyValue: num(r.buy_value),
+      valueAsOfToday: num(r.value_as_of_today),
+      pnlAmount: num(r.pnl_amount),
+      percentPnl: num(r.percent_pnl),
+      broker: r.broker || "",
+      debtEquity: r.debt_equity || "",
+      subCategory: r.sub_category || "",
+      date: r.date,
       type: "equity" as const,
-      strategy: r["Strategy"] || undefined,
+      strategy: r.strategy || undefined,
     }));
 
     const mfHoldings: Holding[] = mfRows.map((r) => ({
-      symbol: r["Symbol"] || "",
+      symbol: r.symbol || "",
       exchange: "MUTUAL_FUND",
-      quantity: num(r["Quantity"]),
-      avgPrice: num(r["Avg Price"]),
-      ltp: num(r["NAV"]),
-      buyValue: num(r["Buy Value"]),
-      valueAsOfToday: num(r["Value as of Today"]),
-      pnlAmount: num(r["PNL Amount"]),
-      percentPnl: num(r["% PNL"]),
-      broker: r["Broker"] || "",
-      debtEquity: r["Debt/Equity"] || "",
-      subCategory: r["Sub Category"] || "",
-      date: asOf,
+      quantity: num(r.quantity),
+      avgPrice: num(r.avg_price),
+      ltp: num(r.nav),
+      buyValue: num(r.buy_value),
+      valueAsOfToday: num(r.value_as_of_today),
+      pnlAmount: num(r.pnl_amount),
+      percentPnl: num(r.percent_pnl),
+      broker: r.broker || "",
+      debtEquity: r.debt_equity || "",
+      subCategory: r.sub_category || "",
+      date: r.as_of_date,
       type: "mutual_fund" as const,
-      isin: r["ISIN"] || undefined,
-      strategy: r["Strategy"] || undefined,
+      isin: r.isin || undefined,
+      strategy: r.strategy || undefined,
     }));
 
     const allHoldings: Holding[] = [...stockHoldings, ...mfHoldings];
@@ -166,11 +161,15 @@ export async function GET() {
       new Set(allHoldings.map((h) => h.strategy).filter((s): s is string => !!s))
     ).sort();
 
+    const equityDate = latestEquity?.date.getTime() ?? 0;
+    const mfDate = latestMf?.as_of_date.getTime() ?? 0;
+    const asOf = equityDate || mfDate ? new Date(Math.max(equityDate, mfDate)) : null;
+
     return NextResponse.json(
       {
         holdingsSummary,
         availableStrategies,
-        dataAsOfDate: asOf.toISOString(),
+        dataAsOfDate: asOf ? asOf.toISOString() : null,
       },
       { status: 200 }
     );

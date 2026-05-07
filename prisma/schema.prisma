@@ -1037,3 +1037,50 @@ model yearly_performance {
   @@index([identifier, year], map: "idx_yearly_lookup")
   @@schema("public")
 }
+
+model bifurcated_equity_holding_test {
+  id                Int      @id @default(autoincrement())
+  qcode             String   @db.VarChar(20)
+  date              DateTime @db.Date
+  symbol            String?  @db.VarChar(100)
+  mastersheet_tag   String?  @db.VarChar(100)
+  exchange          String?  @db.VarChar(20)
+  quantity          BigInt?
+  avg_price         Decimal? @db.Decimal(18, 6)
+  broker            String?  @db.VarChar(100)
+  debt_equity       String?  @db.VarChar(20)
+  sub_category      String?  @db.VarChar(100)
+  ltp               Decimal? @db.Decimal(18, 6)
+  buy_value         Decimal? @db.Decimal(18, 4)
+  value_as_of_today Decimal? @db.Decimal(18, 4)
+  pnl_amount        Decimal? @db.Decimal(18, 4)
+  percent_pnl       Decimal? @db.Decimal(18, 6)
+  strategy          String?  @db.VarChar(50)
+
+  @@index([qcode, date], map: "idx_bif_eq_qcode_date")
+  @@schema("public")
+}
+
+model bifurcated_mutual_fund_holding_sheet_test {
+  id                Int      @id @default(autoincrement())
+  qcode             String   @db.VarChar(20)
+  as_of_date        DateTime @db.Date
+  symbol            String?  @db.VarChar(200)
+  isin              String?  @db.VarChar(20)
+  scheme_code       BigInt?
+  quantity          Decimal? @db.Decimal(18, 6)
+  avg_price         Decimal? @db.Decimal(18, 6)
+  broker            String?  @db.VarChar(100)
+  debt_equity       String?  @db.VarChar(20)
+  mastersheet_tag   String?  @db.VarChar(100)
+  sub_category      String?  @db.VarChar(100)
+  nav               Decimal? @db.Decimal(18, 6)
+  buy_value         Decimal? @db.Decimal(18, 4)
+  value_as_of_today Decimal? @db.Decimal(18, 4)
+  pnl_amount        Decimal? @db.Decimal(18, 4)
+  percent_pnl       Decimal? @db.Decimal(18, 6)
+  strategy          String?  @db.VarChar(50)
+
+  @@index([qcode, as_of_date], map: "idx_bif_mf_qcode_date")
+  @@schema("public")
+}
