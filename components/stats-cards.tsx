@@ -32,22 +32,27 @@ interface StatsCardsProps {
   returnViewType?: "percent" | "cash"; // Add this prop
   setReturnViewType?: (type: "percent" | "cash") => void; // Add this prop
   totalFees?: number;
+  hasNavBasedTotalPortfolio?: boolean;
 }
 
-export function StatsCards({ 
-  stats, 
-  accountType, 
-  broker, 
+export function StatsCards({
+  stats,
+  accountType,
+  broker,
   isTotalPortfolio = false,
   returnViewType = "percent", // Default fallback
   setReturnViewType, // Use the prop instead of local state
-  totalFees
+  totalFees,
+  hasNavBasedTotalPortfolio = false,
 }: StatsCardsProps) {
   // Remove the local useState - we now use props
   // const [returnViewType, setReturnViewType] = useState<"percent" | "cash">(isTotalPortfolio ? "cash" : "percent");
 
-  // For total portfolio, force cash view
-  const effectiveReturnViewType = isTotalPortfolio ? "cash" : returnViewType;
+  // Total Portfolio normally locks to cash view, but Dinesh/Arwani have a real
+  // NAV curve (Qode Total Portfolio tag) so percent is meaningful — let the
+  // toggle drive the view in that case.
+  const lockToCashView = isTotalPortfolio && !hasNavBasedTotalPortfolio;
+  const effectiveReturnViewType = lockToCashView ? "cash" : returnViewType;
 
   const [showNetOfFees, setShowNetOfFees] = React.useState(false);
 
@@ -112,7 +117,7 @@ export function StatsCards({
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <div className="text-sm font-normal text-card-text truncate">{stat.name}</div>
-                {stat.showNote && !isTotalPortfolio && (
+                {stat.showNote && !lockToCashView && (
                   <Tooltip
                     side="top"
                     sideOffset={8}
@@ -133,7 +138,7 @@ export function StatsCards({
                   </Tooltip>
                 )}
               </div>
-              {stat.showNote && !isTotalPortfolio && setReturnViewType && (
+              {stat.showNote && !lockToCashView && setReturnViewType && (
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={() => setReturnViewType("cash")}

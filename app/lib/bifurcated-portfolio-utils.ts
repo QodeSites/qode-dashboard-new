@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Decimal } from "@prisma/client/runtime/library";
 import {
-  DINESH_FROZEN_DATA,
+  EMPTY_FROZEN_DATA,
   SHILPA_FROZEN_DATA,
   VIKRAM_FROZEN_DATA,
 } from "./bifurcated-portfolio-data";
@@ -71,11 +71,27 @@ interface PortfolioResponse {
   metadata: Metadata;
 }
 
+interface SchemeTagConfig {
+  depositTag: string;
+  navTag: string;
+  startDate: Date;
+}
+
 interface PortfolioConfig {
   current: string;
   metrics: string;
   nav: string;
   isActive: boolean;
+  // When set, this scheme uses its own system tags + inception date instead of
+  // the client-level depositSystemTag/navSystemTag/newStartDate. Required for
+  // parallel-running active schemes (e.g. Dinesh's QYE++ alongside QAW++).
+  tags?: SchemeTagConfig;
+  // When true, the scheme card's "Amount Invested" displays 0 regardless of
+  // the live computed value. Used for fully-wound-down schemes where the
+  // closing withdrawal nets the historical seed deposit (e.g. Dinesh's QTF).
+  // Does NOT affect Total Portfolio aggregation — those still use real cash
+  // flows from this scheme.
+  displayAmountInvestedAsZero?: boolean;
 }
 
 export interface FrozenSchemeData {
@@ -98,6 +114,13 @@ interface ClientConfig {
   // query. When they differ (e.g. Dinesh), we must combine frozen + DB data.
   oldSchemeDepositTag: string;
   oldSchemeNavTag: string;
+  // When set, the client's master_sheet queries are redirected to
+  // bifurcated_master_sheet_test (a superset with the same columns), and the
+  // "Total Portfolio" view's NAV curve + PnL are sourced from this system_tag —
+  // an authoritative single continuous curve that replaces the frozen+rebased
+  // splice. Cash flows, amount deposited, latest exposure, and individual
+  // scheme views keep their existing tags.
+  qodeTotalPortfolioTag?: string;
   portfolioMapping: Record<string, PortfolioConfig>;
 }
 
@@ -107,14 +130,21 @@ const DINESH_CONFIG: ClientConfig = {
   clientName: "Dinesh",
   defaultQcode: "QAC00053",
   accountCode: "AC9",
-  oldSchemeName: "Scheme QTF",
+  // QTF was migrated from frozen-data-file to live DB queries (sourced from
+  // bifurcated_master_sheet_test under "QTF Zerodha Total Portfolio"). The
+  // engine's frozen-scheme branches now never fire for Dinesh because
+  // oldSchemeName is a sentinel that doesn't match any portfolioMapping key.
+  oldSchemeName: "__no_old_scheme__",
   newSchemeName: "Scheme QAW++",
-  oldFinalNav: 113.57,
+  oldFinalNav: 100,
   newStartDate: new Date("2026-01-12"),
   depositSystemTag: "Zerodha Total Portfolio",
   navSystemTag: "Zerodha Total Portfolio",
-  oldSchemeDepositTag: "QTF Zerodha Total Portfolio",
-  oldSchemeNavTag: "QTF Zerodha Total Portfolio",
+  // Sentinels different from depositSystemTag/navSystemTag — irrelevant after
+  // QTF migration but kept consistent with Arwani's pattern.
+  oldSchemeDepositTag: "__no_old_deposit_tag__",
+  oldSchemeNavTag: "__no_old_nav_tag__",
+  qodeTotalPortfolioTag: "Qode Total Portfolio",
   portfolioMapping: {
     "Total Portfolio": {
       current: "Total Portfolio",
@@ -123,16 +153,42 @@ const DINESH_CONFIG: ClientConfig = {
       isActive: true,
     },
     "Scheme QAW++": {
-      current: "Zerodha Total Portfolio",
-      metrics: "Zerodha Total Portfolio",
-      nav: "Zerodha Total Portfolio",
+      current: "QAW++ Zerodha Total Portfolio",
+      metrics: "QAW++ Zerodha Total Portfolio",
+      nav: "QAW++ Zerodha Total Portfolio",
       isActive: true,
+      tags: {
+        depositTag: "QAW++ Zerodha Total Portfolio",
+        navTag: "QAW++ Zerodha Total Portfolio",
+        startDate: new Date("2026-01-12"),
+      },
+    },
+    "Scheme QYE++": {
+      current: "QYE++ Zerodha Total Portfolio",
+      metrics: "QYE++ Zerodha Total Portfolio",
+      nav: "QYE++ Total Portfolio Value",
+      isActive: true,
+      tags: {
+        depositTag: "QYE++ Zerodha Total Portfolio",
+        navTag: "QYE++ Total Portfolio Value",
+        startDate: new Date("2026-04-08"),
+      },
     },
     "Scheme QTF": {
       current: "QTF Zerodha Total Portfolio",
       metrics: "QTF Zerodha Total Portfolio",
       nav: "QTF Zerodha Total Portfolio",
       isActive: false,
+      tags: {
+        depositTag: "QTF Zerodha Total Portfolio",
+        navTag: "QTF Zerodha Total Portfolio",
+        startDate: new Date("2025-08-26"),
+      },
+      // Net cash flow on QTF is negative (closing withdrawal of ~₹5.68 Cr
+      // exceeded the ~₹4.99 Cr seed because the withdrawal moved the grown
+      // portfolio out to QAW++). Team prefers to show 0 on the inactive
+      // card rather than expose this accounting artifact.
+      displayAmountInvestedAsZero: true,
     },
   },
 };
@@ -205,6 +261,60 @@ const VIKRAM_CONFIG: ClientConfig = {
   },
 };
 
+// Arwani has no inactive scheme — two parallel active schemes (QYE++ since
+// inception 2026-01-16, QAW++ added 2026-03-23) and a Qode Total Portfolio
+// authoritative aggregate. The "old scheme" config fields are sentinels that
+// never match a portfolioMapping key, so the engine's frozen-scheme branches
+// stay dormant. EMPTY_FROZEN_DATA satisfies the engine's frozenData reads
+// during Total Portfolio aggregation as no-ops.
+const ARWANI_CONFIG: ClientConfig = {
+  clientName: "Arwani",
+  defaultQcode: "QAC00071",
+  accountCode: "AC12",
+  oldSchemeName: "__no_old_scheme__",
+  newSchemeName: "Scheme QYE++",
+  oldFinalNav: 100,
+  newStartDate: new Date("2026-01-16"),
+  depositSystemTag: "QYE++ Zerodha Total Portfolio",
+  navSystemTag: "QYE++ Zerodha Total Portfolio",
+  // Sentinels different from depositSystemTag/navSystemTag — forces
+  // sharedDepositTag/sharedNavTag = false, which gives QYE++ a date-filtered
+  // query and a NAV=100 inception baseline (correct for Arwani).
+  oldSchemeDepositTag: "__no_old_deposit_tag__",
+  oldSchemeNavTag: "__no_old_nav_tag__",
+  qodeTotalPortfolioTag: "Qode Total Portfolio",
+  portfolioMapping: {
+    "Total Portfolio": {
+      current: "Total Portfolio",
+      metrics: "Total Portfolio",
+      nav: "Total Portfolio",
+      isActive: true,
+    },
+    "Scheme QYE++": {
+      current: "QYE++ Zerodha Total Portfolio",
+      metrics: "QYE++ Zerodha Total Portfolio",
+      nav: "QYE++ Total Portfolio Value",
+      isActive: true,
+      tags: {
+        depositTag: "QYE++ Zerodha Total Portfolio",
+        navTag: "QYE++ Total Portfolio Value",
+        startDate: new Date("2026-01-16"),
+      },
+    },
+    "Scheme QAW++": {
+      current: "QAW++ Zerodha Total Portfolio",
+      metrics: "QAW++ Zerodha Total Portfolio",
+      nav: "QAW++ Zerodha Total Portfolio",
+      isActive: true,
+      tags: {
+        depositTag: "QAW++ Zerodha Total Portfolio",
+        navTag: "QAW++ Zerodha Total Portfolio",
+        startDate: new Date("2026-03-23"),
+      },
+    },
+  },
+};
+
 // ==================== Engine ====================
 
 class BifurcatedPortfolioEngine {
@@ -226,6 +336,17 @@ class BifurcatedPortfolioEngine {
     return this.config.oldSchemeNavTag === this.config.navSystemTag;
   }
 
+  // Redirects master_sheet reads to bifurcated_master_sheet_test when the client
+  // opts in via qodeTotalPortfolioTag. The bifurcated table is a superset (same
+  // columns, same rows + the "Qode Total Portfolio" authoritative curve). `any`
+  // sidesteps the minor Decimal-precision type differences between the two
+  // Prisma models — we only read columns that exist in both.
+  private get msTable(): any {
+    return this.config.qodeTotalPortfolioTag
+      ? prisma.bifurcated_master_sheet_test
+      : prisma.master_sheet;
+  }
+
   private normalizeDate(date: Date | string): string {
     if (typeof date === "string") return date.split("T")[0];
     return date.toISOString().split("T")[0];
@@ -239,6 +360,48 @@ class BifurcatedPortfolioEngine {
         nav: "",
         isActive: false,
       }
+    );
+  }
+
+  // Returns per-scheme tags when configured (e.g. Dinesh's QYE++), else falls
+  // back to client-level defaults. Enables parallel-running active schemes
+  // under one client — each with its own tags and inception date.
+  private getSchemeTagsAndDate(scheme: string): SchemeTagConfig {
+    const pm = this.config.portfolioMapping[scheme];
+    if (pm?.tags) return pm.tags;
+    return {
+      depositTag: this.config.depositSystemTag,
+      navTag: this.config.navSystemTag,
+      startDate: this.config.newStartDate,
+    };
+  }
+
+  // True when the scheme has its own per-scheme tags — always requires a date
+  // filter on queries (isolated parallel scheme, not a shared client-level tag
+  // that spans both old and new periods).
+  private hasPerSchemeTags(scheme: string): boolean {
+    return !!this.config.portfolioMapping[scheme]?.tags;
+  }
+
+  // Non-aggregate, non-frozen scheme keys — excludes "Total Portfolio" (the
+  // aggregate view) and oldSchemeName (the frozen-data sentinel/old scheme).
+  // Used to aggregate Total Portfolio's cash flows and per-month capital-in/out
+  // across every scheme. Inactive schemes (e.g. Dinesh's QTF, now sourced
+  // live from the DB) ARE included — their historical cash flows still
+  // belong to the portfolio's lifetime totals.
+  private getAggregatedSchemeKeys(): string[] {
+    return Object.keys(this.config.portfolioMapping).filter((k) => {
+      return k !== "Total Portfolio" && k !== this.config.oldSchemeName;
+    });
+  }
+
+  // Whether the scheme should be treated as a "fresh active scheme" — i.e.
+  // start from NAV=100 with a prepended baseline day. Covers newSchemeName
+  // (today's QAW++ for Dinesh, QYE++ for Shilpa/Vikram) and any additional
+  // parallel scheme with its own per-scheme tags (Dinesh's QYE++).
+  private isFreshActiveScheme(scheme: string): boolean {
+    return (
+      scheme === this.config.newSchemeName || this.hasPerSchemeTags(scheme)
     );
   }
 
@@ -258,13 +421,19 @@ class BifurcatedPortfolioEngine {
       return cashFlows.reduce((sum, flow) => sum + flow.amount, 0);
     }
 
-    const depositSum = await prisma.master_sheet.aggregate({
+    const schemeTags = this.getSchemeTagsAndDate(scheme);
+    const hasOwnTags = this.hasPerSchemeTags(scheme);
+    const depositSum = await this.msTable.aggregate({
       where: {
         qcode,
-        system_tag: this.config.depositSystemTag,
-        // Shared tags: no date filter — all capital movements belong to this
-        // continuous account. Different tags: date filter isolates new scheme.
-        ...(this.sharedDepositTag ? {} : { date: { gte: this.config.newStartDate } }),
+        system_tag: schemeTags.depositTag,
+        // Per-scheme tags (QYE++): always date-filter — it's an isolated
+        // parallel scheme. Client-level tag shared with old scheme
+        // (Shilpa/Vikram): no date filter. Client-level tag not shared
+        // (Dinesh's QAW++): date-filter.
+        ...(hasOwnTags || !this.sharedDepositTag
+          ? { date: { gte: schemeTags.startDate } }
+          : {}),
         capital_in_out: { not: null },
       },
       _sum: { capital_in_out: true },
@@ -291,16 +460,51 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
-      // Delegate to new scheme — the latest exposure is always from
-      // the current active period.
+      if (this.config.qodeTotalPortfolioTag) {
+        // For Dinesh/Arwani, "Current Portfolio Value" sources from the
+        // literal "Zerodha Total Portfolio" tag's latest portfolio_value
+        // column (NOT this.config.depositSystemTag — Arwani's deposit tag is
+        // "QYE++ Zerodha Total Portfolio"). NAV and drawdown still come from
+        // the Qode Total Portfolio curve, read separately.
+        const [zerodhaRecord, qtpRecord] = await Promise.all([
+          this.msTable.findFirst({
+            where: {
+              qcode,
+              system_tag: "Zerodha Total Portfolio",
+            },
+            orderBy: { date: "desc" },
+            select: { portfolio_value: true, date: true },
+          }),
+          this.msTable.findFirst({
+            where: {
+              qcode,
+              system_tag: this.config.qodeTotalPortfolioTag,
+            },
+            orderBy: { date: "desc" },
+            select: { drawdown: true, nav: true, date: true },
+          }),
+        ]);
+        if (!zerodhaRecord && !qtpRecord) return null;
+        return {
+          portfolioValue: Number(zerodhaRecord?.portfolio_value) || 0,
+          drawdown: Math.abs(Number(qtpRecord?.drawdown) || 0),
+          nav: Number(qtpRecord?.nav) || 0,
+          date: zerodhaRecord?.date || qtpRecord?.date || new Date(),
+        };
+      }
+
+      // Fallback for clients without a Qode Total Portfolio tag
+      // (Shilpa/Vikram): delegate to the new scheme — the latest exposure
+      // is from the current active period.
       return this.getLatestExposure(qcode, this.config.newSchemeName);
     }
 
-    const record = await prisma.master_sheet.findFirst({
+    const schemeTags = this.getSchemeTagsAndDate(scheme);
+    const record = await this.msTable.findFirst({
       where: {
         qcode,
-        system_tag: this.config.depositSystemTag,
-        date: { gte: this.config.newStartDate },
+        system_tag: schemeTags.depositTag,
+        date: { gte: schemeTags.startDate },
       },
       orderBy: { date: "desc" },
       select: {
@@ -350,6 +554,54 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
+      if (this.config.qodeTotalPortfolioTag) {
+        // Authoritative single continuous curve — no frozen splice, no rebasing.
+        // Prepend a NAV=100 baseline one day before the first row because Qode's
+        // day-1 row has prev_nav=100 (the inception baseline). This keeps the
+        // equity curve's visual "starts at 100" convention and anchors the
+        // sinceInception day-count correctly.
+        const rows = await this.msTable.findMany({
+          where: {
+            qcode,
+            system_tag: this.config.qodeTotalPortfolioTag,
+            nav: { not: null },
+          },
+          select: {
+            date: true,
+            nav: true,
+            prev_nav: true,
+            drawdown: true,
+            pnl: true,
+            capital_in_out: true,
+          },
+          orderBy: { date: "asc" },
+        });
+
+        const result = rows.map((entry: any) => ({
+          date: entry.date as Date,
+          nav: Number(entry.nav) || 0,
+          prevNav: entry.prev_nav != null ? Number(entry.prev_nav) : null,
+          drawdown: Math.abs(Number(entry.drawdown) || 0),
+          pnl: Number(entry.pnl) || 0,
+          capitalInOut: Number(entry.capital_in_out) || 0,
+        }));
+
+        if (result.length > 0) {
+          const baselineDate = new Date(result[0].date);
+          baselineDate.setUTCDate(baselineDate.getUTCDate() - 1);
+          result.unshift({
+            date: baselineDate,
+            nav: 100,
+            prevNav: null,
+            drawdown: 0,
+            pnl: 0,
+            capitalInOut: 0,
+          });
+        }
+
+        return result;
+      }
+
       const oldData = await this.getHistoricalData(
         qcode,
         this.config.oldSchemeName
@@ -368,11 +620,12 @@ class BifurcatedPortfolioEngine {
       return [...oldData, ...rebasedNewData];
     }
 
-    const data = await prisma.master_sheet.findMany({
+    const schemeTags = this.getSchemeTagsAndDate(scheme);
+    const data = await this.msTable.findMany({
       where: {
         qcode,
-        system_tag: this.config.navSystemTag,
-        date: { gte: this.config.newStartDate },
+        system_tag: schemeTags.navTag,
+        date: { gte: schemeTags.startDate },
         nav: { not: null },
       },
       select: {
@@ -386,7 +639,7 @@ class BifurcatedPortfolioEngine {
       orderBy: { date: "asc" },
     });
 
-    return data.map((entry) => ({
+    return data.map((entry: any) => ({
       date: entry.date,
       nav: Number(entry.nav) || 0,
       prevNav: entry.prev_nav ? Number(entry.prev_nav) : null,
@@ -405,28 +658,31 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
-      // Always combine frozen old + DB new — the DB may not have old
-      // period capital_in_out entries even when deposit tags are shared.
+      // Combine frozen old scheme + every active parallel scheme. This
+      // picks up QYE++'s seed deposit in addition to QAW++'s cash flows
+      // for Dinesh; unchanged for Shilpa/Vikram (one active scheme each).
       const oldCashFlows = await this.getCashFlows(
         qcode,
         this.config.oldSchemeName
       );
-      const newCashFlows = await this.getCashFlows(
-        qcode,
-        this.config.newSchemeName
+      const aggregatedSchemeFlows = await Promise.all(
+        this.getAggregatedSchemeKeys().map((s) =>
+          this.getCashFlows(qcode, s)
+        )
       );
-      return [...oldCashFlows, ...newCashFlows].sort((a, b) =>
-        a.date.localeCompare(b.date)
-      );
+      return (
+        [oldCashFlows, ...aggregatedSchemeFlows].flat() as CashFlow[]
+      ).sort((a, b) => a.date.localeCompare(b.date));
     }
 
-    const data = await prisma.master_sheet.findMany({
+    const schemeTags = this.getSchemeTagsAndDate(scheme);
+    const data = await this.msTable.findMany({
       where: {
         qcode,
-        system_tag: this.config.depositSystemTag,
-        // Always filter by date for the active scheme's cash flow table —
-        // only show entries from the new scheme period onwards.
-        date: { gte: this.config.newStartDate },
+        system_tag: schemeTags.depositTag,
+        // Always filter by date — only show cash flows from the scheme's
+        // inception onwards.
+        date: { gte: schemeTags.startDate },
         AND: [
           { capital_in_out: { not: null } },
           { capital_in_out: { not: new Decimal(0) } },
@@ -436,7 +692,7 @@ class BifurcatedPortfolioEngine {
       orderBy: { date: "asc" },
     });
 
-    return data.map((entry) => ({
+    return data.map((entry: any) => ({
       date: this.normalizeDate(entry.date),
       amount: entry.capital_in_out?.toNumber() || 0,
       dividend: 0,
@@ -452,6 +708,20 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
+      if (this.config.qodeTotalPortfolioTag) {
+        // Qode Total Portfolio's pnl column is authoritative for the combined
+        // view — no need to merge frozen + DB.
+        const profitSum = await this.msTable.aggregate({
+          where: {
+            qcode,
+            system_tag: this.config.qodeTotalPortfolioTag,
+            pnl: { not: null },
+          },
+          _sum: { pnl: true },
+        });
+        return Number(profitSum._sum.pnl) || 0;
+      }
+
       // Always combine frozen old + DB new — the DB may not have old
       // period PnL entries even when NAV tags are shared.
       const oldProfit = await this.getTotalProfit(
@@ -465,11 +735,12 @@ class BifurcatedPortfolioEngine {
       return oldProfit + newProfit;
     }
 
-    const profitSum = await prisma.master_sheet.aggregate({
+    const schemeTags = this.getSchemeTagsAndDate(scheme);
+    const profitSum = await this.msTable.aggregate({
       where: {
         qcode,
-        system_tag: this.config.navSystemTag,
-        date: { gte: this.config.newStartDate },
+        system_tag: schemeTags.navTag,
+        date: { gte: schemeTags.startDate },
         pnl: { not: null },
       },
       _sum: { pnl: true },
@@ -514,14 +785,58 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
+      if (this.config.qodeTotalPortfolioTag) {
+        // Qode's first row has prev_nav=100 (the inception baseline) and
+        // represents day 1 of the account. Use prev_nav as the return
+        // denominator and anchor the day-count to inception (one day before
+        // first row) so day-1 NAV moves are captured and the span matches
+        // the prepended baseline in the equity curve.
+        const firstNavRecord = await this.msTable.findFirst({
+          where: {
+            qcode,
+            system_tag: this.config.qodeTotalPortfolioTag,
+            nav: { not: null },
+          },
+          orderBy: { date: "asc" },
+          select: { nav: true, prev_nav: true, date: true },
+        });
+        const latestNavRecord = await this.msTable.findFirst({
+          where: {
+            qcode,
+            system_tag: this.config.qodeTotalPortfolioTag,
+            nav: { not: null },
+          },
+          orderBy: { date: "desc" },
+          select: { nav: true, date: true },
+        });
+
+        if (!firstNavRecord || !latestNavRecord) return 0;
+
+        const initialNav =
+          firstNavRecord.prev_nav != null
+            ? Number(firstNavRecord.prev_nav)
+            : 100;
+        const finalNav = Number(latestNavRecord.nav) || 0;
+        const inceptionDate = new Date(firstNavRecord.date);
+        inceptionDate.setUTCDate(inceptionDate.getUTCDate() - 1);
+        const days =
+          (latestNavRecord.date.getTime() - inceptionDate.getTime()) /
+          (1000 * 60 * 60 * 24);
+
+        if (days < 365) {
+          return (finalNav / initialNav - 1) * 100;
+        }
+        return (Math.pow(finalNav / initialNav, 365 / days) - 1) * 100;
+      }
+
       if (this.sharedNavTag) {
         // Tags match — query DB directly for first/last NAV (Shilpa/Vikram)
-        const firstNavRecord = await prisma.master_sheet.findFirst({
+        const firstNavRecord = await this.msTable.findFirst({
           where: { qcode, system_tag: this.config.navSystemTag, nav: { not: null } },
           orderBy: { date: "asc" },
           select: { nav: true, date: true },
         });
-        const latestNavRecord = await prisma.master_sheet.findFirst({
+        const latestNavRecord = await this.msTable.findFirst({
           where: { qcode, system_tag: this.config.navSystemTag, nav: { not: null } },
           orderBy: { date: "desc" },
           select: { nav: true, date: true },
@@ -570,15 +885,16 @@ class BifurcatedPortfolioEngine {
         historicalData[0].date.getTime()) /
       (1000 * 60 * 60 * 24);
 
-    // For different-tag clients (Dinesh), the new scheme's DB tag starts
-    // fresh at NAV ~100, so use 100 as base. For shared-tag clients
-    // (Shilpa/Vikram), the DB NAV continues from the old scheme's final
-    // value (~110/~106), so use prevNav (previous day's close) as the
-    // base — using the first day's close would drop day 1's return.
+    // For different-tag clients (Dinesh's QAW++) and per-scheme parallel
+    // schemes (Dinesh's QYE++), the DB tag starts fresh at NAV ~100, so use
+    // 100 as base. For shared-tag clients (Shilpa/Vikram), the DB NAV
+    // continues from the old scheme's final value (~110/~106), so use
+    // prevNav (previous day's close) as the base — using the first day's
+    // close would drop day 1's return.
     const firstNav =
       scheme === this.config.newSchemeName && this.sharedNavTag
         ? (historicalData[0].prevNav ?? originalFirstNav)
-        : scheme === this.config.newSchemeName
+        : this.isFreshActiveScheme(scheme)
           ? 100
           : originalFirstNav;
 
@@ -593,7 +909,7 @@ class BifurcatedPortfolioEngine {
   private async getRawHistoricalNav(
     qcode: string
   ): Promise<{ date: string; nav: number }[]> {
-    const data = await prisma.master_sheet.findMany({
+    const data = await this.msTable.findMany({
       where: {
         qcode,
         system_tag: this.config.navSystemTag,
@@ -604,7 +920,7 @@ class BifurcatedPortfolioEngine {
       orderBy: { date: "asc" },
     });
 
-    const result = data.map((entry) => ({
+    const result = data.map((entry: any) => ({
       date: this.normalizeDate(entry.date),
       nav: Number(entry.nav) || 0,
     }));
@@ -775,11 +1091,28 @@ class BifurcatedPortfolioEngine {
         false
       );
 
+      // When Qode Total Portfolio is authoritative, percent and cash (pnl) are
+      // already correct from the unified Qode curve — only capitalInOut needs
+      // the frozen-old + per-active-scheme merge because Qode's capital_in_out
+      // column is zero by design (cash movements are tracked on the original
+      // tags, including each parallel scheme's own tag).
+      const cashFromQodeTag = !!this.config.qodeTotalPortfolioTag;
       const oldMonthlyPnl = this.frozenData.data.monthlyPnl;
-      const newMonthlyPnl = await this.calculateMonthlyPnL(
-        qcode,
-        this.config.newSchemeName
+      const aggregatedMonthlyPnls = await Promise.all(
+        this.getAggregatedSchemeKeys().map((s) =>
+          this.calculateMonthlyPnL(qcode, s)
+        )
       );
+
+      const getMonthValue = (
+        pnl: MonthlyPnL,
+        year: string,
+        month: string,
+        field: "cash" | "capitalInOut"
+      ): number => {
+        const m = pnl[year]?.months[month];
+        return m && m[field] !== "-" ? parseFloat(m[field]) : 0;
+      };
 
       for (const year of Object.keys(navBasedResult)) {
         let yearTotalCash = 0;
@@ -788,32 +1121,33 @@ class BifurcatedPortfolioEngine {
         for (const month of Object.keys(navBasedResult[year].months)) {
           if (navBasedResult[year].months[month].percent === "-") continue;
 
-          const oldMonth = oldMonthlyPnl[year]?.months[month];
-          const newMonth = newMonthlyPnl[year]?.months[month];
-          const oldCash =
-            oldMonth && oldMonth.cash !== "-"
-              ? parseFloat(oldMonth.cash)
-              : 0;
-          const newCash =
-            newMonth && newMonth.cash !== "-"
-              ? parseFloat(newMonth.cash)
-              : 0;
-          const oldCapitalInOut =
-            oldMonth && oldMonth.capitalInOut !== "-"
-              ? parseFloat(oldMonth.capitalInOut)
-              : 0;
-          const newCapitalInOut =
-            newMonth && newMonth.capitalInOut !== "-"
-              ? parseFloat(newMonth.capitalInOut)
-              : 0;
+          const oldCapitalInOut = getMonthValue(
+            oldMonthlyPnl,
+            year,
+            month,
+            "capitalInOut"
+          );
+          const aggregatedCapitalInOut = aggregatedMonthlyPnls.reduce(
+            (sum, pnl) => sum + getMonthValue(pnl, year, month, "capitalInOut"),
+            0
+          );
+          const totalCapitalInOut = oldCapitalInOut + aggregatedCapitalInOut;
 
-          const totalCash = oldCash + newCash;
-          const totalCapitalInOut = oldCapitalInOut + newCapitalInOut;
-
-          navBasedResult[year].months[month].cash = totalCash.toFixed(2);
+          if (!cashFromQodeTag) {
+            const oldCash = getMonthValue(oldMonthlyPnl, year, month, "cash");
+            const aggregatedCash = aggregatedMonthlyPnls.reduce(
+              (sum, pnl) => sum + getMonthValue(pnl, year, month, "cash"),
+              0
+            );
+            navBasedResult[year].months[month].cash = (
+              oldCash + aggregatedCash
+            ).toFixed(2);
+          }
           navBasedResult[year].months[month].capitalInOut =
             totalCapitalInOut.toFixed(2);
-          yearTotalCash += totalCash;
+
+          yearTotalCash +=
+            parseFloat(navBasedResult[year].months[month].cash) || 0;
           yearTotalCapitalInOut += totalCapitalInOut;
         }
 
@@ -825,9 +1159,11 @@ class BifurcatedPortfolioEngine {
     }
 
     const historicalData = await this.getHistoricalData(qcode, scheme);
+    // Fresh active schemes (newSchemeName + per-scheme parallel schemes like
+    // QYE++) use prevNav=100 on day 1 as the month-1 starting baseline.
     return this.computeMonthlyPnLFromHistoricalData(
       historicalData,
-      scheme === this.config.newSchemeName
+      this.isFreshActiveScheme(scheme)
     );
   }
 
@@ -959,6 +1295,21 @@ class BifurcatedPortfolioEngine {
         false
       );
 
+      // When Qode Total Portfolio is authoritative, per-quarter cash (pnl) is
+      // already correct from the unified Qode curve — just recompute year totals.
+      if (this.config.qodeTotalPortfolioTag) {
+        for (const year of Object.keys(navBasedResult)) {
+          let yearTotalCash = 0;
+          for (const q of ["q1", "q2", "q3", "q4"] as const) {
+            yearTotalCash +=
+              parseFloat(navBasedResult[year].cash[q] || "0") || 0;
+          }
+          navBasedResult[year].cash.total = yearTotalCash.toFixed(2);
+          navBasedResult[year].yearCash = yearTotalCash.toFixed(2);
+        }
+        return navBasedResult;
+      }
+
       const oldQuarterlyPnl = this.frozenData.data.quarterlyPnl;
       const newQuarterlyPnl = await this.calculateQuarterlyPnL(
         qcode,
@@ -994,9 +1345,11 @@ class BifurcatedPortfolioEngine {
     }
 
     const historicalData = await this.getHistoricalData(qcode, scheme);
+    // Fresh active schemes (newSchemeName + per-scheme parallel schemes like
+    // QYE++) use prevNav=100 on day 1 as the quarter-1 starting baseline.
     return this.computeQuarterlyPnLFromHistoricalData(
       historicalData,
-      scheme === this.config.newSchemeName
+      this.isFreshActiveScheme(scheme)
     );
   }
 
@@ -1096,11 +1449,10 @@ class BifurcatedPortfolioEngine {
       const qcode =
         url.searchParams.get("qcode") || this.config.defaultQcode;
 
-      const schemes = [
-        "Total Portfolio",
-        this.config.newSchemeName,
-        this.config.oldSchemeName,
-      ];
+      // Drive the scheme list + response order from the portfolio mapping
+      // (JS preserves insertion order), so adding a parallel scheme like
+      // Dinesh's QYE++ auto-includes it without touching the engine.
+      const schemes = Object.keys(this.config.portfolioMapping);
 
       for (const scheme of schemes) {
         const portfolioNames = this.getPortfolioNames(scheme);
@@ -1128,8 +1480,47 @@ class BifurcatedPortfolioEngine {
           nav: d.nav,
         }));
 
-        const drawdownMetrics =
-          this.calculateDrawdownMetrics(rawEquityCurve);
+        // Build the canonical equity curve once — used for both the displayed
+        // chart and as the input to drawdown computation, so MDD/currentDD
+        // anchor to the inception baseline (NAV=100) instead of the day-1
+        // close. Without this, schemes that drop on day 1 (e.g. QYE++ NAV
+        // 99.01 from prev_nav=100) had their peak initialized to 99.01 and
+        // missed the day-1 dip itself.
+        const equityCurveForDisplay = (() => {
+          if (
+            this.isFreshActiveScheme(scheme) &&
+            rawEquityCurve.length > 0
+          ) {
+            const firstDate = new Date(rawEquityCurve[0].date);
+            firstDate.setDate(firstDate.getDate() - 1);
+            const baselineDate = firstDate.toISOString().split("T")[0];
+
+            // Only rebase when using the client-level shared NAV tag whose
+            // DB NAV continues from the old scheme's final value
+            // (Shilpa/Vikram). Per-scheme tag schemes start fresh at
+            // NAV ~100 — no rebase needed.
+            if (
+              scheme === this.config.newSchemeName &&
+              this.sharedNavTag
+            ) {
+              const baseNav =
+                historicalData[0]?.prevNav ?? rawEquityCurve[0].nav;
+              const rebaseFactor = 100 / baseNav;
+              const rebasedCurve = rawEquityCurve.map((p) => ({
+                date: p.date,
+                nav: Number((p.nav * rebaseFactor).toFixed(2)),
+              }));
+              return [{ date: baselineDate, nav: 100 }, ...rebasedCurve];
+            }
+
+            return [{ date: baselineDate, nav: 100 }, ...rawEquityCurve];
+          }
+          return rawEquityCurve;
+        })();
+
+        const drawdownMetrics = this.calculateDrawdownMetrics(
+          equityCurveForDisplay
+        );
         const trailingReturns = await this.calculateTrailingReturns(
           qcode,
           scheme,
@@ -1141,66 +1532,29 @@ class BifurcatedPortfolioEngine {
           scheme
         );
 
+        // Per-scheme display override: e.g. Dinesh's QTF shows 0 instead of
+        // its real net (negative) historical cash flow. Total Portfolio's
+        // own amountDeposited is unaffected — it's derived from getCashFlows
+        // ("Total Portfolio") which still includes this scheme's real flows.
+        const displayedInvestedAmount = portfolioNames.displayAmountInvestedAsZero
+          ? 0
+          : investedAmount;
+
         const portfolioData: PortfolioData = {
-          amountDeposited: investedAmount.toFixed(2),
+          amountDeposited: displayedInvestedAmount.toFixed(2),
           currentExposure: latestExposure?.portfolioValue.toFixed(2) || "0",
           return: returns.toFixed(2),
           totalProfit: totalProfit.toFixed(2),
           trailingReturns,
           drawdown: drawdownMetrics.currentDD.toFixed(2),
           maxDrawdown: drawdownMetrics.mdd.toFixed(2),
-          equityCurve: (() => {
-            if (
-              scheme === this.config.newSchemeName &&
-              rawEquityCurve.length > 0
-            ) {
-              const firstDate = new Date(rawEquityCurve[0].date);
-              firstDate.setDate(firstDate.getDate() - 1);
-              const baselineDate = firstDate.toISOString().split("T")[0];
-
-              if (this.sharedNavTag) {
-                // Shared-tag: DB NAV continues from old scheme (~110/~106).
-                // Rebase relative to prevNav (previous day's close) so
-                // day 1's return is visible on the chart.
-                const baseNav = historicalData[0]?.prevNav ?? rawEquityCurve[0].nav;
-                const rebaseFactor = 100 / baseNav;
-                const rebasedCurve = rawEquityCurve.map((p) => ({
-                  date: p.date,
-                  nav: Number((p.nav * rebaseFactor).toFixed(2)),
-                }));
-                return [
-                  { date: baselineDate, nav: 100 },
-                  ...rebasedCurve,
-                ];
-              }
-
-              return [
-                { date: baselineDate, nav: 100 },
-                ...rawEquityCurve,
-              ];
-            }
-            return rawEquityCurve;
-          })(),
-          drawdownCurve: (() => {
-            const rawDDCurve = drawdownMetrics.ddCurve.map((d) => ({
-              date: d.date,
-              drawdown: d.value,
-            }));
-            if (
-              scheme === this.config.newSchemeName &&
-              rawDDCurve.length > 0 &&
-              historicalData.length > 0
-            ) {
-              const firstDate = new Date(historicalData[0].date);
-              firstDate.setDate(firstDate.getDate() - 1);
-              const baselineDate = firstDate.toISOString().split("T")[0];
-              return [
-                { date: baselineDate, drawdown: 0 },
-                ...rawDDCurve,
-              ];
-            }
-            return rawDDCurve;
-          })(),
+          equityCurve: equityCurveForDisplay,
+          // ddCurve already includes the baseline day (drawdown=0) because it
+          // was computed from the prepended equity curve — no extra prepend.
+          drawdownCurve: drawdownMetrics.ddCurve.map((d) => ({
+            date: d.date,
+            drawdown: d.value,
+          })),
           quarterlyPnl,
           monthlyPnl,
           cashFlows,
@@ -1251,9 +1605,11 @@ class BifurcatedPortfolioEngine {
 
 // ==================== Engine Instances & Exports ====================
 
+// Dinesh's QTF (formerly frozen) is now live-DB-sourced; engine receives
+// EMPTY_FROZEN_DATA so the frozen-scheme branches stay dormant.
 const dineshEngine = new BifurcatedPortfolioEngine(
   DINESH_CONFIG,
-  DINESH_FROZEN_DATA
+  EMPTY_FROZEN_DATA
 );
 const shilpaEngine = new BifurcatedPortfolioEngine(
   SHILPA_CONFIG,
@@ -1262,6 +1618,10 @@ const shilpaEngine = new BifurcatedPortfolioEngine(
 const vikramEngine = new BifurcatedPortfolioEngine(
   VIKRAM_CONFIG,
   VIKRAM_FROZEN_DATA
+);
+const arwaniEngine = new BifurcatedPortfolioEngine(
+  ARWANI_CONFIG,
+  EMPTY_FROZEN_DATA
 );
 
 export const DineshApi = {
@@ -1272,4 +1632,7 @@ export const ShilpaApi = {
 };
 export const VikramApi = {
   GET: (req: Request) => vikramEngine.handleGET(req),
+};
+export const ArwaniApi = {
+  GET: (req: Request) => arwaniEngine.handleGET(req),
 };

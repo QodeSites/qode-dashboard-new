@@ -420,7 +420,8 @@ export default function Portfolio() {
   const isDinesh = effectiveIcode === "QUS00072";
   const isShilpa = effectiveIcode === "QUS00067";
   const isVikram = effectiveIcode === "QUS00068";
-  const isBifurcatedClient = isDinesh || isShilpa || isVikram;
+  const isArwani = effectiveIcode === "QUS00085";
+  const isBifurcatedClient = isDinesh || isShilpa || isVikram || isArwani;
   // Read URL params directly to avoid useSearchParams() which triggers a Suspense boundary
   // and causes a loading flicker (Suspense fallback → page loading state).
   // Safe because during SSR status="loading" so the loading UI renders regardless of param values.
@@ -518,7 +519,9 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           ? { api: "/api/dinesh-api", qcode: "QAC00053", name: "Dinesh" }
           : isShilpa
           ? { api: "/api/shilpa-api", qcode: "QAC00040", name: "Shilpa" }
-          : { api: "/api/vikram-api", qcode: "QAC00043", name: "Vikram Trading" };
+          : isVikram
+          ? { api: "/api/vikram-api", qcode: "QAC00043", name: "Vikram Trading" }
+          : { api: "/api/arwani-api", qcode: "QAC00071", name: "Arwani" };
 
         const fetchBifurcatedData = async () => {
           try {
@@ -1261,6 +1264,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     const lastDate = getLastDate(filteredEquityCurve, strategyData.metadata?.lastUpdated);
     const isTotalPortfolio = selectedStrategy === "Total Portfolio";
     const isActive = strategyData.metadata.isActive;
+    const hasNavBasedTotalPortfolio = isDinesh || isArwani;
 
     return (
       <div className="space-y-6">
@@ -1295,13 +1299,14 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         <StatsCards
           stats={convertedStats}
           accountType="sarla"
-          broker={isDinesh ? "Dinesh" : isShilpa ? "Shilpa" : "Vikram Trading"}
+          broker={isDinesh ? "Dinesh" : isShilpa ? "Shilpa" : isVikram ? "Vikram Trading" : "Arwani"}
           isTotalPortfolio={isTotalPortfolio}
           isActive={isActive}
           returnViewType={returnViewType}
           setReturnViewType={setReturnViewType}
+          hasNavBasedTotalPortfolio={hasNavBasedTotalPortfolio}
         />
-        {!isTotalPortfolio && (
+        {(!isTotalPortfolio || hasNavBasedTotalPortfolio) && (
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
             <div className="flex-1 min-w-0 sm:w-5/6">
               <RevenueChart
@@ -1360,7 +1365,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   if ((isSarla || isSatidham || isBifurcatedClient) && (!sarlaData || availableStrategies.length === 0)) {
     return (
       <div className="p-6 text-center bg-[#f3f4f6] rounded-lg text-card-text">
-        No strategy data found for {isSarla ? "Sarla" : isSatidham ? "Satidham" : isDinesh ? "Dinesh" : isShilpa ? "Shilpa" : "Vikram Trading"} user.
+        No strategy data found for {isSarla ? "Sarla" : isSatidham ? "Satidham" : isDinesh ? "Dinesh" : isShilpa ? "Shilpa" : isVikram ? "Vikram Trading" : "Arwani"} user.
       </div>
     );
   }
