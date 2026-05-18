@@ -43,6 +43,7 @@ model accounts {
   strategy                                                  String?
   account_access_account_access_source_account_idToaccounts account_access[]             @relation("account_access_source_account_idToaccounts")
   account_access_account_access_target_account_idToaccounts account_access[]             @relation("account_access_target_account_idToaccounts")
+  account_aum                                               account_aum?
   account_custodian_codes                                   account_custodian_codes[]
   pooled_account_allocations                                pooled_account_allocations[]
   pooled_account_users                                      pooled_account_users[]
@@ -212,6 +213,8 @@ model master_sheet {
   system_tag           String?   @db.VarChar(50)
   created_at           DateTime? @default(now()) @db.Date
 
+  @@unique([date, id], map: "date_id")
+  @@index([qcode, date, id], map: "idx_master_sheet_qcode_date_id")
   @@schema("public")
 }
 
@@ -353,7 +356,7 @@ model pms_master_sheet {
 }
 
 model master_sheet_test {
-  id                   Int       @id @default(autoincrement())
+  id                   Int       @default(autoincrement())
   qcode                String    @db.VarChar(20)
   date                 DateTime  @db.Date
   portfolio_value      Decimal?  @db.Decimal(20, 4)
@@ -370,6 +373,7 @@ model master_sheet_test {
   system_tag           String?   @db.VarChar(50)
   created_at           DateTime? @default(now()) @db.Date
 
+  @@id([id, qcode], map: "master_sheet_test_partition_pkey")
   @@schema("public")
 }
 
@@ -539,10 +543,24 @@ model payment_transactions {
   canceled_at        DateTime? @db.Timestamptz(6)
   is_new_strategy    Boolean?  @default(false)
   strategy_type      String?   @db.VarChar(10)
+  cf_payment_id      String?   @db.VarChar
+  payment_time       DateTime? @db.Timestamptz(6)
+  bank_reference     String?   @db.VarChar
+  payment_method     Json?
+  payment_message    String?
+  auth_id            String?   @db.VarChar
+  settlement_amount  Decimal?  @db.Decimal
+  transfer_utr       String?   @db.VarChar
+  settled_at         DateTime? @db.Timestamptz(6)
+  deployed_at        DateTime? @db.Timestamptz(6)
+  investment_status  String    @default("PENDING_PAYMENT") @db.VarChar
 
   @@index([client_id, payment_status], map: "idx_client_status")
   @@index([created_at], map: "idx_created_at")
   @@index([order_id], map: "idx_order_id")
+  @@index([investment_status], map: "idx_pt_investment_status")
+  @@index([nuvama_code], map: "idx_pt_nuvama_code")
+  @@index([payment_status], map: "idx_pt_payment_status")
   @@schema("public")
 }
 
@@ -561,8 +579,358 @@ model pms_clients_audit_log {
   @@schema("public")
 }
 
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
 model pms_clients_master {
-  id                          Int       @id @default(autoincrement())
+  id                          Int       @default(autoincrement())
+  clientid                    String?   @db.VarChar(50)
+  clientname                  String?   @db.VarChar(100)
+  clientcode                  String?   @db.VarChar(50)
+  clienttype                  String?   @db.VarChar(20)
+  accounttype                 String?   @db.VarChar(20)
+  account_open_date           DateTime? @db.Date
+  inceptiondate               DateTime? @db.Date
+  mobile                      String?   @db.VarChar(15)
+  email                       String?   @db.VarChar(100)
+  address1                    String?   @db.VarChar(200)
+  address2                    String?   @db.VarChar(200)
+  city                        String?   @db.VarChar(50)
+  pincode                     String?   @db.VarChar(6)
+  state                       String?   @db.VarChar(50)
+  pannumber                   String?   @db.VarChar(10)
+  ownerid                     String?   @db.VarChar(50)
+  ownername                   String?   @db.VarChar(100)
+  groupid                     String?   @db.VarChar(50)
+  groupname                   String?   @db.VarChar(100)
+  schemeid                    String?   @db.VarChar(50)
+  schemename                  String?   @db.VarChar(100)
+  advisorname                 String?   @db.VarChar(100)
+  username                    String?   @db.VarChar(50)
+  salutation                  String?   @db.VarChar(10)
+  firstname                   String?   @db.VarChar(50)
+  middlename                  String?   @db.VarChar(50)
+  lastname                    String?   @db.VarChar(50)
+  first_holder_gender         String?   @db.VarChar(20)
+  created_at                  DateTime? @default(now()) @db.Timestamp(6)
+  updated_at                  DateTime? @default(now()) @db.Timestamp(6)
+  password                    String?   @default("Qode@123") @db.VarChar(100)
+  head_of_family              Boolean?
+  password_setup_token        String?   @db.VarChar(255)
+  password_setup_expires      DateTime? @db.Timestamptz(6)
+  password_set_at             DateTime? @db.Timestamptz(6)
+  first_login_at              DateTime? @db.Timestamptz(6)
+  onboarding_status           String?   @default("pending") @db.VarChar(20)
+  login_attempts              Int?      @default(0)
+  locked_until                DateTime? @db.Timestamptz(6)
+  last_login_at               DateTime? @db.Timestamp(6)
+  login_count                 Int?      @default(0)
+  intermediaryname            String    @default("QODE ADVISORS LLP INT") @db.VarChar(255)
+  intermediary_fee_percentage Decimal?  @default(0.00) @db.Decimal(5, 2)
+  billgroup                   String?   @db.VarChar(100)
+  maturity_date               DateTime? @db.Date
+
+  @@ignore
+  @@schema("public")
+}
+
+model prop_account_default_tags {
+  qcode        String   @unique
+  deposit_tag  String
+  nav_tag      String
+  cashflow_tag String?
+  created_at   DateTime @default(now()) @db.Timestamp(6)
+  updated_at   DateTime @db.Timestamp(6)
+  id           BigInt   @id @default(autoincrement())
+
+  @@index([updated_at])
+  @@schema("public")
+}
+
+model refresh_tokens {
+  id          String    @id @db.Uuid
+  user_id     String    @db.VarChar(255)
+  token_hash  String
+  expires_at  DateTime  @db.Timestamp(6)
+  revoked     Boolean?  @default(false)
+  created_at  DateTime? @default(now()) @db.Timestamp(6)
+  replaced_by String?   @db.Uuid
+
+  @@schema("public")
+}
+
+model account_aum {
+  qcode          String    @id
+  aum            Decimal   @default(0) @db.Decimal
+  aum_updated_at DateTime? @default(now()) @db.Timestamp(6)
+  accounts       accounts  @relation(fields: [qcode], references: [qcode], onDelete: Cascade, onUpdate: NoAction, map: "fk_account_qcode")
+
+  @@index([aum(sort: Desc)], map: "idx_account_aum_value")
+  @@schema("public")
+}
+
+model bifurcated_master_sheet_test {
+  id                   BigInt   @id @default(autoincrement())
+  qcode                String   @db.VarChar(20)
+  date                 DateTime @db.Date
+  system_tag           String
+  portfolio_value      Decimal? @db.Decimal(20, 4)
+  capital_in_out       Decimal? @db.Decimal(20, 4)
+  nav                  Decimal? @db.Decimal(20, 8)
+  prev_nav             Decimal? @db.Decimal(20, 8)
+  pnl                  Decimal? @db.Decimal(20, 4)
+  daily_p_l            Decimal? @db.Decimal(10, 6)
+  exposure_value       Decimal? @db.Decimal(20, 4)
+  prev_portfolio_value Decimal? @db.Decimal(20, 4)
+  prev_exposure_value  Decimal? @db.Decimal(20, 4)
+  prev_pnl             Decimal? @db.Decimal(20, 4)
+  drawdown             Decimal? @db.Decimal(10, 6)
+  created_at           DateTime @db.Date
+
+  @@index([qcode, date], map: "idx_bif_ms_qcode_date")
+  @@schema("public")
+}
+
+model client_push_tokens {
+  id          Int      @id @default(autoincrement())
+  client_id   String   @db.VarChar(255)
+  nuvama_code String?  @db.VarChar(50)
+  push_token  String
+  platform    String?  @db.VarChar(10)
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([client_id, push_token], map: "uq_client_push_token")
+  @@index([client_id], map: "idx_push_tokens_client_id")
+  @@schema("public")
+}
+
+model monthly_pnl {
+  id                 Int       @id @default(autoincrement())
+  identifier         String    @db.VarChar(20)
+  scheme_or_strategy String    @db.VarChar(100)
+  year               Int
+  month              Int
+  percent            Decimal?  @db.Decimal(10, 4)
+  cash               Decimal?  @db.Decimal(20, 2)
+  capital_in_out     Decimal?  @db.Decimal(20, 2)
+  created_at         DateTime? @default(now()) @db.Timestamp(6)
+
+  @@unique([identifier, scheme_or_strategy, year, month], map: "uq_monthly_pnl")
+  @@index([identifier, year, month], map: "idx_monthly_lookup")
+  @@schema("public")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model pms_clients_master_backup_20260323_120710 {
+  id                          Int?
+  clientid                    String?   @db.VarChar(50)
+  clientname                  String?   @db.VarChar(100)
+  clientcode                  String?   @db.VarChar(50)
+  clienttype                  String?   @db.VarChar(20)
+  accounttype                 String?   @db.VarChar(20)
+  account_open_date           DateTime? @db.Date
+  inceptiondate               DateTime? @db.Date
+  mobile                      String?   @db.VarChar(15)
+  email                       String?   @db.VarChar(100)
+  address1                    String?   @db.VarChar(200)
+  address2                    String?   @db.VarChar(200)
+  city                        String?   @db.VarChar(50)
+  pincode                     String?   @db.VarChar(6)
+  state                       String?   @db.VarChar(50)
+  pannumber                   String?   @db.VarChar(10)
+  ownerid                     String?   @db.VarChar(50)
+  ownername                   String?   @db.VarChar(100)
+  groupid                     String?   @db.VarChar(50)
+  groupname                   String?   @db.VarChar(100)
+  schemeid                    String?   @db.VarChar(50)
+  schemename                  String?   @db.VarChar(100)
+  advisorname                 String?   @db.VarChar(100)
+  username                    String?   @db.VarChar(50)
+  salutation                  String?   @db.VarChar(10)
+  firstname                   String?   @db.VarChar(50)
+  middlename                  String?   @db.VarChar(50)
+  lastname                    String?   @db.VarChar(50)
+  first_holder_gender         String?   @db.VarChar(20)
+  created_at                  DateTime? @db.Timestamp(6)
+  updated_at                  DateTime? @db.Timestamp(6)
+  password                    String?   @db.VarChar(100)
+  head_of_family              Boolean?
+  password_setup_token        String?   @db.VarChar(255)
+  password_setup_expires      DateTime? @db.Timestamptz(6)
+  password_set_at             DateTime? @db.Timestamptz(6)
+  first_login_at              DateTime? @db.Timestamptz(6)
+  onboarding_status           String?   @db.VarChar(20)
+  login_attempts              Int?
+  locked_until                DateTime? @db.Timestamptz(6)
+  last_login_at               DateTime? @db.Timestamp(6)
+  login_count                 Int?
+  intermediaryname            String?   @db.VarChar(255)
+  intermediary_fee_percentage Decimal?  @db.Decimal(5, 2)
+  billgroup                   String?   @db.VarChar(100)
+
+  @@ignore
+  @@schema("public")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model pms_clients_master_backup_20260323_121008 {
+  id                          Int?
+  clientid                    String?   @db.VarChar(50)
+  clientname                  String?   @db.VarChar(100)
+  clientcode                  String?   @db.VarChar(50)
+  clienttype                  String?   @db.VarChar(20)
+  accounttype                 String?   @db.VarChar(20)
+  account_open_date           DateTime? @db.Date
+  inceptiondate               DateTime? @db.Date
+  mobile                      String?   @db.VarChar(15)
+  email                       String?   @db.VarChar(100)
+  address1                    String?   @db.VarChar(200)
+  address2                    String?   @db.VarChar(200)
+  city                        String?   @db.VarChar(50)
+  pincode                     String?   @db.VarChar(6)
+  state                       String?   @db.VarChar(50)
+  pannumber                   String?   @db.VarChar(10)
+  ownerid                     String?   @db.VarChar(50)
+  ownername                   String?   @db.VarChar(100)
+  groupid                     String?   @db.VarChar(50)
+  groupname                   String?   @db.VarChar(100)
+  schemeid                    String?   @db.VarChar(50)
+  schemename                  String?   @db.VarChar(100)
+  advisorname                 String?   @db.VarChar(100)
+  username                    String?   @db.VarChar(50)
+  salutation                  String?   @db.VarChar(10)
+  firstname                   String?   @db.VarChar(50)
+  middlename                  String?   @db.VarChar(50)
+  lastname                    String?   @db.VarChar(50)
+  first_holder_gender         String?   @db.VarChar(20)
+  created_at                  DateTime? @db.Timestamp(6)
+  updated_at                  DateTime? @db.Timestamp(6)
+  password                    String?   @db.VarChar(100)
+  head_of_family              Boolean?
+  password_setup_token        String?   @db.VarChar(255)
+  password_setup_expires      DateTime? @db.Timestamptz(6)
+  password_set_at             DateTime? @db.Timestamptz(6)
+  first_login_at              DateTime? @db.Timestamptz(6)
+  onboarding_status           String?   @db.VarChar(20)
+  login_attempts              Int?
+  locked_until                DateTime? @db.Timestamptz(6)
+  last_login_at               DateTime? @db.Timestamp(6)
+  login_count                 Int?
+  intermediaryname            String?   @db.VarChar(255)
+  intermediary_fee_percentage Decimal?  @db.Decimal(5, 2)
+  billgroup                   String?   @db.VarChar(100)
+
+  @@ignore
+  @@schema("public")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model pms_clients_master_backup_20260323_121018 {
+  id                          Int?
+  clientid                    String?   @db.VarChar(50)
+  clientname                  String?   @db.VarChar(100)
+  clientcode                  String?   @db.VarChar(50)
+  clienttype                  String?   @db.VarChar(20)
+  accounttype                 String?   @db.VarChar(20)
+  account_open_date           DateTime? @db.Date
+  inceptiondate               DateTime? @db.Date
+  mobile                      String?   @db.VarChar(15)
+  email                       String?   @db.VarChar(100)
+  address1                    String?   @db.VarChar(200)
+  address2                    String?   @db.VarChar(200)
+  city                        String?   @db.VarChar(50)
+  pincode                     String?   @db.VarChar(6)
+  state                       String?   @db.VarChar(50)
+  pannumber                   String?   @db.VarChar(10)
+  ownerid                     String?   @db.VarChar(50)
+  ownername                   String?   @db.VarChar(100)
+  groupid                     String?   @db.VarChar(50)
+  groupname                   String?   @db.VarChar(100)
+  schemeid                    String?   @db.VarChar(50)
+  schemename                  String?   @db.VarChar(100)
+  advisorname                 String?   @db.VarChar(100)
+  username                    String?   @db.VarChar(50)
+  salutation                  String?   @db.VarChar(10)
+  firstname                   String?   @db.VarChar(50)
+  middlename                  String?   @db.VarChar(50)
+  lastname                    String?   @db.VarChar(50)
+  first_holder_gender         String?   @db.VarChar(20)
+  created_at                  DateTime? @db.Timestamp(6)
+  updated_at                  DateTime? @db.Timestamp(6)
+  password                    String?   @db.VarChar(100)
+  head_of_family              Boolean?
+  password_setup_token        String?   @db.VarChar(255)
+  password_setup_expires      DateTime? @db.Timestamptz(6)
+  password_set_at             DateTime? @db.Timestamptz(6)
+  first_login_at              DateTime? @db.Timestamptz(6)
+  onboarding_status           String?   @db.VarChar(20)
+  login_attempts              Int?
+  locked_until                DateTime? @db.Timestamptz(6)
+  last_login_at               DateTime? @db.Timestamp(6)
+  login_count                 Int?
+  intermediaryname            String?   @db.VarChar(255)
+  intermediary_fee_percentage Decimal?  @db.Decimal(5, 2)
+  billgroup                   String?   @db.VarChar(100)
+
+  @@ignore
+  @@schema("public")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model pms_clients_master_backup_20260323_121138 {
+  id                          Int?
+  clientid                    String?   @db.VarChar(50)
+  clientname                  String?   @db.VarChar(100)
+  clientcode                  String?   @db.VarChar(50)
+  clienttype                  String?   @db.VarChar(20)
+  accounttype                 String?   @db.VarChar(20)
+  account_open_date           DateTime? @db.Date
+  inceptiondate               DateTime? @db.Date
+  mobile                      String?   @db.VarChar(15)
+  email                       String?   @db.VarChar(100)
+  address1                    String?   @db.VarChar(200)
+  address2                    String?   @db.VarChar(200)
+  city                        String?   @db.VarChar(50)
+  pincode                     String?   @db.VarChar(6)
+  state                       String?   @db.VarChar(50)
+  pannumber                   String?   @db.VarChar(10)
+  ownerid                     String?   @db.VarChar(50)
+  ownername                   String?   @db.VarChar(100)
+  groupid                     String?   @db.VarChar(50)
+  groupname                   String?   @db.VarChar(100)
+  schemeid                    String?   @db.VarChar(50)
+  schemename                  String?   @db.VarChar(100)
+  advisorname                 String?   @db.VarChar(100)
+  username                    String?   @db.VarChar(50)
+  salutation                  String?   @db.VarChar(10)
+  firstname                   String?   @db.VarChar(50)
+  middlename                  String?   @db.VarChar(50)
+  lastname                    String?   @db.VarChar(50)
+  first_holder_gender         String?   @db.VarChar(20)
+  created_at                  DateTime? @db.Timestamp(6)
+  updated_at                  DateTime? @db.Timestamp(6)
+  password                    String?   @db.VarChar(100)
+  head_of_family              Boolean?
+  password_setup_token        String?   @db.VarChar(255)
+  password_setup_expires      DateTime? @db.Timestamptz(6)
+  password_set_at             DateTime? @db.Timestamptz(6)
+  first_login_at              DateTime? @db.Timestamptz(6)
+  onboarding_status           String?   @db.VarChar(20)
+  login_attempts              Int?
+  locked_until                DateTime? @db.Timestamptz(6)
+  last_login_at               DateTime? @db.Timestamp(6)
+  login_count                 Int?
+  intermediaryname            String?   @db.VarChar(255)
+  intermediary_fee_percentage Decimal?  @db.Decimal(5, 2)
+  billgroup                   String?   @db.VarChar(100)
+
+  @@ignore
+  @@schema("public")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model pms_clients_master_old {
+  id                          Int
   clientid                    String?   @db.VarChar(50)
   clientname                  String?   @db.VarChar(100)
   clientcode                  String?   @db.VarChar(50)
@@ -608,118 +976,111 @@ model pms_clients_master {
   intermediary_fee_percentage Decimal?  @default(0.00) @db.Decimal(5, 2)
   billgroup                   String?   @db.VarChar(100)
 
-  @@index([clientid], map: "idx_pms_clients_master_clientid")
-  @@index([email], map: "idx_pms_clients_master_email")
-  @@index([mobile], map: "idx_pms_clients_master_mobile")
-  @@index([pannumber], map: "idx_pms_clients_master_pannumber")
-  @@index([onboarding_status], map: "idx_pms_clients_onboarding_status")
-  @@index([password_setup_token], map: "idx_pms_clients_password_token")
+  @@ignore
   @@schema("public")
 }
 
-model pms_clients_master1 {
-  id                     Int       @id @default(autoincrement())
-  clientid               String?   @db.VarChar(50)
-  clientname             String?   @db.VarChar(255)
-  clientcode             String?   @db.VarChar(50)
-  clienttype             String?   @db.VarChar(50)
-  accounttype            String?   @db.VarChar(50)
-  account_open_date      DateTime? @db.Date
-  inceptiondate          DateTime? @db.Date
-  mobile                 String?   @db.VarChar(15)
-  email                  String?   @db.VarChar(255)
-  address1               String?
-  address2               String?
-  city                   String?   @db.VarChar(100)
-  pincode                String?   @db.VarChar(10)
-  state                  String?   @db.VarChar(100)
-  pannumber              String?   @db.VarChar(20)
-  ownerid                String?   @db.VarChar(50)
-  ownername              String?   @db.VarChar(255)
-  groupid                String?   @db.VarChar(50)
-  groupname              String?   @db.VarChar(255)
-  schemeid               String?   @db.VarChar(50)
-  schemename             String?   @db.VarChar(255)
-  advisorname            String?   @db.VarChar(255)
-  username               String?   @db.VarChar(100)
-  salutation             String?   @db.VarChar(20)
-  firstname              String?   @db.VarChar(100)
-  middlename             String?   @db.VarChar(100)
-  lastname               String?   @db.VarChar(100)
-  first_holder_gender    String?   @db.VarChar(10)
-  created_at             DateTime? @default(now()) @db.Timestamp(6)
-  updated_at             DateTime? @default(now()) @db.Timestamp(6)
-  password               String?   @db.VarChar(100)
-  head_of_family         Boolean?
-  password_setup_token   String?   @db.VarChar(255)
-  password_setup_expires DateTime? @db.Timestamp(6)
-  password_set_at        DateTime? @db.Timestamp(6)
-  first_login_at         DateTime? @db.Timestamp(6)
-  onboarding_status      String?   @default("PENDING") @db.VarChar(50)
-  login_attempts         Int?      @default(0)
-  locked_until           DateTime? @db.Timestamp(6)
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model quarterly_pnl {
+  id                 Int       @id @default(autoincrement())
+  identifier         String    @db.VarChar(20)
+  scheme_or_strategy String    @db.VarChar(100)
+  year               Int
+  quarter            Int
+  percent            Decimal?  @db.Decimal(10, 4)
+  cash               Decimal?  @db.Decimal(20, 2)
+  created_at         DateTime? @default(now()) @db.Timestamp(6)
 
+  @@unique([identifier, scheme_or_strategy, year, quarter], map: "uq_quarterly_pnl")
+  @@index([identifier, year, quarter], map: "idx_quarterly_lookup")
   @@schema("public")
 }
 
-model pms_clients_master2 {
-  id                  Int       @id(map: "pms_clients_master_pkey1") @default(autoincrement())
-  clientid            String?   @db.VarChar(50)
-  clientname          String?   @db.VarChar(100)
-  clientcode          String?   @db.VarChar(50)
-  clienttype          String?   @db.VarChar(20)
-  accounttype         String?   @db.VarChar(20)
-  account_open_date   DateTime? @db.Date
-  inceptiondate       DateTime? @db.Date
-  mobile              String?   @db.VarChar(15)
-  email               String?   @db.VarChar(100)
-  address1            String?   @db.VarChar(200)
-  address2            String?   @db.VarChar(200)
-  city                String?   @db.VarChar(50)
-  pincode             String?   @db.VarChar(6)
-  state               String?   @db.VarChar(50)
-  pannumber           String?   @db.VarChar(10)
-  ownerid             String?   @db.VarChar(50)
-  ownername           String?   @db.VarChar(100)
-  groupid             String?   @db.VarChar(50)
-  groupname           String?   @db.VarChar(100)
-  schemeid            String?   @db.VarChar(50)
-  schemename          String?   @db.VarChar(100)
-  advisorname         String?   @db.VarChar(100)
-  username            String?   @db.VarChar(50)
-  salutation          String?   @db.VarChar(10)
-  firstname           String?   @db.VarChar(50)
-  middlename          String?   @db.VarChar(50)
-  lastname            String?   @db.VarChar(50)
-  first_holder_gender String?   @db.VarChar(20)
-  head_of_family      String?   @db.VarChar(5)
-  created_at          DateTime? @default(now()) @db.Timestamp(6)
-  updated_at          DateTime? @default(now()) @db.Timestamp(6)
+model sip_charges {
+  id                 Int       @id @default(autoincrement())
+  subscription_id    String    @db.VarChar(255)
+  cf_subscription_id String?   @db.VarChar(255)
+  nuvama_code        String    @db.VarChar(50)
+  client_id          String    @db.VarChar(255)
+  installment_number Int?
+  charge_amount      Decimal   @db.Decimal(10, 2)
+  currency           String    @default("INR") @db.VarChar(3)
+  charge_status      String    @db.VarChar(50)
+  cf_payment_id      String?   @db.VarChar(255)
+  payment_time       DateTime? @db.Timestamptz(6)
+  charge_date        DateTime? @db.Date
+  bank_reference     String?   @db.VarChar(255)
+  payment_method     Json?
+  failure_reason     String?
+  retry_count        Int       @default(0)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime  @default(now()) @db.Timestamptz(6)
 
+  @@index([charge_date], map: "idx_sip_charges_charge_date")
+  @@index([charge_status], map: "idx_sip_charges_charge_status")
+  @@index([nuvama_code], map: "idx_sip_charges_nuvama_code")
+  @@index([subscription_id], map: "idx_sip_charges_subscription_id")
   @@schema("public")
 }
 
-model prop_account_default_tags {
-  qcode        String   @unique
-  deposit_tag  String
-  nav_tag      String
-  cashflow_tag String?
-  created_at   DateTime @default(now()) @db.Timestamp(6)
-  updated_at   DateTime @db.Timestamp(6)
-  id           BigInt   @id @default(autoincrement())
+model yearly_performance {
+  id                   Int       @id @default(autoincrement())
+  identifier           String    @db.VarChar(20)
+  scheme_or_strategy   String    @db.VarChar(100)
+  year                 Int
+  total_percent        Decimal?  @db.Decimal(10, 4)
+  total_cash           Decimal?  @db.Decimal(20, 2)
+  total_capital_in_out Decimal?  @db.Decimal(20, 2)
+  created_at           DateTime? @default(now()) @db.Timestamp(6)
 
-  @@index([updated_at])
+  @@unique([identifier, scheme_or_strategy, year], map: "uq_yearly_pnl")
+  @@index([identifier, year], map: "idx_yearly_lookup")
   @@schema("public")
 }
 
-model refresh_tokens {
-  id          String    @id @db.Uuid
-  user_id     String    @db.VarChar(255)
-  token_hash  String
-  expires_at  DateTime  @db.Timestamp(6)
-  revoked     Boolean?  @default(false)
-  created_at  DateTime? @default(now()) @db.Timestamp(6)
-  replaced_by String?   @db.Uuid
+model bifurcated_equity_holding_test {
+  id                Int      @id @default(autoincrement())
+  qcode             String   @db.VarChar(20)
+  date              DateTime @db.Date
+  symbol            String?  @db.VarChar(100)
+  mastersheet_tag   String?  @db.VarChar(100)
+  exchange          String?  @db.VarChar(20)
+  quantity          BigInt?
+  avg_price         Decimal? @db.Decimal(18, 6)
+  broker            String?  @db.VarChar(100)
+  debt_equity       String?  @db.VarChar(20)
+  sub_category      String?  @db.VarChar(100)
+  ltp               Decimal? @db.Decimal(18, 6)
+  buy_value         Decimal? @db.Decimal(18, 4)
+  value_as_of_today Decimal? @db.Decimal(18, 4)
+  pnl_amount        Decimal? @db.Decimal(18, 4)
+  percent_pnl       Decimal? @db.Decimal(18, 6)
+  strategy          String?  @db.VarChar(50)
 
+  @@index([qcode, date], map: "idx_bif_eq_qcode_date")
+  @@schema("public")
+}
+
+model bifurcated_mutual_fund_holding_sheet_test {
+  id                Int      @id @default(autoincrement())
+  qcode             String   @db.VarChar(20)
+  as_of_date        DateTime @db.Date
+  symbol            String?  @db.VarChar(200)
+  isin              String?  @db.VarChar(20)
+  scheme_code       BigInt?
+  quantity          Decimal? @db.Decimal(18, 6)
+  avg_price         Decimal? @db.Decimal(18, 6)
+  broker            String?  @db.VarChar(100)
+  debt_equity       String?  @db.VarChar(20)
+  mastersheet_tag   String?  @db.VarChar(100)
+  sub_category      String?  @db.VarChar(100)
+  nav               Decimal? @db.Decimal(18, 6)
+  buy_value         Decimal? @db.Decimal(18, 4)
+  value_as_of_today Decimal? @db.Decimal(18, 4)
+  pnl_amount        Decimal? @db.Decimal(18, 4)
+  percent_pnl       Decimal? @db.Decimal(18, 6)
+  strategy          String?  @db.VarChar(50)
+
+  @@index([qcode, as_of_date], map: "idx_bif_mf_qcode_date")
   @@schema("public")
 }

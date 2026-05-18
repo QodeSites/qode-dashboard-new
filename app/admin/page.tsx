@@ -7,15 +7,27 @@ import { AdminHeader } from "@/components/admin/AdminHeader";
 import { AdminStats } from "@/components/admin/AdminStats";
 import { ClientManagement } from "@/components/admin/ClientManagement";
 
+interface AumAccount {
+  qcode: string;
+  name: string;
+  aum: number;
+}
 interface Stats {
   totalClients: number;
   totalAccounts: number;
+  totalAumManaged: number;
+  aumAccounts: AumAccount[]; 
 }
 
 export default function AdminPage() {
   const { data: session, status, update: updateSession } = useSession();
   const router = useRouter();
-  const [stats, setStats] = useState<Stats>({ totalClients: 0, totalAccounts: 0 });
+  const [stats, setStats] = useState<Stats>({
+    totalClients: 0,
+    totalAccounts: 0,
+    totalAumManaged: 0,
+    aumAccounts: [],
+  });
   const [statsLoading, setStatsLoading] = useState(true);
   const [impersonatingIcode, setImpersonatingIcode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -158,6 +170,8 @@ export default function AdminPage() {
         <AdminStats
           totalClients={stats.totalClients}
           totalAccounts={stats.totalAccounts}
+          totalAumManaged={stats.totalAumManaged}
+          accountAums={stats.aumAccounts}
           isLoading={statsLoading}
         />
       </div>

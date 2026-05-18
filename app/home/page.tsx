@@ -2,21 +2,46 @@
 
 import React, { useEffect, useState } from "react";
 import axios from "axios";
-import Head from "next/head";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import DashboardLayout from "../dashboard/layout";
+
+interface BlogPost {
+  id: string;
+  title: string;
+  feature_image: string | null;
+  excerpt: string;
+  url: string;
+}
+
+function getResizedImage(url: string | null, width: number = 600): string | null {
+  if (!url) return null;
+  // Ghost CDN supports /size/w{width}/ for on-the-fly resizing
+  return url.replace(
+    "/content/images/",
+    `/content/images/size/w${width}/`
+  );
+}
+
+function getBlogUrl(ghostUrl: string): string {
+  return ghostUrl.replace(
+    "https://blogs.qodeinvest.com/",
+    "https://qodeinvest.com/quicktakes/"
+  );
+}
+
 const HomePage = () => {
-  const [blog, setBlog] = useState([]);
+  const [posts, setPosts] = useState<BlogPost[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
-  // IMPORTANT: For client-side env variables in Next.js, prefix with NEXT_PUBLIC_
+
   const key = process.env.NEXT_PUBLIC_GHOST_BLOG_KEY;
-  const url = `https://blogs.qodeinvest.com/ghost/api/content/posts/?key=${key}&filter=tag:qode-dashboard`;
 
   useEffect(() => {
     axios
-      .get(url)
+      .get(
+        `https://blogs.qodeinvest.com/ghost/api/content/posts/?key=${key}&filter=tag:hash-blog-quicktakes&limit=all&fields=id,title,feature_image,excerpt,url`
+      )
       .then((response) => {
-        setBlog(response.data.posts);
+        setPosts(response.data.posts);
         setLoading(false);
       })
       .catch((error) => {
@@ -25,95 +50,195 @@ const HomePage = () => {
       });
   }, [key]);
 
-  return (
-    <>
-      <Head>
-        <title>Qode Blogs - Insights on Data-Driven Investing</title>
-        <meta
-          name="description"
-          content="Read the latest blogs and insights from Qode on data-driven investment strategies, market analysis, and wealth management tips."
-        />
-        <meta
-          name="keywords"
-          content="Qode blogs, investment strategies, wealth management, market analysis, data-driven investing"
-        />
-        <meta name="author" content="Qode" />
-        <link rel="canonical" href="https://www.qodeinvest.com/insights" />
-      </Head>
-      <DashboardLayout>
-        <div className="sm:p-2 space-y-6">
-          <h1 className="text-3xl font-semibold text-card-text-secondary font-heading">Home</h1>
+  const handlePrev = () => {
+    setCurrentIndex((prev) => (prev === 0 ? posts.length - 1 : prev - 1));
+  };
 
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-            <a
-              href="https://qodeinvest.com"
-              target="_blank"
-              rel="noreferrer noopener"
-              className="bg-white/50  card-shadow border-0 rounded-lg cursor-pointer"
-            >
-              <Card className="bg-white/50 card-shadow border-none">
-                <CardHeader>
-                  <CardTitle className="text-card-text text-sm sm:text-lg flex items-center justify-between">
-                    Visit website
-                    <svg
-                      stroke="currentColor"
-                      fill="currentColor"
-                      strokeWidth="0"
-                      viewBox="0 0 24 24"
-                      className="h-4 w-4 text-gray-400 ml-2"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"
-                      ></path>
-                    </svg>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Keep up with our latest content on our website
-                  </p>
-                </CardContent>
-              </Card>
-            </a>
+  const handleNext = () => {
+    setCurrentIndex((prev) => (prev === posts.length - 1 ? 0 : prev + 1));
+  };
+
+  const currentPost = posts[currentIndex];
+  const prevIndex = currentIndex === 0 ? posts.length - 1 : currentIndex - 1;
+  const nextIndex = currentIndex === posts.length - 1 ? 0 : currentIndex + 1;
+
+  return (
+    <DashboardLayout>
+      <div className="flex flex-col items-center px-4 sm:px-8 md:px-12 pt-16 pb-12">
+        <div className="w-full max-w-5xl space-y-16">
+          {/* Title: Our Core */}
+          <div className="text-center">
+            <h1 className="text-4xl md:text-5xl font-serif text-card-text">
+              Our <em className="text-button-text">Core</em>
+            </h1>
+            <div className="mt-3 mx-auto w-12 h-[3px] bg-button-text rounded" />
           </div>
 
-          <h2 className="text-xl font-semibold text-card-text font-heading-bold">Latest Posts</h2>
-          {loading ? (
-            <div className="flex justify-center items-center h-40 text-gray-900 dark:text-gray-100">
-              Loading...
+          {/* Two-column layout */}
+          <div className="grid grid-cols-1 md:grid-cols-[2fr_3fr] gap-12 md:gap-16 md:items-center">
+            {/* Left column */}
+            <div>
+
+              <p className="text-xl md:text-2xl font-serif text-card-text leading-relaxed">
+                At Qode, while practicing the future of investing, we&apos;re
+                enabling the{" "}
+                <em className="text-button-text">
+                  Qode of Wealth Generation.
+                </em>
+              </p>
             </div>
-          ) : (
-            <div className="grid gap-6 md:grid-cols-2">
-              {blog.map((post) => {
-                // Format the published date if available
-                const publishedDate = post.published_at
-                  ? new Date(post.published_at).toLocaleDateString("en-IN", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      year: "numeric",
-                    })
-                  : "Unknown Date";
-                return (
-                  <Card
-                    key={post.id}
-                    className="bg-white/50 backdrop-blur-sm card-shadow border-0 cursor-pointer"
-                    onClick={() => (window.location.href = `https://www.qodeinvest.com/insights/${post.slug}`)}
+
+            {/* Right column */}
+            <div className="space-y-6 text-card-text-secondary leading-relaxed text-justify">
+              <p>
+                In a world where investment decisions are often shaped by
+                intuition, instinct, and speculation, we follow a more thoughtful
+                and structured approach, where technology is a powerful enabler
+                that enhances decision-making, but human expertise remains at the
+                core.
+              </p>
+              <p>
+                As a quant-focused asset management firm, we apply knowledge,
+                curiosity, and analytical depth to uncover the underlying forces
+                shaping markets, helping investors navigate complexity with
+                confidence.
+              </p>
+              <p>
+                Rooted in transparency, discipline, and deep research, our
+                strategies are optimised, resilient, and calibrated, ensuring
+                rationality prevails over panic, and long-term wealth is built
+                with clarity and conviction.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Blog Carousel */}
+      {!loading && posts.length > 0 && currentPost && (
+        <div className="px-4 sm:px-8 md:px-12 pt-8 pb-16">
+          <div className="max-w-5xl mx-auto">
+            <div className="bg-[#E8E5CC] rounded-2xl p-6 md:p-10">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
+                {/* Left: Feature Image */}
+                <div className="bg-white rounded-xl shadow-sm overflow-hidden aspect-[4/3]">
+                  {currentPost.feature_image ? (
+                    <img
+                      key={currentPost.id}
+                      src={getResizedImage(currentPost.feature_image)!}
+                      alt={currentPost.title}
+                      className="w-full h-full object-cover"
+                      loading="eager"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                      <span className="text-2xl font-serif text-card-text-secondary">
+                        Qode
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right: Content */}
+                <div className="flex flex-col justify-between gap-4">
+                  {/* Navigation */}
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={handlePrev}
+                      className="w-9 h-9 flex items-center justify-center rounded border border-card-text-secondary text-card-text-secondary hover:bg-white/50 transition-colors"
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <polyline points="15 18 9 12 15 6" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={handleNext}
+                      className="w-9 h-9 flex items-center justify-center rounded border border-card-text-secondary text-card-text-secondary hover:bg-white/50 transition-colors"
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <polyline points="9 18 15 12 9 6" />
+                      </svg>
+                    </button>
+                    <span className="text-sm text-card-text-secondary">
+                      {currentIndex + 1} of {posts.length}
+                    </span>
+                  </div>
+
+                  {/* Title */}
+                  <h3 className="text-xl md:text-2xl font-serif text-card-text leading-snug">
+                    {currentPost.title}
+                  </h3>
+
+                  {/* Excerpt */}
+                  <p className="text-sm md:text-base text-card-text-secondary leading-relaxed line-clamp-4">
+                    {currentPost.excerpt}
+                  </p>
+
+                  {/* Know More Button */}
+                  <div>
+                  <a
+                    href={getBlogUrl(currentPost.url)}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-logo-green text-white text-sm font-medium rounded-full hover:opacity-90 transition-opacity"
                   >
-                    <CardContent className="p-4">
-                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">{publishedDate}</p>
-                      <h3 className="text-xl font-semibold text-card-text font-heading-bold mb-2">{post.title}</h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">{post.excerpt}</p>
-                      <p className="text-sm font-semibold text-button-text my-2">Read More</p>
-                    </CardContent>
-                  </Card>
-                );
-              })}
+                    Know More
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                      <polyline points="12 5 19 12 12 19" />
+                    </svg>
+                  </a>
+                  </div>
+                </div>
+              </div>
             </div>
+          </div>
+
+          {/* Preload adjacent slide images */}
+          {posts[prevIndex]?.feature_image && (
+            <link
+              rel="prefetch"
+              href={getResizedImage(posts[prevIndex].feature_image)!}
+              as="image"
+            />
+          )}
+          {posts[nextIndex]?.feature_image && (
+            <link
+              rel="prefetch"
+              href={getResizedImage(posts[nextIndex].feature_image)!}
+              as="image"
+            />
           )}
         </div>
-      </DashboardLayout>
-    </>
+      )}
+    </DashboardLayout>
   );
 };
 

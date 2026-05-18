@@ -4,14 +4,14 @@ import "next-auth/jwt";
 declare module "next-auth" {
   interface User {
     icode?: string;
-    accessType?: "admin" | "client";
+    accessType?: "admin" | "client" | "distributor";
   }
   interface Session {
     user: {
       icode?: string;
       name?: string | null;
       email?: string | null;
-      accessType?: "admin" | "client";
+      accessType?: "admin" | "client" | "distributor";
       impersonating?: {
         icode: string;
         name: string;
@@ -24,7 +24,7 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     icode?: string;
-    accessType?: "admin" | "client";
+    accessType?: "admin" | "client" | "distributor";
     impersonating?: {
       icode: string;
       name: string;

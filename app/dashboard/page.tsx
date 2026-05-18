@@ -418,6 +418,10 @@ export default function Portfolio() {
   const isSarla = effectiveIcode === "QUS0007";
   const isSatidham = effectiveIcode === "QUS0010";
   const isDinesh = effectiveIcode === "QUS00072";
+  const isShilpa = effectiveIcode === "QUS00067";
+  const isVikram = effectiveIcode === "QUS00068";
+  const isArwani = effectiveIcode === "QUS00085";
+  const isBifurcatedClient = isDinesh || isShilpa || isVikram || isArwani;
   // Read URL params directly to avoid useSearchParams() which triggers a Suspense boundary
   // and causes a loading flicker (Suspense fallback → page loading state).
   // Safe because during SSR status="loading" so the loading UI renders regardless of param values.
@@ -516,13 +520,21 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         };
 
         fetchSatidhamData();
-      } else if (isDinesh) {
-        const fetchDineshData = async () => {
+      } else if (isBifurcatedClient) {
+        const bifurcatedConfig = isDinesh
+          ? { api: "/api/dinesh-api", qcode: "QAC00053", name: "Dinesh" }
+          : isShilpa
+          ? { api: "/api/shilpa-api", qcode: "QAC00040", name: "Shilpa" }
+          : isVikram
+          ? { api: "/api/vikram-api", qcode: "QAC00043", name: "Vikram Trading" }
+          : { api: "/api/arwani-api", qcode: "QAC00071", name: "Arwani" };
+
+        const fetchBifurcatedData = async () => {
           try {
-            const res = await fetch(`/api/dinesh-api?qcode=QAC00053&accountCode=AC9`, { credentials: "include" });
+            const res = await fetch(`${bifurcatedConfig.api}?qcode=${bifurcatedConfig.qcode}`, { credentials: "include" });
             if (!res.ok) {
               const errorData = await res.json();
-              throw new Error(errorData.error || `Failed to load Dinesh data`);
+              throw new Error(errorData.error || `Failed to load ${bifurcatedConfig.name} data`);
             }
             const data: SarlaApiResponse = await res.json();
             setSarlaData(data);
@@ -541,7 +553,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           }
         };
 
-        fetchDineshData();
+        fetchBifurcatedData();
       } else {
         const fetchAccounts = async () => {
           try {
@@ -569,7 +581,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, router, isSarla, isSatidham, isDinesh, accountCode, isAdmin, isImpersonating]);
+  }, [status, router, isSarla, isSatidham, isBifurcatedClient, accountCode, isAdmin, isImpersonating]);
 
   // Fetch available system tags when account selection changes
   useEffect(() => {
@@ -652,7 +664,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   }, [isDinesh, status, depositTag, navTag, cashflowTag]);
 
   useEffect(() => {
-    if (selectedAccount && status === "authenticated" && !isSarla && !isSatidham && !isDinesh) {
+    if (selectedAccount && status === "authenticated" && !isSarla && !isSatidham && !isBifurcatedClient) {
       const fetchAccountData = async () => {
         setIsLoading(true);
         setError(null);
@@ -784,7 +796,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   const renderCashFlowsTable = () => {
     let transactions: { date: string; amount: number }[] = [];
 
-    if ((isSarla || isSatidham || isDinesh) && sarlaData && selectedStrategy) {
+    if ((isSarla || isSatidham || isBifurcatedClient) && sarlaData && selectedStrategy) {
       transactions = sarlaData[selectedStrategy]?.data?.cashFlows || [];
     } else if (Array.isArray(stats)) {
       transactions = stats.flatMap((item) => item.stats.cashFlows || []);
@@ -1112,7 +1124,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   };
 
   const renderSarlaStrategyTabs = () => {
-    if (!(isSarla || isSatidham || isDinesh) || !sarlaData || availableStrategies.length === 0) return null;
+    if (!(isSarla || isSatidham || isBifurcatedClient) || !sarlaData || availableStrategies.length === 0) return null;
 
     return (
       <div className="mb-4 block sm:hidden">
@@ -1331,7 +1343,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   };
 
   const renderDineshContent = () => {
-    if (!isDinesh || !sarlaData || !selectedStrategy || !sarlaData[selectedStrategy]) {
+    if (!isBifurcatedClient || !sarlaData || !selectedStrategy || !sarlaData[selectedStrategy]) {
       return null;
     }
 
@@ -1345,6 +1357,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     const lastDate = getLastDate(filteredEquityCurve, strategyData.metadata?.lastUpdated);
     const isTotalPortfolio = selectedStrategy === "Total Portfolio";
     const isActive = strategyData.metadata.isActive;
+    const hasNavBasedTotalPortfolio = isDinesh || isArwani;
 
     const showDineshTagDropdowns = availableSystemTags.length > 1 && isActive;
 
@@ -1427,13 +1440,14 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         <StatsCards
           stats={convertedStats}
           accountType="sarla"
-          broker="Dinesh"
+          broker={isDinesh ? "Dinesh" : isShilpa ? "Shilpa" : isVikram ? "Vikram Trading" : "Arwani"}
           isTotalPortfolio={isTotalPortfolio}
           isActive={isActive}
           returnViewType={returnViewType}
           setReturnViewType={setReturnViewType}
+          hasNavBasedTotalPortfolio={hasNavBasedTotalPortfolio}
         />
-        {!isTotalPortfolio && (
+        {(!isTotalPortfolio || hasNavBasedTotalPortfolio) && (
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
             <div className="flex-1 min-w-0 sm:w-5/6">
               <RevenueChart
@@ -1454,7 +1468,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           showPmsQawView={false}
         />
         {renderCashFlowsTable()}
-        {isDinesh && !isActive && (
+        {isBifurcatedClient && !isActive && (
           <div className="text-sm text-[#ca8a04]">
             <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
           </div>
@@ -1481,7 +1495,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     );
   }
 
-  if (!isSarla && !isSatidham && !isDinesh && accounts.length === 0) {
+  if (!isSarla && !isSatidham && !isBifurcatedClient && accounts.length === 0) {
     return (
       <div className="p-6 text-center bg-[#f3f4f6] rounded-lg text-card-text">
         No accounts found for this user.
@@ -1489,15 +1503,15 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     );
   }
 
-  if ((isSarla || isSatidham || isDinesh) && (!sarlaData || availableStrategies.length === 0)) {
+  if ((isSarla || isSatidham || isBifurcatedClient) && (!sarlaData || availableStrategies.length === 0)) {
     return (
       <div className="p-6 text-center bg-[#f3f4f6] rounded-lg text-card-text">
-        No strategy data found for {isSarla ? "Sarla" : isSatidham ? "Satidham" : "Dinesh"} user.
+        No strategy data found for {isSarla ? "Sarla" : isSatidham ? "Satidham" : isDinesh ? "Dinesh" : isShilpa ? "Shilpa" : isVikram ? "Vikram Trading" : "Arwani"} user.
       </div>
     );
   }
 
-  const currentMetadata = (isSarla || isSatidham || isDinesh) && sarlaData && selectedStrategy
+  const currentMetadata = (isSarla || isSatidham || isBifurcatedClient) && sarlaData && selectedStrategy
     ? sarlaData[selectedStrategy].metadata
     : metadata;
 
@@ -1527,7 +1541,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           </div>
 
           {/* Dropdown */}
-          {(isSarla || isSatidham || isDinesh) && sarlaData && availableStrategies.length > 0 && (
+          {(isSarla || isSatidham || isBifurcatedClient) && sarlaData && availableStrategies.length > 0 && (
             <div className="hidden sm:block">
               <Select value={selectedStrategy || ""} onValueChange={setSelectedStrategy}>
                 <SelectTrigger className="w-[400px] border-0 card-shadow text-button-text">
@@ -1548,7 +1562,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           )}
         </div>
 
-        {!isSarla && !isSatidham && !isDinesh && (currentMetadata?.strategyName || (stats && !Array.isArray(stats))) && (
+        {!isSarla && !isSatidham && !isBifurcatedClient && (currentMetadata?.strategyName || (stats && !Array.isArray(stats))) && (
           <div className="flex flex-wrap items-center gap-3 mt-4">
             {currentMetadata?.strategyName && (
               <Button
@@ -1588,7 +1602,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
             )}
           </div>
         )}
-        {(isSarla || isSatidham || isDinesh) && sarlaData && availableStrategies.length > 0 && (
+        {(isSarla || isSatidham || isBifurcatedClient) && sarlaData && availableStrategies.length > 0 && (
           <div className="mt-2 text-xs text-card-text-secondary">
             <p><strong>Note:</strong> Inactive strategies may have limited data updates.</p>
           </div>
@@ -1597,7 +1611,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
       {renderSarlaStrategyTabs()}
 
-      {(isSarla || isSatidham || isDinesh) ? (
+      {(isSarla || isSatidham || isBifurcatedClient) ? (
         isSarla ? renderSarlaContent() : isSatidham ? renderSatidhamContent() : renderDineshContent()
       ) : (
         stats && (
@@ -1619,7 +1633,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                           <div>
                             <CardTitle className="text-card-text text-sm sm:text-sm">
                               {item.metadata.account_name} ({item.metadata.account_type.toUpperCase()} - {item.metadata.broker})
-                              {(isSarla || isSatidham || isDinesh) && !item.metadata.isActive ? " (Inactive)" : ""}
+                              {(isSarla || isSatidham || isBifurcatedClient) && !item.metadata.isActive ? " (Inactive)" : ""}
                             </CardTitle>
                             <div className="text-sm text-card-text-secondary mt-1">
                               Strategy: <strong>{item.metadata.strategyName || "Unknown Strategy"}</strong>
@@ -1672,7 +1686,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                           quarterlyPnl={convertedStats.quarterlyPnl}
                           monthlyPnl={convertedStats.monthlyPnl}
                         />
-                        {(isSarla || isSatidham || isDinesh) && !item.metadata.isActive && (
+                        {(isSarla || isSatidham || isBifurcatedClient) && !item.metadata.isActive && (
                           <div className="text-sm text-[#ca8a04]">
                             <strong>Note:</strong> This account is inactive. Data may not be updated regularly.
                           </div>
@@ -1767,7 +1781,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                         monthlyPnl={convertedStats.monthlyPnl}
                       />
                       {renderCashFlowsTable()}
-                      {(isSarla || isSatidham || isDinesh) && metadata && !metadata.isActive && (
+                      {(isSarla || isSatidham || isBifurcatedClient) && metadata && !metadata.isActive && (
                         <div className="text-sm text-[#ca8a04]">
                           <strong>Note:</strong> This strategy is inactive. Data may not be updated regularly.
                         </div>

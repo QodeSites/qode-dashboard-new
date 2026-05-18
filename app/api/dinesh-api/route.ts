@@ -1,3 +1,3 @@
-import { PortfolioApi } from '@/app/lib/dinesh-utils';
+import { DineshApi } from '@/app/lib/bifurcated-portfolio-utils';
 
-export const GET = PortfolioApi.GET;
+export const GET = DineshApi.GET;

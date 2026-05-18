@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
+import { BLOCKED_ICODES } from "@/lib/blocked-icodes";
 
 export const authOptions = {
   providers: [
@@ -15,23 +16,39 @@ export const authOptions = {
           return null;
         }
 
+        const identifierLower = credentials.identifier.toLowerCase();
+        const passwordLower = credentials.password.toLowerCase();
+
         // Check admin credentials from env
         const adminEmails = (process.env.ADMIN_EMAILS || "")
           .split(",")
-          .map((e) => e.trim())
+          .map((e) => e.trim().toLowerCase())
           .filter(Boolean);
         const adminPasswords = (process.env.ADMIN_PASSWORDS || "")
           .split(",")
-          .map((p) => p.trim())
+          .map((p) => p.trim().toLowerCase())
           .filter(Boolean);
 
-        const adminIndex = adminEmails.indexOf(credentials.identifier);
-        if (adminIndex !== -1 && adminPasswords[adminIndex] === credentials.password) {
+        const adminIndex = adminEmails.indexOf(identifierLower);
+        if (adminIndex !== -1 && adminPasswords[adminIndex] === passwordLower) {
           return {
             id: "admin",
             name: adminEmails[adminIndex].split("@")[0],
-            email: credentials.identifier,
+            email: adminEmails[adminIndex],
             accessType: "admin" as const,
+          };
+        }
+
+        // Distributor credentials (hardcoded for now)
+        if (
+          identifierLower === "live@qodeinvest.com" &&
+          passwordLower === "live123"
+        ) {
+          return {
+            id: "distributor",
+            name: "Distributor",
+            email: "dist@qodeinvest.com",
+            accessType: "distributor" as const,
           };
         }
 
@@ -46,6 +63,10 @@ export const authOptions = {
         });
 
         if (!user || user.password !== credentials.password) {
+          return null;
+        }
+
+        if (user.icode && BLOCKED_ICODES.has(user.icode)) {
           return null;
         }
 
