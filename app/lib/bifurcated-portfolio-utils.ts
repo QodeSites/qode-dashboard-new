@@ -77,6 +77,15 @@ interface SchemeTagConfig {
   startDate: Date;
 }
 
+// Per-strategy system_tag overrides driven by the dashboard dropdown. Each
+// override targets a specific query family — applied only to the scheme that
+// matches the request's `scheme` param (per-strategy scope).
+interface TagOverrides {
+  depositTag?: string;   // → replaces schemeTags.depositTag in deposit/exposure queries
+  navTag?: string;       // → replaces schemeTags.navTag in NAV/PnL queries (history, totalProfit, returns, trailing, monthly/quarterly)
+  cashflowTag?: string;  // → replaces the system_tag used for cash-flow queries (defaults to schemeTags.depositTag)
+}
+
 interface PortfolioConfig {
   current: string;
   metrics: string;
@@ -409,24 +418,27 @@ class BifurcatedPortfolioEngine {
 
   private async getAmountDeposited(
     qcode: string,
-    scheme: string
+    scheme: string,
+    tagOverrides?: TagOverrides
   ): Promise<number> {
     if (scheme === this.config.oldSchemeName) return 0;
 
     if (scheme === "Total Portfolio") {
       // Always derive from combined cash flows (frozen old + DB new) —
       // the DB may not have old period capital_in_out entries even when
-      // deposit tags are shared.
+      // deposit tags are shared. Overrides target one scheme only; do
+      // not propagate to the aggregate's sub-scheme calls.
       const cashFlows = await this.getCashFlows(qcode, "Total Portfolio");
       return cashFlows.reduce((sum, flow) => sum + flow.amount, 0);
     }
 
     const schemeTags = this.getSchemeTagsAndDate(scheme);
+    const depositTag = tagOverrides?.depositTag ?? schemeTags.depositTag;
     const hasOwnTags = this.hasPerSchemeTags(scheme);
     const depositSum = await this.msTable.aggregate({
       where: {
         qcode,
-        system_tag: schemeTags.depositTag,
+        system_tag: depositTag,
         // Per-scheme tags (QYE++): always date-filter — it's an isolated
         // parallel scheme. Client-level tag shared with old scheme
         // (Shilpa/Vikram): no date filter. Client-level tag not shared
@@ -443,7 +455,8 @@ class BifurcatedPortfolioEngine {
 
   private async getLatestExposure(
     qcode: string,
-    scheme: string
+    scheme: string,
+    tagOverrides?: TagOverrides
   ): Promise<{
     portfolioValue: number;
     drawdown: number;
@@ -500,10 +513,11 @@ class BifurcatedPortfolioEngine {
     }
 
     const schemeTags = this.getSchemeTagsAndDate(scheme);
+    const depositTag = tagOverrides?.depositTag ?? schemeTags.depositTag;
     const record = await this.msTable.findFirst({
       where: {
         qcode,
-        system_tag: schemeTags.depositTag,
+        system_tag: depositTag,
         date: { gte: schemeTags.startDate },
       },
       orderBy: { date: "desc" },
@@ -526,7 +540,8 @@ class BifurcatedPortfolioEngine {
 
   private async getHistoricalData(
     qcode: string,
-    scheme: string
+    scheme: string,
+    tagOverrides?: TagOverrides
   ): Promise<
     {
       date: Date;
@@ -621,10 +636,11 @@ class BifurcatedPortfolioEngine {
     }
 
     const schemeTags = this.getSchemeTagsAndDate(scheme);
+    const navTag = tagOverrides?.navTag ?? schemeTags.navTag;
     const data = await this.msTable.findMany({
       where: {
         qcode,
-        system_tag: schemeTags.navTag,
+        system_tag: navTag,
         date: { gte: schemeTags.startDate },
         nav: { not: null },
       },
@@ -651,7 +667,8 @@ class BifurcatedPortfolioEngine {
 
   private async getCashFlows(
     qcode: string,
-    scheme: string
+    scheme: string,
+    tagOverrides?: TagOverrides
   ): Promise<CashFlow[]> {
     if (scheme === this.config.oldSchemeName) {
       return this.frozenData.data.cashFlows;
@@ -676,10 +693,14 @@ class BifurcatedPortfolioEngine {
     }
 
     const schemeTags = this.getSchemeTagsAndDate(scheme);
+    // Cashflow queries default to the deposit tag; the cashflowTag override
+    // lets users inspect cash flows under a different system_tag without
+    // touching the deposit/exposure aggregates.
+    const cashflowTag = tagOverrides?.cashflowTag ?? schemeTags.depositTag;
     const data = await this.msTable.findMany({
       where: {
         qcode,
-        system_tag: schemeTags.depositTag,
+        system_tag: cashflowTag,
         // Always filter by date — only show cash flows from the scheme's
         // inception onwards.
         date: { gte: schemeTags.startDate },
@@ -701,7 +722,8 @@ class BifurcatedPortfolioEngine {
 
   private async getTotalProfit(
     qcode: string,
-    scheme: string
+    scheme: string,
+    tagOverrides?: TagOverrides
   ): Promise<number> {
     if (scheme === this.config.oldSchemeName) {
       return parseFloat(this.frozenData.data.totalProfit);
@@ -736,10 +758,11 @@ class BifurcatedPortfolioEngine {
     }
 
     const schemeTags = this.getSchemeTagsAndDate(scheme);
+    const navTag = tagOverrides?.navTag ?? schemeTags.navTag;
     const profitSum = await this.msTable.aggregate({
       where: {
         qcode,
-        system_tag: schemeTags.navTag,
+        system_tag: navTag,
         date: { gte: schemeTags.startDate },
         pnl: { not: null },
       },
@@ -778,7 +801,8 @@ class BifurcatedPortfolioEngine {
 
   private async calculatePortfolioReturns(
     qcode: string,
-    scheme: string
+    scheme: string,
+    tagOverrides?: TagOverrides
   ): Promise<number> {
     if (scheme === this.config.oldSchemeName) {
       return parseFloat(this.frozenData.data.return);
@@ -875,7 +899,11 @@ class BifurcatedPortfolioEngine {
       }
     }
 
-    const historicalData = await this.getHistoricalData(qcode, scheme);
+    const historicalData = await this.getHistoricalData(
+      qcode,
+      scheme,
+      tagOverrides
+    );
     if (historicalData.length < 2) return 0;
 
     const originalFirstNav = historicalData[0].nav;
@@ -941,7 +969,8 @@ class BifurcatedPortfolioEngine {
   private async calculateTrailingReturns(
     qcode: string,
     scheme: string,
-    drawdownMetrics: { mdd: number; currentDD: number }
+    drawdownMetrics: { mdd: number; currentDD: number },
+    tagOverrides?: TagOverrides
   ): Promise<Record<string, number | null | string>> {
     if (scheme === this.config.oldSchemeName) {
       return this.frozenData.data.trailingReturns;
@@ -953,7 +982,7 @@ class BifurcatedPortfolioEngine {
     const useRebasedData = scheme === "Total Portfolio" && !this.sharedNavTag;
     const historicalData = (useRawDbNav)
       ? null
-      : await this.getHistoricalData(qcode, scheme);
+      : await this.getHistoricalData(qcode, scheme, tagOverrides);
     const normalizedData = useRawDbNav
       ? await this.getRawHistoricalNav(qcode)
       : (historicalData || []).map((entry) => ({ date: this.normalizeDate(entry.date), nav: entry.nav }))
@@ -1075,7 +1104,8 @@ class BifurcatedPortfolioEngine {
 
   private async calculateMonthlyPnL(
     qcode: string,
-    scheme: string
+    scheme: string,
+    tagOverrides?: TagOverrides
   ): Promise<MonthlyPnL> {
     if (scheme === this.config.oldSchemeName) {
       return this.frozenData.data.monthlyPnl;
@@ -1158,7 +1188,11 @@ class BifurcatedPortfolioEngine {
       return navBasedResult;
     }
 
-    const historicalData = await this.getHistoricalData(qcode, scheme);
+    const historicalData = await this.getHistoricalData(
+      qcode,
+      scheme,
+      tagOverrides
+    );
     // Fresh active schemes (newSchemeName + per-scheme parallel schemes like
     // QYE++) use prevNav=100 on day 1 as the month-1 starting baseline.
     return this.computeMonthlyPnLFromHistoricalData(
@@ -1279,7 +1313,8 @@ class BifurcatedPortfolioEngine {
 
   private async calculateQuarterlyPnL(
     qcode: string,
-    scheme: string
+    scheme: string,
+    tagOverrides?: TagOverrides
   ): Promise<QuarterlyPnL> {
     if (scheme === this.config.oldSchemeName) {
       return this.frozenData.data.quarterlyPnl;
@@ -1344,7 +1379,11 @@ class BifurcatedPortfolioEngine {
       return navBasedResult;
     }
 
-    const historicalData = await this.getHistoricalData(qcode, scheme);
+    const historicalData = await this.getHistoricalData(
+      qcode,
+      scheme,
+      tagOverrides
+    );
     // Fresh active schemes (newSchemeName + per-scheme parallel schemes like
     // QYE++) use prevNav=100 on day 1 as the quarter-1 starting baseline.
     return this.computeQuarterlyPnLFromHistoricalData(
@@ -1449,6 +1488,20 @@ class BifurcatedPortfolioEngine {
       const qcode =
         url.searchParams.get("qcode") || this.config.defaultQcode;
 
+      // Per-strategy system_tag override. The dashboard sends `scheme` (the
+      // currently active strategy) along with one or more tag overrides; the
+      // override is applied only when iterating that scheme — other strategies
+      // continue to use their config-defined tags. Total Portfolio is not a
+      // valid target (its data branches don't consult schemeTags), so the
+      // frontend hides the dropdown there.
+      const overrideScheme = url.searchParams.get("scheme") || null;
+      const depositTagOverride = url.searchParams.get("depositTag");
+      const navTagOverride = url.searchParams.get("navTag");
+      const cashflowTagOverride = url.searchParams.get("cashflowTag");
+      const hasAnyOverride =
+        !!overrideScheme &&
+        (!!depositTagOverride || !!navTagOverride || !!cashflowTagOverride);
+
       // Drive the scheme list + response order from the portfolio mapping
       // (JS preserves insertion order), so adding a parallel scheme like
       // Dinesh's QYE++ auto-includes it without touching the engine.
@@ -1468,12 +1521,21 @@ class BifurcatedPortfolioEngine {
           continue;
         }
 
-        const investedAmount = await this.getAmountDeposited(qcode, scheme);
-        const latestExposure = await this.getLatestExposure(qcode, scheme);
-        const totalProfit = await this.getTotalProfit(qcode, scheme);
-        const returns = await this.calculatePortfolioReturns(qcode, scheme);
-        const historicalData = await this.getHistoricalData(qcode, scheme);
-        const cashFlows = await this.getCashFlows(qcode, scheme);
+        const tagOverrides: TagOverrides | undefined =
+          hasAnyOverride && scheme === overrideScheme
+            ? {
+                depositTag: depositTagOverride ?? undefined,
+                navTag: navTagOverride ?? undefined,
+                cashflowTag: cashflowTagOverride ?? undefined,
+              }
+            : undefined;
+
+        const investedAmount = await this.getAmountDeposited(qcode, scheme, tagOverrides);
+        const latestExposure = await this.getLatestExposure(qcode, scheme, tagOverrides);
+        const totalProfit = await this.getTotalProfit(qcode, scheme, tagOverrides);
+        const returns = await this.calculatePortfolioReturns(qcode, scheme, tagOverrides);
+        const historicalData = await this.getHistoricalData(qcode, scheme, tagOverrides);
+        const cashFlows = await this.getCashFlows(qcode, scheme, tagOverrides);
 
         const rawEquityCurve = historicalData.map((d) => ({
           date: this.normalizeDate(d.date),
@@ -1524,12 +1586,14 @@ class BifurcatedPortfolioEngine {
         const trailingReturns = await this.calculateTrailingReturns(
           qcode,
           scheme,
-          drawdownMetrics
+          drawdownMetrics,
+          tagOverrides
         );
-        const monthlyPnl = await this.calculateMonthlyPnL(qcode, scheme);
+        const monthlyPnl = await this.calculateMonthlyPnL(qcode, scheme, tagOverrides);
         const quarterlyPnl = await this.calculateQuarterlyPnL(
           qcode,
-          scheme
+          scheme,
+          tagOverrides
         );
 
         // Per-scheme display override: e.g. Dinesh's QTF shows 0 instead of

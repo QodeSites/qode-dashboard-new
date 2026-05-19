@@ -404,6 +404,18 @@ async function fetchBenchmarkReturns(
   return emptyResult;
 }
 
+// Bifurcated clients (Dinesh/Shilpa/Vikram/Arwani) share a single dashboard
+// codepath but each hits its own dedicated API route + qcode. Lifted out of
+// the component so the initial fetch, the system-tags fetch, and the
+// per-strategy tag override refetch all read from one source.
+type BifurcatedClientFlags = { isDinesh: boolean; isShilpa: boolean; isVikram: boolean; isArwani: boolean };
+function getBifurcatedConfig(flags: BifurcatedClientFlags): { api: string; qcode: string; name: string } {
+  if (flags.isDinesh) return { api: "/api/dinesh-api", qcode: "QAC00053", name: "Dinesh" };
+  if (flags.isShilpa) return { api: "/api/shilpa-api", qcode: "QAC00040", name: "Shilpa" };
+  if (flags.isVikram) return { api: "/api/vikram-api", qcode: "QAC00043", name: "Vikram Trading" };
+  return { api: "/api/arwani-api", qcode: "QAC00071", name: "Arwani" };
+}
+
 export default function Portfolio() {
   const { data: session, status, update: updateSession } = useSession();
   const router = useRouter();
@@ -521,13 +533,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
         fetchSatidhamData();
       } else if (isBifurcatedClient) {
-        const bifurcatedConfig = isDinesh
-          ? { api: "/api/dinesh-api", qcode: "QAC00053", name: "Dinesh" }
-          : isShilpa
-          ? { api: "/api/shilpa-api", qcode: "QAC00040", name: "Shilpa" }
-          : isVikram
-          ? { api: "/api/vikram-api", qcode: "QAC00043", name: "Vikram Trading" }
-          : { api: "/api/arwani-api", qcode: "QAC00071", name: "Arwani" };
+        const bifurcatedConfig = getBifurcatedConfig({ isDinesh, isShilpa, isVikram, isArwani });
 
         const fetchBifurcatedData = async () => {
           try {
@@ -591,11 +597,14 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     setCashflowTag(null);
     setAvailableSystemTags([]);
 
-    // Dinesh: fetch tags for his fixed qcode
-    if (isDinesh && status === "authenticated") {
+    // Bifurcated clients (Dinesh/Shilpa/Vikram/Arwani): fetch tags for the
+    // client's fixed qcode. Each scheme has its own configured tags; the
+    // dropdown lets users substitute any tag available under this qcode.
+    if (isBifurcatedClient && status === "authenticated") {
+      const { qcode } = getBifurcatedConfig({ isDinesh, isShilpa, isVikram, isArwani });
       const fetchTags = async () => {
         try {
-          const res = await fetch(`/api/system-tags?qcode=QAC00053`, { credentials: "include" });
+          const res = await fetch(`/api/system-tags?qcode=${qcode}`, { credentials: "include" });
           if (res.ok) {
             const data = await res.json();
             setAvailableSystemTags(data.tags || []);
@@ -630,27 +639,42 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     };
 
     fetchSystemTags();
-  }, [selectedAccount, accounts, isSarla, isSatidham, isDinesh, status]);
+  }, [selectedAccount, accounts, isSarla, isSatidham, isBifurcatedClient, isDinesh, isShilpa, isVikram, isArwani, status]);
 
-  // Re-fetch Dinesh data when tag overrides change
+  // Reset tag overrides when the user switches to a different strategy. Each
+  // strategy has its own config-defined tags; the override is per-strategy
+  // (option-2 semantics), so picking a different strategy starts fresh.
   useEffect(() => {
-    if (!isDinesh || status !== "authenticated") return;
-    if (!depositTag && !navTag && !cashflowTag) return;
+    setDepositTag(null);
+    setNavTag(null);
+    setCashflowTag(null);
+  }, [selectedStrategy]);
 
-    const refetchDineshData = async () => {
+  // Re-fetch bifurcated-client data when tag overrides change. Sends `scheme`
+  // so the backend scopes the override to the currently active strategy only —
+  // other strategies in the response keep their config tags.
+  useEffect(() => {
+    if (!isBifurcatedClient || status !== "authenticated") return;
+    if (!depositTag && !navTag && !cashflowTag) return;
+    if (!selectedStrategy) return;
+
+    const { api, qcode } = getBifurcatedConfig({ isDinesh, isShilpa, isVikram, isArwani });
+
+    const refetchBifurcatedData = async () => {
       setIsLoading(true);
       try {
         const tagParams = [
+          `scheme=${encodeURIComponent(selectedStrategy)}`,
           depositTag && `depositTag=${encodeURIComponent(depositTag)}`,
           navTag && `navTag=${encodeURIComponent(navTag)}`,
           cashflowTag && `cashflowTag=${encodeURIComponent(cashflowTag)}`,
         ].filter(Boolean).join("&");
 
         const res = await fetch(
-          `/api/dinesh-api?qcode=QAC00053&accountCode=AC9${tagParams ? `&${tagParams}` : ""}`,
+          `${api}?qcode=${qcode}&${tagParams}`,
           { credentials: "include" }
         );
-        if (!res.ok) throw new Error("Failed to refetch Dinesh data");
+        if (!res.ok) throw new Error("Failed to refetch portfolio data");
         const data: SarlaApiResponse = await res.json();
         setSarlaData(data);
         setIsLoading(false);
@@ -660,8 +684,8 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
       }
     };
 
-    refetchDineshData();
-  }, [isDinesh, status, depositTag, navTag, cashflowTag]);
+    refetchBifurcatedData();
+  }, [isBifurcatedClient, isDinesh, isShilpa, isVikram, isArwani, status, selectedStrategy, depositTag, navTag, cashflowTag]);
 
   useEffect(() => {
     if (selectedAccount && status === "authenticated" && !isSarla && !isSatidham && !isBifurcatedClient) {
@@ -1359,7 +1383,12 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     const isActive = strategyData.metadata.isActive;
     const hasNavBasedTotalPortfolio = isDinesh || isArwani;
 
-    const showDineshTagDropdowns = availableSystemTags.length > 1 && isActive;
+    // Override is per-strategy (option-2 semantics). The "Total Portfolio"
+    // aggregate doesn't consult scheme tags for clients with qodeTotalPortfolioTag
+    // (Dinesh/Arwani) or delegates to sub-schemes (Shilpa/Vikram), so the
+    // override has no effect there — hide the dropdown to avoid confusion.
+    const showDineshTagDropdowns =
+      availableSystemTags.length > 1 && isActive && !isTotalPortfolio;
 
     return (
       <div className="space-y-6">
