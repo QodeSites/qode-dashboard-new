@@ -517,6 +517,7 @@ const HoldingsSummaryPage = () => {
     const isSarla = session?.user?.icode === "QUS0007";
     const isSatidham = session?.user?.icode === "QUS0010";
     const isArwani = session?.user?.icode === "QUS00085";
+    const isAshwin = session?.user?.icode === "QUS00097";
     const isDinesh = session?.user?.icode === "QUS00072";
 
     useEffect(() => {
@@ -529,6 +530,8 @@ const HoldingsSummaryPage = () => {
 
         if (isArwani) {
             fetchArwaniHoldings();
+        } else if (isAshwin) {
+            fetchAshwinHoldings();
         } else if (isDinesh) {
             fetchDineshHoldings();
         } else if (isSarla || isSatidham) {
@@ -536,13 +539,13 @@ const HoldingsSummaryPage = () => {
         } else {
             fetchAccounts();
         }
-    }, [status, router, isSarla, isSatidham, isArwani, isDinesh, accountCode]);
+    }, [status, router, isSarla, isSatidham, isArwani, isAshwin, isDinesh, accountCode]);
 
     useEffect(() => {
-        if (selectedAccount && !isSarla && !isSatidham && !isArwani && !isDinesh) {
+        if (selectedAccount && !isSarla && !isSatidham && !isArwani && !isAshwin && !isDinesh) {
             fetchHoldingsData();
         }
-    }, [selectedAccount, isSarla, isSatidham, isArwani, isDinesh]);
+    }, [selectedAccount, isSarla, isSatidham, isArwani, isAshwin, isDinesh]);
 
     const fetchAccounts = async () => {
         try {
@@ -569,6 +572,32 @@ const HoldingsSummaryPage = () => {
             if (!res.ok) {
                 const errorData = await res.json();
                 throw new Error(errorData.error || "Failed to load Arwani holdings");
+            }
+            const data: {
+                holdingsSummary: HoldingsSummary;
+                availableStrategies: string[];
+                dataAsOfDate: string | null;
+            } = await res.json();
+
+            setHoldingsData(data.holdingsSummary);
+            setAvailableStrategies(data.availableStrategies || []);
+            if (data.dataAsOfDate) {
+                const d = new Date(data.dataAsOfDate);
+                if (!isNaN(d.getTime())) setLastUpdatedDate(d);
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to load holdings data");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const fetchAshwinHoldings = async () => {
+        try {
+            const res = await fetch(`/api/ashwin-holdings-api`, { credentials: "include" });
+            if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.error || "Failed to load Ashwin holdings");
             }
             const data: {
                 holdingsSummary: HoldingsSummary;
