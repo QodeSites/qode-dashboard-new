@@ -89,7 +89,7 @@ export function AdminStats({
               {isLoading ? (
                 <div className="h-8 w-24 bg-card-text-secondary/10 rounded animate-pulse" />
               ) : (
-                <p className="text-3xl font-bold text-card-text">
+                <p className="text-3xl font-bold text-card-text whitespace-nowrap">
                   {formatInr(totalAumManaged)}
                 </p>
               )}
