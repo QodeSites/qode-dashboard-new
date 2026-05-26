@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import { useSession } from "next-auth/react";
+import { findByIcode } from "@/app/lib/bifurcated-clients-registry";
 import { useRouter, useSearchParams } from "next/navigation";
 import DashboardLayout from '../dashboard/layout';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -516,9 +517,7 @@ const HoldingsSummaryPage = () => {
 
     const isSarla = session?.user?.icode === "QUS0007";
     const isSatidham = session?.user?.icode === "QUS0010";
-    const isArwani = session?.user?.icode === "QUS00085";
-    const isAshwin = session?.user?.icode === "QUS00097";
-    const isDinesh = session?.user?.icode === "QUS00072";
+    const bifurcatedClient = findByIcode(session?.user?.icode ?? "");
 
     useEffect(() => {
         if (status === "unauthenticated") {
@@ -528,24 +527,20 @@ const HoldingsSummaryPage = () => {
 
         if (status !== "authenticated") return;
 
-        if (isArwani) {
-            fetchArwaniHoldings();
-        } else if (isAshwin) {
-            fetchAshwinHoldings();
-        } else if (isDinesh) {
-            fetchDineshHoldings();
+        if (bifurcatedClient) {
+            fetchBifurcatedHoldings(bifurcatedClient.qcode);
         } else if (isSarla || isSatidham) {
             fetchHoldingsForSpecialAccounts();
         } else {
             fetchAccounts();
         }
-    }, [status, router, isSarla, isSatidham, isArwani, isAshwin, isDinesh, accountCode]);
+    }, [status, router, isSarla, isSatidham, bifurcatedClient, accountCode]);
 
     useEffect(() => {
-        if (selectedAccount && !isSarla && !isSatidham && !isArwani && !isAshwin && !isDinesh) {
+        if (selectedAccount && !isSarla && !isSatidham && !bifurcatedClient) {
             fetchHoldingsData();
         }
-    }, [selectedAccount, isSarla, isSatidham, isArwani, isAshwin, isDinesh]);
+    }, [selectedAccount, isSarla, isSatidham, bifurcatedClient]);
 
     const fetchAccounts = async () => {
         try {
@@ -566,64 +561,12 @@ const HoldingsSummaryPage = () => {
         }
     };
 
-    const fetchArwaniHoldings = async () => {
+    const fetchBifurcatedHoldings = async (qcode: string) => {
         try {
-            const res = await fetch(`/api/arwani-holdings-api`, { credentials: "include" });
+            const res = await fetch(`/api/bifurcated-holdings?qcode=${qcode}`, { credentials: "include" });
             if (!res.ok) {
                 const errorData = await res.json();
-                throw new Error(errorData.error || "Failed to load Arwani holdings");
-            }
-            const data: {
-                holdingsSummary: HoldingsSummary;
-                availableStrategies: string[];
-                dataAsOfDate: string | null;
-            } = await res.json();
-
-            setHoldingsData(data.holdingsSummary);
-            setAvailableStrategies(data.availableStrategies || []);
-            if (data.dataAsOfDate) {
-                const d = new Date(data.dataAsOfDate);
-                if (!isNaN(d.getTime())) setLastUpdatedDate(d);
-            }
-        } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to load holdings data");
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const fetchAshwinHoldings = async () => {
-        try {
-            const res = await fetch(`/api/ashwin-holdings-api`, { credentials: "include" });
-            if (!res.ok) {
-                const errorData = await res.json();
-                throw new Error(errorData.error || "Failed to load Ashwin holdings");
-            }
-            const data: {
-                holdingsSummary: HoldingsSummary;
-                availableStrategies: string[];
-                dataAsOfDate: string | null;
-            } = await res.json();
-
-            setHoldingsData(data.holdingsSummary);
-            setAvailableStrategies(data.availableStrategies || []);
-            if (data.dataAsOfDate) {
-                const d = new Date(data.dataAsOfDate);
-                if (!isNaN(d.getTime())) setLastUpdatedDate(d);
-            }
-        } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to load holdings data");
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const fetchDineshHoldings = async () => {
-        try {
-            const res = await fetch(`/api/dinesh-holdings-api`, { credentials: "include" });
-            if (!res.ok) {
-                const errorData = await res.json();
-                throw new Error(errorData.error || "Failed to load Dinesh holdings");
+                throw new Error(errorData.error || "Failed to load holdings");
             }
             const data: {
                 holdingsSummary: HoldingsSummary;
