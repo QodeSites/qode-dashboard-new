@@ -5,10 +5,7 @@ import type {
 import { DINESH_CONFIG } from "./clients/dinesh";
 import { ARWANI_CONFIG } from "./clients/arwani";
 import { ASHWIN_CONFIG } from "./clients/ashwin";
-import {
-  DINESH_FROZEN_DATA,
-  EMPTY_FROZEN_DATA,
-} from "./bifurcated-portfolio-data";
+import { EMPTY_FROZEN_DATA } from "./bifurcated-portfolio-data";
 
 // Single source of truth for clients whose data lives in
 // bifurcated_master_sheet_test. Add a new entry here when onboarding a new
@@ -33,7 +30,13 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     qcode: "QAC00053",
     displayName: "Dinesh",
     config: DINESH_CONFIG,
-    frozenData: DINESH_FROZEN_DATA,
+    // EMPTY_FROZEN_DATA (not DINESH_FROZEN_DATA) — matches the pre-refactor
+    // dineshEngine instantiation. The QTF scheme was migrated from frozen
+    // data to live DB queries; with oldSchemeName="__no_old_scheme__", the
+    // engine's frozen-scheme branches never fire for Dinesh, so frozenData
+    // is effectively a no-op. Preserving EMPTY_FROZEN_DATA keeps byte-level
+    // parity with the prior engine instance.
+    frozenData: EMPTY_FROZEN_DATA,
     hasNavBasedTotalPortfolio: true,
   },
   {
