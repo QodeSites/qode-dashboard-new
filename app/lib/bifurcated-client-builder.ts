@@ -48,6 +48,12 @@ export interface DefineBifurcatedClientInput {
       inceptionDate: string; // YYYY-MM-DD
       exposure: string;      // system_tag for current/metrics (the "exposure" tag)
       profit: string;        // system_tag for nav (the "profit" tag)
+      // Mark a scheme as no longer actively trading. The engine still pulls
+      // its historical data normally; the dashboard adds an "(Inactive)"
+      // suffix in the strategy dropdown + scheme badge, dims the badge, and
+      // shows the "data may not be updated regularly" note. Excel export
+      // inherits the flag too. Default: false (i.e. active).
+      inactive?: boolean;
     }
   >;
   // Optional overrides — rarely needed.
@@ -80,7 +86,7 @@ export function defineBifurcatedClient(
       current: scheme.exposure,
       metrics: scheme.exposure,
       nav: scheme.profit,
-      isActive: true,
+      isActive: !scheme.inactive,
       tags: {
         depositTag: scheme.exposure,
         navTag: scheme.profit,

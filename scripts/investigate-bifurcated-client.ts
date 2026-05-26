@@ -176,6 +176,7 @@ export const ${fileName.toUpperCase().replace(/-/g, "_")}_CONFIG = defineBifurca
       console.log(`      inceptionDate: "${s.inceptionDate}",`);
       console.log(`      exposure: "<FILL_FROM_DATA_TEAM>",  // hint: detected "${s.exposureTagGuess}"`);
       console.log(`      profit:   "<FILL_FROM_DATA_TEAM>",`);
+      console.log(`      // inactive: true,  // uncomment if the data team marked this scheme inactive`);
       console.log(`    },`);
     }
     console.log(`  },`);

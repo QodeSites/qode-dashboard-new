@@ -99,12 +99,38 @@ git commit -m "feat(bifurcated): add client Mangesh Hirve"
 - The `BifurcatedPortfolioEngine` class — no instances declared explicitly;
   the registry's `engineByQcode` map creates them automatically.
 
-## When to use the verbose `ClientConfig` instead of `defineBifurcatedClient`
+## Marking a scheme as inactive
 
-The helper covers the dominant "multi-parallel-active-schemes + Qode Total
-Portfolio aggregate" pattern. If the new client has an inactive scheme
-(like Dinesh's QTF), the helper does not model that — write a verbose
-`ClientConfig` directly, modeled on `app/lib/clients/dinesh.ts`.
+If a scheme has stopped trading (no new positions; historical data only),
+add `inactive: true` to that scheme in the config file:
+
+```ts
+"Scheme QYE++": {
+  inceptionDate: "2025-12-09",
+  exposure: "QYE++ Zerodha Total Portfolio",
+  profit:   "QYE++ Total Portfolio Value",
+  inactive: true,
+},
+```
+
+When the user opens the dashboard the inactive scheme shows up with:
+- an `(Inactive)` suffix in the strategy dropdown and on the scheme badge,
+- a dimmed (70% opacity) badge,
+- a bottom note: *"Note: This strategy is inactive. Data may not be updated regularly."*,
+- the Excel export marks the scheme inactive as well.
+
+The engine continues to serve the scheme's historical data normally; only
+the UI changes. Default (when the field is omitted) is `inactive: false`.
+
+## When the helper isn't enough
+
+The `defineBifurcatedClient` helper covers the dominant pattern (one or
+more parallel active schemes + Qode Total Portfolio aggregate + optional
+inactive schemes). If you need something it doesn't model — e.g. a
+fully-wound-down scheme with frozen historical data and a
+`displayAmountInvestedAsZero: true` accounting carve-out (Dinesh's QTF) —
+write a verbose `ClientConfig` directly, modeled on
+`app/lib/clients/dinesh.ts`.
 
 ## Script runner: tsx vs ts-node
 
