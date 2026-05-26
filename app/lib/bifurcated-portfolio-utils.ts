@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Decimal } from "@prisma/client/runtime/library";
-import {
-  EMPTY_FROZEN_DATA,
-  SHILPA_FROZEN_DATA,
-  VIKRAM_FROZEN_DATA,
-} from "./bifurcated-portfolio-data";
+import { EMPTY_FROZEN_DATA } from "./bifurcated-portfolio-data";
 // Re-export types and builder from the cycle-free builder module so callers
 // that import from bifurcated-portfolio-utils keep working unchanged.
 export type {
@@ -97,8 +93,6 @@ export interface FrozenSchemeData {
 // ==================== Per-Client Config Imports ====================
 
 import { DINESH_CONFIG } from "./clients/dinesh";
-import { SHILPA_CONFIG } from "./clients/shilpa";
-import { VIKRAM_CONFIG } from "./clients/vikram";
 import { ARWANI_CONFIG } from "./clients/arwani";
 import { ASHWIN_CONFIG } from "./clients/ashwin";
 
@@ -1412,29 +1406,11 @@ export function getEngineForQcode(
   return engineByQcode.get(qcode) ?? null;
 }
 
-// Shilpa and Vikram are NOT in the registry (they still read from master_sheet,
-// not bifurcated_master_sheet_test). Their engines stay standalone.
-const shilpaEngine = new BifurcatedPortfolioEngine(
-  SHILPA_CONFIG,
-  SHILPA_FROZEN_DATA
-);
-const vikramEngine = new BifurcatedPortfolioEngine(
-  VIKRAM_CONFIG,
-  VIKRAM_FROZEN_DATA
-);
-
 // Backward-compat shim exports. distributor-utils.ts:795 still calls
-// DineshApi.GET(fakeReq); these shims delegate to the registry-driven map for
-// the 3 registered clients, and to the standalone engines for Shilpa/Vikram.
+// DineshApi.GET(fakeReq); these shims delegate to the registry-driven map.
 // Removable once all callers migrate to /api/bifurcated-portfolio.
 export const DineshApi = {
   GET: (req: Request) => engineByQcode.get("QAC00053")!.handleGET(req),
-};
-export const ShilpaApi = {
-  GET: (req: Request) => shilpaEngine.handleGET(req),
-};
-export const VikramApi = {
-  GET: (req: Request) => vikramEngine.handleGET(req),
 };
 export const ArwaniApi = {
   GET: (req: Request) => engineByQcode.get("QAC00071")!.handleGET(req),

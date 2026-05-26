@@ -418,12 +418,9 @@ export default function Portfolio() {
 
   const isSarla = effectiveIcode === "QUS0007";
   const isSatidham = effectiveIcode === "QUS0010";
-  // Registry-driven for the 3 bifurcated_master_sheet_test clients. Shilpa and
-  // Vikram remain on legacy per-client routes until their data migrates.
+  // Registry-driven for all bifurcated_master_sheet_test clients.
   const bifurcatedClient = findByIcode(effectiveIcode);
-  const isShilpa = effectiveIcode === "QUS00067";
-  const isVikram = effectiveIcode === "QUS00068";
-  const isBifurcatedClient = !!bifurcatedClient || isShilpa || isVikram;
+  const isBifurcatedClient = !!bifurcatedClient;
   // Read URL params directly to avoid useSearchParams() which triggers a Suspense boundary
   // and causes a loading flicker (Suspense fallback → page loading state).
   // Safe because during SSR status="loading" so the loading UI renders regardless of param values.
@@ -516,16 +513,12 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         };
 
         fetchSatidhamData();
-      } else if (isBifurcatedClient) {
-        const bifurcatedConfig = bifurcatedClient
-          ? {
-              api: "/api/bifurcated-portfolio",
-              qcode: bifurcatedClient.qcode,
-              name: bifurcatedClient.displayName,
-            }
-          : isShilpa
-          ? { api: "/api/shilpa-api", qcode: "QAC00040", name: "Shilpa" }
-          : { api: "/api/vikram-api", qcode: "QAC00043", name: "Vikram Trading" };
+      } else if (isBifurcatedClient && bifurcatedClient) {
+        const bifurcatedConfig = {
+          api: "/api/bifurcated-portfolio",
+          qcode: bifurcatedClient.qcode,
+          name: bifurcatedClient.displayName,
+        };
 
         const fetchBifurcatedData = async () => {
           try {
@@ -1303,7 +1296,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         <StatsCards
           stats={convertedStats}
           accountType="sarla"
-          broker={bifurcatedClient?.displayName ?? (isShilpa ? "Shilpa" : "Vikram Trading")}
+          broker={bifurcatedClient?.displayName ?? ""}
           isTotalPortfolio={isTotalPortfolio}
           isActive={isActive}
           returnViewType={returnViewType}
@@ -1369,7 +1362,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   if ((isSarla || isSatidham || isBifurcatedClient) && (!sarlaData || availableStrategies.length === 0)) {
     return (
       <div className="p-6 text-center bg-[#f3f4f6] rounded-lg text-card-text">
-        No strategy data found for {isSarla ? "Sarla" : isSatidham ? "Satidham" : bifurcatedClient?.displayName ?? (isShilpa ? "Shilpa" : "Vikram Trading")} user.
+        No strategy data found for {isSarla ? "Sarla" : isSatidham ? "Satidham" : bifurcatedClient?.displayName ?? "this"} user.
       </div>
     );
   }
