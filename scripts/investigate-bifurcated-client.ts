@@ -99,9 +99,12 @@ async function main() {
   });
   console.log(`  ${tagRows.length} distinct tag(s) found.`);
 
-  // 3. Detect schemes (heuristic: tags starting with "<PREFIX>++ Zerodha Total Portfolio")
+  // 3. Detect schemes. Matches "<PREFIX> Zerodha Total Portfolio" where PREFIX
+  // is one or more uppercase letters, optionally followed by one or more '+'
+  // signs. This catches QYE+ (retired), QYE++ (current), QAW++ (current),
+  // QTF (Dinesh's retired bare-prefix scheme), etc.
   const schemes: SchemeInfo[] = [];
-  const exposureTagRegex = /^([A-Z]+\+\+)\s+Zerodha Total Portfolio$/;
+  const exposureTagRegex = /^([A-Z]+\+*)\s+Zerodha Total Portfolio$/;
   for (const { system_tag } of tagRows) {
     const m = system_tag.match(exposureTagRegex);
     if (m) {
