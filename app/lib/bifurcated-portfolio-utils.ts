@@ -130,6 +130,7 @@ import { DINESH_CONFIG } from "./clients/dinesh";
 import { SHILPA_CONFIG } from "./clients/shilpa";
 import { VIKRAM_CONFIG } from "./clients/vikram";
 import { ARWANI_CONFIG } from "./clients/arwani";
+import { ASHWIN_CONFIG } from "./clients/ashwin";
 
 // ==================== Helper: defineBifurcatedClient ====================
 // Builder for the Arwani/Ashwin "multi-parallel-active-schemes" pattern.
@@ -210,54 +211,6 @@ export function defineBifurcatedClient(
 
 // ==================== Client Configurations ====================
 
-
-// Ashwin Agarwal: identical shape to Arwani — two parallel active schemes
-// (QYE++ since 2026-02-24, QAW++ added 2026-05-04) and an authoritative
-// Qode Total Portfolio aggregate curve. No inactive scheme.
-const ASHWIN_CONFIG: ClientConfig = {
-  clientName: "Ashwin Agarwal",
-  defaultQcode: "QAC00083",
-  accountCode: "AC13",
-  oldSchemeName: "__no_old_scheme__",
-  newSchemeName: "Scheme QYE++",
-  oldFinalNav: 100,
-  newStartDate: new Date("2026-02-24"),
-  depositSystemTag: "QYE++ Zerodha Total Portfolio",
-  navSystemTag: "QYE++ Zerodha Total Portfolio",
-  oldSchemeDepositTag: "__no_old_deposit_tag__",
-  oldSchemeNavTag: "__no_old_nav_tag__",
-  qodeTotalPortfolioTag: "Qode Total Portfolio",
-  portfolioMapping: {
-    "Total Portfolio": {
-      current: "Total Portfolio",
-      metrics: "Total Portfolio",
-      nav: "Total Portfolio",
-      isActive: true,
-    },
-    "Scheme QYE++": {
-      current: "QYE++ Zerodha Total Portfolio",
-      metrics: "QYE++ Zerodha Total Portfolio",
-      nav: "QYE++ Total Portfolio Value",
-      isActive: true,
-      tags: {
-        depositTag: "QYE++ Zerodha Total Portfolio",
-        navTag: "QYE++ Total Portfolio Value",
-        startDate: new Date("2026-02-24"),
-      },
-    },
-    "Scheme QAW++": {
-      current: "QAW++ Zerodha Total Portfolio",
-      metrics: "QAW++ Zerodha Total Portfolio",
-      nav: "QAW++ Zerodha Total Portfolio",
-      isActive: true,
-      tags: {
-        depositTag: "QAW++ Zerodha Total Portfolio",
-        navTag: "QAW++ Zerodha Total Portfolio",
-        startDate: new Date("2026-05-04"),
-      },
-    },
-  },
-};
 
 // ==================== Engine ====================
 
