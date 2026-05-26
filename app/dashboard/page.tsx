@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
+import { findByIcode } from "@/app/lib/bifurcated-clients-registry";
 import { useRouter } from "next/navigation";
 import { StatsCards } from "@/components/stats-cards";
 import { RevenueChart } from "@/components/revenue-chart";
@@ -417,12 +418,12 @@ export default function Portfolio() {
 
   const isSarla = effectiveIcode === "QUS0007";
   const isSatidham = effectiveIcode === "QUS0010";
-  const isDinesh = effectiveIcode === "QUS00072";
+  // Registry-driven for the 3 bifurcated_master_sheet_test clients. Shilpa and
+  // Vikram remain on legacy per-client routes until their data migrates.
+  const bifurcatedClient = findByIcode(effectiveIcode);
   const isShilpa = effectiveIcode === "QUS00067";
   const isVikram = effectiveIcode === "QUS00068";
-  const isArwani = effectiveIcode === "QUS00085";
-  const isAshwin = effectiveIcode === "QUS00097";
-  const isBifurcatedClient = isDinesh || isShilpa || isVikram || isArwani || isAshwin;
+  const isBifurcatedClient = !!bifurcatedClient || isShilpa || isVikram;
   // Read URL params directly to avoid useSearchParams() which triggers a Suspense boundary
   // and causes a loading flicker (Suspense fallback → page loading state).
   // Safe because during SSR status="loading" so the loading UI renders regardless of param values.
@@ -516,15 +517,15 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
         fetchSatidhamData();
       } else if (isBifurcatedClient) {
-        const bifurcatedConfig = isDinesh
-          ? { api: "/api/dinesh-api", qcode: "QAC00053", name: "Dinesh" }
+        const bifurcatedConfig = bifurcatedClient
+          ? {
+              api: "/api/bifurcated-portfolio",
+              qcode: bifurcatedClient.qcode,
+              name: bifurcatedClient.displayName,
+            }
           : isShilpa
           ? { api: "/api/shilpa-api", qcode: "QAC00040", name: "Shilpa" }
-          : isVikram
-          ? { api: "/api/vikram-api", qcode: "QAC00043", name: "Vikram Trading" }
-          : isArwani
-          ? { api: "/api/arwani-api", qcode: "QAC00071", name: "Arwani" }
-          : { api: "/api/ashwin-api", qcode: "QAC00083", name: "Ashwin Agarwal" };
+          : { api: "/api/vikram-api", qcode: "QAC00043", name: "Vikram Trading" };
 
         const fetchBifurcatedData = async () => {
           try {
@@ -1267,7 +1268,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     const lastDate = getLastDate(filteredEquityCurve, strategyData.metadata?.lastUpdated);
     const isTotalPortfolio = selectedStrategy === "Total Portfolio";
     const isActive = strategyData.metadata.isActive;
-    const hasNavBasedTotalPortfolio = isDinesh || isArwani || isAshwin;
+    const hasNavBasedTotalPortfolio = bifurcatedClient?.hasNavBasedTotalPortfolio ?? false;
 
     return (
       <div className="space-y-6">
@@ -1302,7 +1303,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         <StatsCards
           stats={convertedStats}
           accountType="sarla"
-          broker={isDinesh ? "Dinesh" : isShilpa ? "Shilpa" : isVikram ? "Vikram Trading" : isArwani ? "Arwani" : "Ashwin Agarwal"}
+          broker={bifurcatedClient?.displayName ?? (isShilpa ? "Shilpa" : "Vikram Trading")}
           isTotalPortfolio={isTotalPortfolio}
           isActive={isActive}
           returnViewType={returnViewType}
@@ -1368,7 +1369,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   if ((isSarla || isSatidham || isBifurcatedClient) && (!sarlaData || availableStrategies.length === 0)) {
     return (
       <div className="p-6 text-center bg-[#f3f4f6] rounded-lg text-card-text">
-        No strategy data found for {isSarla ? "Sarla" : isSatidham ? "Satidham" : isDinesh ? "Dinesh" : isShilpa ? "Shilpa" : isVikram ? "Vikram Trading" : isArwani ? "Arwani" : "Ashwin Agarwal"} user.
+        No strategy data found for {isSarla ? "Sarla" : isSatidham ? "Satidham" : bifurcatedClient?.displayName ?? (isShilpa ? "Shilpa" : "Vikram Trading")} user.
       </div>
     );
   }
