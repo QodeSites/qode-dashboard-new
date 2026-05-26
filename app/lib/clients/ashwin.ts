@@ -1,4 +1,4 @@
-import { defineBifurcatedClient } from "../bifurcated-portfolio-utils";
+import { defineBifurcatedClient } from "../bifurcated-client-builder";
 
 // Ashwin Agarwal: two parallel active schemes (QYE++ since 2026-02-24,
 // QAW++ added 2026-05-04) and an authoritative Qode Total Portfolio

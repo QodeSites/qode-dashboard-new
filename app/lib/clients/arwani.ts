@@ -1,4 +1,4 @@
-import { defineBifurcatedClient } from "../bifurcated-portfolio-utils";
+import { defineBifurcatedClient } from "../bifurcated-client-builder";
 
 // Arwani: two parallel active schemes (QYE++ since 2026-01-16, QAW++ since
 // 2026-03-23) and an authoritative Qode Total Portfolio aggregate curve.

@@ -6,6 +6,18 @@ import {
   SHILPA_FROZEN_DATA,
   VIKRAM_FROZEN_DATA,
 } from "./bifurcated-portfolio-data";
+// Re-export types and builder from the cycle-free builder module so callers
+// that import from bifurcated-portfolio-utils keep working unchanged.
+export type {
+  PortfolioConfig,
+  ClientConfig,
+  DefineBifurcatedClientInput,
+} from "./bifurcated-client-builder";
+export { defineBifurcatedClient } from "./bifurcated-client-builder";
+import type {
+  PortfolioConfig,
+  ClientConfig,
+} from "./bifurcated-client-builder";
 
 // ==================== Interfaces ====================
 
@@ -77,51 +89,9 @@ interface SchemeTagConfig {
   startDate: Date;
 }
 
-export interface PortfolioConfig {
-  current: string;
-  metrics: string;
-  nav: string;
-  isActive: boolean;
-  // When set, this scheme uses its own system tags + inception date instead of
-  // the client-level depositSystemTag/navSystemTag/newStartDate. Required for
-  // parallel-running active schemes (e.g. Dinesh's QYE++ alongside QAW++).
-  tags?: SchemeTagConfig;
-  // When true, the scheme card's "Amount Invested" displays 0 regardless of
-  // the live computed value. Used for fully-wound-down schemes where the
-  // closing withdrawal nets the historical seed deposit (e.g. Dinesh's QTF).
-  // Does NOT affect Total Portfolio aggregation — those still use real cash
-  // flows from this scheme.
-  displayAmountInvestedAsZero?: boolean;
-}
-
 export interface FrozenSchemeData {
   data: PortfolioData;
   metadata: Metadata;
-}
-
-export interface ClientConfig {
-  clientName: string;
-  defaultQcode: string;
-  accountCode: string;
-  oldSchemeName: string;
-  newSchemeName: string;
-  oldFinalNav: number;
-  newStartDate: Date;
-  depositSystemTag: string;
-  navSystemTag: string;
-  // Old scheme's DB system tags — when these match depositSystemTag/navSystemTag,
-  // the DB has continuous data under one tag and "Total Portfolio" can use a single
-  // query. When they differ (e.g. Dinesh), we must combine frozen + DB data.
-  oldSchemeDepositTag: string;
-  oldSchemeNavTag: string;
-  // When set, the client's master_sheet queries are redirected to
-  // bifurcated_master_sheet_test (a superset with the same columns), and the
-  // "Total Portfolio" view's NAV curve + PnL are sourced from this system_tag —
-  // an authoritative single continuous curve that replaces the frozen+rebased
-  // splice. Cash flows, amount deposited, latest exposure, and individual
-  // scheme views keep their existing tags.
-  qodeTotalPortfolioTag?: string;
-  portfolioMapping: Record<string, PortfolioConfig>;
 }
 
 // ==================== Per-Client Config Imports ====================
@@ -131,83 +101,6 @@ import { SHILPA_CONFIG } from "./clients/shilpa";
 import { VIKRAM_CONFIG } from "./clients/vikram";
 import { ARWANI_CONFIG } from "./clients/arwani";
 import { ASHWIN_CONFIG } from "./clients/ashwin";
-
-// ==================== Helper: defineBifurcatedClient ====================
-// Builder for the Arwani/Ashwin "multi-parallel-active-schemes" pattern.
-// Input vocabulary mirrors the data team's tag spec (profit / exposure /
-// inceptionDate). The helper synthesizes the verbose ClientConfig with all
-// sentinel fields filled in. Use for new bifurcated_master_sheet_test clients
-// that have no inactive scheme and use "Qode Total Portfolio" as the aggregate.
-// For clients with inactive schemes (e.g. Dinesh's QTF) use the verbose
-// ClientConfig directly.
-
-export interface DefineBifurcatedClientInput {
-  name: string;
-  qcode: string;
-  schemes: Record<
-    string,
-    {
-      inceptionDate: string; // YYYY-MM-DD
-      exposure: string;      // system_tag for current/metrics (the "exposure" tag)
-      profit: string;        // system_tag for nav (the "profit" tag)
-    }
-  >;
-  // Optional overrides — rarely needed.
-  qodeTotalPortfolioTag?: string; // default: "Qode Total Portfolio"
-  accountCode?: string;            // default: "" (field is vestigial here)
-}
-
-export function defineBifurcatedClient(
-  input: DefineBifurcatedClientInput
-): ClientConfig {
-  const schemeNames = Object.keys(input.schemes);
-  if (schemeNames.length === 0) {
-    throw new Error(
-      `defineBifurcatedClient: ${input.name} declares no schemes`
-    );
-  }
-  const firstSchemeName = schemeNames[0];
-  const firstScheme = input.schemes[firstSchemeName];
-
-  const portfolioMapping: Record<string, PortfolioConfig> = {
-    "Total Portfolio": {
-      current: "Total Portfolio",
-      metrics: "Total Portfolio",
-      nav: "Total Portfolio",
-      isActive: true,
-    },
-  };
-  for (const [schemeName, scheme] of Object.entries(input.schemes)) {
-    portfolioMapping[schemeName] = {
-      current: scheme.exposure,
-      metrics: scheme.exposure,
-      nav: scheme.profit,
-      isActive: true,
-      tags: {
-        depositTag: scheme.exposure,
-        navTag: scheme.profit,
-        startDate: new Date(scheme.inceptionDate),
-      },
-    };
-  }
-
-  return {
-    clientName: input.name,
-    defaultQcode: input.qcode,
-    accountCode: input.accountCode ?? "",
-    oldSchemeName: "__no_old_scheme__",
-    newSchemeName: firstSchemeName,
-    oldFinalNav: 100,
-    newStartDate: new Date(firstScheme.inceptionDate),
-    depositSystemTag: firstScheme.exposure,
-    navSystemTag: firstScheme.exposure,
-    oldSchemeDepositTag: "__no_old_deposit_tag__",
-    oldSchemeNavTag: "__no_old_nav_tag__",
-    qodeTotalPortfolioTag:
-      input.qodeTotalPortfolioTag ?? "Qode Total Portfolio",
-    portfolioMapping,
-  };
-}
 
 // ==================== Client Configurations ====================
 
