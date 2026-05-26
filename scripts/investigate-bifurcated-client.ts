@@ -162,7 +162,7 @@ async function main() {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
   console.log(`
-import { defineBifurcatedClient } from "../bifurcated-portfolio-utils";
+import { defineBifurcatedClient } from "../bifurcated-client-builder";
 
 export const ${fileName.toUpperCase().replace(/-/g, "_")}_CONFIG = defineBifurcatedClient({
   name: "${account.account_name}",
