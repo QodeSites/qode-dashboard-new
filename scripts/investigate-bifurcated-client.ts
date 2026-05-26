@@ -9,7 +9,11 @@
  * All queries are SELECT operations only (findFirst / findMany / count).
  *
  * Usage:
- *   npx ts-node scripts/investigate-bifurcated-client.ts <qcode> [name-search]
+ *   npx tsx scripts/investigate-bifurcated-client.ts <qcode> [name-search]
+ *
+ * (Use `tsx`, not `ts-node` — the project's `moduleResolution: "bundler"`
+ * tsconfig setting breaks ts-node when importing project code; `tsx` works
+ * out of the box.)
  */
 
 import { PrismaClient } from "@prisma/client";
@@ -30,7 +34,7 @@ interface SchemeInfo {
 async function main() {
   const [, , qcodeArg, nameArg] = process.argv;
   if (!qcodeArg) {
-    console.error("Usage: npx ts-node scripts/investigate-bifurcated-client.ts <qcode> [name-search]");
+    console.error("Usage: npx tsx scripts/investigate-bifurcated-client.ts <qcode> [name-search]");
     process.exit(1);
   }
   const qcode = qcodeArg;

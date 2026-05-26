@@ -787,8 +787,10 @@ export async function getQawStats(): Promise<DistributorPortfolioResponse> {
 
   // ---- 2. Dinesh's QAW++ scheme via the bifurcated engine --------------------
   // Calling DineshApi.GET directly (with a synthetic Request) means we go
-  // through the EXACT same code as /api/dinesh-api. Zero risk of divergence
-  // from what the regular Dinesh dashboard shows.
+  // through the EXACT same code as /api/bifurcated-portfolio?qcode=QAC00053
+  // (DineshApi is a backward-compat shim that delegates to the registry-driven
+  // engineByQcode map in bifurcated-portfolio-utils.ts). Zero risk of
+  // divergence from what the regular Dinesh dashboard shows.
   const fakeReq = new Request(
     `http://internal.distributor/?qcode=${QAW_DINESH_QCODE}`
   );
