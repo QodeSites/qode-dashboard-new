@@ -77,7 +77,7 @@ interface SchemeTagConfig {
   startDate: Date;
 }
 
-interface PortfolioConfig {
+export interface PortfolioConfig {
   current: string;
   metrics: string;
   nav: string;
@@ -99,7 +99,7 @@ export interface FrozenSchemeData {
   metadata: Metadata;
 }
 
-interface ClientConfig {
+export interface ClientConfig {
   clientName: string;
   defaultQcode: string;
   accountCode: string;
@@ -122,6 +122,83 @@ interface ClientConfig {
   // scheme views keep their existing tags.
   qodeTotalPortfolioTag?: string;
   portfolioMapping: Record<string, PortfolioConfig>;
+}
+
+// ==================== Helper: defineBifurcatedClient ====================
+// Builder for the Arwani/Ashwin "multi-parallel-active-schemes" pattern.
+// Input vocabulary mirrors the data team's tag spec (profit / exposure /
+// inceptionDate). The helper synthesizes the verbose ClientConfig with all
+// sentinel fields filled in. Use for new bifurcated_master_sheet_test clients
+// that have no inactive scheme and use "Qode Total Portfolio" as the aggregate.
+// For clients with inactive schemes (e.g. Dinesh's QTF) use the verbose
+// ClientConfig directly.
+
+export interface DefineBifurcatedClientInput {
+  name: string;
+  qcode: string;
+  schemes: Record<
+    string,
+    {
+      inceptionDate: string; // YYYY-MM-DD
+      exposure: string;      // system_tag for current/metrics (the "exposure" tag)
+      profit: string;        // system_tag for nav (the "profit" tag)
+    }
+  >;
+  // Optional overrides — rarely needed.
+  qodeTotalPortfolioTag?: string; // default: "Qode Total Portfolio"
+  accountCode?: string;            // default: "" (field is vestigial here)
+}
+
+export function defineBifurcatedClient(
+  input: DefineBifurcatedClientInput
+): ClientConfig {
+  const schemeNames = Object.keys(input.schemes);
+  if (schemeNames.length === 0) {
+    throw new Error(
+      `defineBifurcatedClient: ${input.name} declares no schemes`
+    );
+  }
+  const firstSchemeName = schemeNames[0];
+  const firstScheme = input.schemes[firstSchemeName];
+
+  const portfolioMapping: Record<string, PortfolioConfig> = {
+    "Total Portfolio": {
+      current: "Total Portfolio",
+      metrics: "Total Portfolio",
+      nav: "Total Portfolio",
+      isActive: true,
+    },
+  };
+  for (const [schemeName, scheme] of Object.entries(input.schemes)) {
+    portfolioMapping[schemeName] = {
+      current: scheme.exposure,
+      metrics: scheme.exposure,
+      nav: scheme.profit,
+      isActive: true,
+      tags: {
+        depositTag: scheme.exposure,
+        navTag: scheme.profit,
+        startDate: new Date(scheme.inceptionDate),
+      },
+    };
+  }
+
+  return {
+    clientName: input.name,
+    defaultQcode: input.qcode,
+    accountCode: input.accountCode ?? "",
+    oldSchemeName: "__no_old_scheme__",
+    newSchemeName: firstSchemeName,
+    oldFinalNav: 100,
+    newStartDate: new Date(firstScheme.inceptionDate),
+    depositSystemTag: firstScheme.exposure,
+    navSystemTag: firstScheme.exposure,
+    oldSchemeDepositTag: "__no_old_deposit_tag__",
+    oldSchemeNavTag: "__no_old_nav_tag__",
+    qodeTotalPortfolioTag:
+      input.qodeTotalPortfolioTag ?? "Qode Total Portfolio",
+    portfolioMapping,
+  };
 }
 
 // ==================== Client Configurations ====================
