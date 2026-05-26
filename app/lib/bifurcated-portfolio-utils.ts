@@ -1502,12 +1502,25 @@ class BifurcatedPortfolioEngine {
 
 // ==================== Engine Instances & Exports ====================
 
-// Dinesh's QTF (formerly frozen) is now live-DB-sourced; engine receives
-// EMPTY_FROZEN_DATA so the frozen-scheme branches stay dormant.
-const dineshEngine = new BifurcatedPortfolioEngine(
-  DINESH_CONFIG,
-  EMPTY_FROZEN_DATA
+import { BIFURCATED_CLIENTS } from "./bifurcated-clients-registry";
+
+// Registry-driven engine cache. One instance per registered bifurcated client
+// (Dinesh, Arwani, Ashwin). Constructed once at module load.
+const engineByQcode: Map<string, BifurcatedPortfolioEngine> = new Map(
+  BIFURCATED_CLIENTS.map((c) => [
+    c.qcode,
+    new BifurcatedPortfolioEngine(c.config, c.frozenData),
+  ])
 );
+
+export function getEngineForQcode(
+  qcode: string
+): BifurcatedPortfolioEngine | null {
+  return engineByQcode.get(qcode) ?? null;
+}
+
+// Shilpa and Vikram are NOT in the registry (they still read from master_sheet,
+// not bifurcated_master_sheet_test). Their engines stay standalone.
 const shilpaEngine = new BifurcatedPortfolioEngine(
   SHILPA_CONFIG,
   SHILPA_FROZEN_DATA
@@ -1516,17 +1529,13 @@ const vikramEngine = new BifurcatedPortfolioEngine(
   VIKRAM_CONFIG,
   VIKRAM_FROZEN_DATA
 );
-const arwaniEngine = new BifurcatedPortfolioEngine(
-  ARWANI_CONFIG,
-  EMPTY_FROZEN_DATA
-);
-const ashwinEngine = new BifurcatedPortfolioEngine(
-  ASHWIN_CONFIG,
-  EMPTY_FROZEN_DATA
-);
 
+// Backward-compat shim exports. distributor-utils.ts:795 still calls
+// DineshApi.GET(fakeReq); these shims delegate to the registry-driven map for
+// the 3 registered clients, and to the standalone engines for Shilpa/Vikram.
+// Removable once all callers migrate to /api/bifurcated-portfolio.
 export const DineshApi = {
-  GET: (req: Request) => dineshEngine.handleGET(req),
+  GET: (req: Request) => engineByQcode.get("QAC00053")!.handleGET(req),
 };
 export const ShilpaApi = {
   GET: (req: Request) => shilpaEngine.handleGET(req),
@@ -1535,8 +1544,8 @@ export const VikramApi = {
   GET: (req: Request) => vikramEngine.handleGET(req),
 };
 export const ArwaniApi = {
-  GET: (req: Request) => arwaniEngine.handleGET(req),
+  GET: (req: Request) => engineByQcode.get("QAC00071")!.handleGET(req),
 };
 export const AshwinApi = {
-  GET: (req: Request) => ashwinEngine.handleGET(req),
+  GET: (req: Request) => engineByQcode.get("QAC00083")!.handleGET(req),
 };
