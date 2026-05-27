@@ -92,7 +92,6 @@ export interface FrozenSchemeData {
 
 // ==================== Per-Client Config Imports ====================
 
-import { DINESH_CONFIG } from "./clients/dinesh";
 import { ARWANI_CONFIG } from "./clients/arwani";
 import { ASHWIN_CONFIG } from "./clients/ashwin";
 
@@ -1406,12 +1405,8 @@ export function getEngineForQcode(
   return engineByQcode.get(qcode) ?? null;
 }
 
-// Backward-compat shim exports. distributor-utils.ts:795 still calls
-// DineshApi.GET(fakeReq); these shims delegate to the registry-driven map.
-// Removable once all callers migrate to /api/bifurcated-portfolio.
-export const DineshApi = {
-  GET: (req: Request) => engineByQcode.get("QAC00053")!.handleGET(req),
-};
+// Backward-compat shim exports. Kept for any remaining server-side callers
+// that import these directly; new code should use getEngineForQcode instead.
 export const ArwaniApi = {
   GET: (req: Request) => engineByQcode.get("QAC00071")!.handleGET(req),
 };
