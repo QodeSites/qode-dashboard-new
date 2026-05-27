@@ -48,11 +48,24 @@ export interface DefineBifurcatedClientInput {
       inceptionDate: string; // YYYY-MM-DD
       exposure: string;      // system_tag for current/metrics (the "exposure" tag)
       profit: string;        // system_tag for nav (the "profit" tag)
-      // Mark a scheme as no longer actively trading. The engine still pulls
-      // its historical data normally; the dashboard adds an "(Inactive)"
-      // suffix in the strategy dropdown + scheme badge, dims the badge, and
-      // shows the "data may not be updated regularly" note. Excel export
-      // inherits the flag too. Default: false (i.e. active).
+      // Mark a scheme as no longer actively trading. Two coupled effects:
+      //
+      //   1. UI inactive markers — "(Inactive)" suffix in the strategy
+      //      dropdown + scheme badge, dimmed badge (opacity-70), bottom
+      //      note "Data may not be updated regularly", Excel export tag.
+      //
+      //   2. Amount Invested card displays ₹0 instead of the real net
+      //      cash flow. This hides closing-withdrawal accounting artifacts
+      //      where a retired scheme's net cash flow turned negative
+      //      because the grown portfolio rolled out to another scheme
+      //      (e.g. Dinesh's QTF → QAW++ migration). Total Portfolio
+      //      aggregation is NOT affected — it still counts the real cash
+      //      flows under the hood.
+      //
+      // Default: false (i.e. active, amount shown as-is). If you ever need
+      // "inactive marker but real amount shown," fall back to the verbose
+      // ClientConfig and set isActive: false + displayAmountInvestedAsZero
+      // independently.
       inactive?: boolean;
     }
   >;
@@ -87,6 +100,9 @@ export function defineBifurcatedClient(
       metrics: scheme.exposure,
       nav: scheme.profit,
       isActive: !scheme.inactive,
+      // Inactive schemes default to showing ₹0 in the Amount Invested card
+      // (see scheme.inactive comment above).
+      displayAmountInvestedAsZero: !!scheme.inactive,
       tags: {
         depositTag: scheme.exposure,
         navTag: scheme.profit,
