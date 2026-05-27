@@ -839,7 +839,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   };
 
   // Export handler functions
-  const handleDownloadPDF = async (convertedStats: Stats, strategyName: string, isTotalPortfolio: boolean, exportMetadata?: { inceptionDate?: string | null; dataAsOfDate?: string | null }) => {
+  const handleDownloadPDF = async (convertedStats: Stats, strategyName: string, isTotalPortfolio: boolean, exportMetadata?: { inceptionDate?: string | null; dataAsOfDate?: string | null }, hasNavBasedTotalPortfolio: boolean = false) => {
     try {
       setExporting(true);
       const cashFlows = convertedStats.cashFlows || [];
@@ -892,6 +892,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         quarterlyPnl: convertedStats.quarterlyPnl,
         strategyName,
         isTotalPortfolio,
+        hasNavBasedTotalPortfolio,
         isActive: true,
         dateFormatter,
         formatter: (v) =>
@@ -971,7 +972,8 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     strategyName: string,
     isTotalPortfolio: boolean,
     overrideAccountInfo?: { accountName: string; accountType: string; broker: string },
-    exportMetadata?: { dataAsOfDate?: string | null; isActive?: boolean }
+    exportMetadata?: { dataAsOfDate?: string | null; isActive?: boolean },
+    hasNavBasedTotalPortfolio: boolean = false
   ) => {
     try {
       setExporting(true);
@@ -1009,6 +1011,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
       generateExcelReport({
         strategyName,
         isTotalPortfolio,
+        hasNavBasedTotalPortfolio,
         isActive: exportMetadata?.isActive ?? metadata?.isActive ?? true,
         sessionUserName: session?.user?.name || "User",
         dataAsOfDate: exportMetadata?.dataAsOfDate ?? metadata?.dataAsOfDate,
@@ -1280,7 +1283,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           </Button>
           <div className="flex gap-2 ml-auto">
             <Button
-              onClick={() => handleDownloadPDF(convertedStats, selectedStrategy, isTotalPortfolio, { inceptionDate: strategyData.metadata?.inceptionDate, dataAsOfDate: strategyData.metadata?.dataAsOfDate })}
+              onClick={() => handleDownloadPDF(convertedStats, selectedStrategy, isTotalPortfolio, { inceptionDate: strategyData.metadata?.inceptionDate, dataAsOfDate: strategyData.metadata?.dataAsOfDate }, hasNavBasedTotalPortfolio)}
               disabled={exporting}
               className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
               variant="default"
@@ -1289,7 +1292,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
               PDF
             </Button>
             <Button
-              onClick={() => handleDownloadExcel(convertedStats, selectedStrategy, isTotalPortfolio, undefined, { dataAsOfDate: strategyData.metadata?.dataAsOfDate, isActive })}
+              onClick={() => handleDownloadExcel(convertedStats, selectedStrategy, isTotalPortfolio, undefined, { dataAsOfDate: strategyData.metadata?.dataAsOfDate, isActive }, hasNavBasedTotalPortfolio)}
               disabled={exporting}
               className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
               variant="default"
