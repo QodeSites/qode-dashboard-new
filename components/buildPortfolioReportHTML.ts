@@ -53,6 +53,7 @@ export interface PortfolioReportProps {
   lastDate?: string | null;
   strategyName?: string;
   isTotalPortfolio?: boolean;
+  hasNavBasedTotalPortfolio?: boolean;
   isActive?: boolean;
   returnViewType?: "percent";
   showOnlyQuarterlyCash?: boolean;
@@ -136,6 +137,7 @@ export function buildPortfolioReportHTML(
     strategyName,
     isActive = true,
     isTotalPortfolio = false,
+    hasNavBasedTotalPortfolio = false,
     dateFormatter = defaultDateFmt,
     formatter = defaultMoneyFmt,
     sessionUserName = "User",
@@ -248,7 +250,10 @@ export function buildPortfolioReportHTML(
     : (lastDate ? dateFormatter(lastDate) : "N/A");
 
   // =============== HTML ===============
-  const showFullPages = !isTotalPortfolio; // if total portfolio => only summary + quarterly cash + cash flows
+  // Mirrors app/dashboard/page.tsx:1312 so NAV-based total portfolios
+  // (Dinesh, Arwani, Ashwin) get the full report, while sum-of-schemes
+  // aggregates (Sarla, Satidham, classic bifurcated) stay cash-only.
+  const showFullPages = !isTotalPortfolio || hasNavBasedTotalPortfolio;
 
   const html = `
 <!DOCTYPE html>
@@ -921,8 +926,8 @@ export function buildPortfolioReportHTML(
         // Store original rows
         const originalRows = allRows.map(row => row.cloneNode(true));
         
-        // Set starting page number based on portfolio type
-        let nextPageNum = isTotalPortfolio ? 3 : 5; // Next page after cash flows page
+        // Set starting page number based on whether full pages were rendered
+        let nextPageNum = showFullPages ? 5 : 3; // Next page after cash flows page
         
         function createContinuationPage(refPage, pageNum) {
           const newPage = refPage.cloneNode(true);
@@ -979,7 +984,7 @@ export function buildPortfolioReportHTML(
           rowsAddedToCurrentPage++;
         }
         
-        console.log('Pagination completed. Total rows:', originalRows.length, 'Pages created:', nextPageNum - (isTotalPortfolio ? 3 : 5));
+        console.log('Pagination completed. Total rows:', originalRows.length, 'Pages created:', nextPageNum - (showFullPages ? 5 : 3));
       }
 
       // Run pagination for tables with many rows, then signal ready
