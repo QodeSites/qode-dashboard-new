@@ -11,8 +11,8 @@ export const SURESH_SOMANI_CONFIG = defineBifurcatedClient({
     },
     "Scheme QYE+": {
       inceptionDate: "2026-01-20",
-      exposure: "QYE+ Total Portfolio Value", // hint: detected "QYE+ Zerodha Total Portfolio"
-      profit: "QYE+ Zerodha Total Portfolio",
+      exposure: "QYE+ Zerodha Total Portfolio",
+      profit: "QYE+ Total Portfolio Value",
       inactive: true,
     },
   },
