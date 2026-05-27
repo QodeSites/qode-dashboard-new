@@ -8,6 +8,8 @@ import { ASHWIN_CONFIG } from "./clients/ashwin";
 import { EMPTY_FROZEN_DATA } from "./bifurcated-portfolio-data";
 import { MANGESH_HIRVE_CONFIG } from "./clients/mangesh";
 import { SHILPA_PODDAR_CONFIG } from "./clients/shilpa";
+import { SURESH_SOMANI_CONFIG } from "./clients/suresh";
+import { VIKRAM_TRADING_COMPANY_CONFIG } from "./clients/vikram";
 
 // Single source of truth for clients whose data lives in
 // bifurcated_master_sheet_test. Add a new entry here when onboarding a new
@@ -73,7 +75,22 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     frozenData: EMPTY_FROZEN_DATA,
     hasNavBasedTotalPortfolio: true,
   },
-
+  {
+    icode: "QUS00086",
+    qcode: "QAC00072",
+    displayName: "Suresh Somani",
+    config: SURESH_SOMANI_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+  },
+  {
+    icode: "QUS00068",
+    qcode: "QAC00043",
+    displayName: "Vikram Trading Company",
+    config: VIKRAM_TRADING_COMPANY_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+  },
 ];
 
 export function findByIcode(icode: string): BifurcatedClientEntry | undefined {
