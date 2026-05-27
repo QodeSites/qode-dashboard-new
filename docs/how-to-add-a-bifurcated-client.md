@@ -117,10 +117,23 @@ When the user opens the dashboard the inactive scheme shows up with:
 - an `(Inactive)` suffix in the strategy dropdown and on the scheme badge,
 - a dimmed (70% opacity) badge,
 - a bottom note: *"Note: This strategy is inactive. Data may not be updated regularly."*,
-- the Excel export marks the scheme inactive as well.
+- the Excel export marks the scheme inactive as well,
+- **the "Amount Invested" card displays ₹0** instead of the real net cash flow
+  (default for inactive schemes — hides closing-withdrawal accounting
+  artifacts when a retired scheme's grown portfolio rolled out to another
+  scheme, e.g. Dinesh's QTF → QAW++).
 
 The engine continues to serve the scheme's historical data normally; only
-the UI changes. Default (when the field is omitted) is `inactive: false`.
+the per-scheme display changes. The Total Portfolio aggregation across all
+schemes is unaffected — it still counts the real cash flows.
+
+Default (when `inactive` is omitted) is `inactive: false` — scheme is
+treated as active and the real Amount Invested is shown.
+
+If you ever need "inactive marker but real Amount Invested shown" — a rare
+case — the helper doesn't expose that combination. Fall back to a verbose
+`ClientConfig` and set `isActive: false` + `displayAmountInvestedAsZero: false`
+independently.
 
 ## When the helper isn't enough
 
