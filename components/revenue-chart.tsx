@@ -43,7 +43,7 @@ export function RevenueChart({ equityCurve, drawdownCurve, trailingReturns, draw
   console.log(equityCurve,"=============================equityCurve2")
   const chartRef = useRef<HTMLDivElement>(null);
   const chart = useRef<any>(null);
-  const { bse500Data, error } = useBse500Data(equityCurve);
+  const { bse500Data, error } = useBse500Data(equityCurve, adjustBenchmarkStartDate);
 
   // Calculate tick positions for NAV/Performance axis (ensures minimum 5 ticks)
   const calculateNavTickPositions = useCallback((data: number[], minTickCount = 5) => {
