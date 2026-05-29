@@ -14,6 +14,12 @@ import { GRD_CONFIG } from "./clients/grd";
 import { ANUP_RAMANI_CONFIG } from "./clients/anup_single";
 import { ASHIT_JHAVERI_CONFIG } from "./clients/ashit_jhaveri_single";
 import { AURUS_FUND_CONFIG } from "./clients/arus_fund_single";
+import { BHARAT_SHAH_CONFIG } from "./clients/bharat_shah_single";
+import { DEEPALI_SHUKLA_CONFIG } from "./clients/deepali_shukla_single";
+import { DEEPTI_PARIKH_CONFIG } from "./clients/deepti_parikh_single";
+import { KARNA_STOCK_BROKING_CONFIG } from "./clients/karan_single";
+import { RADIANCE_FPI_CONFIG } from "./clients/radiance_single";
+import { SAKSHI_MAHESHWARI_CONFIG } from "./clients/sakshi_single";
 
 // Single source of truth for clients whose data lives in
 // bifurcated_master_sheet_test. Add a new entry here when onboarding a new
@@ -136,6 +142,67 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     hasNavBasedTotalPortfolio: true,
     renderMode: "single",
     broker: "radiance",
+  },
+  {
+    icode: "QUS00074",
+    qcode: "QAC00056",
+    displayName: "Bharat Shah",
+    config: BHARAT_SHAH_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00110",
+    qcode: "QAC00096",
+    displayName: "Deepali Shukla",
+    config: DEEPALI_SHUKLA_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+
+  {
+    icode: "QUS0001",
+    qcode: "QAC00022",
+    displayName: "Deepti Parikh",
+    config: DEEPTI_PARIKH_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00111",
+    qcode: "QAC00097",
+    displayName: "Karna Stock Broking",
+    config: KARNA_STOCK_BROKING_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "radiance",
+  },
+  {
+    icode: "QUS00080",
+    qcode: "QAC00065",
+    displayName: "Radiance FPI",
+    config: RADIANCE_FPI_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "radiance",
+  },
+  {
+    icode: "QUS00084",
+    qcode: "QAC00069",
+    displayName: "Sakshi Maheshwari",
+    config: SAKSHI_MAHESHWARI_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
   },
 ];
 
