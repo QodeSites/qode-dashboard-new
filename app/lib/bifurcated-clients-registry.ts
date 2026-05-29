@@ -11,6 +11,9 @@ import { SURESH_SOMANI_CONFIG } from "./clients/suresh";
 import { VIKRAM_TRADING_COMPANY_CONFIG } from "./clients/vikram";
 import { DINESH_GOEL_CONFIG } from "./clients/dinesh";
 import { GRD_CONFIG } from "./clients/grd";
+import { ANUP_RAMANI_CONFIG } from "./clients/anup_single";
+import { ASHIT_JHAVERI_CONFIG } from "./clients/ashit_jhaveri_single";
+import { AURUS_FUND_CONFIG } from "./clients/arus_fund_single";
 
 // Single source of truth for clients whose data lives in
 // bifurcated_master_sheet_test. Add a new entry here when onboarding a new
@@ -99,6 +102,36 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     qcode: "QAC00092",
     displayName: "GRD",
     config: GRD_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "radiance",
+  },
+  {
+    icode: "QUS00109",
+    qcode: "QAC00095",
+    displayName: "Anup Ramani",
+    config: ANUP_RAMANI_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00088",
+    qcode: "QAC00074",
+    displayName: "Ashit Jhaveri",
+    config: ASHIT_JHAVERI_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00112",
+    qcode: "QAC00098",
+    displayName: "Aurus Fund",
+    config: AURUS_FUND_CONFIG,
     frozenData: EMPTY_FROZEN_DATA,
     hasNavBasedTotalPortfolio: true,
     renderMode: "single",
