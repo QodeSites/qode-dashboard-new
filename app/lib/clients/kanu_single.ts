@@ -5,6 +5,6 @@ export const KANU_DOSHI_CONFIG = defineSingleStrategyClient({
   qcode: "QAC00111",
   strategyName: "Qode Yield Enhancer+",
   inceptionDate: "2026-05-21",
-  exposure: "QYE+ Total Portfolio Value", // candidates: "QYE+ Total Portfolio Value", "QYE+ Zerodha Total Portfolio"
+  exposure: "QYE+ Zerodha Total Portfolio", // candidates: "QYE+ Total Portfolio Value", "QYE+ Zerodha Total Portfolio"
   profit: "QYE+ Total Portfolio Value", // candidates: "QYE+ Total Portfolio Value", "QYE+ Zerodha Total Portfolio"
 });
