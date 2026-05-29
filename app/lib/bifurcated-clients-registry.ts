@@ -25,6 +25,11 @@ import { BINACA_LIMITED_CONFIG } from "./clients/binaca_single";
 import { NEHA_RAMANI_CONFIG } from "./clients/neha_ramani_single";
 import { SSUNEET_KABRA_CONFIG } from "./clients/ssuneet_kabra_single";
 import { TRANSGLOBAL_CONFIG } from "./clients/transglobal_single";
+import { SSRG_ADVISORY_LLP_CONFIG } from "./clients/SSRG_single";
+import { WINRO_COMMERCIAL_CONFIG } from "./clients/winro_single";
+import { KANU_DOSHI_CONFIG } from "./clients/kanu_single";
+import { ASHOK_JOGANI_HUF_CONFIG } from "./clients/ashok_single";
+import { ANAND_DAMANI_CONFIG } from "./clients/anand_single";
 
 // Single source of truth for clients whose data lives in
 // bifurcated_master_sheet_test. Add a new entry here when onboarding a new
@@ -258,6 +263,56 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     hasNavBasedTotalPortfolio: true,
     renderMode: "single",
     broker: "radiance",
+  },
+  {
+    icode: "QUS00108",
+    qcode: "QAC00094",
+    displayName: "SSRG Advisory LLP  ",
+    config: SSRG_ADVISORY_LLP_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00113",
+    qcode: "QAC00099",
+    displayName: "Winro Commercial",
+    config: WINRO_COMMERCIAL_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "radiance",
+  },
+  {
+    icode: "QUS00125",
+    qcode: "QAC00111",
+    displayName: "Kanu Doshi",
+    config: KANU_DOSHI_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00124",
+    qcode: "QAC00110",
+    displayName: "Ashok Jogani HUF",
+    config: ASHOK_JOGANI_HUF_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00122",
+    qcode: "QAC00108",
+    displayName: "Anand Damani",
+    config: ANAND_DAMANI_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
   },
 ];
 
