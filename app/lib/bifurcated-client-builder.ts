@@ -128,3 +128,66 @@ export function defineBifurcatedClient(
     portfolioMapping,
   };
 }
+
+// ==================== Helper: defineSingleStrategyClient ====================
+// Builds a ClientConfig for a SINGLE-strategy client whose data lives in
+// bifurcated_master_sheet_test but which must render in the existing
+// single-strategy dashboard format (NO strategy dropdown, no "Total
+// Portfolio" aggregate). Produces exactly one scheme key in
+// portfolioMapping. qodeTotalPortfolioTag is set only to route the engine's
+// msTable getter to bifurcated_master_sheet_test — because there is no
+// "Total Portfolio" key in the mapping, the engine's aggregate code paths
+// never run, and handleGET returns a single keyed entry.
+//
+// Use defineBifurcatedClient (not this) for multi-scheme clients that need
+// the dropdown + Total Portfolio aggregate.
+
+export interface DefineSingleStrategyClientInput {
+  name: string;
+  qcode: string;
+  strategyName: string;   // the single scheme's display label, e.g. "QYE++"
+  inceptionDate: string;  // YYYY-MM-DD
+  exposure: string;       // system_tag for current value / deposit / metrics
+  profit: string;         // system_tag for the NAV curve
+  // Optional overrides — rarely needed.
+  qodeTotalPortfolioTag?: string; // default "Qode Total Portfolio" (table routing only)
+  accountCode?: string;            // default "" (vestigial)
+}
+
+export function defineSingleStrategyClient(
+  input: DefineSingleStrategyClientInput
+): ClientConfig {
+  const portfolioMapping: Record<string, PortfolioConfig> = {
+    // NOTE: no "Total Portfolio" entry — exactly one scheme key, so the
+    // engine returns a single response key and the frontend renders it via
+    // the no-dropdown single-strategy path.
+    [input.strategyName]: {
+      current: input.exposure,
+      metrics: input.exposure,
+      nav: input.profit,
+      isActive: true,
+      tags: {
+        depositTag: input.exposure,
+        navTag: input.profit,
+        startDate: new Date(input.inceptionDate),
+      },
+    },
+  };
+
+  return {
+    clientName: input.name,
+    defaultQcode: input.qcode,
+    accountCode: input.accountCode ?? "",
+    oldSchemeName: "__no_old_scheme__",
+    newSchemeName: input.strategyName,
+    oldFinalNav: 100,
+    newStartDate: new Date(input.inceptionDate),
+    depositSystemTag: input.exposure,
+    navSystemTag: input.exposure,
+    oldSchemeDepositTag: "__no_old_deposit_tag__",
+    oldSchemeNavTag: "__no_old_nav_tag__",
+    qodeTotalPortfolioTag:
+      input.qodeTotalPortfolioTag ?? "Qode Total Portfolio",
+    portfolioMapping,
+  };
+}
