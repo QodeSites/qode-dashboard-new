@@ -20,6 +20,11 @@ import { DEEPTI_PARIKH_CONFIG } from "./clients/deepti_parikh_single";
 import { KARNA_STOCK_BROKING_CONFIG } from "./clients/karan_single";
 import { RADIANCE_FPI_CONFIG } from "./clients/radiance_single";
 import { SAKSHI_MAHESHWARI_CONFIG } from "./clients/sakshi_single";
+import { BAKUL_SHAH_CONFIG } from "./clients/bakul_shah_single";
+import { BINACA_LIMITED_CONFIG } from "./clients/binaca_single";
+import { NEHA_RAMANI_CONFIG } from "./clients/neha_ramani_single";
+import { SSUNEET_KABRA_CONFIG } from "./clients/ssuneet_kabra_single";
+import { TRANSGLOBAL_CONFIG } from "./clients/transglobal_single";
 
 // Single source of truth for clients whose data lives in
 // bifurcated_master_sheet_test. Add a new entry here when onboarding a new
@@ -203,6 +208,56 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     hasNavBasedTotalPortfolio: true,
     renderMode: "single",
     broker: "zerodha",
+  },
+  {
+    icode: "QUS00115",
+    qcode: "QAC00101",
+    displayName: "Bakul Shah",
+    config: BAKUL_SHAH_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00121",
+    qcode: "QAC00107",
+    displayName: "Binaca Limited",
+    config: BINACA_LIMITED_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "radiance",
+  },
+  {
+    icode: "QUS00116",
+    qcode: "QAC00102",
+    displayName: "Neha Ramani",
+    config: NEHA_RAMANI_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00120",
+    qcode: "QAC00106",
+    displayName: "Ssuneet Kabra",
+    config: SSUNEET_KABRA_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "radiance",
+  },
+  {
+    icode: "QUS00117",
+    qcode: "QAC00103",
+    displayName: "Transglobal",
+    config: TRANSGLOBAL_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "radiance",
   },
 ];
 
