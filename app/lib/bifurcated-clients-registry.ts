@@ -9,6 +9,7 @@ import { MANGESH_HIRVE_CONFIG } from "./clients/mangesh";
 import { SHILPA_PODDAR_CONFIG } from "./clients/shilpa";
 import { SURESH_SOMANI_CONFIG } from "./clients/suresh";
 import { VIKRAM_TRADING_COMPANY_CONFIG } from "./clients/vikram";
+import { GRD_CONFIG } from "./clients/grd";
 
 // Single source of truth for clients whose data lives in
 // bifurcated_master_sheet_test. Add a new entry here when onboarding a new
@@ -25,6 +26,14 @@ export interface BifurcatedClientEntry {
   config: ClientConfig;
   frozenData: FrozenSchemeData;
   hasNavBasedTotalPortfolio: boolean;
+  // "multi" (default, when absent) = dropdown render with Total Portfolio +
+  // per-scheme views. "single" = no dropdown; the dashboard unwraps the one
+  // scheme into the existing single-strategy render path.
+  renderMode?: "multi" | "single";
+  // Only used for renderMode: "single" clients — supplies the StatsCards
+  // broker label, since these clients bypass /api/accounts (which is where
+  // multi-account/regular clients get their broker from).
+  broker?: string;
 }
 
 export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
@@ -75,6 +84,16 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     config: VIKRAM_TRADING_COMPANY_CONFIG,
     frozenData: EMPTY_FROZEN_DATA,
     hasNavBasedTotalPortfolio: true,
+  },
+  {
+    icode: "QUS00106",
+    qcode: "QAC00092",
+    displayName: "GRD",
+    config: GRD_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "radiance",
   },
 ];
 
