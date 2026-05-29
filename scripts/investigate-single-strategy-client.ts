@@ -27,6 +27,20 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+// Friendly display names for the strategy pill — mirrors strategyNameMap in
+// app/lib/portfolio-utils.ts (the legacy single-strategy engine), so a client
+// migrated to the bifurcated source keeps the same pill label it showed
+// before. Kept as a local copy because portfolio-utils.ts imports prisma and
+// would drag the engine into this script's import graph. Extend as needed.
+const STRATEGY_DISPLAY_NAMES: Record<string, string> = {
+  "QAW+": "Qode All Weather+",
+  "QAW++": "Qode All Weather++",
+  "QTF+": "Qode Tactical Fund+",
+  "QTF++": "Qode Tactical Fund++",
+  "QYE+": "Qode Yield Enhancer+",
+  "QYE++": "Qode Yield Enhancer++",
+};
+
 function fmtDate(d: Date | null | undefined): string {
   return d ? d.toISOString().split("T")[0] : "NO DATA";
 }
@@ -198,7 +212,18 @@ async function main() {
     }
   }
 
+  // Friendly display label for the strategy pill (falls back to the raw
+  // prefix if we don't have a mapping). This is what goes into the config's
+  // strategyName field so the pill matches the legacy single-strategy view.
+  const displayStrategyName = STRATEGY_DISPLAY_NAMES[strategyName] ?? strategyName;
+
   console.log(`  Detected strategy: "${strategyName}"`);
+  console.log(
+    `  Display name (pill): "${displayStrategyName}"` +
+      (displayStrategyName === strategyName
+        ? "  (no friendly mapping — using raw prefix; edit if needed)"
+        : "")
+  );
   console.log(`  Inception: ${inceptionDate} (from MIN date of "${inceptionTagUsed}")`);
   console.log(`  Candidate tags for this strategy (pick exposure/profit from these):`);
   for (const tag of candidateTags) {
@@ -230,7 +255,7 @@ import { defineSingleStrategyClient } from "../bifurcated-client-builder";
 export const ${cName} = defineSingleStrategyClient({
   name: "${account.account_name}",
   qcode: "${qcode}",
-  strategyName: "${strategyName}",
+  strategyName: "${displayStrategyName}",
   inceptionDate: "${inceptionDate}",
   exposure: "<FILL_FROM_DATA_TEAM>",${hint}
   profit:   "<FILL_FROM_DATA_TEAM>",${hint}
