@@ -1599,8 +1599,16 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                     <>
                       <StatsCards
                         stats={convertedStats}
-                        accountType={accounts.find((acc) => acc.qcode === selectedAccount)?.account_type || "unknown"}
-                        broker={accounts.find((acc) => acc.qcode === selectedAccount)?.broker || "Unknown"}
+                        accountType={
+                          isSingleStrategyBifurcated
+                            ? "managed_account"
+                            : accounts.find((acc) => acc.qcode === selectedAccount)?.account_type || "unknown"
+                        }
+                        broker={
+                          isSingleStrategyBifurcated
+                            ? bifurcatedClient?.broker || "Unknown"
+                            : accounts.find((acc) => acc.qcode === selectedAccount)?.broker || "Unknown"
+                        }
                         isActive={metadata?.isActive ?? true}
                         returnViewType={returnViewType}
                         setReturnViewType={setReturnViewType}
