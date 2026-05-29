@@ -1383,7 +1383,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     );
   }
 
-  if (!isSarla && !isSatidham && !isBifurcatedClient && accounts.length === 0) {
+  if (!isSarla && !isSatidham && !isBifurcatedClient && !isSingleStrategyBifurcated && accounts.length === 0) {
     return (
       <div className="p-6 text-center bg-[#f3f4f6] rounded-lg text-card-text">
         No accounts found for this user.
