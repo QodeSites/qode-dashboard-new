@@ -1354,10 +1354,19 @@ class BifurcatedPortfolioEngine {
             startDate: null,
             endDate: null,
           },
+          // Source inception from the DISPLAYED equity curve, not the raw DB
+          // rows. For fresh active schemes the displayed curve has a NAV=100
+          // baseline prepended one day before the first real row (see
+          // equityCurveForDisplay above), so the inception label lines up with
+          // where the chart actually starts — matching the legacy
+          // single-strategy convention (first real day − 1). Falls back to raw
+          // historical, then frozen metadata.
           inceptionDate:
-            historicalData.length > 0
-              ? this.normalizeDate(historicalData[0].date)
-              : this.frozenData.metadata.inceptionDate,
+            equityCurveForDisplay.length > 0
+              ? equityCurveForDisplay[0].date
+              : historicalData.length > 0
+                ? this.normalizeDate(historicalData[0].date)
+                : this.frozenData.metadata.inceptionDate,
           dataAsOfDate:
             latestExposure?.date.toISOString().split("T")[0] ||
             new Date().toISOString().split("T")[0],
