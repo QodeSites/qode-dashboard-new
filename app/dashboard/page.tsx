@@ -420,7 +420,11 @@ export default function Portfolio() {
   const isSatidham = effectiveIcode === "QUS0010";
   // Registry-driven for all bifurcated_master_sheet_test clients.
   const bifurcatedClient = findByIcode(effectiveIcode);
-  const isBifurcatedClient = !!bifurcatedClient;
+  // Single-strategy clients (renderMode: "single") render through the
+  // existing no-dropdown single-strategy path, NOT the dropdown bifurcated
+  // path — so they are deliberately excluded from isBifurcatedClient.
+  const isSingleStrategyBifurcated = bifurcatedClient?.renderMode === "single";
+  const isBifurcatedClient = !!bifurcatedClient && !isSingleStrategyBifurcated;
   // Read URL params directly to avoid useSearchParams() which triggers a Suspense boundary
   // and causes a loading flicker (Suspense fallback → page loading state).
   // Safe because during SSR status="loading" so the loading UI renders regardless of param values.
@@ -545,6 +549,34 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         };
 
         fetchBifurcatedData();
+      } else if (isSingleStrategyBifurcated && bifurcatedClient) {
+        // Single-strategy bifurcated client: fetch the same parameterized
+        // route, but the response has exactly one scheme key. Unwrap it into
+        // the `stats`/`metadata` state so the existing single-strategy render
+        // path (no dropdown) displays it.
+        const ssClient = bifurcatedClient;
+        const fetchSingleStrategyData = async () => {
+          try {
+            const res = await fetch(`/api/bifurcated-portfolio?qcode=${ssClient.qcode}`, { credentials: "include" });
+            if (!res.ok) {
+              const errorData = await res.json();
+              throw new Error(errorData.error || `Failed to load ${ssClient.displayName} data`);
+            }
+            const data: SarlaApiResponse = await res.json();
+            const entry = Object.values(data)[0] as { data: Stats; metadata: Metadata | null };
+            if (!entry?.data) {
+              throw new Error(`No scheme data returned for ${ssClient.displayName}`);
+            }
+            setStats(entry.data as Stats);
+            setMetadata(entry.metadata ?? null);
+            setIsLoading(false);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : `An unexpected error occurred`);
+            setIsLoading(false);
+          }
+        };
+
+        fetchSingleStrategyData();
       } else {
         const fetchAccounts = async () => {
           try {
@@ -572,10 +604,10 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, router, isSarla, isSatidham, isBifurcatedClient, accountCode, isAdmin, isImpersonating]);
+  }, [status, router, isSarla, isSatidham, isBifurcatedClient, isSingleStrategyBifurcated, accountCode, isAdmin, isImpersonating]);
 
   useEffect(() => {
-    if (selectedAccount && status === "authenticated" && !isSarla && !isSatidham && !isBifurcatedClient) {
+    if (selectedAccount && status === "authenticated" && !isSarla && !isSatidham && !isBifurcatedClient && !isSingleStrategyBifurcated) {
       const fetchAccountData = async () => {
         setIsLoading(true);
         setError(null);
