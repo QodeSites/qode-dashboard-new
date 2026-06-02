@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authorizeBifurcatedRequest } from "@/app/lib/bifurcated-auth";
+import { authorizeHoldingsRequest } from "@/app/lib/bifurcated-auth";
 import { prisma } from "@/lib/prisma";
 
 interface Holding {
@@ -85,9 +85,9 @@ function processHoldingsSummary(holdings: Holding[]): HoldingsSummary {
 
 export async function GET(req: Request) {
   try {
-    const auth = await authorizeBifurcatedRequest(req);
+    const auth = await authorizeHoldingsRequest(req);
     if (!auth.ok) return auth.response;
-    const qcode = auth.client.qcode;
+    const qcode = auth.qcode;
 
     const latestEquity = await prisma.bifurcated_equity_holding_test.findFirst({
       where: { qcode },
