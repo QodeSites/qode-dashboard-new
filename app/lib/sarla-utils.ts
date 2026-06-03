@@ -361,6 +361,48 @@ export class PortfolioApi {
     const map = isSatidham ? this.SATIDHAM_SYSTEM_TAGS : this.SARLA_SYSTEM_TAGS;
     return map[scheme] || `Zerodha Total Portfolio ${scheme}`;
   }
+
+  // Active schemes whose data now comes from bifurcated_master_sheet_test instead
+  // of master_sheet. Keyed by scheme name. `tagRewrite` maps the master_sheet
+  // system_tag -> the bifurcated table's system_tag (identity when the bifurcated
+  // table uses the same tag name). Schemes NOT listed here keep reading
+  // master_sheet with their existing tags. Inactive (hardcoded) schemes never
+  // reach a table read (getHardcoded short-circuits first), so they are
+  // untouched regardless. Note: both Sarla and Satidham have a "Scheme B", but
+  // Satidham's is inactive/hardcoded — only Sarla's active "Scheme B" reaches a
+  // table read, so keying by name is safe here.
+  private static readonly SCHEME_BIFURCATED_SOURCE: Record<
+    string,
+    { tagRewrite?: Record<string, string> }
+  > = {
+    // Sarla Scheme B — same tag names in the bifurcated table (both
+    // "Zerodha Total Portfolio" and "Total Portfolio Value"), so no rewrite.
+    "Scheme B": {},
+    // Satidham Scheme QAW++ — bifurcated table uses the "QAW++ " prefixed tags.
+    "Scheme QAW++": {
+      tagRewrite: {
+        "Zerodha Total Portfolio": "QAW++ Zerodha Total Portfolio",
+        "Total Portfolio Value": "QAW++ Total Portfolio Value",
+      },
+    },
+  };
+
+  // Returns the Prisma model to read for a scheme: the bifurcated table for
+  // migrated active schemes, else master_sheet. `any` sidesteps the minor
+  // Decimal-precision type differences between the two models (same pattern as
+  // the bifurcated engine's msTable); only columns common to both are read.
+  private static schemeTable(scheme: string): any {
+    return scheme in this.SCHEME_BIFURCATED_SOURCE
+      ? prisma.bifurcated_master_sheet_test
+      : prisma.master_sheet;
+  }
+
+  // Rewrites a master_sheet system_tag to its bifurcated-table equivalent for a
+  // migrated scheme (identity for non-migrated schemes or unmapped tags).
+  private static rewriteTag(scheme: string, tag: string): string {
+    return this.SCHEME_BIFURCATED_SOURCE[scheme]?.tagRewrite?.[tag] ?? tag;
+  }
+
   private static resolvePmsAccountCode(input?: string): string {
     if (!input) return "QAW00023";                  // sensible default
     if (input.startsWith("QAW")) return input;      // already a PMS code
