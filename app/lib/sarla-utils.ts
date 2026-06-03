@@ -295,8 +295,8 @@ export class PortfolioApi {
 
     // Everything else from master_sheet by (effectiveQcode + system_tag)
     const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
-    const profitSum = await prisma.master_sheet.aggregate({
-      where: { qcode: effectiveQcode, system_tag: systemTag },
+    const profitSum = await PortfolioApi.schemeTable(scheme).aggregate({
+      where: { qcode: effectiveQcode, system_tag: PortfolioApi.rewriteTag(scheme, systemTag) },
       _sum: { pnl: true },
     });
     return Number(profitSum._sum.pnl) || 0;
@@ -1931,10 +1931,10 @@ export class PortfolioApi {
           totalDeposited += schemeDeposited;
         } else if (s === "Scheme B" || s === "Scheme A") {
           const systemTag = s === "Scheme B" ? "Zerodha Total Portfolio" : PortfolioApi.getSystemTag(s, qcode);
-          const depositSum = await prisma.master_sheet.aggregate({
+          const depositSum = await PortfolioApi.schemeTable(s).aggregate({
             where: {
               qcode,
-              system_tag: systemTag,
+              system_tag: PortfolioApi.rewriteTag(s, systemTag),
               capital_in_out: { not: null },
             },
             _sum: { capital_in_out: true },
@@ -1944,10 +1944,10 @@ export class PortfolioApi {
           // This scheme uses QAC00066 instead of QAC00046
           const effectiveQcode = PortfolioApi.getEffectiveQcode(s, qcode);
           const systemTag = PortfolioApi.getSystemTag(s, effectiveQcode);
-          const depositSum = await prisma.master_sheet.aggregate({
+          const depositSum = await PortfolioApi.schemeTable(s).aggregate({
             where: {
               qcode: effectiveQcode,
-              system_tag: systemTag,
+              system_tag: PortfolioApi.rewriteTag(s, systemTag),
               capital_in_out: { not: null },
             },
             _sum: { capital_in_out: true },
@@ -1969,10 +1969,10 @@ export class PortfolioApi {
 
     if (scheme === "Scheme B") {
       const systemTag = "Zerodha Total Portfolio";
-      const depositSum = await prisma.master_sheet.aggregate({
+      const depositSum = await PortfolioApi.schemeTable(scheme).aggregate({
         where: {
           qcode,
-          system_tag: systemTag,
+          system_tag: PortfolioApi.rewriteTag(scheme, systemTag),
           capital_in_out: { not: null },
         },
         _sum: { capital_in_out: true },
@@ -1984,10 +1984,10 @@ export class PortfolioApi {
     if (scheme === "Scheme QAW++") {
       const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
       const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
-      const depositSum = await prisma.master_sheet.aggregate({
+      const depositSum = await PortfolioApi.schemeTable(scheme).aggregate({
         where: {
           qcode: effectiveQcode,
-          system_tag: systemTag,
+          system_tag: PortfolioApi.rewriteTag(scheme, systemTag),
           capital_in_out: { not: null },
         },
         _sum: { capital_in_out: true },
@@ -2033,8 +2033,8 @@ export class PortfolioApi {
           }
         } else if (s === "Scheme B" || s === "Scheme A") {
           const systemTag = s === "Scheme B" ? "Zerodha Total Portfolio" : PortfolioApi.getSystemTag(s, qcode);
-          const record = await prisma.master_sheet.findFirst({
-            where: { qcode, system_tag: systemTag },
+          const record = await PortfolioApi.schemeTable(s).findFirst({
+            where: { qcode, system_tag: PortfolioApi.rewriteTag(s, systemTag) },
             orderBy: { date: "desc" },
             select: { portfolio_value: true, drawdown: true, nav: true, date: true },
           });
@@ -2050,8 +2050,8 @@ export class PortfolioApi {
           // This scheme uses QAC00066 instead of QAC00046
           const effectiveQcode = PortfolioApi.getEffectiveQcode(s, qcode);
           const systemTag = PortfolioApi.getSystemTag(s, effectiveQcode);
-          const record = await prisma.master_sheet.findFirst({
-            where: { qcode: effectiveQcode, system_tag: systemTag },
+          const record = await PortfolioApi.schemeTable(s).findFirst({
+            where: { qcode: effectiveQcode, system_tag: PortfolioApi.rewriteTag(s, systemTag) },
             orderBy: { date: "desc" },
             select: { portfolio_value: true, drawdown: true, nav: true, date: true },
           });
@@ -2087,8 +2087,8 @@ export class PortfolioApi {
     if (scheme === "Scheme B") {
       const systemTag = "Zerodha Total Portfolio";
 
-      const record = await prisma.master_sheet.findFirst({
-        where: { qcode, system_tag: systemTag },
+      const record = await PortfolioApi.schemeTable(scheme).findFirst({
+        where: { qcode, system_tag: PortfolioApi.rewriteTag(scheme, systemTag) },
         orderBy: { date: "desc" },
         select: { portfolio_value: true, drawdown: true, nav: true, date: true },
       });
@@ -2109,8 +2109,8 @@ export class PortfolioApi {
     const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
     const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
 
-    const record = await prisma.master_sheet.findFirst({
-      where: { qcode: effectiveQcode, system_tag: systemTag },
+    const record = await PortfolioApi.schemeTable(scheme).findFirst({
+      where: { qcode: effectiveQcode, system_tag: PortfolioApi.rewriteTag(scheme, systemTag) },
       orderBy: { date: "desc" },
       select: { portfolio_value: true, drawdown: true, nav: true, date: true },
     });
@@ -2218,14 +2218,14 @@ export class PortfolioApi {
       const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
       const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
 
-      const firstNavRecord = await prisma.master_sheet.findFirst({
-        where: { qcode: effectiveQcode, system_tag: systemTag, nav: { not: null } },
+      const firstNavRecord = await PortfolioApi.schemeTable(scheme).findFirst({
+        where: { qcode: effectiveQcode, system_tag: PortfolioApi.rewriteTag(scheme, systemTag), nav: { not: null } },
         orderBy: { date: "asc" },
         select: { nav: true, date: true },
       });
 
-      const latestNavRecord = await prisma.master_sheet.findFirst({
-        where: { qcode: effectiveQcode, system_tag: systemTag, nav: { not: null } },
+      const latestNavRecord = await PortfolioApi.schemeTable(scheme).findFirst({
+        where: { qcode: effectiveQcode, system_tag: PortfolioApi.rewriteTag(scheme, systemTag), nav: { not: null } },
         orderBy: { date: "desc" },
         select: { nav: true, date: true },
       });
@@ -2264,8 +2264,8 @@ export class PortfolioApi {
       // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ uses QAC00066)
       const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
       const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
-      const profitSum = await prisma.master_sheet.aggregate({
-        where: { qcode: effectiveQcode, system_tag: systemTag },
+      const profitSum = await PortfolioApi.schemeTable(scheme).aggregate({
+        where: { qcode: effectiveQcode, system_tag: PortfolioApi.rewriteTag(scheme, systemTag) },
         _sum: { pnl: true },
       });
       return Number(profitSum._sum.pnl) || 0;
@@ -2328,10 +2328,10 @@ export class PortfolioApi {
     const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
     const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
 
-    const data = await prisma.master_sheet.findMany({
+    const data = await PortfolioApi.schemeTable(scheme).findMany({
       where: {
         qcode: effectiveQcode,
-        system_tag: systemTag,
+        system_tag: PortfolioApi.rewriteTag(scheme, systemTag),
         nav: { not: null },
         drawdown: { not: null },
       },
@@ -2389,10 +2389,10 @@ export class PortfolioApi {
             // Fetch from database using QAC00066
             const effectiveQcode = PortfolioApi.getEffectiveQcode(s, qcode);
             const systemTag = PortfolioApi.getSystemTag(s, effectiveQcode);
-            const schemeCashFlows = await prisma.master_sheet.findMany({
+            const schemeCashFlows = await PortfolioApi.schemeTable(s).findMany({
               where: {
                 qcode: effectiveQcode,
-                system_tag: systemTag,
+                system_tag: PortfolioApi.rewriteTag(s, systemTag),
                 capital_in_out: { not: null, not: new Decimal(0) },
               },
               select: { date: true, capital_in_out: true },
@@ -2418,10 +2418,10 @@ export class PortfolioApi {
         for (const s of schemes) {
           const systemTag = s === "Scheme B" ? "Zerodha Total Portfolio" : PortfolioApi.getSystemTag(s);
           if (s === "Scheme B") {
-            const schemeCashFlows = await prisma.master_sheet.findMany({
+            const schemeCashFlows = await PortfolioApi.schemeTable(s).findMany({
               where: {
                 qcode,
-                system_tag: systemTag,
+                system_tag: PortfolioApi.rewriteTag(s, systemTag),
                 capital_in_out: { not: null, not: new Decimal(0) },
               },
               select: { date: true, capital_in_out: true },
@@ -2448,10 +2448,10 @@ export class PortfolioApi {
     const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
     const systemTag = scheme === "Scheme B" ? "Zerodha Total Portfolio" : PortfolioApi.getSystemTag(scheme, effectiveQcode);
 
-    const cashFlows = await prisma.master_sheet.findMany({
+    const cashFlows = await PortfolioApi.schemeTable(scheme).findMany({
       where: {
         qcode: effectiveQcode,
-        system_tag: systemTag,
+        system_tag: PortfolioApi.rewriteTag(scheme, systemTag),
         capital_in_out: { not: null, not: new Decimal(0) },
       },
       select: { date: true, capital_in_out: true },
@@ -3239,8 +3239,8 @@ if (scheme === "Scheme PMS QAW") {
     // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ uses QAC00066)
     const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
     const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
-    const portfolioValues = await prisma.master_sheet.findMany({
-      where: { qcode: effectiveQcode, system_tag: systemTag, portfolio_value: { not: null } },
+    const portfolioValues = await PortfolioApi.schemeTable(scheme).findMany({
+      where: { qcode: effectiveQcode, system_tag: PortfolioApi.rewriteTag(scheme, systemTag), portfolio_value: { not: null } },
       select: { date: true, portfolio_value: true, daily_p_l: true },
       orderBy: { date: "asc" },
     });
@@ -3423,13 +3423,13 @@ if (scheme === "Scheme PMS QAW") {
           masterSheetData = [];
         } else {
           [cashInOutData, masterSheetData] = await Promise.all([
-            prisma.master_sheet.findMany({
-              where: { qcode: effectiveQcode, system_tag: systemTag, capital_in_out: { not: null } },
+            PortfolioApi.schemeTable(scheme).findMany({
+              where: { qcode: effectiveQcode, system_tag: PortfolioApi.rewriteTag(scheme, systemTag), capital_in_out: { not: null } },
               select: { date: true, capital_in_out: true },
               orderBy: { date: "asc" },
             }),
-            prisma.master_sheet.findMany({
-              where: { qcode: effectiveQcode, system_tag: systemTag },
+            PortfolioApi.schemeTable(scheme).findMany({
+              where: { qcode: effectiveQcode, system_tag: PortfolioApi.rewriteTag(scheme, systemTag) },
               select: { date: true, nav: true, drawdown: true, portfolio_value: true, daily_p_l: true, pnl: true, capital_in_out: true },
               orderBy: { date: "asc" },
             }),
