@@ -651,46 +651,62 @@ const HoldingsSummaryPage = () => {
                 throw new Error("Selected account not found");
             }
 
-            const endpoint = selectedAccountData.account_type === "pms"
-                ? `/api/pms-data?qcode=${selectedAccount}&viewMode=consolidated&accountCode=${accountCode}`
-                : `/api/portfolio?viewMode=consolidated&qcode=${selectedAccount}&accountCode=${accountCode}`;
-
-            const res = await fetch(endpoint, { credentials: "include" });
-            if (!res.ok) {
-                const errorData = await res.json();
-                throw new Error(errorData.error || "Failed to load holdings data");
-            }
-
-            const response = await res.json();
-
-            let holdings = null;
-            if (response.data?.holdings) {
-                holdings = response.data.holdings;
-            } else if (response.holdings) {
-                holdings = response.holdings;
-            }
-
-            if (holdings) {
-                setHoldingsData(holdings);
-
-                const allHoldings = [
-                    ...(holdings.equityHoldings || []),
-                    ...(holdings.debtHoldings || []),
-                    ...(holdings.mutualFundHoldings || [])
-                ];
-
-                if (allHoldings.length > 0) {
+            // PMS accounts are out of scope for the bifurcated-holdings
+            // migration — keep the legacy behavior (reads a .holdings key that
+            // /api/pms-data does not currently emit; stays empty as before).
+            if (selectedAccountData.account_type === "pms") {
+                const res = await fetch(
+                    `/api/pms-data?qcode=${selectedAccount}&viewMode=consolidated&accountCode=${accountCode}`,
+                    { credentials: "include" }
+                );
+                if (!res.ok) {
+                    const errorData = await res.json();
+                    throw new Error(errorData.error || "Failed to load holdings data");
+                }
+                const response = await res.json();
+                const holdings = response.data?.holdings ?? response.holdings ?? null;
+                if (holdings) {
+                    setHoldingsData(holdings);
+                    const allHoldings = [
+                        ...(holdings.equityHoldings || []),
+                        ...(holdings.debtHoldings || []),
+                        ...(holdings.mutualFundHoldings || [])
+                    ];
                     const validDates = allHoldings
                         .map((h: Holding) => h.date)
                         .filter((date: Date | null) => date != null)
                         .map((date: Date | string) => new Date(date))
                         .filter((date: Date) => !isNaN(date.getTime()));
-
                     if (validDates.length > 0) {
-                        const lastUpdated = new Date(Math.max(...validDates.map((d: Date) => d.getTime())));
-                        setLastUpdatedDate(lastUpdated);
+                        setLastUpdatedDate(new Date(Math.max(...validDates.map((d: Date) => d.getTime()))));
                     }
                 }
+                return;
+            }
+
+            // Managed accounts (Zerodha/Jainam/Radiance): served from the
+            // bifurcated holdings tables via the shared holdings endpoint,
+            // keyed by the selected account's qcode. Same response shape +
+            // state setters as fetchBifurcatedHoldings.
+            const res = await fetch(
+                `/api/bifurcated-holdings?qcode=${selectedAccount}`,
+                { credentials: "include" }
+            );
+            if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.error || "Failed to load holdings data");
+            }
+            const data: {
+                holdingsSummary: HoldingsSummary;
+                availableStrategies: string[];
+                dataAsOfDate: string | null;
+            } = await res.json();
+
+            setHoldingsData(data.holdingsSummary);
+            setAvailableStrategies(data.availableStrategies || []);
+            if (data.dataAsOfDate) {
+                const d = new Date(data.dataAsOfDate);
+                if (!isNaN(d.getTime())) setLastUpdatedDate(d);
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : "Failed to load holdings data");
