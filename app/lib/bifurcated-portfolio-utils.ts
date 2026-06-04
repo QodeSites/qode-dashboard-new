@@ -209,6 +209,21 @@ class BifurcatedPortfolioEngine {
     if (scheme === this.config.oldSchemeName) return 0;
 
     if (scheme === "Total Portfolio") {
+      // Admin override: when a Deposit/Value tag is selected on the Total
+      // Portfolio page, amount invested = net capital_in_out for that single
+      // tag over its full natural range.
+      if (tagOverrides?.depositTag) {
+        const depositSum = await this.msTable.aggregate({
+          where: {
+            qcode,
+            system_tag: tagOverrides.depositTag,
+            capital_in_out: { not: null },
+          },
+          _sum: { capital_in_out: true },
+        });
+        return Number(depositSum._sum.capital_in_out) || 0;
+      }
+
       // Always derive from combined cash flows (frozen old + DB new) —
       // the DB may not have old period capital_in_out entries even when
       // deposit tags are shared. Overrides target one scheme only; do
@@ -258,6 +273,23 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
+      // Admin override: Current Value/drawdown/nav from the selected
+      // Deposit/Value tag's latest row (full natural range).
+      if (tagOverrides?.depositTag) {
+        const record = await this.msTable.findFirst({
+          where: { qcode, system_tag: tagOverrides.depositTag },
+          orderBy: { date: "desc" },
+          select: { portfolio_value: true, drawdown: true, nav: true, date: true },
+        });
+        if (!record) return null;
+        return {
+          portfolioValue: Number(record.portfolio_value) || 0,
+          drawdown: Math.abs(Number(record.drawdown) || 0),
+          nav: Number(record.nav) || 0,
+          date: record.date,
+        };
+      }
+
       if (this.config.qodeTotalPortfolioTag) {
         // For Dinesh/Arwani, "Current Portfolio Value" sources from the
         // literal "Zerodha Total Portfolio" tag's latest portfolio_value
