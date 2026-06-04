@@ -881,8 +881,14 @@ class BifurcatedPortfolioEngine {
 
     // For "Total Portfolio" with shared tags: use raw DB NAV (no rebasing) to match old flow
     // For "Total Portfolio" with different tags: use rebased combined data (Dinesh)
-    const useRawDbNav = scheme === "Total Portfolio" && this.sharedNavTag;
-    const useRebasedData = scheme === "Total Portfolio" && !this.sharedNavTag;
+    // Admin override: a selected Returns/P&L tag must drive trailing returns,
+    // so force the getHistoricalData path (which honors the override) instead
+    // of the raw-DB-NAV path.
+    const hasNavOverride = scheme === "Total Portfolio" && !!tagOverrides?.navTag;
+    const useRawDbNav =
+      scheme === "Total Portfolio" && this.sharedNavTag && !hasNavOverride;
+    const useRebasedData =
+      scheme === "Total Portfolio" && !this.sharedNavTag && !hasNavOverride;
     const historicalData = (useRawDbNav)
       ? null
       : await this.getHistoricalData(qcode, scheme, tagOverrides);
