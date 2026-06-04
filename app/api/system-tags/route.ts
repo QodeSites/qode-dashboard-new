@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { getUserQcodes } from "@/app/lib/portfolio-utils";
 import { getEffectiveIcode } from "@/app/lib/admin-utils";
+import { findByQcode } from "@/app/lib/bifurcated-clients-registry";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: Request) {
@@ -27,12 +28,22 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Unauthorized access to this account" }, { status: 403 });
     }
 
-    // Fetch distinct system tags for this qcode (read-only query)
-    const records = await prisma.master_sheet.findMany({
-      where: { qcode },
-      select: { system_tag: true },
-      distinct: ["system_tag"],
-    });
+    // Fetch distinct system tags for this qcode (read-only query). Source from
+    // the SAME table the engine reads: bifurcated registry clients live in
+    // bifurcated_master_sheet_test (so the dropdown lists tags the override can
+    // actually apply); regular managed accounts live in master_sheet.
+    const isBifurcated = !!findByQcode(qcode);
+    const records = isBifurcated
+      ? await prisma.bifurcated_master_sheet_test.findMany({
+          where: { qcode },
+          select: { system_tag: true },
+          distinct: ["system_tag"],
+        })
+      : await prisma.master_sheet.findMany({
+          where: { qcode },
+          select: { system_tag: true },
+          distinct: ["system_tag"],
+        });
 
     const tags = records
       .map((r) => r.system_tag)
