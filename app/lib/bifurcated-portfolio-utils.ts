@@ -538,6 +538,28 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
+      // Admin override: cash flows from the selected Cash Flow tag's rows over
+      // its full natural range.
+      if (tagOverrides?.cashflowTag) {
+        const overrideFlows = await this.msTable.findMany({
+          where: {
+            qcode,
+            system_tag: tagOverrides.cashflowTag,
+            AND: [
+              { capital_in_out: { not: null } },
+              { capital_in_out: { not: new Decimal(0) } },
+            ],
+          },
+          select: { date: true, capital_in_out: true },
+          orderBy: { date: "asc" },
+        });
+        return overrideFlows.map((entry: any) => ({
+          date: this.normalizeDate(entry.date),
+          amount: entry.capital_in_out?.toNumber() || 0,
+          dividend: 0,
+        }));
+      }
+
       // Combine frozen old scheme + every active parallel scheme. This
       // picks up QYE++'s seed deposit in addition to QAW++'s cash flows
       // for Dinesh; unchanged for Shilpa/Vikram (one active scheme each).
