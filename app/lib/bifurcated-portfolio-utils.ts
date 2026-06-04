@@ -1021,6 +1021,22 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
+      // Admin override: monthly PnL from the selected Returns/P&L tag's series
+      // (full natural range, NAV=100 baseline). useFirstPrevNav=false matches
+      // the authoritative path — the series already carries the prepended 100
+      // baseline from getHistoricalData.
+      if (tagOverrides?.navTag) {
+        const overrideHistoricalData = await this.getHistoricalData(
+          qcode,
+          "Total Portfolio",
+          tagOverrides
+        );
+        return this.computeMonthlyPnLFromHistoricalData(
+          overrideHistoricalData,
+          false
+        );
+      }
+
       const unifiedHistoricalData = await this.getHistoricalData(
         qcode,
         "Total Portfolio"
@@ -1226,6 +1242,20 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
+      // Admin override: quarterly PnL from the selected Returns/P&L tag's
+      // series (full natural range, NAV=100 baseline).
+      if (tagOverrides?.navTag) {
+        const overrideHistoricalData = await this.getHistoricalData(
+          qcode,
+          "Total Portfolio",
+          tagOverrides
+        );
+        return this.computeQuarterlyPnLFromHistoricalData(
+          overrideHistoricalData,
+          false
+        );
+      }
+
       const unifiedHistoricalData = await this.getHistoricalData(
         qcode,
         "Total Portfolio"
