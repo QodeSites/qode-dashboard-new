@@ -388,6 +388,50 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
+      // Admin override: when a Returns/P&L tag is selected on the Total
+      // Portfolio page, build the curve from that single tag's full natural
+      // range. Prepend a NAV=100 baseline one day before the first row (the
+      // tag's first row carries prev_nav=100), matching the authoritative
+      // curve's "starts at 100" convention.
+      if (tagOverrides?.navTag) {
+        const overrideRows = await this.msTable.findMany({
+          where: { qcode, system_tag: tagOverrides.navTag, nav: { not: null } },
+          select: {
+            date: true,
+            nav: true,
+            prev_nav: true,
+            drawdown: true,
+            pnl: true,
+            capital_in_out: true,
+          },
+          orderBy: { date: "asc" },
+        });
+
+        const overrideResult = overrideRows.map((entry: any) => ({
+          date: entry.date as Date,
+          nav: Number(entry.nav) || 0,
+          prevNav: entry.prev_nav != null ? Number(entry.prev_nav) : null,
+          drawdown: Math.abs(Number(entry.drawdown) || 0),
+          pnl: Number(entry.pnl) || 0,
+          capitalInOut: Number(entry.capital_in_out) || 0,
+        }));
+
+        if (overrideResult.length > 0) {
+          const baselineDate = new Date(overrideResult[0].date);
+          baselineDate.setUTCDate(baselineDate.getUTCDate() - 1);
+          overrideResult.unshift({
+            date: baselineDate,
+            nav: 100,
+            prevNav: null,
+            drawdown: 0,
+            pnl: 0,
+            capitalInOut: 0,
+          });
+        }
+
+        return overrideResult;
+      }
+
       if (this.config.qodeTotalPortfolioTag) {
         // Authoritative single continuous curve — no frozen splice, no rebasing.
         // Prepend a NAV=100 baseline one day before the first row because Qode's
