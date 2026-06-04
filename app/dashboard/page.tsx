@@ -1409,15 +1409,15 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     const isActive = strategyData.metadata.isActive;
     const hasNavBasedTotalPortfolio = bifurcatedClient?.hasNavBasedTotalPortfolio ?? false;
 
-    // Override is per-strategy (option-2 semantics). The "Total Portfolio"
-    // aggregate doesn't consult scheme tags for clients with qodeTotalPortfolioTag
-    // (Dinesh/Arwani) or delegates to sub-schemes (Shilpa/Vikram), so the
-    // override has no effect there — hide the dropdown to avoid confusion.
-    // Admin-only: the per-strategy system_tag override is an internal
-    // inspection tool. Only show it while an admin is impersonating a client
-    // (the only way an admin views the dashboard) — never to real clients.
+    // System-tag-wise override lives ONLY on the Total Portfolio page for
+    // bifurcated clients: each dropdown re-points its metric at a chosen
+    // system_tag over that tag's full natural date range. Individual scheme
+    // pages show no dropdowns.
+    // Admin-only: the override is an internal inspection tool. Only show it
+    // while an admin is impersonating a client (the only way an admin views
+    // the dashboard) — never to real clients.
     const showDineshTagDropdowns =
-      isImpersonating && availableSystemTags.length > 1 && isActive && !isTotalPortfolio;
+      isImpersonating && availableSystemTags.length > 1 && isTotalPortfolio;
 
     return (
       <div className="space-y-6">
