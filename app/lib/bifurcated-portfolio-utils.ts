@@ -593,6 +593,16 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
+      // Admin override: Total Profit = sum of the selected Returns/P&L tag's
+      // pnl over its full natural range.
+      if (tagOverrides?.navTag) {
+        const overrideProfit = await this.msTable.aggregate({
+          where: { qcode, system_tag: tagOverrides.navTag, pnl: { not: null } },
+          _sum: { pnl: true },
+        });
+        return Number(overrideProfit._sum.pnl) || 0;
+      }
+
       if (this.config.qodeTotalPortfolioTag) {
         // Qode Total Portfolio's pnl column is authoritative for the combined
         // view — no need to merge frozen + DB.
@@ -672,6 +682,40 @@ class BifurcatedPortfolioEngine {
     }
 
     if (scheme === "Total Portfolio") {
+      // Admin override: returns from the selected Returns/P&L tag's full
+      // natural range, baseline = first row's prev_nav (?? 100), inception =
+      // one day before the first row (captures the day-1 return).
+      if (tagOverrides?.navTag) {
+        const firstNavRecord = await this.msTable.findFirst({
+          where: { qcode, system_tag: tagOverrides.navTag, nav: { not: null } },
+          orderBy: { date: "asc" },
+          select: { nav: true, prev_nav: true, date: true },
+        });
+        const latestNavRecord = await this.msTable.findFirst({
+          where: { qcode, system_tag: tagOverrides.navTag, nav: { not: null } },
+          orderBy: { date: "desc" },
+          select: { nav: true, date: true },
+        });
+
+        if (!firstNavRecord || !latestNavRecord) return 0;
+
+        const initialNav =
+          firstNavRecord.prev_nav != null
+            ? Number(firstNavRecord.prev_nav)
+            : 100;
+        const finalNav = Number(latestNavRecord.nav) || 0;
+        const inceptionDate = new Date(firstNavRecord.date);
+        inceptionDate.setUTCDate(inceptionDate.getUTCDate() - 1);
+        const days =
+          (latestNavRecord.date.getTime() - inceptionDate.getTime()) /
+          (1000 * 60 * 60 * 24);
+
+        if (days < 365) {
+          return (finalNav / initialNav - 1) * 100;
+        }
+        return (Math.pow(finalNav / initialNav, 365 / days) - 1) * 100;
+      }
+
       if (this.config.qodeTotalPortfolioTag) {
         // Qode's first row has prev_nav=100 (the inception baseline) and
         // represents day 1 of the account. Use prev_nav as the return
