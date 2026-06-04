@@ -39,6 +39,7 @@ interface CombinedTrailingPeriod {
 interface ExcelReportInput {
   strategyName: string;
   isTotalPortfolio: boolean;
+  hasNavBasedTotalPortfolio?: boolean;
   isActive: boolean;
   sessionUserName: string;
   dataAsOfDate?: string | null;
@@ -80,6 +81,7 @@ export function generateExcelReport(input: ExcelReportInput): void {
   const {
     strategyName,
     isTotalPortfolio,
+    hasNavBasedTotalPortfolio = false,
     isActive,
     sessionUserName,
     dataAsOfDate,
@@ -90,6 +92,8 @@ export function generateExcelReport(input: ExcelReportInput): void {
     monthlyPnl,
     quarterlyPnl,
   } = input;
+
+  const includeFullSections = !isTotalPortfolio || hasNavBasedTotalPortfolio;
 
   try {
     const nameForFile = accountInfo?.accountName || strategyName;
@@ -135,9 +139,9 @@ export function generateExcelReport(input: ExcelReportInput): void {
     wsData.push([]);
 
     // ========================================================================
-    // 2. Trailing Returns Section (skip for Total Portfolio)
+    // 2. Trailing Returns Section (rendered only when includeFullSections)
     // ========================================================================
-    if (!isTotalPortfolio && combinedTrailing) {
+    if (includeFullSections && combinedTrailing) {
       headerRows.push(wsData.length);
       wsData.push(["", "Trailing Returns (Portfolio vs Benchmark)"]);
       subHeaderRows.push(wsData.length);
@@ -224,9 +228,9 @@ export function generateExcelReport(input: ExcelReportInput): void {
     }
 
     // ========================================================================
-    // 4. Monthly PnL Section (skip for Total Portfolio)
+    // 4. Monthly PnL Section (rendered only when includeFullSections)
     // ========================================================================
-    if (!isTotalPortfolio && monthlyPnl && Object.keys(monthlyPnl).length > 0) {
+    if (includeFullSections && monthlyPnl && Object.keys(monthlyPnl).length > 0) {
       headerRows.push(wsData.length);
       wsData.push(["", "Monthly P&L"]);
       subHeaderRows.push(wsData.length);
@@ -261,14 +265,10 @@ export function generateExcelReport(input: ExcelReportInput): void {
     // ========================================================================
     if (quarterlyPnl && Object.keys(quarterlyPnl).length > 0) {
       headerRows.push(wsData.length);
-      if (isTotalPortfolio) {
-        wsData.push(["", "Quarterly P&L"]);
-      } else {
-        wsData.push(["", "Quarterly P&L"]);
-      }
+      wsData.push(["", "Quarterly P&L"]);
       subHeaderRows.push(wsData.length);
 
-      if (isTotalPortfolio) {
+      if (!includeFullSections) {
         wsData.push(["", "Year", "Quarter", "Cash Return (₹)"]);
       } else {
         wsData.push(["", "Year", "Quarter", "Percent Return (%)", "Cash Return (₹)"]);
@@ -278,7 +278,7 @@ export function generateExcelReport(input: ExcelReportInput): void {
 
       years.forEach((year) => {
         const yearData = quarterlyPnl[year];
-        if (isTotalPortfolio) {
+        if (!includeFullSections) {
           wsData.push(["", year, "Q1", parseFloat(yearData.cash.q1) || 0]);
           wsData.push(["", year, "Q2", parseFloat(yearData.cash.q2) || 0]);
           wsData.push(["", year, "Q3", parseFloat(yearData.cash.q3) || 0]);

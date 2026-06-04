@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { calculatePortfolioMetrics, formatPortfolioStats } from "@/app/lib/portfolio-utils";
-import { DineshApi } from "@/app/lib/bifurcated-portfolio-utils";
+import { getEngineForQcode } from "@/app/lib/bifurcated-portfolio-utils";
 // PortfolioApi from sarla-utils is intentionally NOT used because
 // PortfolioApi.GET fetches ALL Sarla schemes (5-6), which is slow.
 // Instead, getQyePlusStats queries master_sheet directly for Scheme B only.
@@ -786,13 +786,20 @@ export async function getQawStats(): Promise<DistributorPortfolioResponse> {
   const krishnanCurve = krishnanStats.equityCurve as NavPoint[];
 
   // ---- 2. Dinesh's QAW++ scheme via the bifurcated engine --------------------
-  // Calling DineshApi.GET directly (with a synthetic Request) means we go
-  // through the EXACT same code as /api/dinesh-api. Zero risk of divergence
-  // from what the regular Dinesh dashboard shows.
+  // Resolve the registry-driven engine for Dinesh's qcode and call handleGET
+  // directly with a synthetic Request. Same code path as a real
+  // /api/bifurcated-portfolio?qcode=QAC00053 hit, just skipping the HTTP and
+  // auth layers (we're already server-side and trusted here).
+  const dineshEngine = getEngineForQcode(QAW_DINESH_QCODE);
+  if (!dineshEngine) {
+    throw new Error(
+      `Distributor view: no engine registered for Dinesh qcode ${QAW_DINESH_QCODE}`
+    );
+  }
   const fakeReq = new Request(
     `http://internal.distributor/?qcode=${QAW_DINESH_QCODE}`
   );
-  const dineshRes = await DineshApi.GET(fakeReq);
+  const dineshRes = await dineshEngine.handleGET(fakeReq);
   if (!dineshRes.ok) {
     throw new Error(
       `Distributor view: bifurcated engine returned ${dineshRes.status} for Dinesh`
