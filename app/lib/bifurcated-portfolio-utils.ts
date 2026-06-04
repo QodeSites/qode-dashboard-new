@@ -85,11 +85,13 @@ interface SchemeTagConfig {
   startDate: Date;
 }
 
-// Per-strategy system_tag overrides driven by the dashboard dropdown. Each
-// override targets a specific query family — applied only to the scheme that
-// matches the request's `scheme` param (per-strategy scope). Never applied to
-// the "Total Portfolio" aggregate, whose data branches read the Qode Total
-// Portfolio tag / sub-schemes rather than schemeTags.
+// Per-strategy / per-metric system_tag overrides driven by the dashboard
+// dropdown. Each override targets a specific query family. On individual
+// scheme requests the override applies to the scheme matching the request's
+// `scheme` param. On the "Total Portfolio" page each override is honored
+// per-metric at the top of the corresponding Total Portfolio branch, over the
+// selected tag's full natural date range. Default (no override) keeps the
+// authoritative aggregate unchanged.
 interface TagOverrides {
   depositTag?: string;   // → replaces schemeTags.depositTag in deposit/exposure queries
   navTag?: string;       // → replaces schemeTags.navTag in NAV/PnL queries (history, totalProfit, returns, trailing, monthly/quarterly)
@@ -1293,12 +1295,12 @@ class BifurcatedPortfolioEngine {
       const qcode =
         url.searchParams.get("qcode") || this.config.defaultQcode;
 
-      // Per-strategy system_tag override. The dashboard sends `scheme` (the
-      // currently active strategy) along with one or more tag overrides; the
-      // override is applied only when iterating that scheme — other strategies
-      // continue to use their config-defined tags. Total Portfolio is not a
-      // valid target (its data branches don't consult schemeTags), so the
-      // frontend hides the dropdown there.
+      // Per-strategy / per-metric system_tag override. The dashboard sends
+      // `scheme` (the currently active strategy) along with one or more tag
+      // overrides; the override is applied only when iterating that scheme.
+      // "Total Portfolio" is itself a valid target: each Total Portfolio branch
+      // honors the relevant override per-metric over the selected tag's natural
+      // range. Other strategies keep their config-defined tags.
       const overrideScheme = url.searchParams.get("scheme") || null;
       const depositTagOverride = url.searchParams.get("depositTag");
       const navTagOverride = url.searchParams.get("navTag");
