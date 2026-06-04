@@ -40,6 +40,7 @@ export const MANAGED_ACCOUNTS_LIST: string[] = [
   "QAC00109",
   "QAC00110",
   "QAC00111",
+  "QAC00112",
   "QAC00073",
   "QAC00093",
 ];
@@ -69,6 +70,7 @@ const different_cases: Record<string, string> = {
    "QAC00109": "Zerodha Total Portfolio",
    "QAC00110": "Zerodha Total Portfolio",
    "QAC00111": "Zerodha Total Portfolio",
+   "QAC00112": "Zerodha Total Portfolio",
    "QAC00073": "Total Portfolio Exposure",
    "QAC00093": "Total Portfolio Exposure",
   };
