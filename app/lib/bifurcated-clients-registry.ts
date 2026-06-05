@@ -30,6 +30,8 @@ import { WINRO_COMMERCIAL_CONFIG } from "./clients/winro_single";
 import { KANU_DOSHI_CONFIG } from "./clients/kanu_single";
 import { ASHOK_JOGANI_HUF_CONFIG } from "./clients/ashok_single";
 import { ANAND_DAMANI_CONFIG } from "./clients/anand_single";
+import { JONA_FASHIONS_LIFESTYLE_LLP_CONFIG } from "./clients/jona_single";
+import { RAJ_GOSHAR_CONFIG } from "./clients/Raj_Goshar_single";
 
 // Single source of truth for clients whose data lives in
 // bifurcated_master_sheet_test. Add a new entry here when onboarding a new
@@ -309,6 +311,26 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     qcode: "QAC00108",
     displayName: "Anand Damani",
     config: ANAND_DAMANI_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00123",
+    qcode: "QAC00109",
+    displayName: "Jona Fashions & Lifestyle LLP",
+    config: JONA_FASHIONS_LIFESTYLE_LLP_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00126",
+    qcode: "QAC00112",
+    displayName: "Raj Goshar",
+    config: RAJ_GOSHAR_CONFIG,
     frozenData: EMPTY_FROZEN_DATA,
     hasNavBasedTotalPortfolio: true,
     renderMode: "single",
