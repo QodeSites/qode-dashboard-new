@@ -1,11 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { getEffectiveIcode } from "@/app/lib/admin-utils";
+import { authorizeHoldingsRequest } from "@/app/lib/bifurcated-auth";
 import { prisma } from "@/lib/prisma";
-
-const DINESH_ICODE = "QUS00072";
-const DINESH_QCODE = "QAC00053";
 
 interface Holding {
   symbol: string;
@@ -88,32 +83,31 @@ function processHoldingsSummary(holdings: Holding[]): HoldingsSummary {
   };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    const icode = getEffectiveIcode(session);
-    if (!icode) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (icode !== DINESH_ICODE) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const auth = await authorizeHoldingsRequest(req);
+    if (!auth.ok) return auth.response;
+    const qcode = auth.qcode;
 
     const latestEquity = await prisma.bifurcated_equity_holding_test.findFirst({
-      where: { qcode: DINESH_QCODE },
+      where: { qcode },
       orderBy: { date: "desc" },
       select: { date: true },
     });
     const latestMf = await prisma.bifurcated_mutual_fund_holding_sheet_test.findFirst({
-      where: { qcode: DINESH_QCODE },
+      where: { qcode },
       orderBy: { as_of_date: "desc" },
       select: { as_of_date: true },
     });
 
     const equityRows = latestEquity
       ? await prisma.bifurcated_equity_holding_test.findMany({
-          where: { qcode: DINESH_QCODE, date: latestEquity.date },
+          where: { qcode, date: latestEquity.date },
         })
       : [];
     const mfRows = latestMf
       ? await prisma.bifurcated_mutual_fund_holding_sheet_test.findMany({
-          where: { qcode: DINESH_QCODE, as_of_date: latestMf.as_of_date },
+          where: { qcode, as_of_date: latestMf.as_of_date },
         })
       : [];
 
@@ -174,7 +168,7 @@ export async function GET() {
       { status: 200 }
     );
   } catch (error) {
-    console.error("Dinesh holdings API error:", error);
+    console.error("Bifurcated holdings API error:", error);
     return NextResponse.json(
       { error: "Internal server error", message: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }

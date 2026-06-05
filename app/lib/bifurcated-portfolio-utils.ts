@@ -1,11 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Decimal } from "@prisma/client/runtime/library";
-import {
-  EMPTY_FROZEN_DATA,
-  SHILPA_FROZEN_DATA,
-  VIKRAM_FROZEN_DATA,
-} from "./bifurcated-portfolio-data";
+import { EMPTY_FROZEN_DATA } from "./bifurcated-portfolio-data";
+// Re-export types and builder from the cycle-free builder module so callers
+// that import from bifurcated-portfolio-utils keep working unchanged.
+export type {
+  PortfolioConfig,
+  ClientConfig,
+  DefineBifurcatedClientInput,
+} from "./bifurcated-client-builder";
+export { defineBifurcatedClient } from "./bifurcated-client-builder";
+import type {
+  PortfolioConfig,
+  ClientConfig,
+} from "./bifurcated-client-builder";
 
 // ==================== Interfaces ====================
 
@@ -77,293 +85,18 @@ interface SchemeTagConfig {
   startDate: Date;
 }
 
-interface PortfolioConfig {
-  current: string;
-  metrics: string;
-  nav: string;
-  isActive: boolean;
-  // When set, this scheme uses its own system tags + inception date instead of
-  // the client-level depositSystemTag/navSystemTag/newStartDate. Required for
-  // parallel-running active schemes (e.g. Dinesh's QYE++ alongside QAW++).
-  tags?: SchemeTagConfig;
-  // When true, the scheme card's "Amount Invested" displays 0 regardless of
-  // the live computed value. Used for fully-wound-down schemes where the
-  // closing withdrawal nets the historical seed deposit (e.g. Dinesh's QTF).
-  // Does NOT affect Total Portfolio aggregation — those still use real cash
-  // flows from this scheme.
-  displayAmountInvestedAsZero?: boolean;
-}
-
 export interface FrozenSchemeData {
   data: PortfolioData;
   metadata: Metadata;
 }
 
-interface ClientConfig {
-  clientName: string;
-  defaultQcode: string;
-  accountCode: string;
-  oldSchemeName: string;
-  newSchemeName: string;
-  oldFinalNav: number;
-  newStartDate: Date;
-  depositSystemTag: string;
-  navSystemTag: string;
-  // Old scheme's DB system tags — when these match depositSystemTag/navSystemTag,
-  // the DB has continuous data under one tag and "Total Portfolio" can use a single
-  // query. When they differ (e.g. Dinesh), we must combine frozen + DB data.
-  oldSchemeDepositTag: string;
-  oldSchemeNavTag: string;
-  // When set, the client's master_sheet queries are redirected to
-  // bifurcated_master_sheet_test (a superset with the same columns), and the
-  // "Total Portfolio" view's NAV curve + PnL are sourced from this system_tag —
-  // an authoritative single continuous curve that replaces the frozen+rebased
-  // splice. Cash flows, amount deposited, latest exposure, and individual
-  // scheme views keep their existing tags.
-  qodeTotalPortfolioTag?: string;
-  portfolioMapping: Record<string, PortfolioConfig>;
-}
+// ==================== Per-Client Config Imports ====================
+
+import { ARWANI_CONFIG } from "./clients/arwani";
+import { ASHWIN_CONFIG } from "./clients/ashwin";
 
 // ==================== Client Configurations ====================
 
-const DINESH_CONFIG: ClientConfig = {
-  clientName: "Dinesh",
-  defaultQcode: "QAC00053",
-  accountCode: "AC9",
-  // QTF was migrated from frozen-data-file to live DB queries (sourced from
-  // bifurcated_master_sheet_test under "QTF++ Zerodha Total Portfolio" — the
-  // data team prefixed it like QAW++/QYE++; the un-prefixed tag has 0 rows in
-  // the bifurcated table). The engine's frozen-scheme branches now never fire
-  // for Dinesh because oldSchemeName is a sentinel that doesn't match any
-  // portfolioMapping key.
-  oldSchemeName: "__no_old_scheme__",
-  newSchemeName: "Scheme QAW++",
-  oldFinalNav: 100,
-  newStartDate: new Date("2026-01-12"),
-  depositSystemTag: "Zerodha Total Portfolio",
-  navSystemTag: "Zerodha Total Portfolio",
-  // Sentinels different from depositSystemTag/navSystemTag — irrelevant after
-  // QTF migration but kept consistent with Arwani's pattern.
-  oldSchemeDepositTag: "__no_old_deposit_tag__",
-  oldSchemeNavTag: "__no_old_nav_tag__",
-  qodeTotalPortfolioTag: "Qode Total Portfolio",
-  portfolioMapping: {
-    "Total Portfolio": {
-      current: "Total Portfolio",
-      metrics: "Total Portfolio",
-      nav: "Total Portfolio",
-      isActive: true,
-    },
-    "Scheme QAW++": {
-      current: "QAW++ Zerodha Total Portfolio",
-      metrics: "QAW++ Zerodha Total Portfolio",
-      nav: "QAW++ Zerodha Total Portfolio",
-      isActive: true,
-      tags: {
-        depositTag: "QAW++ Zerodha Total Portfolio",
-        navTag: "QAW++ Zerodha Total Portfolio",
-        startDate: new Date("2026-01-12"),
-      },
-    },
-    "Scheme QYE++": {
-      current: "QYE++ Zerodha Total Portfolio",
-      metrics: "QYE++ Zerodha Total Portfolio",
-      nav: "QYE++ Total Portfolio Value",
-      isActive: true,
-      tags: {
-        depositTag: "QYE++ Zerodha Total Portfolio",
-        navTag: "QYE++ Total Portfolio Value",
-        startDate: new Date("2026-04-08"),
-      },
-    },
-    "Scheme QTF": {
-      current: "QTF++ Zerodha Total Portfolio",
-      metrics: "QTF++ Zerodha Total Portfolio",
-      nav: "QTF++ Zerodha Total Portfolio",
-      isActive: false,
-      tags: {
-        depositTag: "QTF++ Zerodha Total Portfolio",
-        navTag: "QTF++ Zerodha Total Portfolio",
-        startDate: new Date("2025-08-26"),
-      },
-      // Net cash flow on QTF is negative (closing withdrawal of ~₹5.68 Cr
-      // exceeded the ~₹4.99 Cr seed because the withdrawal moved the grown
-      // portfolio out to QAW++). Team prefers to show 0 on the inactive
-      // card rather than expose this accounting artifact.
-      displayAmountInvestedAsZero: true,
-    },
-  },
-};
-
-const SHILPA_CONFIG: ClientConfig = {
-  clientName: "Shilpa",
-  defaultQcode: "QAC00040",
-  accountCode: "AC10",
-  oldSchemeName: "Scheme QYE+",
-  newSchemeName: "Scheme QYE++",
-  oldFinalNav: 110.43,
-  newStartDate: new Date("2026-02-05"),
-  depositSystemTag: "Zerodha Total Portfolio",
-  navSystemTag: "Total Portfolio Value",
-  oldSchemeDepositTag: "Zerodha Total Portfolio",
-  oldSchemeNavTag: "Total Portfolio Value",
-  portfolioMapping: {
-    "Total Portfolio": {
-      current: "Total Portfolio",
-      metrics: "Total Portfolio",
-      nav: "Total Portfolio",
-      isActive: true,
-    },
-    "Scheme QYE++": {
-      current: "Total Portfolio Value",
-      metrics: "Total Portfolio Value",
-      nav: "Total Portfolio Value",
-      isActive: true,
-    },
-    "Scheme QYE+": {
-      current: "Total Portfolio Value",
-      metrics: "Total Portfolio Value",
-      nav: "Total Portfolio Value",
-      isActive: false,
-    },
-  },
-};
-
-const VIKRAM_CONFIG: ClientConfig = {
-  clientName: "Vikram Trading",
-  defaultQcode: "QAC00043",
-  accountCode: "AC11",
-  oldSchemeName: "Scheme QYE+",
-  newSchemeName: "Scheme QYE++",
-  oldFinalNav: 106.02,
-  newStartDate: new Date("2026-01-14"),
-  depositSystemTag: "Zerodha Total Portfolio",
-  navSystemTag: "Total Portfolio Value",
-  oldSchemeDepositTag: "Zerodha Total Portfolio",
-  oldSchemeNavTag: "Total Portfolio Value",
-  portfolioMapping: {
-    "Total Portfolio": {
-      current: "Total Portfolio",
-      metrics: "Total Portfolio",
-      nav: "Total Portfolio",
-      isActive: true,
-    },
-    "Scheme QYE++": {
-      current: "Total Portfolio Value",
-      metrics: "Total Portfolio Value",
-      nav: "Total Portfolio Value",
-      isActive: true,
-    },
-    "Scheme QYE+": {
-      current: "Total Portfolio Value",
-      metrics: "Total Portfolio Value",
-      nav: "Total Portfolio Value",
-      isActive: false,
-    },
-  },
-};
-
-// Arwani has no inactive scheme — two parallel active schemes (QYE++ since
-// inception 2026-01-16, QAW++ added 2026-03-23) and a Qode Total Portfolio
-// authoritative aggregate. The "old scheme" config fields are sentinels that
-// never match a portfolioMapping key, so the engine's frozen-scheme branches
-// stay dormant. EMPTY_FROZEN_DATA satisfies the engine's frozenData reads
-// during Total Portfolio aggregation as no-ops.
-const ARWANI_CONFIG: ClientConfig = {
-  clientName: "Arwani",
-  defaultQcode: "QAC00071",
-  accountCode: "AC12",
-  oldSchemeName: "__no_old_scheme__",
-  newSchemeName: "Scheme QYE++",
-  oldFinalNav: 100,
-  newStartDate: new Date("2026-01-16"),
-  depositSystemTag: "QYE++ Zerodha Total Portfolio",
-  navSystemTag: "QYE++ Zerodha Total Portfolio",
-  // Sentinels different from depositSystemTag/navSystemTag — forces
-  // sharedDepositTag/sharedNavTag = false, which gives QYE++ a date-filtered
-  // query and a NAV=100 inception baseline (correct for Arwani).
-  oldSchemeDepositTag: "__no_old_deposit_tag__",
-  oldSchemeNavTag: "__no_old_nav_tag__",
-  qodeTotalPortfolioTag: "Qode Total Portfolio",
-  portfolioMapping: {
-    "Total Portfolio": {
-      current: "Total Portfolio",
-      metrics: "Total Portfolio",
-      nav: "Total Portfolio",
-      isActive: true,
-    },
-    "Scheme QYE++": {
-      current: "QYE++ Zerodha Total Portfolio",
-      metrics: "QYE++ Zerodha Total Portfolio",
-      nav: "QYE++ Total Portfolio Value",
-      isActive: true,
-      tags: {
-        depositTag: "QYE++ Zerodha Total Portfolio",
-        navTag: "QYE++ Total Portfolio Value",
-        startDate: new Date("2026-01-16"),
-      },
-    },
-    "Scheme QAW++": {
-      current: "QAW++ Zerodha Total Portfolio",
-      metrics: "QAW++ Zerodha Total Portfolio",
-      nav: "QAW++ Zerodha Total Portfolio",
-      isActive: true,
-      tags: {
-        depositTag: "QAW++ Zerodha Total Portfolio",
-        navTag: "QAW++ Zerodha Total Portfolio",
-        startDate: new Date("2026-03-23"),
-      },
-    },
-  },
-};
-
-// Ashwin Agarwal: identical shape to Arwani — two parallel active schemes
-// (QYE++ since 2026-02-24, QAW++ added 2026-05-04) and an authoritative
-// Qode Total Portfolio aggregate curve. No inactive scheme.
-const ASHWIN_CONFIG: ClientConfig = {
-  clientName: "Ashwin Agarwal",
-  defaultQcode: "QAC00083",
-  accountCode: "AC13",
-  oldSchemeName: "__no_old_scheme__",
-  newSchemeName: "Scheme QYE++",
-  oldFinalNav: 100,
-  newStartDate: new Date("2026-02-24"),
-  depositSystemTag: "QYE++ Zerodha Total Portfolio",
-  navSystemTag: "QYE++ Zerodha Total Portfolio",
-  oldSchemeDepositTag: "__no_old_deposit_tag__",
-  oldSchemeNavTag: "__no_old_nav_tag__",
-  qodeTotalPortfolioTag: "Qode Total Portfolio",
-  portfolioMapping: {
-    "Total Portfolio": {
-      current: "Total Portfolio",
-      metrics: "Total Portfolio",
-      nav: "Total Portfolio",
-      isActive: true,
-    },
-    "Scheme QYE++": {
-      current: "QYE++ Zerodha Total Portfolio",
-      metrics: "QYE++ Zerodha Total Portfolio",
-      nav: "QYE++ Total Portfolio Value",
-      isActive: true,
-      tags: {
-        depositTag: "QYE++ Zerodha Total Portfolio",
-        navTag: "QYE++ Total Portfolio Value",
-        startDate: new Date("2026-02-24"),
-      },
-    },
-    "Scheme QAW++": {
-      current: "QAW++ Zerodha Total Portfolio",
-      metrics: "QAW++ Zerodha Total Portfolio",
-      nav: "QAW++ Zerodha Total Portfolio",
-      isActive: true,
-      tags: {
-        depositTag: "QAW++ Zerodha Total Portfolio",
-        navTag: "QAW++ Zerodha Total Portfolio",
-        startDate: new Date("2026-05-04"),
-      },
-    },
-  },
-};
 
 // ==================== Engine ====================
 
@@ -1261,7 +994,14 @@ class BifurcatedPortfolioEngine {
           // For shared-tag (Shilpa/Vikram): prevNav is the old scheme's
           // final NAV (~110/~106), which is the correct base for the new
           // scheme's first period.
-          startNav = historicalData[0]?.prevNav ?? 100;
+          // Use the inception row's prevNav as the first-period base, but only
+          // when it's a real positive value. Some inception rows store
+          // prevNav=0 (not null) — `?? 100` would NOT catch 0, leaving
+          // startNav=0 and producing +Infinity% for the inception period.
+          startNav =
+            historicalData[0]?.prevNav && historicalData[0].prevNav > 0
+              ? historicalData[0].prevNav
+              : 100;
           isFirstMonthSet = true;
         } else if (i > 0) {
           startNav = historicalData[i - 1]?.nav || entry.nav;
@@ -1434,7 +1174,14 @@ class BifurcatedPortfolioEngine {
           // For shared-tag (Shilpa/Vikram): prevNav is the old scheme's
           // final NAV (~110/~106), which is the correct base for the new
           // scheme's first period.
-          startNav = historicalData[0]?.prevNav ?? 100;
+          // Use the inception row's prevNav as the first-period base, but only
+          // when it's a real positive value. Some inception rows store
+          // prevNav=0 (not null) — `?? 100` would NOT catch 0, leaving
+          // startNav=0 and producing +Infinity% for the inception period.
+          startNav =
+            historicalData[0]?.prevNav && historicalData[0].prevNav > 0
+              ? historicalData[0].prevNav
+              : 100;
           isFirstQuarterSet = true;
         } else if (i > 0) {
           startNav = historicalData[i - 1]?.nav || entry.nav;
@@ -1539,7 +1286,13 @@ class BifurcatedPortfolioEngine {
         const equityCurveForDisplay = (() => {
           if (
             this.isFreshActiveScheme(scheme) &&
-            rawEquityCurve.length > 0
+            rawEquityCurve.length > 0 &&
+            // Only prepend a synthetic NAV=100 baseline when the first real
+            // row isn't already 100 (matches the legacy convention in
+            // portfolio-utils). When the inception row is already 100 (e.g.
+            // Deepti), prepending would push the inception label to a day
+            // before the account existed.
+            rawEquityCurve[0].nav !== 100
           ) {
             const firstDate = new Date(rawEquityCurve[0].date);
             firstDate.setDate(firstDate.getDate() - 1);
@@ -1553,8 +1306,12 @@ class BifurcatedPortfolioEngine {
               scheme === this.config.newSchemeName &&
               this.sharedNavTag
             ) {
+              // Guard prevNav<=0 (some inception rows store 0, not null) so the
+              // rebase base never divides by zero.
               const baseNav =
-                historicalData[0]?.prevNav ?? rawEquityCurve[0].nav;
+                historicalData[0]?.prevNav && historicalData[0].prevNav > 0
+                  ? historicalData[0].prevNav
+                  : rawEquityCurve[0].nav;
               const rebaseFactor = 100 / baseNav;
               const rebasedCurve = rawEquityCurve.map((p) => ({
                 date: p.date,
@@ -1621,10 +1378,19 @@ class BifurcatedPortfolioEngine {
             startDate: null,
             endDate: null,
           },
+          // Source inception from the DISPLAYED equity curve, not the raw DB
+          // rows. For fresh active schemes the displayed curve has a NAV=100
+          // baseline prepended one day before the first real row (see
+          // equityCurveForDisplay above), so the inception label lines up with
+          // where the chart actually starts — matching the legacy
+          // single-strategy convention (first real day − 1). Falls back to raw
+          // historical, then frozen metadata.
           inceptionDate:
-            historicalData.length > 0
-              ? this.normalizeDate(historicalData[0].date)
-              : this.frozenData.metadata.inceptionDate,
+            equityCurveForDisplay.length > 0
+              ? equityCurveForDisplay[0].date
+              : historicalData.length > 0
+                ? this.normalizeDate(historicalData[0].date)
+                : this.frozenData.metadata.inceptionDate,
           dataAsOfDate:
             latestExposure?.date.toISOString().split("T")[0] ||
             new Date().toISOString().split("T")[0],
@@ -1655,41 +1421,28 @@ class BifurcatedPortfolioEngine {
 
 // ==================== Engine Instances & Exports ====================
 
-// Dinesh's QTF (formerly frozen) is now live-DB-sourced; engine receives
-// EMPTY_FROZEN_DATA so the frozen-scheme branches stay dormant.
-const dineshEngine = new BifurcatedPortfolioEngine(
-  DINESH_CONFIG,
-  EMPTY_FROZEN_DATA
-);
-const shilpaEngine = new BifurcatedPortfolioEngine(
-  SHILPA_CONFIG,
-  SHILPA_FROZEN_DATA
-);
-const vikramEngine = new BifurcatedPortfolioEngine(
-  VIKRAM_CONFIG,
-  VIKRAM_FROZEN_DATA
-);
-const arwaniEngine = new BifurcatedPortfolioEngine(
-  ARWANI_CONFIG,
-  EMPTY_FROZEN_DATA
-);
-const ashwinEngine = new BifurcatedPortfolioEngine(
-  ASHWIN_CONFIG,
-  EMPTY_FROZEN_DATA
+import { BIFURCATED_CLIENTS } from "./bifurcated-clients-registry";
+
+// Registry-driven engine cache. One instance per registered bifurcated client
+// (Dinesh, Arwani, Ashwin). Constructed once at module load.
+const engineByQcode: Map<string, BifurcatedPortfolioEngine> = new Map(
+  BIFURCATED_CLIENTS.map((c) => [
+    c.qcode,
+    new BifurcatedPortfolioEngine(c.config, c.frozenData),
+  ])
 );
 
-export const DineshApi = {
-  GET: (req: Request) => dineshEngine.handleGET(req),
-};
-export const ShilpaApi = {
-  GET: (req: Request) => shilpaEngine.handleGET(req),
-};
-export const VikramApi = {
-  GET: (req: Request) => vikramEngine.handleGET(req),
-};
+export function getEngineForQcode(
+  qcode: string
+): BifurcatedPortfolioEngine | null {
+  return engineByQcode.get(qcode) ?? null;
+}
+
+// Backward-compat shim exports. Kept for any remaining server-side callers
+// that import these directly; new code should use getEngineForQcode instead.
 export const ArwaniApi = {
-  GET: (req: Request) => arwaniEngine.handleGET(req),
+  GET: (req: Request) => engineByQcode.get("QAC00071")!.handleGET(req),
 };
 export const AshwinApi = {
-  GET: (req: Request) => ashwinEngine.handleGET(req),
+  GET: (req: Request) => engineByQcode.get("QAC00083")!.handleGET(req),
 };

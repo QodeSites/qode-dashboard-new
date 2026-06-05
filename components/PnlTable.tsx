@@ -318,27 +318,27 @@ const renderMonthlyTable = () => {
                   <td
                     className={`${getCellClass(
                       isPercentView
-                        ? monthlyPnl[year]?.totalPercent.toString() || "-"
-                        : monthlyPnl[year]?.totalCash.toString() || "-",
+                        ? monthlyPnl[year]?.totalPercent?.toString() || "-"
+                        : monthlyPnl[year]?.totalCash?.toString() || "-",
                       isPercentView
                     )} `}
                   >
                     <span
                       className={getReturnColor(
                         isPercentView
-                          ? monthlyPnl[year]?.totalPercent.toString() || "-"
-                          : monthlyPnl[year]?.totalCash.toString() || "-"
+                          ? monthlyPnl[year]?.totalPercent?.toString() || "-"
+                          : monthlyPnl[year]?.totalCash?.toString() || "-"
                       )}
                     >
                       {isPercentView
-                        ? monthlyPnl[year]?.totalPercent.toString() === "-"
+                        ? monthlyPnl[year]?.totalPercent?.toString() === "-"
                           ? "-%"
                           : monthlyPnl[year]?.totalPercent && monthlyPnl[year].totalPercent !== 0
                             ? monthlyPnl[year].totalPercent > 0
                               ? `+${monthlyPnl[year].totalPercent.toFixed(2)}%`
                               : `${monthlyPnl[year].totalPercent.toFixed(2)}%`
                             : "-"
-                        : monthlyPnl[year]?.totalCash.toString() === "-"
+                        : monthlyPnl[year]?.totalCash?.toString() === "-"
                           ? "-"
                           : monthlyPnl[year]?.totalCash && monthlyPnl[year].totalCash !== 0
                             ? monthlyPnl[year].totalCash >= 0

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
+import { findByIcode } from "@/app/lib/bifurcated-clients-registry";
 import { useRouter } from "next/navigation";
 import { StatsCards } from "@/components/stats-cards";
 import { RevenueChart } from "@/components/revenue-chart";
@@ -417,12 +418,13 @@ export default function Portfolio() {
 
   const isSarla = effectiveIcode === "QUS0007";
   const isSatidham = effectiveIcode === "QUS0010";
-  const isDinesh = effectiveIcode === "QUS00072";
-  const isShilpa = effectiveIcode === "QUS00067";
-  const isVikram = effectiveIcode === "QUS00068";
-  const isArwani = effectiveIcode === "QUS00085";
-  const isAshwin = effectiveIcode === "QUS00097";
-  const isBifurcatedClient = isDinesh || isShilpa || isVikram || isArwani || isAshwin;
+  // Registry-driven for all bifurcated_master_sheet_test clients.
+  const bifurcatedClient = findByIcode(effectiveIcode);
+  // Single-strategy clients (renderMode: "single") render through the
+  // existing no-dropdown single-strategy path, NOT the dropdown bifurcated
+  // path — so they are deliberately excluded from isBifurcatedClient.
+  const isSingleStrategyBifurcated = bifurcatedClient?.renderMode === "single";
+  const isBifurcatedClient = !!bifurcatedClient && !isSingleStrategyBifurcated;
   // Read URL params directly to avoid useSearchParams() which triggers a Suspense boundary
   // and causes a loading flicker (Suspense fallback → page loading state).
   // Safe because during SSR status="loading" so the loading UI renders regardless of param values.
@@ -515,16 +517,12 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         };
 
         fetchSatidhamData();
-      } else if (isBifurcatedClient) {
-        const bifurcatedConfig = isDinesh
-          ? { api: "/api/dinesh-api", qcode: "QAC00053", name: "Dinesh" }
-          : isShilpa
-          ? { api: "/api/shilpa-api", qcode: "QAC00040", name: "Shilpa" }
-          : isVikram
-          ? { api: "/api/vikram-api", qcode: "QAC00043", name: "Vikram Trading" }
-          : isArwani
-          ? { api: "/api/arwani-api", qcode: "QAC00071", name: "Arwani" }
-          : { api: "/api/ashwin-api", qcode: "QAC00083", name: "Ashwin Agarwal" };
+      } else if (isBifurcatedClient && bifurcatedClient) {
+        const bifurcatedConfig = {
+          api: "/api/bifurcated-portfolio",
+          qcode: bifurcatedClient.qcode,
+          name: bifurcatedClient.displayName,
+        };
 
         const fetchBifurcatedData = async () => {
           try {
@@ -551,6 +549,34 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         };
 
         fetchBifurcatedData();
+      } else if (isSingleStrategyBifurcated && bifurcatedClient) {
+        // Single-strategy bifurcated client: fetch the same parameterized
+        // route, but the response has exactly one scheme key. Unwrap it into
+        // the `stats`/`metadata` state so the existing single-strategy render
+        // path (no dropdown) displays it.
+        const ssClient = bifurcatedClient;
+        const fetchSingleStrategyData = async () => {
+          try {
+            const res = await fetch(`/api/bifurcated-portfolio?qcode=${ssClient.qcode}`, { credentials: "include" });
+            if (!res.ok) {
+              const errorData = await res.json();
+              throw new Error(errorData.error || `Failed to load ${ssClient.displayName} data`);
+            }
+            const data: SarlaApiResponse = await res.json();
+            const entry = Object.values(data)[0] as { data: Stats; metadata: Metadata | null };
+            if (!entry?.data) {
+              throw new Error(`No scheme data returned for ${ssClient.displayName}`);
+            }
+            setStats(entry.data as Stats);
+            setMetadata(entry.metadata ?? null);
+            setIsLoading(false);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : `An unexpected error occurred`);
+            setIsLoading(false);
+          }
+        };
+
+        fetchSingleStrategyData();
       } else {
         const fetchAccounts = async () => {
           try {
@@ -578,10 +604,10 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, router, isSarla, isSatidham, isBifurcatedClient, accountCode, isAdmin, isImpersonating]);
+  }, [status, router, isSarla, isSatidham, isBifurcatedClient, isSingleStrategyBifurcated, accountCode, isAdmin, isImpersonating]);
 
   useEffect(() => {
-    if (selectedAccount && status === "authenticated" && !isSarla && !isSatidham && !isBifurcatedClient) {
+    if (selectedAccount && status === "authenticated" && !isSarla && !isSatidham && !isBifurcatedClient && !isSingleStrategyBifurcated) {
       const fetchAccountData = async () => {
         setIsLoading(true);
         setError(null);
@@ -1270,7 +1296,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     const lastDate = getLastDate(filteredEquityCurve, strategyData.metadata?.lastUpdated);
     const isTotalPortfolio = selectedStrategy === "Total Portfolio";
     const isActive = strategyData.metadata.isActive;
-    const hasNavBasedTotalPortfolio = isDinesh || isArwani || isAshwin;
+    const hasNavBasedTotalPortfolio = bifurcatedClient?.hasNavBasedTotalPortfolio ?? false;
 
     return (
       <div className="space-y-6">
@@ -1305,7 +1331,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         <StatsCards
           stats={convertedStats}
           accountType="sarla"
-          broker={isDinesh ? "Dinesh" : isShilpa ? "Shilpa" : isVikram ? "Vikram Trading" : isArwani ? "Arwani" : "Ashwin Agarwal"}
+          broker={bifurcatedClient?.displayName ?? ""}
           isTotalPortfolio={isTotalPortfolio}
           isActive={isActive}
           returnViewType={returnViewType}
@@ -1360,7 +1386,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     );
   }
 
-  if (!isSarla && !isSatidham && !isBifurcatedClient && accounts.length === 0) {
+  if (!isSarla && !isSatidham && !isBifurcatedClient && !isSingleStrategyBifurcated && accounts.length === 0) {
     return (
       <div className="p-6 text-center bg-[#f3f4f6] rounded-lg text-card-text">
         No accounts found for this user.
@@ -1371,7 +1397,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   if ((isSarla || isSatidham || isBifurcatedClient) && (!sarlaData || availableStrategies.length === 0)) {
     return (
       <div className="p-6 text-center bg-[#f3f4f6] rounded-lg text-card-text">
-        No strategy data found for {isSarla ? "Sarla" : isSatidham ? "Satidham" : isDinesh ? "Dinesh" : isShilpa ? "Shilpa" : isVikram ? "Vikram Trading" : isArwani ? "Arwani" : "Ashwin Agarwal"} user.
+        No strategy data found for {isSarla ? "Sarla" : isSatidham ? "Satidham" : bifurcatedClient?.displayName ?? "this"} user.
       </div>
     );
   }
@@ -1576,8 +1602,16 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                     <>
                       <StatsCards
                         stats={convertedStats}
-                        accountType={accounts.find((acc) => acc.qcode === selectedAccount)?.account_type || "unknown"}
-                        broker={accounts.find((acc) => acc.qcode === selectedAccount)?.broker || "Unknown"}
+                        accountType={
+                          isSingleStrategyBifurcated
+                            ? "managed_account"
+                            : accounts.find((acc) => acc.qcode === selectedAccount)?.account_type || "unknown"
+                        }
+                        broker={
+                          isSingleStrategyBifurcated
+                            ? bifurcatedClient?.broker || "Unknown"
+                            : accounts.find((acc) => acc.qcode === selectedAccount)?.broker || "Unknown"
+                        }
                         isActive={metadata?.isActive ?? true}
                         returnViewType={returnViewType}
                         setReturnViewType={setReturnViewType}
