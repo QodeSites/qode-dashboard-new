@@ -994,7 +994,14 @@ class BifurcatedPortfolioEngine {
           // For shared-tag (Shilpa/Vikram): prevNav is the old scheme's
           // final NAV (~110/~106), which is the correct base for the new
           // scheme's first period.
-          startNav = historicalData[0]?.prevNav ?? 100;
+          // Use the inception row's prevNav as the first-period base, but only
+          // when it's a real positive value. Some inception rows store
+          // prevNav=0 (not null) — `?? 100` would NOT catch 0, leaving
+          // startNav=0 and producing +Infinity% for the inception period.
+          startNav =
+            historicalData[0]?.prevNav && historicalData[0].prevNav > 0
+              ? historicalData[0].prevNav
+              : 100;
           isFirstMonthSet = true;
         } else if (i > 0) {
           startNav = historicalData[i - 1]?.nav || entry.nav;
@@ -1167,7 +1174,14 @@ class BifurcatedPortfolioEngine {
           // For shared-tag (Shilpa/Vikram): prevNav is the old scheme's
           // final NAV (~110/~106), which is the correct base for the new
           // scheme's first period.
-          startNav = historicalData[0]?.prevNav ?? 100;
+          // Use the inception row's prevNav as the first-period base, but only
+          // when it's a real positive value. Some inception rows store
+          // prevNav=0 (not null) — `?? 100` would NOT catch 0, leaving
+          // startNav=0 and producing +Infinity% for the inception period.
+          startNav =
+            historicalData[0]?.prevNav && historicalData[0].prevNav > 0
+              ? historicalData[0].prevNav
+              : 100;
           isFirstQuarterSet = true;
         } else if (i > 0) {
           startNav = historicalData[i - 1]?.nav || entry.nav;
@@ -1286,8 +1300,12 @@ class BifurcatedPortfolioEngine {
               scheme === this.config.newSchemeName &&
               this.sharedNavTag
             ) {
+              // Guard prevNav<=0 (some inception rows store 0, not null) so the
+              // rebase base never divides by zero.
               const baseNav =
-                historicalData[0]?.prevNav ?? rawEquityCurve[0].nav;
+                historicalData[0]?.prevNav && historicalData[0].prevNav > 0
+                  ? historicalData[0].prevNav
+                  : rawEquityCurve[0].nav;
               const rebaseFactor = 100 / baseNav;
               const rebasedCurve = rawEquityCurve.map((p) => ({
                 date: p.date,
