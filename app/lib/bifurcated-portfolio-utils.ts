@@ -131,9 +131,11 @@ const DINESH_CONFIG: ClientConfig = {
   defaultQcode: "QAC00053",
   accountCode: "AC9",
   // QTF was migrated from frozen-data-file to live DB queries (sourced from
-  // bifurcated_master_sheet_test under "QTF Zerodha Total Portfolio"). The
-  // engine's frozen-scheme branches now never fire for Dinesh because
-  // oldSchemeName is a sentinel that doesn't match any portfolioMapping key.
+  // bifurcated_master_sheet_test under "QTF++ Zerodha Total Portfolio" — the
+  // data team prefixed it like QAW++/QYE++; the un-prefixed tag has 0 rows in
+  // the bifurcated table). The engine's frozen-scheme branches now never fire
+  // for Dinesh because oldSchemeName is a sentinel that doesn't match any
+  // portfolioMapping key.
   oldSchemeName: "__no_old_scheme__",
   newSchemeName: "Scheme QAW++",
   oldFinalNav: 100,
@@ -175,13 +177,13 @@ const DINESH_CONFIG: ClientConfig = {
       },
     },
     "Scheme QTF": {
-      current: "QTF Zerodha Total Portfolio",
-      metrics: "QTF Zerodha Total Portfolio",
-      nav: "QTF Zerodha Total Portfolio",
+      current: "QTF++ Zerodha Total Portfolio",
+      metrics: "QTF++ Zerodha Total Portfolio",
+      nav: "QTF++ Zerodha Total Portfolio",
       isActive: false,
       tags: {
-        depositTag: "QTF Zerodha Total Portfolio",
-        navTag: "QTF Zerodha Total Portfolio",
+        depositTag: "QTF++ Zerodha Total Portfolio",
+        navTag: "QTF++ Zerodha Total Portfolio",
         startDate: new Date("2025-08-26"),
       },
       // Net cash flow on QTF is negative (closing withdrawal of ~₹5.68 Cr
