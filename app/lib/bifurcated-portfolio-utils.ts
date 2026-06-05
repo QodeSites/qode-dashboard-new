@@ -1286,7 +1286,13 @@ class BifurcatedPortfolioEngine {
         const equityCurveForDisplay = (() => {
           if (
             this.isFreshActiveScheme(scheme) &&
-            rawEquityCurve.length > 0
+            rawEquityCurve.length > 0 &&
+            // Only prepend a synthetic NAV=100 baseline when the first real
+            // row isn't already 100 (matches the legacy convention in
+            // portfolio-utils). When the inception row is already 100 (e.g.
+            // Deepti), prepending would push the inception label to a day
+            // before the account existed.
+            rawEquityCurve[0].nav !== 100
           ) {
             const firstDate = new Date(rawEquityCurve[0].date);
             firstDate.setDate(firstDate.getDate() - 1);
