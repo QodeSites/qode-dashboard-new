@@ -3537,6 +3537,12 @@ if (scheme === "Scheme PMS QAW") {
   }
 
   static async getHoldings(qcode: string): Promise<Holding[]> {
+    // Holdings are sourced from the bifurcated_* tables. The legacy
+    // equity_holding / mutual_fund_holding_sheet tables are no longer refreshed
+    // (the data team migrated holdings updates to bifurcated_equity_holding_test
+    // / bifurcated_mutual_fund_holding_sheet_test, same as the managed-account
+    // /api/bifurcated-holdings path). Reading the old tables left Sarla/Satidham
+    // holdings frozen. Column shapes match — same query logic, fresher source.
     // Fetch equity holdings for the latest date only
     const equityHoldings = await prisma.$queryRaw<{
       symbol: string;
@@ -3554,12 +3560,12 @@ if (scheme === "Scheme PMS QAW") {
       date: Date;
     }[]>`
       SELECT e.*
-      FROM equity_holding e
+      FROM bifurcated_equity_holding_test e
       WHERE e.qcode = ${qcode}
         AND e.quantity > 0
         AND e.date = (
           SELECT MAX(date)
-          FROM equity_holding
+          FROM bifurcated_equity_holding_test
           WHERE qcode = ${qcode} AND date IS NOT NULL
         )
     `;
@@ -3584,7 +3590,7 @@ if (scheme === "Scheme PMS QAW") {
     }[]>`
       WITH latest_date AS (
         SELECT MAX(as_of_date) as max_date
-        FROM mutual_fund_holding_sheet
+        FROM bifurcated_mutual_fund_holding_sheet_test
         WHERE qcode = ${qcode} AND as_of_date IS NOT NULL
       ),
       ranked_holdings AS (
@@ -3594,7 +3600,7 @@ if (scheme === "Scheme PMS QAW") {
             PARTITION BY m.isin
             ORDER BY m.quantity DESC, m.buy_value DESC
           ) as rn
-        FROM mutual_fund_holding_sheet m
+        FROM bifurcated_mutual_fund_holding_sheet_test m
         CROSS JOIN latest_date ld
         WHERE m.qcode = ${qcode}
           AND m.quantity > 0
