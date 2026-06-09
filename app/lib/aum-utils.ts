@@ -150,7 +150,7 @@ if (tagMap.length > 0) {
         m.qcode,
         m.system_tag,
         m.portfolio_value
-      FROM master_sheet m
+      FROM bifurcated_master_sheet_test m
       WHERE ${Prisma.join(conditions, " OR ")}
       ORDER BY m.qcode, m.system_tag, m.date DESC
     `
