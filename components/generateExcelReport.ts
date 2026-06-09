@@ -392,7 +392,7 @@ export function generateExcelReport(input: ExcelReportInput): void {
         horizontal: "right",
         vertical: "center"
       },
-      numFmt: "0.00",
+      numFmt: "#,##0.00",  // ← changed from "0.00"
       border: tableBorder
     };
 
@@ -457,7 +457,7 @@ export function generateExcelReport(input: ExcelReportInput): void {
           if (Number.isInteger(ws[cellAddress].v) && ws[cellAddress].v >= 1900 && ws[cellAddress].v <= 2100) {
             ws[cellAddress].z = '0'; // Format years as integers
           } else {
-            ws[cellAddress].z = '0.00'; // Format other numbers with 2 decimal places
+              ws[cellAddress].z = '#,##0.00';  // ← comma-separated with 2 decimals
           }
         } else if (typeof ws[cellAddress].v === 'string') {
           const trimmed = ws[cellAddress].v.trim();
@@ -468,7 +468,7 @@ export function generateExcelReport(input: ExcelReportInput): void {
             if (Number.isInteger(num) && num >= 1900 && num <= 2100) {
               ws[cellAddress].z = '0';
             } else {
-              ws[cellAddress].z = '0.00';
+              ws[cellAddress].z = '#,##0.00';  // ← comma-separated with 2 decimals
             }
           } else {
             ws[cellAddress].t = 's';
