@@ -2006,6 +2006,11 @@ ${commonStyles}
     const assetAllocation = getAssetAllocation();
     const { stocks, mutualFunds } = separateHoldings();
 
+    // Dropdown is only useful when there is more than one strategy to filter
+    // between. The Strategy column + exports stay at length > 0 (single value is
+    // still shown); only the interactive filter is suppressed for single-strategy.
+    const isMultiStrategy = availableStrategies.length > 1;
+
     // When a specific strategy is selected, recompute totals from the filtered rows
     // shown in the tables. When "ALL", fall back to the server's aggregated summary.
     const filteredTotals = (() => {
@@ -2073,7 +2078,7 @@ ${commonStyles}
                     </div>
                 </div>
 
-                {availableStrategies.length > 0 && (
+                {isMultiStrategy && (
                     <div className="flex justify-end">
                         <Select value={selectedStrategy} onValueChange={setSelectedStrategy}>
                             <SelectTrigger className="w-[240px] bg-white/50 border-0 card-shadow">
