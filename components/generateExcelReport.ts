@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx-js-style";
+import JSZip from "jszip";
 
 // ============================================================================
 // Type Definitions
@@ -538,17 +539,49 @@ export function generateExcelReport(input: ExcelReportInput): void {
     }
 
     // ========================================================================
-    // Hide Gridlines
-    // ========================================================================
-    (ws as any)['!views'] = [{
-      showGridLines: false
-    }];
-
-    // ========================================================================
-    // Add Worksheet and Write File
+    // Add Worksheet
     // ========================================================================
     XLSX.utils.book_append_sheet(wb, ws, "Portfolio Data");
-    XLSX.writeFile(wb, filename);
+
+    // ========================================================================
+    // Write to buffer, patch XML to hide gridlines, then download
+    // ========================================================================
+    const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+
+    JSZip.loadAsync(wbout).then(async (zip) => {
+      const sheetPath = "xl/worksheets/sheet1.xml";
+      let sheetXml = await zip.file(sheetPath)!.async("string");
+
+      if (sheetXml.includes("<sheetView ")) {
+        if (/showGridLines\s*=/.test(sheetXml)) {
+          sheetXml = sheetXml.replace(/showGridLines\s*=\s*"[^"]*"/, 'showGridLines="0"');
+        } else {
+          sheetXml = sheetXml.replace(/<sheetView\s/, '<sheetView showGridLines="0" ');
+        }
+      } else {
+        sheetXml = sheetXml.replace(
+          /(<worksheet[^>]*>)/,
+          '$1<sheetViews><sheetView showGridLines="0" workbookViewId="0"/></sheetViews>'
+        );
+      }
+
+      zip.file(sheetPath, sheetXml);
+
+      const patched = await zip.generateAsync({
+        type: "blob",
+        mimeType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+
+      const url = URL.createObjectURL(patched);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
 
   } catch (error) {
     console.error("Error generating Excel:", error);
