@@ -620,6 +620,10 @@ const HoldingsSummaryPage = () => {
                         ...(holdingsSummary.mutualFundHoldings || [])
                     ];
 
+                    setAvailableStrategies(
+                        [...new Set(allHoldings.map((h: Holding) => h.strategy).filter(Boolean))].sort() as string[]
+                    );
+
                     if (allHoldings.length > 0 && allHoldings[0]?.date) {
                         setLastUpdatedDate(new Date(allHoldings[0].date));
                     }
@@ -628,7 +632,15 @@ const HoldingsSummaryPage = () => {
                     for (const [, strategyData] of Object.entries(data)) {
                         const sd = strategyData as { data?: { holdingsSummary?: HoldingsSummary } };
                         if (sd?.data?.holdingsSummary) {
-                            setHoldingsData(sd.data.holdingsSummary);
+                            const hs = sd.data.holdingsSummary;
+                            setHoldingsData(hs);
+                            setAvailableStrategies(
+                                [...new Set([
+                                    ...(hs.equityHoldings || []),
+                                    ...(hs.debtHoldings || []),
+                                    ...(hs.mutualFundHoldings || []),
+                                ].map((h: Holding) => h.strategy).filter(Boolean))].sort() as string[]
+                            );
                             break;
                         }
                     }
