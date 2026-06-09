@@ -47,6 +47,7 @@ interface Holding {
   date: Date;
   type?: 'equity' | 'mutual_fund';
   isin?: string;
+  strategy?: string;
 }
 
 interface HoldingsSummary {
@@ -3558,6 +3559,7 @@ if (scheme === "Scheme PMS QAW") {
       debt_equity: string;
       sub_category: string;
       date: Date;
+      strategy: string | null;
     }[]>`
       SELECT e.*
       FROM bifurcated_equity_holding_test e
@@ -3587,6 +3589,7 @@ if (scheme === "Scheme PMS QAW") {
       sub_category: string;
       as_of_date: Date;
       mastersheet_tag: string;
+      strategy: string | null;
     }[]>`
       WITH latest_date AS (
         SELECT MAX(as_of_date) as max_date
@@ -3623,7 +3626,8 @@ if (scheme === "Scheme PMS QAW") {
         MAX(debt_equity) as debt_equity,
         MAX(sub_category) as sub_category,
         MAX(as_of_date) as as_of_date,
-        MAX(mastersheet_tag) as mastersheet_tag
+        MAX(mastersheet_tag) as mastersheet_tag,
+        MAX(strategy) as strategy
       FROM ranked_holdings
       WHERE rn = 1
       GROUP BY isin
@@ -3644,6 +3648,7 @@ if (scheme === "Scheme PMS QAW") {
       subCategory: holding.sub_category || '',
       date: holding.date || new Date(),
       type: 'equity' as const,
+      strategy: holding.strategy || undefined,
     }));
 
     const isinMap = new Map<string, Holding>();
@@ -3667,6 +3672,7 @@ if (scheme === "Scheme PMS QAW") {
           date: holding.as_of_date ? new Date(holding.as_of_date) : new Date(),
           type: 'mutual_fund' as const,
           isin: isin,
+          strategy: holding.strategy || undefined,
         });
       }
     });
