@@ -598,14 +598,40 @@ function computeDerivedMetrics(
  * UI components, not by the data layer.
  */
 export async function getQyeStats(): Promise<DistributorPortfolioResponse> {
-  const accountMeta = await loadAccountMeta(QYE_QCODE);
-
-  const metrics = await calculatePortfolioMetrics([accountMeta]);
-  if (!metrics) {
-    throw new Error("Distributor view: failed to calculate QYE++ metrics");
+  // Deepti Parikh (QAC00022) is a registry-driven bifurcated client whose data
+  // lives in bifurcated_master_sheet_test. Read it through the same engine the
+  // regular dashboard uses (identical code path to getQawStats for Dinesh) so
+  // the distributor view tracks the live bifurcated data. The previous
+  // master_sheet pipeline read the generic "Total Portfolio Value" tag, which
+  // is no longer updated for QYE schemes after the bifurcation refactor (froze
+  // ~2026-06-03) — the fresh QYE++ data is in bifurcated_master_sheet_test.
+  const engine = getEngineForQcode(QYE_QCODE);
+  if (!engine) {
+    throw new Error(
+      `Distributor view: no engine registered for QYE qcode ${QYE_QCODE}`
+    );
+  }
+  const res = await engine.handleGET(
+    new Request(`http://internal.distributor/?qcode=${QYE_QCODE}`)
+  );
+  if (!res.ok) {
+    throw new Error(
+      `Distributor view: bifurcated engine returned ${res.status} for QYE`
+    );
+  }
+  const json = await res.json();
+  // Single-strategy client → exactly one scheme key in the response.
+  const entry = Object.values(json)[0] as
+    | {
+        data: ReturnType<typeof formatPortfolioStats>;
+        metadata: { inceptionDate?: string | null; dataAsOfDate?: string | null };
+      }
+    | undefined;
+  if (!entry?.data?.equityCurve) {
+    throw new Error("Distributor view: QYE++ payload missing equityCurve");
   }
 
-  const stats = formatPortfolioStats(metrics);
+  const stats = entry.data;
   const { inceptionDate, dataAsOfDate } = getCurveDateRange(stats.equityCurve);
 
   // Scrub the strategy name on the formatted stats so nothing client-specific
@@ -654,8 +680,13 @@ export async function getQyePlusStats(): Promise<DistributorPortfolioResponse> {
   // need a separate profitSum aggregate — totalProfit is computed client-side
   // from navRows.pnl values. This is cheaper and ensures the total always
   // matches the per-month cash values derived from the same rows.
+  // Read from bifurcated_master_sheet_test: Sarla's Scheme B was migrated there
+  // (sarla-utils SCHEME_BIFURCATED_SOURCE, identity tag names), and master_sheet
+  // stopped updating these tags after the bifurcation refactor (~2026-06-03).
+  // The qcode and tag names are identical across both tables, so this is a
+  // straight table swap.
   const [navRows, depositSum, latestExposureRow] = await Promise.all([
-    prisma.master_sheet.findMany({
+    prisma.bifurcated_master_sheet_test.findMany({
       where: {
         qcode: SARLA_QCODE,
         system_tag: SCHEME_B_NAV_TAG,
@@ -663,7 +694,7 @@ export async function getQyePlusStats(): Promise<DistributorPortfolioResponse> {
       select: { date: true, nav: true, pnl: true },
       orderBy: { date: "asc" },
     }),
-    prisma.master_sheet.aggregate({
+    prisma.bifurcated_master_sheet_test.aggregate({
       where: {
         qcode: SARLA_QCODE,
         system_tag: SCHEME_B_RUPEE_TAG,
@@ -671,7 +702,7 @@ export async function getQyePlusStats(): Promise<DistributorPortfolioResponse> {
       },
       _sum: { capital_in_out: true },
     }),
-    prisma.master_sheet.findFirst({
+    prisma.bifurcated_master_sheet_test.findFirst({
       where: {
         qcode: SARLA_QCODE,
         system_tag: SCHEME_B_RUPEE_TAG,
