@@ -28,7 +28,7 @@ import { TRANSGLOBAL_CONFIG } from "./clients/transglobal_single";
 import { SSRG_ADVISORY_LLP_CONFIG } from "./clients/SSRG_single";
 import { WINRO_COMMERCIAL_CONFIG } from "./clients/winro_single";
 import { KANU_DOSHI_CONFIG } from "./clients/kanu_single";
-import { ASHOK_JOGANI_HUF_CONFIG } from "./clients/ashok_single";
+import { ASHOK_JOGANI_HUF_CONFIG } from "./clients/ashok";
 import { ANAND_DAMANI_CONFIG } from "./clients/anand_single";
 import { JONA_FASHIONS_LIFESTYLE_LLP_CONFIG } from "./clients/jona_single";
 import { RAJ_GOSHAR_CONFIG } from "./clients/Raj_Goshar_single";
@@ -305,8 +305,8 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     config: ASHOK_JOGANI_HUF_CONFIG,
     frozenData: EMPTY_FROZEN_DATA,
     hasNavBasedTotalPortfolio: true,
-    renderMode: "single",
-    broker: "zerodha",
+    // Now multi-scheme (QAW++ active + QAW+ inactive) → default "multi"
+    // renderMode with a Total Portfolio aggregate; no longer single-strategy.
   },
   {
     icode: "QUS00122",
