@@ -34,6 +34,7 @@ import { JONA_FASHIONS_LIFESTYLE_LLP_CONFIG } from "./clients/jona_single";
 import { RAJ_GOSHAR_CONFIG } from "./clients/Raj_Goshar_single";
 import { ASHIKA_PROP_CONFIG } from "./clients/ashika_prop1";
 import { ASHIKA_PROP_2_CONFIG } from "./clients/ashika_prop2";
+import { VBW005_CONFIG } from "./clients/VBW005_single";
 
 // Single source of truth for clients whose data lives in
 // bifurcated_master_sheet_test. Add a new entry here when onboarding a new
@@ -353,6 +354,16 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     qcode: "QAC00093",
     displayName: "Ashika Prop 2",
     config: ASHIKA_PROP_2_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "radiance",
+  },
+  {
+    icode: "QUS00129",
+    qcode: "QAC00115",
+    displayName: "VBW005",
+    config: VBW005_CONFIG,
     frozenData: EMPTY_FROZEN_DATA,
     hasNavBasedTotalPortfolio: true,
     renderMode: "single",
