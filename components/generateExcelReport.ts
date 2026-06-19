@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx-js-style";
+import JSZip from "jszip";
 
 // ============================================================================
 // Type Definitions
@@ -392,7 +393,7 @@ export function generateExcelReport(input: ExcelReportInput): void {
         horizontal: "right",
         vertical: "center"
       },
-      numFmt: "0.00",
+      numFmt: "#,##0.00",  // ← changed from "0.00"
       border: tableBorder
     };
 
@@ -457,7 +458,7 @@ export function generateExcelReport(input: ExcelReportInput): void {
           if (Number.isInteger(ws[cellAddress].v) && ws[cellAddress].v >= 1900 && ws[cellAddress].v <= 2100) {
             ws[cellAddress].z = '0'; // Format years as integers
           } else {
-            ws[cellAddress].z = '0.00'; // Format other numbers with 2 decimal places
+              ws[cellAddress].z = '#,##0.00';  // ← comma-separated with 2 decimals
           }
         } else if (typeof ws[cellAddress].v === 'string') {
           const trimmed = ws[cellAddress].v.trim();
@@ -468,7 +469,7 @@ export function generateExcelReport(input: ExcelReportInput): void {
             if (Number.isInteger(num) && num >= 1900 && num <= 2100) {
               ws[cellAddress].z = '0';
             } else {
-              ws[cellAddress].z = '0.00';
+              ws[cellAddress].z = '#,##0.00';  // ← comma-separated with 2 decimals
             }
           } else {
             ws[cellAddress].t = 's';
@@ -538,17 +539,49 @@ export function generateExcelReport(input: ExcelReportInput): void {
     }
 
     // ========================================================================
-    // Hide Gridlines
-    // ========================================================================
-    (ws as any)['!views'] = [{
-      showGridLines: false
-    }];
-
-    // ========================================================================
-    // Add Worksheet and Write File
+    // Add Worksheet
     // ========================================================================
     XLSX.utils.book_append_sheet(wb, ws, "Portfolio Data");
-    XLSX.writeFile(wb, filename);
+
+    // ========================================================================
+    // Write to buffer, patch XML to hide gridlines, then download
+    // ========================================================================
+    const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+
+    JSZip.loadAsync(wbout).then(async (zip) => {
+      const sheetPath = "xl/worksheets/sheet1.xml";
+      let sheetXml = await zip.file(sheetPath)!.async("string");
+
+      if (sheetXml.includes("<sheetView ")) {
+        if (/showGridLines\s*=/.test(sheetXml)) {
+          sheetXml = sheetXml.replace(/showGridLines\s*=\s*"[^"]*"/, 'showGridLines="0"');
+        } else {
+          sheetXml = sheetXml.replace(/<sheetView\s/, '<sheetView showGridLines="0" ');
+        }
+      } else {
+        sheetXml = sheetXml.replace(
+          /(<worksheet[^>]*>)/,
+          '$1<sheetViews><sheetView showGridLines="0" workbookViewId="0"/></sheetViews>'
+        );
+      }
+
+      zip.file(sheetPath, sheetXml);
+
+      const patched = await zip.generateAsync({
+        type: "blob",
+        mimeType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+
+      const url = URL.createObjectURL(patched);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
 
   } catch (error) {
     console.error("Error generating Excel:", error);
