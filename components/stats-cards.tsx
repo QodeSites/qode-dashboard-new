@@ -22,7 +22,6 @@ interface Stats {
   drawdown: string;
   equityCurve: { date: string; value: number }[];
   drawdownCurve: { date: string; value: number }[];
-  cashFlows:{amount:number,date:string}[]
 }
 
 interface StatsCardsProps {
@@ -61,8 +60,7 @@ export function StatsCards({
   const getCardLabels = (accountType: string, broker?: string) => {
     if (accountType.toLowerCase() === 'managed_account' && broker?.toLowerCase() === 'jainam') {
       return {
-      amountDeposited: 'Capital Invested',
-      amountWithdrawn:"Capital Withdrawn",
+        amountDeposited: 'Deposit Amount',
         currentExposure: 'Current Exposure',
         return: 'Return on Exposure',
         totalDividend: 'Total Dividend'
@@ -70,36 +68,19 @@ export function StatsCards({
     }
 
     return {
-      amountDeposited: 'Capital Invested',
-      amountWithdrawn:"Capital Withdrawn",
+      amountDeposited: 'Amount Invested',
       currentExposure: 'Current Portfolio Value',
       return: 'Returns',
       totalDividend: 'Total Dividend'
     };
   };
 
-  function getCashInOut(stats:Stats):{cashOut:number,cashIn:number}
-  {
-    let cashOut=0,cashIn=0;
-    stats.cashFlows.forEach(cash => {
-        cash.amount<0 ? cashOut+= cash.amount: cashIn+=cash.amount;
-    });    
-    cashOut*=-1; // making cash flow positive
-    return {cashOut,cashIn};
-  }
-  
-  const labels = getCardLabels(accountType, broker);  
+  const labels = getCardLabels(accountType, broker);
+
   const statItems = [
     {
       name: labels.amountDeposited,
-      value: `₹ ${parseFloat(getCashInOut(stats).cashIn.toString()).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      change: "",
-      changeType: "neutral",
-      showNote: false,
-    },
-    {
-      name: labels.amountWithdrawn,
-      value: `₹ ${parseFloat(getCashInOut(stats).cashOut.toString()).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      value: `₹ ${parseFloat(stats.amountDeposited).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       change: "",
       changeType: "neutral",
       showNote: false,
@@ -129,7 +110,7 @@ export function StatsCards({
   ];
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 overflow-visible">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 overflow-visible">
       {statItems.map((stat, index) => (
         <div key={stat.name} className="bg-white/50 rounded-md backdrop-blur-sm card-shadow overflow-visible">
           <div className="pt-2 px-5 pb-2 relative flex flex-col h-24">
@@ -207,13 +188,11 @@ export function StatsCards({
               )}
             </div>
             <div className="mt-4" />
-              <div
-                className={`flex items-baseline text-3xl font-[500] font-heading ${
-                  stat.changeType === "negative" ? "text-red-600" : "text-card-text-secondary"
-                }`}
-              >
+            <div className="flex items-baseline justify-between">
+              <div className="flex items-baseline text-3xl font-[500] text-card-text-secondary font-heading">
                 {stat.value}
               </div>
+            </div>
           </div>
         </div>
       ))}
