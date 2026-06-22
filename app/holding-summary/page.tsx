@@ -1346,6 +1346,48 @@ const HoldingsSummaryPage = () => {
         }
     };
 
+    const handleDownloadInvestmentSummaryPDF = async () => {
+        if (!holdingsData) {
+            setError('No holdings data available to print');
+            return;
+        }
+
+        setIsGeneratingPdf(true);
+        try {
+            const res = await fetch('/api/download-report');
+            if (res.status === 404) {
+                setError('Report not yet available for your account');
+                return;
+            }
+            if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+
+            // Use the server-provided filename (matches the actual report on disk).
+            const disposition = res.headers.get('Content-Disposition') || '';
+            const match = disposition.match(/filename="?([^"]+)"?/);
+            const isAdmin = session?.user?.accessType === 'admin';
+            const effectiveIcode =
+              (isAdmin && session?.user?.impersonating?.icode) ||
+              session?.user?.icode ||
+              'report';
+            const fileName = match?.[1] || `${effectiveIcode}_Invst_Summary.pdf`;
+
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('Error downloading Investment Summary PDF:', err);
+            setError('Failed to download Investment Summary PDF');
+        } finally {
+            setIsGeneratingPdf(false);
+        }
+    };
+
     const handleDownloadPDF = async () => {
         if (!holdingsData) {
             setError('No holdings data available to print');
@@ -2066,6 +2108,15 @@ ${commonStyles}
                             >
                                 <Download className="h-4 w-4 mr-2" />
                                 Excel
+                            </Button>
+                            <Button
+                                onClick={handleDownloadInvestmentSummaryPDF}
+                                disabled={isGeneratingPdf}
+                                className="h-11 px-4 text-sm font-medium"
+                                variant="default"
+                            >
+                                <Download className="h-4 w-4 mr-2" />
+                                Investment Summary
                             </Button>
                         </div>
                         {lastUpdatedDate && (
