@@ -80,7 +80,7 @@ function HoldingsTable({
   nameCol = "Name",
 }: {
   title: string;
-  rows: { name: string; type: string; amount: number }[];
+  rows: { name: string; type: string; strategy: string; amount: number }[];
   nameCol?: string;
 }) {
   if (!rows.length) return null;
@@ -94,9 +94,10 @@ function HoldingsTable({
           <Table className="min-w-full">
             <TableHeader>
               <TableRow className="bg-black/5 hover:bg-[#e5e7eb] border-b border-[#e5e7eb]">
-                <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">{nameCol}</TableHead>
-                <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">Type</TableHead>
-                <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase text-right">Amount (₹)</TableHead>
+                <TableHead className="w-[40%] px-4 py-2 text-xs font-medium text-card-text uppercase">{nameCol}</TableHead>
+                <TableHead className="w-[15%] px-4 py-2 text-xs font-medium text-card-text uppercase">Type</TableHead>
+                <TableHead className="w-[25%] px-4 py-2 text-xs font-medium text-card-text uppercase">Strategy</TableHead>
+                <TableHead className="w-[20%] px-4 py-2 text-xs font-medium text-card-text uppercase text-right">Amount (₹)</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -104,6 +105,7 @@ function HoldingsTable({
                 <TableRow key={i} className="border-b border-[#e5e7eb]">
                   <TableCell className="px-4 py-2 text-xs text-card-text">{row.name}</TableCell>
                   <TableCell className="px-4 py-2 text-xs text-card-text-secondary">{row.type}</TableCell>
+                  <TableCell className="px-4 py-2 text-xs text-card-text-secondary">{row.strategy}</TableCell>
                   <AmountCell value={row.amount} />
                 </TableRow>
               ))}
@@ -428,9 +430,10 @@ export default function InvestmentSummaryPage() {
                       <Table className="min-w-full">
                         <TableHeader>
                           <TableRow className="bg-black/5 hover:bg-[#e5e7eb] border-b border-[#e5e7eb]">
-                            <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">Particulars</TableHead>
-                            <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">Date</TableHead>
-                            <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase text-right">Amount (₹)</TableHead>
+                            <TableHead className="w-[40%] px-4 py-2 text-xs font-medium text-card-text uppercase">Particulars</TableHead>
+                            <TableHead className="w-[15%] px-4 py-2 text-xs font-medium text-card-text uppercase">Date</TableHead>
+                            <TableHead className="w-[25%] px-4 py-2 text-xs font-medium text-card-text uppercase">Strategy</TableHead>
+                            <TableHead className="w-[20%] px-4 py-2 text-xs font-medium text-card-text uppercase text-right">Amount (₹)</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -438,6 +441,7 @@ export default function InvestmentSummaryPage() {
                             <TableRow key={i} className="border-b border-[#e5e7eb]">
                               <TableCell className="px-4 py-2 text-xs text-card-text">{tx.particulars}</TableCell>
                               <TableCell className="px-4 py-2 text-xs text-card-text-secondary whitespace-nowrap">{tx.date}</TableCell>
+                              <TableCell className="px-4 py-2 text-xs text-card-text-secondary">{tx.strategy}</TableCell>
                               <AmountCell value={tx.amount} />
                             </TableRow>
                           ))}
@@ -490,9 +494,10 @@ export default function InvestmentSummaryPage() {
                       <Table className="min-w-full">
                         <TableHeader>
                           <TableRow className="bg-black/5 hover:bg-[#e5e7eb] border-b border-[#e5e7eb]">
-                            <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">Particulars</TableHead>
-                            <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">Date</TableHead>
-                            <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase text-right">Amount (₹)</TableHead>
+                            <TableHead className="w-[40%] px-4 py-2 text-xs font-medium text-card-text uppercase">Particulars</TableHead>
+                            <TableHead className="w-[15%] px-4 py-2 text-xs font-medium text-card-text uppercase">Date</TableHead>
+                            <TableHead className="w-[25%] px-4 py-2 text-xs font-medium text-card-text uppercase">Strategy</TableHead>
+                            <TableHead className="w-[20%] px-4 py-2 text-xs font-medium text-card-text uppercase text-right">Amount (₹)</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -500,6 +505,7 @@ export default function InvestmentSummaryPage() {
                             <TableRow key={i} className="border-b border-[#e5e7eb]">
                               <TableCell className="px-4 py-2 text-xs text-card-text">{tx.particulars}</TableCell>
                               <TableCell className="px-4 py-2 text-xs text-card-text-secondary whitespace-nowrap">{tx.date}</TableCell>
+                              <TableCell className="px-4 py-2 text-xs text-card-text-secondary">{tx.strategy}</TableCell>
                               <AmountCell value={tx.amount} />
                             </TableRow>
                           ))}

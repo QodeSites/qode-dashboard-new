@@ -31,7 +31,11 @@ export interface InvestmentSummaryData {
   } | null;
 
   // Current Account Summary sheet
-  currentAccountSummary: Array<{ particulars: string; amount: number; percent: number }>;
+  currentAccountSummary: Array<{
+    particulars: string;
+    amount: number;
+    percent: number;
+  }>;
 
   // Cash / Holdings Investment Summary sheets
   cashInvestmentSummary: {
@@ -46,23 +50,58 @@ export interface InvestmentSummaryData {
   };
 
   // Profit Redeployment sheet
-  profitRedeployment: Array<{ strategy: string; profits: number; note: string; isHeader?: boolean }>;
+  profitRedeployment: Array<{
+    strategy: string;
+    profits: number;
+    note: string;
+    isHeader?: boolean;
+  }>;
 
   // Holdings sheets
-  currentEquityHoldings: Array<{ name: string; type: string; amount: number }>;
-  currentMfHoldings: Array<{ name: string; type: string; amount: number }>;
-  historicalEquityHoldings: Array<{ name: string; type: string; amount: number }>;
-  historicalMfHoldings: Array<{ name: string; type: string; amount: number }>;
+  currentEquityHoldings: Array<{
+    name: string;
+    type: string;
+    strategy: string;
+    amount: number;
+  }>;
+  currentMfHoldings: Array<{
+    name: string;
+    type: string;
+    strategy: string;
+    amount: number;
+  }>;
+  historicalEquityHoldings: Array<{
+    name: string;
+    type: string;
+    strategy: string;
+    amount: number;
+  }>;
+  historicalMfHoldings: Array<{
+    name: string;
+    type: string;
+    strategy: string;
+    amount: number;
+  }>;
 
   // Transaction sheets
-  equityTransactions: Array<{ particulars: string; date: string; amount: number }>;
+  equityTransactions: Array<{
+    particulars: string;
+    date: string;
+    strategy: string;
+    amount: number;
+  }>;
   cashTransactions: Array<{
     date: string;
     transactionType: string;
     strategy: string;
     amount: number;
   }>;
-  mfTransactions: Array<{ particulars: string; date: string; amount: number }>;
+  mfTransactions: Array<{
+    particulars: string;
+    date: string;
+    strategy: string;
+    amount: number;
+  }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -72,7 +111,8 @@ export interface InvestmentSummaryData {
 function parseAmount(raw: string | number | null | undefined): number {
   if (raw === null || raw === undefined || raw === "") return 0;
   const s = String(raw).trim().replace(/,/g, "");
-  if (s.startsWith("(") && s.endsWith(")")) return -(parseFloat(s.slice(1, -1)) || 0);
+  if (s.startsWith("(") && s.endsWith(")"))
+    return -(parseFloat(s.slice(1, -1)) || 0);
   return parseFloat(s) || 0;
 }
 
@@ -100,7 +140,9 @@ function dataRows(rows: string[][]): string[][] {
 // Individual sheet parsers
 // ---------------------------------------------------------------------------
 
-function parseInvestmentSummarySheet(wb: XLSX.WorkBook): InvestmentSummaryData["amountInvested"] {
+function parseInvestmentSummarySheet(
+  wb: XLSX.WorkBook,
+): InvestmentSummaryData["amountInvested"] {
   const result = { holdings: 0, cash: 0, total: 0 };
   for (const row of dataRows(sheetRows(wb, "Investment Summary"))) {
     const key = String(row[0] || "").toLowerCase();
@@ -112,7 +154,9 @@ function parseInvestmentSummarySheet(wb: XLSX.WorkBook): InvestmentSummaryData["
   return result;
 }
 
-function parseOverviewCashSummary(wb: XLSX.WorkBook): InvestmentSummaryData["overviewCashSummary"] {
+function parseOverviewCashSummary(
+  wb: XLSX.WorkBook,
+): InvestmentSummaryData["overviewCashSummary"] {
   const rows = sheetRows(wb, "Overview Cash Summary");
   if (!rows.length) return null;
 
@@ -123,7 +167,10 @@ function parseOverviewCashSummary(wb: XLSX.WorkBook): InvestmentSummaryData["ove
   for (const row of dataRows(rows)) {
     const label = String(row[0] || "").trim();
     if (!label) continue;
-    if (label.toLowerCase() === "adjustments") { inAdj = true; continue; }
+    if (label.toLowerCase() === "adjustments") {
+      inAdj = true;
+      continue;
+    }
     const entry = { label, amount: parseAmount(row[1]) };
     if (inAdj) adj.push(entry);
     else top.push(entry);
@@ -132,31 +179,48 @@ function parseOverviewCashSummary(wb: XLSX.WorkBook): InvestmentSummaryData["ove
   return { rows: top, adjustments: adj };
 }
 
-function parseCashInvestmentSummary(wb: XLSX.WorkBook): InvestmentSummaryData["cashInvestmentSummary"] {
-  const result = { totalCashAdded: 0, profitsAndCapitalWithdrawn: 0, netCashBalance: 0 };
+function parseCashInvestmentSummary(
+  wb: XLSX.WorkBook,
+): InvestmentSummaryData["cashInvestmentSummary"] {
+  const result = {
+    totalCashAdded: 0,
+    profitsAndCapitalWithdrawn: 0,
+    netCashBalance: 0,
+  };
   for (const row of dataRows(sheetRows(wb, "Cash Investment Summary"))) {
     const key = String(row[0] || "").toLowerCase();
     const val = parseAmount(row[1]);
     if (key.includes("total cash added")) result.totalCashAdded = val;
-    else if (key.includes("profits and capital withdrawn")) result.profitsAndCapitalWithdrawn = val;
+    else if (key.includes("profits and capital withdrawn"))
+      result.profitsAndCapitalWithdrawn = val;
     else if (key.includes("net cash balance")) result.netCashBalance = val;
   }
   return result;
 }
 
-function parseHoldingsInvestmentSummary(wb: XLSX.WorkBook): InvestmentSummaryData["holdingsInvestmentSummary"] {
-  const result = { totalHoldingsAdded: 0, totalHoldingsWithdrawn: 0, netHoldingBalance: 0 };
+function parseHoldingsInvestmentSummary(
+  wb: XLSX.WorkBook,
+): InvestmentSummaryData["holdingsInvestmentSummary"] {
+  const result = {
+    totalHoldingsAdded: 0,
+    totalHoldingsWithdrawn: 0,
+    netHoldingBalance: 0,
+  };
   for (const row of dataRows(sheetRows(wb, "Holdings Investment Summary"))) {
     const key = String(row[0] || "").toLowerCase();
     const val = parseAmount(row[1]);
     if (key.includes("total holdings added")) result.totalHoldingsAdded = val;
-    else if (key.includes("total holdings withdrawn")) result.totalHoldingsWithdrawn = val;
-    else if (key.includes("net holding balance")) result.netHoldingBalance = val;
+    else if (key.includes("total holdings withdrawn"))
+      result.totalHoldingsWithdrawn = val;
+    else if (key.includes("net holding balance"))
+      result.netHoldingBalance = val;
   }
   return result;
 }
 
-function parseAccountSummary(wb: XLSX.WorkBook): InvestmentSummaryData["currentAccountSummary"] {
+function parseAccountSummary(
+  wb: XLSX.WorkBook,
+): InvestmentSummaryData["currentAccountSummary"] {
   return dataRows(sheetRows(wb, "Current Account Summary"))
     .filter((row) => String(row[0] || "").trim())
     .map((row) => ({
@@ -166,10 +230,14 @@ function parseAccountSummary(wb: XLSX.WorkBook): InvestmentSummaryData["currentA
     }));
 }
 
-function parseProfitRedeployment(wb: XLSX.WorkBook): InvestmentSummaryData["profitRedeployment"] {
+function parseProfitRedeployment(
+  wb: XLSX.WorkBook,
+): InvestmentSummaryData["profitRedeployment"] {
   return dataRows(sheetRows(wb, "Profit Redeployment"))
     .filter((row) => {
-      const s = String(row[0] || "").trim().toLowerCase();
+      const s = String(row[0] || "")
+        .trim()
+        .toLowerCase();
       return s && s !== "total profits";
     })
     .map((row) => {
@@ -188,37 +256,55 @@ function parseProfitRedeployment(wb: XLSX.WorkBook): InvestmentSummaryData["prof
 
 function parseHoldingsSheet(
   wb: XLSX.WorkBook,
-  sheetName: string
-): Array<{ name: string; type: string; amount: number }> {
+  sheetName: string,
+): Array<{ name: string; type: string; strategy: string; amount: number }> {
   return dataRows(sheetRows(wb, sheetName))
     .filter((row) => {
-      const n = String(row[0] || "").trim().toLowerCase();
-      return n && n !== "net" && !n.startsWith("no ") && n !== "stock name" && n !== "fund name";
+      const n = String(row[0] || "")
+        .trim()
+        .toLowerCase();
+      return (
+        n &&
+        n !== "net" &&
+        !n.startsWith("no ") &&
+        n !== "stock name" &&
+        n !== "fund name"
+      );
     })
     .map((row) => ({
       name: String(row[0]).trim(),
       type: String(row[1] || "").trim(),
-      amount: parseAmount(row[2]),
+      strategy: String(row[2] || "").trim(),
+      amount: parseAmount(row[3]),
     }));
 }
 
-function parseEquityTransactions(wb: XLSX.WorkBook): InvestmentSummaryData["equityTransactions"] {
+function parseEquityTransactions(
+  wb: XLSX.WorkBook,
+): InvestmentSummaryData["equityTransactions"] {
   return dataRows(sheetRows(wb, "Equity Transactions"))
     .filter((row) => {
-      const p = String(row[0] || "").trim().toLowerCase();
+      const p = String(row[0] || "")
+        .trim()
+        .toLowerCase();
       return p && p !== "particulars" && p !== "net";
     })
     .map((row) => ({
       particulars: String(row[0]).trim(),
       date: String(row[1] || "").trim(),
-      amount: parseAmount(row[2]),
+      strategy: String(row[2] || "").trim(),
+      amount: parseAmount(row[3]),
     }));
 }
 
-function parseCashTransactions(wb: XLSX.WorkBook): InvestmentSummaryData["cashTransactions"] {
+function parseCashTransactions(
+  wb: XLSX.WorkBook,
+): InvestmentSummaryData["cashTransactions"] {
   return dataRows(sheetRows(wb, "Cash Transactions"))
     .filter((row) => {
-      const d = String(row[0] || "").trim().toLowerCase();
+      const d = String(row[0] || "")
+        .trim()
+        .toLowerCase();
       return d && d !== "date" && d !== "net";
     })
     .map((row) => ({
@@ -229,20 +315,28 @@ function parseCashTransactions(wb: XLSX.WorkBook): InvestmentSummaryData["cashTr
     }));
 }
 
-function parseMfTransactions(wb: XLSX.WorkBook): InvestmentSummaryData["mfTransactions"] {
+function parseMfTransactions(
+  wb: XLSX.WorkBook,
+): InvestmentSummaryData["mfTransactions"] {
   return dataRows(sheetRows(wb, "MF Transactions"))
     .filter((row) => {
-      const p = String(row[0] || "").trim().toLowerCase();
+      const p = String(row[0] || "")
+        .trim()
+        .toLowerCase();
       return p && p !== "particulars" && p !== "net";
     })
     .map((row) => ({
       particulars: String(row[0]).trim(),
       date: String(row[1] || "").trim(),
-      amount: parseAmount(row[2]),
+      strategy: String(row[2] || "").trim(),
+      amount: parseAmount(row[3]),
     }));
 }
 
-function parseValidationMeta(wb: XLSX.WorkBook): { clientName: string; dataAsOfDate: string } {
+function parseValidationMeta(wb: XLSX.WorkBook): {
+  clientName: string;
+  dataAsOfDate: string;
+} {
   const rows = sheetRows(wb, "Validation Summary");
   let clientName = "";
   let dataAsOfDate = "";
@@ -287,7 +381,10 @@ export function parseInvestmentXlsx(fileBuffer: Buffer): InvestmentSummaryData {
     profitRedeployment: parseProfitRedeployment(wb),
     currentEquityHoldings: parseHoldingsSheet(wb, "Current Equity Holdings"),
     currentMfHoldings: parseHoldingsSheet(wb, "Current MF Holdings"),
-    historicalEquityHoldings: parseHoldingsSheet(wb, "Historical Equity Holdings"),
+    historicalEquityHoldings: parseHoldingsSheet(
+      wb,
+      "Historical Equity Holdings",
+    ),
     historicalMfHoldings: parseHoldingsSheet(wb, "Historical MF Holdings"),
     equityTransactions: parseEquityTransactions(wb),
     cashTransactions: parseCashTransactions(wb),
