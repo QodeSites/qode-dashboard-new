@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import DashboardLayout from "../dashboard/layout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Download } from "lucide-react";
+import { Download, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import type { MultiStrategyInvestmentData } from "@/app/lib/parse-investment-pdf";
 
 type ApiResponse = MultiStrategyInvestmentData & {
@@ -39,11 +39,25 @@ function fmt(n: number): string {
   return formatter.format(n);
 }
 
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 0];
+
+function getPageNumbers(currentPage: number, totalPages: number): (number | "...")[] {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+  const pages: (number | "...")[] = [1];
+  if (currentPage > 3) pages.push("...");
+  const start = Math.max(2, currentPage - 1);
+  const end = Math.min(totalPages - 1, currentPage + 1);
+  for (let i = start; i <= end; i++) pages.push(i);
+  if (currentPage < totalPages - 2) pages.push("...");
+  if (totalPages > 1) pages.push(totalPages);
+  return pages;
+}
+
 function AmountCell({ value }: { value: number }) {
   return (
     <TableCell
-      className={`px-4 py-2 text-right text-xs font-medium tabular-nums ${
-        value < 0 ? "text-[#dc2626]" : "text-card-text"
+      className={`py-3 text-sm text-right font-medium tabular-nums ${
+        value < 0 ? "text-red-600" : "text-card-text"
       }`}
     >
       {fmt(value)}
@@ -56,38 +70,40 @@ function SectionCard({
   rows,
 }: {
   title: string;
-  rows: { label: string; value: number; isNegative?: boolean }[];
+  rows: { label: string; value: number }[];
 }) {
   return (
     <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-      <CardHeader className="px-4 py-3">
-        <CardTitle className="text-sm sm:text-base text-card-text">
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-0">
-        <Table>
-          <TableBody>
-            {rows.map((row, i) => (
-              <TableRow key={i} className="border-b border-[#e5e7eb]">
-                <TableCell className="px-4 py-2 text-xs text-card-text-secondary">
-                  {row.label}
-                </TableCell>
-                <TableCell
-                  className={`px-4 py-2 text-xs font-medium text-right tabular-nums ${
-                    row.value < 0 ? "text-[#dc2626]" : "text-card-text"
-                  }`}
-                >
-                  {fmt(row.value)}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg">
+        {title}
+      </CardTitle>
+      <CardContent>
+        <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
+          <Table className="min-w-full">
+            <TableBody>
+              {rows.map((row, i) => (
+                <TableRow key={i} className="border-b border-gray-200">
+                  <TableCell className="py-3 text-sm text-gray-600">
+                    {row.label}
+                  </TableCell>
+                  <TableCell
+                    className={`py-3 text-sm font-medium text-right tabular-nums ${
+                      row.value < 0 ? "text-red-600" : "text-card-text"
+                    }`}
+                  >
+                    {fmt(row.value)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       </CardContent>
     </Card>
   );
 }
+
+type HoldingRow = { name: string; type: string; strategy: string; amount: number };
 
 function HoldingsTable({
   title,
@@ -95,54 +111,554 @@ function HoldingsTable({
   nameCol = "Name",
 }: {
   title: string;
-  rows: { name: string; type: string; strategy: string; amount: number }[];
+  rows: HoldingRow[];
   nameCol?: string;
 }) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+  const [sortKey, setSortKey] = useState<keyof HoldingRow | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+
+  useEffect(() => { setCurrentPage(1); }, [rows]);
+
+  const handleSort = (key: keyof HoldingRow) => {
+    if (sortKey === key) {
+      if (sortDirection === "asc") {
+        setSortDirection("desc");
+      } else {
+        setSortKey(null);
+        setSortDirection("asc");
+      }
+    } else {
+      setSortKey(key);
+      setSortDirection("asc");
+    }
+    setCurrentPage(1);
+  };
+
+  const SortIcon = ({ col }: { col: keyof HoldingRow }) =>
+    sortKey === col
+      ? sortDirection === "asc"
+        ? <ArrowUp className="h-3.5 w-3.5" />
+        : <ArrowDown className="h-3.5 w-3.5" />
+      : <ArrowUpDown className="h-3.5 w-3.5 opacity-30" />;
+
+  const sortedRows = useMemo(() => {
+    if (!sortKey) return rows;
+    return [...rows].sort((a, b) => {
+      const aVal = a[sortKey];
+      const bVal = b[sortKey];
+      const cmp = typeof aVal === "string" && typeof bVal === "string"
+        ? aVal.localeCompare(bVal)
+        : (Number(aVal) || 0) - (Number(bVal) || 0);
+      return sortDirection === "asc" ? cmp : -cmp;
+    });
+  }, [rows, sortKey, sortDirection]);
+
+  const effectiveSize = pageSize === 0 ? sortedRows.length : pageSize;
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / (effectiveSize || 1)));
+  const safePage = Math.min(currentPage, totalPages);
+
+  const paginated = useMemo(() => {
+    if (pageSize === 0 || sortedRows.length === 0) return sortedRows;
+    return sortedRows.slice((safePage - 1) * effectiveSize, safePage * effectiveSize);
+  }, [sortedRows, safePage, effectiveSize, pageSize]);
+
+  const startEntry = rows.length === 0 ? 0 : (safePage - 1) * effectiveSize + 1;
+  const endEntry = Math.min(safePage * effectiveSize, rows.length);
+
   if (!rows.length) return null;
+
   return (
     <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-      <CardHeader className="px-4 py-3">
-        <CardTitle className="text-sm sm:text-base text-card-text">
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
+      <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg">
+        {title}
+      </CardTitle>
+      <CardContent>
+        {/* Top bar: count + page size selector */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm text-card-text-secondary">
+            {rows.length} {rows.length !== 1 ? "entries" : "entry"} total
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-card-text-secondary">Show</span>
+            <Select
+              value={String(pageSize)}
+              onValueChange={(v) => { setPageSize(Number(v)); setCurrentPage(1); }}
+            >
+              <SelectTrigger className="w-[72px] h-8 text-sm bg-transparent text-card-text border border-black/10">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PAGE_SIZE_OPTIONS.map((s) => (
+                  <SelectItem key={s} value={String(s)} className="text-sm">
+                    {s === 0 ? "All" : String(s)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span className="text-sm text-card-text-secondary">entries</span>
+          </div>
+        </div>
+
+        {/* Scrollable table area */}
+        <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
           <Table className="min-w-full">
-            <TableHeader>
-              <TableRow className="bg-black/5 hover:bg-[#e5e7eb] border-b border-[#e5e7eb]">
-                <TableHead className="w-[40%] px-4 py-2 text-xs font-medium text-card-text uppercase">
-                  {nameCol}
-                </TableHead>
-                <TableHead className="w-[15%] px-4 py-2 text-xs font-medium text-card-text uppercase">
-                  Type
-                </TableHead>
-                <TableHead className="w-[25%] px-4 py-2 text-xs font-medium text-card-text uppercase">
-                  Strategy
-                </TableHead>
-                <TableHead className="w-[20%] px-4 py-2 text-xs font-medium text-card-text uppercase text-right">
-                  Amount (₹)
-                </TableHead>
+            <TableHeader className="sticky top-0 z-10">
+              <TableRow className="bg-[#E9E8DE] hover:bg-[#E9E8DE] border-b border-gray-200">
+                {([
+                  { key: "name" as keyof HoldingRow, label: nameCol, align: "left" },
+                  { key: "type" as keyof HoldingRow, label: "Type", align: "left" },
+                  { key: "strategy" as keyof HoldingRow, label: "Strategy", align: "left" },
+                  { key: "amount" as keyof HoldingRow, label: "Amount (₹)", align: "right" },
+                ] as { key: keyof HoldingRow; label: string; align: "left" | "right" }[]).map(({ key, label, align }) => (
+                  <TableHead
+                    key={key}
+                    onClick={() => handleSort(key)}
+                    className={`py-3 text-${align} text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE] cursor-pointer select-none`}
+                  >
+                    <div className={`flex items-center gap-1 ${align === "right" ? "justify-end" : ""}`}>
+                      {label}
+                      <SortIcon col={key} />
+                    </div>
+                  </TableHead>
+                ))}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row, i) => (
-                <TableRow key={i} className="border-b border-[#e5e7eb]">
-                  <TableCell className="px-4 py-2 text-xs text-card-text">
-                    {row.name}
-                  </TableCell>
-                  <TableCell className="px-4 py-2 text-xs text-card-text-secondary">
-                    {row.type}
-                  </TableCell>
-                  <TableCell className="px-4 py-2 text-xs text-card-text-secondary">
-                    {row.strategy}
-                  </TableCell>
+              {paginated.map((row, i) => (
+                <TableRow key={i} className="border-b border-gray-200">
+                  <TableCell className="py-3 text-sm text-card-text">{row.name}</TableCell>
+                  <TableCell className="py-3 text-sm text-gray-600">{row.type}</TableCell>
+                  <TableCell className="py-3 text-sm text-gray-600">{row.strategy}</TableCell>
                   <AmountCell value={row.amount} />
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </div>
+
+        {/* Bottom bar: showing info + pagination controls */}
+        {rows.length > 0 && pageSize !== 0 && (
+          <div className="flex items-center justify-between mt-4 flex-wrap gap-2">
+            <div className="text-sm text-card-text-secondary">
+              Showing {startEntry} to {endEntry} of {rows.length} entries
+            </div>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={safePage <= 1}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-card-text-secondary hover:text-card-text disabled:opacity-40 disabled:cursor-default cursor-pointer rounded-md hover:bg-black/5 transition-colors"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Prev
+                </button>
+                {getPageNumbers(safePage, totalPages).map((pageNum, idx) =>
+                  pageNum === "..." ? (
+                    <span key={idx} className="w-8 text-center text-card-text-secondary">...</span>
+                  ) : (
+                    <button
+                      key={idx}
+                      onClick={() => setCurrentPage(pageNum as number)}
+                      className={`w-8 h-8 text-sm rounded-md cursor-pointer transition-colors ${
+                        pageNum === safePage
+                          ? "bg-logo-green text-white font-medium"
+                          : "text-card-text-secondary hover:bg-black/5 hover:text-card-text"
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  )
+                )}
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={safePage >= totalPages}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-card-text-secondary hover:text-card-text disabled:opacity-40 disabled:cursor-default cursor-pointer rounded-md hover:bg-black/5 transition-colors"
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        {rows.length > 0 && pageSize === 0 && (
+          <div className="mt-3 text-sm text-card-text-secondary">
+            Showing all {rows.length} entries
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+type EquityTxRow = { particulars: string; date: string; strategy: string; amount: number };
+
+function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+  const [sortKey, setSortKey] = useState<keyof EquityTxRow | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+
+  useEffect(() => { setCurrentPage(1); }, [rows]);
+
+  const handleSort = (key: keyof EquityTxRow) => {
+    if (sortKey === key) {
+      if (sortDirection === "asc") { setSortDirection("desc"); }
+      else { setSortKey(null); setSortDirection("asc"); }
+    } else { setSortKey(key); setSortDirection("asc"); }
+    setCurrentPage(1);
+  };
+
+  const SortIcon = ({ col }: { col: keyof EquityTxRow }) =>
+    sortKey === col
+      ? sortDirection === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />
+      : <ArrowUpDown className="h-3.5 w-3.5 opacity-30" />;
+
+  const sortedRows = useMemo(() => {
+    if (!sortKey) return rows;
+    return [...rows].sort((a, b) => {
+      const aVal = a[sortKey]; const bVal = b[sortKey];
+      const cmp = typeof aVal === "string" && typeof bVal === "string"
+        ? aVal.localeCompare(bVal) : (Number(aVal) || 0) - (Number(bVal) || 0);
+      return sortDirection === "asc" ? cmp : -cmp;
+    });
+  }, [rows, sortKey, sortDirection]);
+
+  const effectiveSize = pageSize === 0 ? sortedRows.length : pageSize;
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / (effectiveSize || 1)));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginated = useMemo(() => {
+    if (pageSize === 0 || sortedRows.length === 0) return sortedRows;
+    return sortedRows.slice((safePage - 1) * effectiveSize, safePage * effectiveSize);
+  }, [sortedRows, safePage, effectiveSize, pageSize]);
+  const startEntry = rows.length === 0 ? 0 : (safePage - 1) * effectiveSize + 1;
+  const endEntry = Math.min(safePage * effectiveSize, rows.length);
+
+  const cols: { key: keyof EquityTxRow; label: string; align: "left" | "right" }[] = [
+    { key: "particulars", label: "Particulars", align: "left" },
+    { key: "date", label: "Date", align: "left" },
+    { key: "strategy", label: "Strategy", align: "left" },
+    { key: "amount", label: "Amount (₹)", align: "right" },
+  ];
+
+  return (
+    <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
+      <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg">
+        Equity Transactions
+      </CardTitle>
+      <CardContent>
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm text-card-text-secondary">
+            {rows.length} {rows.length !== 1 ? "entries" : "entry"} total
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-card-text-secondary">Show</span>
+            <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setCurrentPage(1); }}>
+              <SelectTrigger className="w-[72px] h-8 text-sm bg-transparent text-card-text border border-black/10">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PAGE_SIZE_OPTIONS.map((s) => (
+                  <SelectItem key={s} value={String(s)} className="text-sm">{s === 0 ? "All" : String(s)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span className="text-sm text-card-text-secondary">entries</span>
+          </div>
+        </div>
+        <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
+          <Table className="min-w-full">
+            <TableHeader className="sticky top-0 z-10">
+              <TableRow className="bg-[#E9E8DE] hover:bg-[#E9E8DE] border-b border-gray-200">
+                {cols.map(({ key, label, align }) => (
+                  <TableHead
+                    key={key}
+                    onClick={() => handleSort(key)}
+                    className={`py-3 text-${align} text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE] cursor-pointer select-none`}
+                  >
+                    <div className={`flex items-center gap-1 ${align === "right" ? "justify-end" : ""}`}>
+                      {label}<SortIcon col={key} />
+                    </div>
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {paginated.map((tx, i) => (
+                <TableRow key={i} className="border-b border-gray-200">
+                  <TableCell className="py-3 text-sm text-card-text">{tx.particulars}</TableCell>
+                  <TableCell className="py-3 text-sm text-gray-600 whitespace-nowrap">{tx.date}</TableCell>
+                  <TableCell className="py-3 text-sm text-gray-600">{tx.strategy}</TableCell>
+                  <AmountCell value={tx.amount} />
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+        {rows.length > 0 && pageSize !== 0 && (
+          <div className="flex items-center justify-between mt-4 flex-wrap gap-2">
+            <div className="text-sm text-card-text-secondary">Showing {startEntry} to {endEntry} of {rows.length} entries</div>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={safePage <= 1} className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-card-text-secondary hover:text-card-text disabled:opacity-40 disabled:cursor-default cursor-pointer rounded-md hover:bg-black/5 transition-colors"><ChevronLeft className="h-4 w-4" />Prev</button>
+                {getPageNumbers(safePage, totalPages).map((p, idx) =>
+                  p === "..." ? <span key={idx} className="w-8 text-center text-card-text-secondary">...</span> :
+                  <button key={idx} onClick={() => setCurrentPage(p as number)} className={`w-8 h-8 text-sm rounded-md cursor-pointer transition-colors ${p === safePage ? "bg-logo-green text-white font-medium" : "text-card-text-secondary hover:bg-black/5 hover:text-card-text"}`}>{p}</button>
+                )}
+                <button onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages} className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-card-text-secondary hover:text-card-text disabled:opacity-40 disabled:cursor-default cursor-pointer rounded-md hover:bg-black/5 transition-colors">Next<ChevronRight className="h-4 w-4" /></button>
+              </div>
+            )}
+          </div>
+        )}
+        {rows.length > 0 && pageSize === 0 && <div className="mt-3 text-sm text-card-text-secondary">Showing all {rows.length} entries</div>}
+      </CardContent>
+    </Card>
+  );
+}
+
+type CashTxRow = { date: string; transactionType: string; strategy: string; amount: number };
+
+function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+  const [sortKey, setSortKey] = useState<keyof CashTxRow | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+
+  useEffect(() => { setCurrentPage(1); }, [rows]);
+
+  const handleSort = (key: keyof CashTxRow) => {
+    if (sortKey === key) {
+      if (sortDirection === "asc") { setSortDirection("desc"); }
+      else { setSortKey(null); setSortDirection("asc"); }
+    } else { setSortKey(key); setSortDirection("asc"); }
+    setCurrentPage(1);
+  };
+
+  const SortIcon = ({ col }: { col: keyof CashTxRow }) =>
+    sortKey === col
+      ? sortDirection === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />
+      : <ArrowUpDown className="h-3.5 w-3.5 opacity-30" />;
+
+  const sortedRows = useMemo(() => {
+    if (!sortKey) return rows;
+    return [...rows].sort((a, b) => {
+      const aVal = a[sortKey]; const bVal = b[sortKey];
+      const cmp = typeof aVal === "string" && typeof bVal === "string"
+        ? aVal.localeCompare(bVal) : (Number(aVal) || 0) - (Number(bVal) || 0);
+      return sortDirection === "asc" ? cmp : -cmp;
+    });
+  }, [rows, sortKey, sortDirection]);
+
+  const effectiveSize = pageSize === 0 ? sortedRows.length : pageSize;
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / (effectiveSize || 1)));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginated = useMemo(() => {
+    if (pageSize === 0 || sortedRows.length === 0) return sortedRows;
+    return sortedRows.slice((safePage - 1) * effectiveSize, safePage * effectiveSize);
+  }, [sortedRows, safePage, effectiveSize, pageSize]);
+  const startEntry = rows.length === 0 ? 0 : (safePage - 1) * effectiveSize + 1;
+  const endEntry = Math.min(safePage * effectiveSize, rows.length);
+
+  const cols: { key: keyof CashTxRow; label: string; align: "left" | "right" }[] = [
+    { key: "date", label: "Date", align: "left" },
+    { key: "transactionType", label: "Type", align: "left" },
+    { key: "strategy", label: "Strategy", align: "left" },
+    { key: "amount", label: "Amount (₹)", align: "right" },
+  ];
+
+  return (
+    <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
+      <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg">
+        Cash Transactions
+      </CardTitle>
+      <CardContent>
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm text-card-text-secondary">
+            {rows.length} {rows.length !== 1 ? "entries" : "entry"} total
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-card-text-secondary">Show</span>
+            <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setCurrentPage(1); }}>
+              <SelectTrigger className="w-[72px] h-8 text-sm bg-transparent text-card-text border border-black/10"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {PAGE_SIZE_OPTIONS.map((s) => (
+                  <SelectItem key={s} value={String(s)} className="text-sm">{s === 0 ? "All" : String(s)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span className="text-sm text-card-text-secondary">entries</span>
+          </div>
+        </div>
+        <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
+          <Table className="min-w-full">
+            <TableHeader className="sticky top-0 z-10">
+              <TableRow className="bg-[#E9E8DE] hover:bg-[#E9E8DE] border-b border-gray-200">
+                {cols.map(({ key, label, align }) => (
+                  <TableHead
+                    key={key}
+                    onClick={() => handleSort(key)}
+                    className={`py-3 text-${align} text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE] cursor-pointer select-none`}
+                  >
+                    <div className={`flex items-center gap-1 ${align === "right" ? "justify-end" : ""}`}>
+                      {label}<SortIcon col={key} />
+                    </div>
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {paginated.map((tx, i) => (
+                <TableRow key={i} className="border-b border-gray-200">
+                  <TableCell className="py-3 text-sm text-gray-600 whitespace-nowrap">{tx.date}</TableCell>
+                  <TableCell className="py-3 text-sm text-card-text">{tx.transactionType}</TableCell>
+                  <TableCell className="py-3 text-sm text-gray-600">{tx.strategy}</TableCell>
+                  <AmountCell value={tx.amount} />
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+        {rows.length > 0 && pageSize !== 0 && (
+          <div className="flex items-center justify-between mt-4 flex-wrap gap-2">
+            <div className="text-sm text-card-text-secondary">Showing {startEntry} to {endEntry} of {rows.length} entries</div>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={safePage <= 1} className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-card-text-secondary hover:text-card-text disabled:opacity-40 disabled:cursor-default cursor-pointer rounded-md hover:bg-black/5 transition-colors"><ChevronLeft className="h-4 w-4" />Prev</button>
+                {getPageNumbers(safePage, totalPages).map((p, idx) =>
+                  p === "..." ? <span key={idx} className="w-8 text-center text-card-text-secondary">...</span> :
+                  <button key={idx} onClick={() => setCurrentPage(p as number)} className={`w-8 h-8 text-sm rounded-md cursor-pointer transition-colors ${p === safePage ? "bg-logo-green text-white font-medium" : "text-card-text-secondary hover:bg-black/5 hover:text-card-text"}`}>{p}</button>
+                )}
+                <button onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages} className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-card-text-secondary hover:text-card-text disabled:opacity-40 disabled:cursor-default cursor-pointer rounded-md hover:bg-black/5 transition-colors">Next<ChevronRight className="h-4 w-4" /></button>
+              </div>
+            )}
+          </div>
+        )}
+        {rows.length > 0 && pageSize === 0 && <div className="mt-3 text-sm text-card-text-secondary">Showing all {rows.length} entries</div>}
+      </CardContent>
+    </Card>
+  );
+}
+
+type MfTxRow = { particulars: string; date: string; strategy: string; amount: number };
+
+function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+  const [sortKey, setSortKey] = useState<keyof MfTxRow | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+
+  useEffect(() => { setCurrentPage(1); }, [rows]);
+
+  const handleSort = (key: keyof MfTxRow) => {
+    if (sortKey === key) {
+      if (sortDirection === "asc") { setSortDirection("desc"); }
+      else { setSortKey(null); setSortDirection("asc"); }
+    } else { setSortKey(key); setSortDirection("asc"); }
+    setCurrentPage(1);
+  };
+
+  const SortIcon = ({ col }: { col: keyof MfTxRow }) =>
+    sortKey === col
+      ? sortDirection === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />
+      : <ArrowUpDown className="h-3.5 w-3.5 opacity-30" />;
+
+  const sortedRows = useMemo(() => {
+    if (!sortKey) return rows;
+    return [...rows].sort((a, b) => {
+      const aVal = a[sortKey]; const bVal = b[sortKey];
+      const cmp = typeof aVal === "string" && typeof bVal === "string"
+        ? aVal.localeCompare(bVal) : (Number(aVal) || 0) - (Number(bVal) || 0);
+      return sortDirection === "asc" ? cmp : -cmp;
+    });
+  }, [rows, sortKey, sortDirection]);
+
+  const effectiveSize = pageSize === 0 ? sortedRows.length : pageSize;
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / (effectiveSize || 1)));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginated = useMemo(() => {
+    if (pageSize === 0 || sortedRows.length === 0) return sortedRows;
+    return sortedRows.slice((safePage - 1) * effectiveSize, safePage * effectiveSize);
+  }, [sortedRows, safePage, effectiveSize, pageSize]);
+  const startEntry = rows.length === 0 ? 0 : (safePage - 1) * effectiveSize + 1;
+  const endEntry = Math.min(safePage * effectiveSize, rows.length);
+
+  const cols: { key: keyof MfTxRow; label: string; align: "left" | "right" }[] = [
+    { key: "particulars", label: "Particulars", align: "left" },
+    { key: "date", label: "Date", align: "left" },
+    { key: "strategy", label: "Strategy", align: "left" },
+    { key: "amount", label: "Amount (₹)", align: "right" },
+  ];
+
+  return (
+    <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
+      <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg">
+        MF Transactions
+      </CardTitle>
+      <CardContent>
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm text-card-text-secondary">
+            {rows.length} {rows.length !== 1 ? "entries" : "entry"} total
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-card-text-secondary">Show</span>
+            <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setCurrentPage(1); }}>
+              <SelectTrigger className="w-[72px] h-8 text-sm bg-transparent text-card-text border border-black/10"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {PAGE_SIZE_OPTIONS.map((s) => (
+                  <SelectItem key={s} value={String(s)} className="text-sm">{s === 0 ? "All" : String(s)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span className="text-sm text-card-text-secondary">entries</span>
+          </div>
+        </div>
+        <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
+          <Table className="min-w-full">
+            <TableHeader className="sticky top-0 z-10">
+              <TableRow className="bg-[#E9E8DE] hover:bg-[#E9E8DE] border-b border-gray-200">
+                {cols.map(({ key, label, align }) => (
+                  <TableHead
+                    key={key}
+                    onClick={() => handleSort(key)}
+                    className={`py-3 text-${align} text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE] cursor-pointer select-none`}
+                  >
+                    <div className={`flex items-center gap-1 ${align === "right" ? "justify-end" : ""}`}>
+                      {label}<SortIcon col={key} />
+                    </div>
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {paginated.map((tx, i) => (
+                <TableRow key={i} className="border-b border-gray-200">
+                  <TableCell className="py-3 text-sm text-card-text">{tx.particulars}</TableCell>
+                  <TableCell className="py-3 text-sm text-gray-600 whitespace-nowrap">{tx.date}</TableCell>
+                  <TableCell className="py-3 text-sm text-gray-600">{tx.strategy}</TableCell>
+                  <AmountCell value={tx.amount} />
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+        {rows.length > 0 && pageSize !== 0 && (
+          <div className="flex items-center justify-between mt-4 flex-wrap gap-2">
+            <div className="text-sm text-card-text-secondary">Showing {startEntry} to {endEntry} of {rows.length} entries</div>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={safePage <= 1} className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-card-text-secondary hover:text-card-text disabled:opacity-40 disabled:cursor-default cursor-pointer rounded-md hover:bg-black/5 transition-colors"><ChevronLeft className="h-4 w-4" />Prev</button>
+                {getPageNumbers(safePage, totalPages).map((p, idx) =>
+                  p === "..." ? <span key={idx} className="w-8 text-center text-card-text-secondary">...</span> :
+                  <button key={idx} onClick={() => setCurrentPage(p as number)} className={`w-8 h-8 text-sm rounded-md cursor-pointer transition-colors ${p === safePage ? "bg-logo-green text-white font-medium" : "text-card-text-secondary hover:bg-black/5 hover:text-card-text"}`}>{p}</button>
+                )}
+                <button onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages} className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-card-text-secondary hover:text-card-text disabled:opacity-40 disabled:cursor-default cursor-pointer rounded-md hover:bg-black/5 transition-colors">Next<ChevronRight className="h-4 w-4" /></button>
+              </div>
+            )}
+          </div>
+        )}
+        {rows.length > 0 && pageSize === 0 && <div className="mt-3 text-sm text-card-text-secondary">Showing all {rows.length} entries</div>}
       </CardContent>
     </Card>
   );
@@ -357,19 +873,14 @@ export default function InvestmentSummaryPage() {
           </div>
           <div className="flex items-center gap-3 self-start sm:self-auto">
             {isMultiStrategy && (
-              <Select
-                value={selectedStrategy}
-                onValueChange={setSelectedStrategy}
-              >
+              <Select value={selectedStrategy} onValueChange={setSelectedStrategy}>
                 <SelectTrigger className="w-[200px] bg-white/50 border-0 card-shadow">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">Total Portfolio</SelectItem>
                   {data.strategies.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
-                    </SelectItem>
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -407,11 +918,7 @@ export default function InvestmentSummaryPage() {
             <Button
               onClick={handleDownload}
               disabled={downloading || !canDownloadPdf}
-              title={
-                !canDownloadPdf
-                  ? "No PDF available for this strategy"
-                  : undefined
-              }
+              title={!canDownloadPdf ? "No PDF available for this strategy" : undefined}
               className="h-9 px-4 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
             >
               <Download className="h-4 w-4 mr-2" />
@@ -425,10 +932,7 @@ export default function InvestmentSummaryPage() {
               <SectionCard
                 title="Amount Invested"
                 rows={[
-                  {
-                    label: "Holdings",
-                    value: activeSummary.amountInvested.holdings,
-                  },
+                  { label: "Holdings", value: activeSummary.amountInvested.holdings },
                   { label: "Cash", value: activeSummary.amountInvested.cash },
                   { label: "Total", value: activeSummary.amountInvested.total },
                 ]}
@@ -436,42 +940,17 @@ export default function InvestmentSummaryPage() {
               <SectionCard
                 title="Cash Investment Summary"
                 rows={[
-                  {
-                    label: "Total Cash Added",
-                    value: activeSummary.cashInvestmentSummary.totalCashAdded,
-                  },
-                  {
-                    label: "Profits & Capital Withdrawn",
-                    value:
-                      activeSummary.cashInvestmentSummary
-                        .profitsAndCapitalWithdrawn,
-                  },
-                  {
-                    label: "Net Cash Balance",
-                    value: activeSummary.cashInvestmentSummary.netCashBalance,
-                  },
+                  { label: "Total Cash Added", value: activeSummary.cashInvestmentSummary.totalCashAdded },
+                  { label: "Profits & Capital Withdrawn", value: activeSummary.cashInvestmentSummary.profitsAndCapitalWithdrawn },
+                  { label: "Net Cash Balance", value: activeSummary.cashInvestmentSummary.netCashBalance },
                 ]}
               />
               <SectionCard
                 title="Holdings Investment Summary"
                 rows={[
-                  {
-                    label: "Total Holdings Added",
-                    value:
-                      activeSummary.holdingsInvestmentSummary
-                        .totalHoldingsAdded,
-                  },
-                  {
-                    label: "Total Holdings Withdrawn",
-                    value:
-                      activeSummary.holdingsInvestmentSummary
-                        .totalHoldingsWithdrawn,
-                  },
-                  {
-                    label: "Net Holding Balance",
-                    value:
-                      activeSummary.holdingsInvestmentSummary.netHoldingBalance,
-                  },
+                  { label: "Total Holdings Added", value: activeSummary.holdingsInvestmentSummary.totalHoldingsAdded },
+                  { label: "Total Holdings Withdrawn", value: activeSummary.holdingsInvestmentSummary.totalHoldingsWithdrawn },
+                  { label: "Net Holding Balance", value: activeSummary.holdingsInvestmentSummary.netHoldingBalance },
                 ]}
               />
             </div>
@@ -479,23 +958,21 @@ export default function InvestmentSummaryPage() {
             {/* Current Account Summary */}
             {activeSummary.currentAccountSummary.length > 0 && (
               <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-                <CardHeader className="px-4 py-3">
-                  <CardTitle className="text-sm sm:text-base text-card-text">
-                    Current Account Summary — Zerodha
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-black/5 hover:bg-[#e5e7eb] border-b border-[#e5e7eb]">
-                          <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">
+                <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg">
+                  Current Account Summary — Zerodha
+                </CardTitle>
+                <CardContent>
+                  <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
+                    <Table className="min-w-full">
+                      <TableHeader className="sticky top-0 z-10">
+                        <TableRow className="bg-[#E9E8DE] hover:bg-[#E9E8DE] border-b border-gray-200">
+                          <TableHead className="py-3 text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
                             Particulars
                           </TableHead>
-                          <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase text-right">
+                          <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
                             Amount (₹)
                           </TableHead>
-                          <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase text-right">
+                          <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
                             %
                           </TableHead>
                         </TableRow>
@@ -504,22 +981,18 @@ export default function InvestmentSummaryPage() {
                         {activeSummary.currentAccountSummary.map((row, i) => (
                           <TableRow
                             key={i}
-                            className={`border-b border-[#e5e7eb] ${
-                              row.particulars
-                                .toLowerCase()
-                                .includes("account value")
+                            className={`border-b border-gray-200 ${
+                              row.particulars.toLowerCase().includes("account value")
                                 ? "font-semibold"
                                 : ""
                             }`}
                           >
-                            <TableCell className="px-4 py-2 text-xs text-card-text">
+                            <TableCell className="py-3 text-sm text-card-text">
                               {row.particulars}
                             </TableCell>
                             <AmountCell value={row.amount} />
-                            <TableCell className="px-4 py-2 text-xs text-right text-card-text-secondary tabular-nums">
-                              {row.percent > 0
-                                ? `${row.percent.toFixed(2)}%`
-                                : "—"}
+                            <TableCell className="py-3 text-sm text-right text-gray-600 tabular-nums">
+                              {row.percent > 0 ? `${row.percent.toFixed(2)}%` : "—"}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -533,23 +1006,21 @@ export default function InvestmentSummaryPage() {
             {/* Profit Redeployment Summary */}
             {activeProfitRedeployment.length > 0 && (
               <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-                <CardHeader className="px-4 py-3">
-                  <CardTitle className="text-sm sm:text-base text-card-text">
-                    Profit Redeployment Summary
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-black/5 hover:bg-[#e5e7eb] border-b border-[#e5e7eb]">
-                          <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">
+                <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg">
+                  Profit Redeployment Summary
+                </CardTitle>
+                <CardContent>
+                  <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
+                    <Table className="min-w-full">
+                      <TableHeader className="sticky top-0 z-10">
+                        <TableRow className="bg-[#E9E8DE] hover:bg-[#E9E8DE] border-b border-gray-200">
+                          <TableHead className="py-3 text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
                             Strategy
                           </TableHead>
-                          <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase text-right">
+                          <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
                             Profits (₹)
                           </TableHead>
-                          <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">
+                          <TableHead className="py-3 text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
                             Note
                           </TableHead>
                         </TableRow>
@@ -557,31 +1028,18 @@ export default function InvestmentSummaryPage() {
                       <TableBody>
                         {activeProfitRedeployment.map((row, i) =>
                           row.isHeader ? (
-                            <TableRow
-                              key={i}
-                              className="bg-black/5 border-b border-[#e5e7eb]"
-                            >
-                              <TableCell
-                                colSpan={3}
-                                className="px-4 py-2 text-xs font-semibold text-card-text uppercase"
-                              >
+                            <TableRow key={i} className="bg-black/5 border-b border-gray-200">
+                              <TableCell colSpan={3} className="py-3 text-sm font-semibold text-card-text uppercase">
                                 {row.strategy}
                               </TableCell>
                             </TableRow>
                           ) : (
-                            <TableRow
-                              key={i}
-                              className="border-b border-[#e5e7eb]"
-                            >
-                              <TableCell className="px-4 py-2 text-xs text-card-text font-medium">
-                                {row.strategy}
-                              </TableCell>
+                            <TableRow key={i} className="border-b border-gray-200">
+                              <TableCell className="py-3 text-sm text-card-text font-medium">{row.strategy}</TableCell>
                               <AmountCell value={row.profits} />
-                              <TableCell className="px-4 py-2 text-xs text-card-text-secondary">
-                                {row.note}
-                              </TableCell>
+                              <TableCell className="py-3 text-sm text-gray-600">{row.note}</TableCell>
                             </TableRow>
-                          ),
+                          )
                         )}
                       </TableBody>
                     </Table>
@@ -594,184 +1052,19 @@ export default function InvestmentSummaryPage() {
           {/* Holdings Tab */}
           {hasAnyHoldings && (
             <TabsContent value="holdings" className="mt-4 space-y-4">
-              <HoldingsTable
-                title="Current Equity Holdings"
-                rows={activeHoldings.equity}
-                nameCol="Stock Name"
-              />
-              <HoldingsTable
-                title="Current MF Holdings"
-                rows={activeHoldings.mf}
-                nameCol="Fund Name"
-              />
-              <HoldingsTable
-                title="Historical Equity Holdings"
-                rows={activeHoldings.histEquity}
-                nameCol="Stock Name"
-              />
-              <HoldingsTable
-                title="Historical MF Holdings"
-                rows={activeHoldings.histMf}
-                nameCol="Fund Name"
-              />
+              <HoldingsTable title="Current Equity Holdings" rows={activeHoldings.equity} nameCol="Stock Name" />
+              <HoldingsTable title="Current MF Holdings" rows={activeHoldings.mf} nameCol="Fund Name" />
+              <HoldingsTable title="Historical Equity Holdings" rows={activeHoldings.histEquity} nameCol="Stock Name" />
+              <HoldingsTable title="Historical MF Holdings" rows={activeHoldings.histMf} nameCol="Fund Name" />
             </TabsContent>
           )}
 
           {/* Transactions Tab */}
           {hasAnyTx && (
             <TabsContent value="transactions" className="mt-4 space-y-4">
-              {hasEquityTx && (
-                <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-                  <CardHeader className="px-4 py-3">
-                    <CardTitle className="text-sm sm:text-base text-card-text">
-                      Equity Transactions
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    <div className="overflow-x-auto">
-                      <Table className="min-w-full">
-                        <TableHeader>
-                          <TableRow className="bg-black/5 hover:bg-[#e5e7eb] border-b border-[#e5e7eb]">
-                            <TableHead className="w-[40%] px-4 py-2 text-xs font-medium text-card-text uppercase">
-                              Particulars
-                            </TableHead>
-                            <TableHead className="w-[15%] px-4 py-2 text-xs font-medium text-card-text uppercase">
-                              Date
-                            </TableHead>
-                            <TableHead className="w-[25%] px-4 py-2 text-xs font-medium text-card-text uppercase">
-                              Strategy
-                            </TableHead>
-                            <TableHead className="w-[20%] px-4 py-2 text-xs font-medium text-card-text uppercase text-right">
-                              Amount (₹)
-                            </TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {activeTransactions.equity.map((tx, i) => (
-                            <TableRow
-                              key={i}
-                              className="border-b border-[#e5e7eb]"
-                            >
-                              <TableCell className="px-4 py-2 text-xs text-card-text">
-                                {tx.particulars}
-                              </TableCell>
-                              <TableCell className="px-4 py-2 text-xs text-card-text-secondary whitespace-nowrap">
-                                {tx.date}
-                              </TableCell>
-                              <TableCell className="px-4 py-2 text-xs text-card-text-secondary">
-                                {tx.strategy}
-                              </TableCell>
-                              <AmountCell value={tx.amount} />
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {hasCashTx && (
-                <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-                  <CardHeader className="px-4 py-3">
-                    <CardTitle className="text-sm sm:text-base text-card-text">
-                      Cash Transactions
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    <div className="overflow-x-auto">
-                      <Table className="min-w-full">
-                        <TableHeader>
-                          <TableRow className="bg-black/5 hover:bg-[#e5e7eb] border-b border-[#e5e7eb]">
-                            <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">
-                              Date
-                            </TableHead>
-                            <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">
-                              Type
-                            </TableHead>
-                            <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">
-                              Strategy
-                            </TableHead>
-                            <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase text-right">
-                              Amount (₹)
-                            </TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {activeTransactions.cash.map((tx, i) => (
-                            <TableRow
-                              key={i}
-                              className="border-b border-[#e5e7eb]"
-                            >
-                              <TableCell className="px-4 py-2 text-xs text-card-text-secondary whitespace-nowrap">
-                                {tx.date}
-                              </TableCell>
-                              <TableCell className="px-4 py-2 text-xs text-card-text">
-                                {tx.transactionType}
-                              </TableCell>
-                              <TableCell className="px-4 py-2 text-xs text-card-text-secondary">
-                                {tx.strategy}
-                              </TableCell>
-                              <AmountCell value={tx.amount} />
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {hasMfTx && (
-                <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-                  <CardHeader className="px-4 py-3">
-                    <CardTitle className="text-sm sm:text-base text-card-text">
-                      MF Transactions
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    <div className="overflow-x-auto">
-                      <Table className="min-w-full">
-                        <TableHeader>
-                          <TableRow className="bg-black/5 hover:bg-[#e5e7eb] border-b border-[#e5e7eb]">
-                            <TableHead className="w-[40%] px-4 py-2 text-xs font-medium text-card-text uppercase">
-                              Particulars
-                            </TableHead>
-                            <TableHead className="w-[15%] px-4 py-2 text-xs font-medium text-card-text uppercase">
-                              Date
-                            </TableHead>
-                            <TableHead className="w-[25%] px-4 py-2 text-xs font-medium text-card-text uppercase">
-                              Strategy
-                            </TableHead>
-                            <TableHead className="w-[20%] px-4 py-2 text-xs font-medium text-card-text uppercase text-right">
-                              Amount (₹)
-                            </TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {activeTransactions.mf.map((tx, i) => (
-                            <TableRow
-                              key={i}
-                              className="border-b border-[#e5e7eb]"
-                            >
-                              <TableCell className="px-4 py-2 text-xs text-card-text">
-                                {tx.particulars}
-                              </TableCell>
-                              <TableCell className="px-4 py-2 text-xs text-card-text-secondary whitespace-nowrap">
-                                {tx.date}
-                              </TableCell>
-                              <TableCell className="px-4 py-2 text-xs text-card-text-secondary">
-                                {tx.strategy}
-                              </TableCell>
-                              <AmountCell value={tx.amount} />
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+              {hasEquityTx && <EquityTransactionTable rows={activeTransactions.equity} />}
+              {hasCashTx && <CashTransactionTable rows={activeTransactions.cash} />}
+              {hasMfTx && <MfTransactionTable rows={activeTransactions.mf} />}
             </TabsContent>
           )}
         </Tabs>
