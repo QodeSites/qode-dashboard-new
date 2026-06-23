@@ -31,7 +31,7 @@ function fmt(n: number): string {
 function AmountCell({ value }: { value: number }) {
   return (
     <TableCell
-      className={`text-right text-xs font-medium tabular-nums ${
+      className={`px-4 py-2 text-right text-xs font-medium tabular-nums ${
         value < 0 ? "text-[#dc2626]" : "text-card-text"
       }`}
     >
@@ -49,7 +49,7 @@ function SectionCard({
 }) {
   return (
     <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-      <CardHeader className="pb-2">
+      <CardHeader className="px-4 py-3">
         <CardTitle className="text-sm sm:text-base text-card-text">{title}</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
@@ -57,9 +57,9 @@ function SectionCard({
           <TableBody>
             {rows.map((row, i) => (
               <TableRow key={i} className="border-b border-[#e5e7eb]">
-                <TableCell className="py-2 text-xs text-card-text-secondary">{row.label}</TableCell>
+                <TableCell className="px-4 py-2 text-xs text-card-text-secondary">{row.label}</TableCell>
                 <TableCell
-                  className={`py-2 text-xs font-medium text-right tabular-nums ${
+                  className={`px-4 py-2 text-xs font-medium text-right tabular-nums ${
                     row.value < 0 ? "text-[#dc2626]" : "text-card-text"
                   }`}
                 >
@@ -86,7 +86,7 @@ function HoldingsTable({
   if (!rows.length) return null;
   return (
     <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-      <CardHeader className="pb-2">
+      <CardHeader className="px-4 py-3">
         <CardTitle className="text-sm sm:text-base text-card-text">{title}</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
@@ -94,16 +94,16 @@ function HoldingsTable({
           <Table className="min-w-full">
             <TableHeader>
               <TableRow className="bg-black/5 hover:bg-[#e5e7eb] border-b border-[#e5e7eb]">
-                <TableHead className="py-2 text-xs font-medium text-card-text uppercase">{nameCol}</TableHead>
-                <TableHead className="py-2 text-xs font-medium text-card-text uppercase">Type</TableHead>
-                <TableHead className="py-2 text-xs font-medium text-card-text uppercase text-right">Amount (₹)</TableHead>
+                <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">{nameCol}</TableHead>
+                <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">Type</TableHead>
+                <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase text-right">Amount (₹)</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row, i) => (
                 <TableRow key={i} className="border-b border-[#e5e7eb]">
-                  <TableCell className="py-2 text-xs text-card-text">{row.name}</TableCell>
-                  <TableCell className="py-2 text-xs text-card-text-secondary">{row.type}</TableCell>
+                  <TableCell className="px-4 py-2 text-xs text-card-text">{row.name}</TableCell>
+                  <TableCell className="px-4 py-2 text-xs text-card-text-secondary">{row.type}</TableCell>
                   <AmountCell value={row.amount} />
                 </TableRow>
               ))}
@@ -302,7 +302,7 @@ export default function InvestmentSummaryPage() {
             {/* Current Account Summary */}
             {data.currentAccountSummary.length > 0 && (
               <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-                <CardHeader className="pb-2">
+                <CardHeader className="px-4 py-3">
                   <CardTitle className="text-sm sm:text-base text-card-text">
                     Current Account Summary — Zerodha
                   </CardTitle>
@@ -312,9 +312,9 @@ export default function InvestmentSummaryPage() {
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-black/5 hover:bg-[#e5e7eb] border-b border-[#e5e7eb]">
-                          <TableHead className="py-2 text-xs font-medium text-card-text uppercase">Particulars</TableHead>
-                          <TableHead className="py-2 text-xs font-medium text-card-text uppercase text-right">Amount (₹)</TableHead>
-                          <TableHead className="py-2 text-xs font-medium text-card-text uppercase text-right">%</TableHead>
+                          <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">Particulars</TableHead>
+                          <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase text-right">Amount (₹)</TableHead>
+                          <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase text-right">%</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -325,9 +325,9 @@ export default function InvestmentSummaryPage() {
                               row.particulars.toLowerCase().includes("account value") ? "font-semibold" : ""
                             }`}
                           >
-                            <TableCell className="py-2 text-xs text-card-text">{row.particulars}</TableCell>
+                            <TableCell className="px-4 py-2 text-xs text-card-text">{row.particulars}</TableCell>
                             <AmountCell value={row.amount} />
-                            <TableCell className="py-2 text-xs text-right text-card-text-secondary tabular-nums">
+                            <TableCell className="px-4 py-2 text-xs text-right text-card-text-secondary tabular-nums">
                               {row.percent > 0 ? `${row.percent.toFixed(2)}%` : "—"}
                             </TableCell>
                           </TableRow>
@@ -342,7 +342,7 @@ export default function InvestmentSummaryPage() {
             {/* Profit Redeployment Summary */}
             {data.profitRedeployment.length > 0 && (
               <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-                <CardHeader className="pb-2">
+                <CardHeader className="px-4 py-3">
                   <CardTitle className="text-sm sm:text-base text-card-text">
                     Profit Redeployment Summary
                   </CardTitle>
@@ -352,24 +352,24 @@ export default function InvestmentSummaryPage() {
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-black/5 hover:bg-[#e5e7eb] border-b border-[#e5e7eb]">
-                          <TableHead className="py-2 text-xs font-medium text-card-text uppercase">Strategy</TableHead>
-                          <TableHead className="py-2 text-xs font-medium text-card-text uppercase text-right">Profits (₹)</TableHead>
-                          <TableHead className="py-2 text-xs font-medium text-card-text uppercase">Note</TableHead>
+                          <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">Strategy</TableHead>
+                          <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase text-right">Profits (₹)</TableHead>
+                          <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">Note</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {data.profitRedeployment.map((row, i) =>
                           row.isHeader ? (
                             <TableRow key={i} className="bg-black/5 border-b border-[#e5e7eb]">
-                              <TableCell colSpan={3} className="py-2 text-xs font-semibold text-card-text uppercase">
+                              <TableCell colSpan={3} className="px-4 py-2 text-xs font-semibold text-card-text uppercase">
                                 {row.strategy}
                               </TableCell>
                             </TableRow>
                           ) : (
                             <TableRow key={i} className="border-b border-[#e5e7eb]">
-                              <TableCell className="py-2 text-xs text-card-text font-medium">{row.strategy}</TableCell>
+                              <TableCell className="px-4 py-2 text-xs text-card-text font-medium">{row.strategy}</TableCell>
                               <AmountCell value={row.profits} />
-                              <TableCell className="py-2 text-xs text-card-text-secondary">{row.note}</TableCell>
+                              <TableCell className="px-4 py-2 text-xs text-card-text-secondary">{row.note}</TableCell>
                             </TableRow>
                           )
                         )}
@@ -412,7 +412,7 @@ export default function InvestmentSummaryPage() {
             <TabsContent value="transactions" className="mt-4 space-y-4">
               {hasEquityTx && (
                 <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-                  <CardHeader className="pb-2">
+                  <CardHeader className="px-4 py-3">
                     <CardTitle className="text-sm sm:text-base text-card-text">Equity Transactions</CardTitle>
                   </CardHeader>
                   <CardContent className="p-0">
@@ -420,16 +420,16 @@ export default function InvestmentSummaryPage() {
                       <Table className="min-w-full">
                         <TableHeader>
                           <TableRow className="bg-black/5 hover:bg-[#e5e7eb] border-b border-[#e5e7eb]">
-                            <TableHead className="py-2 text-xs font-medium text-card-text uppercase">Particulars</TableHead>
-                            <TableHead className="py-2 text-xs font-medium text-card-text uppercase">Date</TableHead>
-                            <TableHead className="py-2 text-xs font-medium text-card-text uppercase text-right">Amount (₹)</TableHead>
+                            <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">Particulars</TableHead>
+                            <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">Date</TableHead>
+                            <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase text-right">Amount (₹)</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {data.equityTransactions.map((tx, i) => (
                             <TableRow key={i} className="border-b border-[#e5e7eb]">
-                              <TableCell className="py-2 text-xs text-card-text">{tx.particulars}</TableCell>
-                              <TableCell className="py-2 text-xs text-card-text-secondary whitespace-nowrap">{tx.date}</TableCell>
+                              <TableCell className="px-4 py-2 text-xs text-card-text">{tx.particulars}</TableCell>
+                              <TableCell className="px-4 py-2 text-xs text-card-text-secondary whitespace-nowrap">{tx.date}</TableCell>
                               <AmountCell value={tx.amount} />
                             </TableRow>
                           ))}
@@ -442,7 +442,7 @@ export default function InvestmentSummaryPage() {
 
               {hasCashTx && (
                 <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-                  <CardHeader className="pb-2">
+                  <CardHeader className="px-4 py-3">
                     <CardTitle className="text-sm sm:text-base text-card-text">Cash Transactions</CardTitle>
                   </CardHeader>
                   <CardContent className="p-0">
@@ -450,18 +450,18 @@ export default function InvestmentSummaryPage() {
                       <Table className="min-w-full">
                         <TableHeader>
                           <TableRow className="bg-black/5 hover:bg-[#e5e7eb] border-b border-[#e5e7eb]">
-                            <TableHead className="py-2 text-xs font-medium text-card-text uppercase">Date</TableHead>
-                            <TableHead className="py-2 text-xs font-medium text-card-text uppercase">Type</TableHead>
-                            <TableHead className="py-2 text-xs font-medium text-card-text uppercase">Strategy</TableHead>
-                            <TableHead className="py-2 text-xs font-medium text-card-text uppercase text-right">Amount (₹)</TableHead>
+                            <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">Date</TableHead>
+                            <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">Type</TableHead>
+                            <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">Strategy</TableHead>
+                            <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase text-right">Amount (₹)</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {data.cashTransactions.map((tx, i) => (
                             <TableRow key={i} className="border-b border-[#e5e7eb]">
-                              <TableCell className="py-2 text-xs text-card-text-secondary whitespace-nowrap">{tx.date}</TableCell>
-                              <TableCell className="py-2 text-xs text-card-text">{tx.transactionType}</TableCell>
-                              <TableCell className="py-2 text-xs text-card-text-secondary">{tx.strategy}</TableCell>
+                              <TableCell className="px-4 py-2 text-xs text-card-text-secondary whitespace-nowrap">{tx.date}</TableCell>
+                              <TableCell className="px-4 py-2 text-xs text-card-text">{tx.transactionType}</TableCell>
+                              <TableCell className="px-4 py-2 text-xs text-card-text-secondary">{tx.strategy}</TableCell>
                               <AmountCell value={tx.amount} />
                             </TableRow>
                           ))}
@@ -474,7 +474,7 @@ export default function InvestmentSummaryPage() {
 
               {hasMfTx && (
                 <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-                  <CardHeader className="pb-2">
+                  <CardHeader className="px-4 py-3">
                     <CardTitle className="text-sm sm:text-base text-card-text">MF Transactions</CardTitle>
                   </CardHeader>
                   <CardContent className="p-0">
@@ -482,16 +482,16 @@ export default function InvestmentSummaryPage() {
                       <Table className="min-w-full">
                         <TableHeader>
                           <TableRow className="bg-black/5 hover:bg-[#e5e7eb] border-b border-[#e5e7eb]">
-                            <TableHead className="py-2 text-xs font-medium text-card-text uppercase">Particulars</TableHead>
-                            <TableHead className="py-2 text-xs font-medium text-card-text uppercase">Date</TableHead>
-                            <TableHead className="py-2 text-xs font-medium text-card-text uppercase text-right">Amount (₹)</TableHead>
+                            <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">Particulars</TableHead>
+                            <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase">Date</TableHead>
+                            <TableHead className="px-4 py-2 text-xs font-medium text-card-text uppercase text-right">Amount (₹)</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {data.mfTransactions.map((tx, i) => (
                             <TableRow key={i} className="border-b border-[#e5e7eb]">
-                              <TableCell className="py-2 text-xs text-card-text">{tx.particulars}</TableCell>
-                              <TableCell className="py-2 text-xs text-card-text-secondary whitespace-nowrap">{tx.date}</TableCell>
+                              <TableCell className="px-4 py-2 text-xs text-card-text">{tx.particulars}</TableCell>
+                              <TableCell className="px-4 py-2 text-xs text-card-text-secondary whitespace-nowrap">{tx.date}</TableCell>
                               <AmountCell value={tx.amount} />
                             </TableRow>
                           ))}
