@@ -23,6 +23,22 @@ async function findReportByIcode(icode: string): Promise<string | null> {
   return entries.find((n) => n.toLowerCase().endsWith(suffix)) ?? null;
 }
 
+async function findStrategyPdfs(icode: string): Promise<Record<string, boolean>> {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(REPORTS_DIR);
+  } catch {
+    return {};
+  }
+  const result: Record<string, boolean> = {};
+  const pattern = new RegExp(`_${icode}_(.+)\\.pdf$`, "i");
+  for (const name of entries) {
+    const match = name.match(pattern);
+    if (match) result[match[1]] = true;
+  }
+  return result;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -62,11 +78,12 @@ export async function GET(req: NextRequest) {
     }
 
     const data = parseInvestmentXlsx(fileBuffer);
+    const strategyPdfAvailability = await findStrategyPdfs(icode);
 
-    return NextResponse.json(data, {
-      status: 200,
-      headers: { "Cache-Control": "no-store" },
-    });
+    return NextResponse.json(
+      { ...data, strategyPdfAvailability },
+      { status: 200, headers: { "Cache-Control": "no-store" } },
+    );
   } catch (err) {
     console.error("investment-summary error:", err);
     return new NextResponse("Internal Server Error", { status: 500 });

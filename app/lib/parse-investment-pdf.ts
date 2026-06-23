@@ -104,6 +104,19 @@ export interface InvestmentSummaryData {
   }>;
 }
 
+export interface StrategyInvestmentData {
+  amountInvested: InvestmentSummaryData["amountInvested"];
+  overviewCashSummary: InvestmentSummaryData["overviewCashSummary"];
+  cashInvestmentSummary: InvestmentSummaryData["cashInvestmentSummary"];
+  holdingsInvestmentSummary: InvestmentSummaryData["holdingsInvestmentSummary"];
+  currentAccountSummary: InvestmentSummaryData["currentAccountSummary"];
+}
+
+export interface MultiStrategyInvestmentData extends InvestmentSummaryData {
+  strategies: string[];
+  perStrategy: Record<string, StrategyInvestmentData>;
+}
+
 // ---------------------------------------------------------------------------
 // Number helpers
 // ---------------------------------------------------------------------------
@@ -142,9 +155,10 @@ function dataRows(rows: string[][]): string[][] {
 
 function parseInvestmentSummarySheet(
   wb: XLSX.WorkBook,
+  sheetName = "Investment Summary",
 ): InvestmentSummaryData["amountInvested"] {
   const result = { holdings: 0, cash: 0, total: 0 };
-  for (const row of dataRows(sheetRows(wb, "Investment Summary"))) {
+  for (const row of dataRows(sheetRows(wb, sheetName))) {
     const key = String(row[0] || "").toLowerCase();
     const val = parseAmount(row[1]);
     if (key === "holdings") result.holdings = val;
@@ -156,8 +170,9 @@ function parseInvestmentSummarySheet(
 
 function parseOverviewCashSummary(
   wb: XLSX.WorkBook,
+  sheetName = "Overview Cash Summary",
 ): InvestmentSummaryData["overviewCashSummary"] {
-  const rows = sheetRows(wb, "Overview Cash Summary");
+  const rows = sheetRows(wb, sheetName);
   if (!rows.length) return null;
 
   const top: Array<{ label: string; amount: number }> = [];
@@ -181,13 +196,14 @@ function parseOverviewCashSummary(
 
 function parseCashInvestmentSummary(
   wb: XLSX.WorkBook,
+  sheetName = "Cash Investment Summary",
 ): InvestmentSummaryData["cashInvestmentSummary"] {
   const result = {
     totalCashAdded: 0,
     profitsAndCapitalWithdrawn: 0,
     netCashBalance: 0,
   };
-  for (const row of dataRows(sheetRows(wb, "Cash Investment Summary"))) {
+  for (const row of dataRows(sheetRows(wb, sheetName))) {
     const key = String(row[0] || "").toLowerCase();
     const val = parseAmount(row[1]);
     if (key.includes("total cash added")) result.totalCashAdded = val;
@@ -200,13 +216,14 @@ function parseCashInvestmentSummary(
 
 function parseHoldingsInvestmentSummary(
   wb: XLSX.WorkBook,
+  sheetName = "Holdings Investment Summary",
 ): InvestmentSummaryData["holdingsInvestmentSummary"] {
   const result = {
     totalHoldingsAdded: 0,
     totalHoldingsWithdrawn: 0,
     netHoldingBalance: 0,
   };
-  for (const row of dataRows(sheetRows(wb, "Holdings Investment Summary"))) {
+  for (const row of dataRows(sheetRows(wb, sheetName))) {
     const key = String(row[0] || "").toLowerCase();
     const val = parseAmount(row[1]);
     if (key.includes("total holdings added")) result.totalHoldingsAdded = val;
@@ -220,8 +237,9 @@ function parseHoldingsInvestmentSummary(
 
 function parseAccountSummary(
   wb: XLSX.WorkBook,
+  sheetName = "Current Account Summary",
 ): InvestmentSummaryData["currentAccountSummary"] {
-  return dataRows(sheetRows(wb, "Current Account Summary"))
+  return dataRows(sheetRows(wb, sheetName))
     .filter((row) => String(row[0] || "").trim())
     .map((row) => ({
       particulars: String(row[0]).trim(),
@@ -361,18 +379,66 @@ function parseValidationMeta(wb: XLSX.WorkBook): {
 }
 
 // ---------------------------------------------------------------------------
+// Multi-strategy helpers
+// ---------------------------------------------------------------------------
+
+const STRATEGY_SHEET_PREFIXES = [
+  "Inv Summary ",
+  "Overview Cash ",
+  "Cash Inv ",
+  "Holdings Inv ",
+  "Acct Summary ",
+];
+
+function detectStrategies(wb: XLSX.WorkBook): string[] {
+  const counts = new Map<string, number>();
+  for (const name of wb.SheetNames) {
+    for (const prefix of STRATEGY_SHEET_PREFIXES) {
+      if (name.startsWith(prefix)) {
+        const s = name.slice(prefix.length);
+        counts.set(s, (counts.get(s) ?? 0) + 1);
+      }
+    }
+  }
+  return [...counts.entries()]
+    .filter(([, count]) => count >= 2)
+    .map(([s]) => s)
+    .sort();
+}
+
+function parsePerStrategyData(
+  wb: XLSX.WorkBook,
+  strategies: string[],
+): Record<string, StrategyInvestmentData> {
+  const result: Record<string, StrategyInvestmentData> = {};
+  for (const s of strategies) {
+    result[s] = {
+      amountInvested: parseInvestmentSummarySheet(wb, `Inv Summary ${s}`),
+      overviewCashSummary: parseOverviewCashSummary(wb, `Overview Cash ${s}`),
+      cashInvestmentSummary: parseCashInvestmentSummary(wb, `Cash Inv ${s}`),
+      holdingsInvestmentSummary: parseHoldingsInvestmentSummary(wb, `Holdings Inv ${s}`),
+      currentAccountSummary: parseAccountSummary(wb, `Acct Summary ${s}`),
+    };
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
 
-export function parseInvestmentXlsx(fileBuffer: Buffer): InvestmentSummaryData {
+export function parseInvestmentXlsx(fileBuffer: Buffer): MultiStrategyInvestmentData {
   const wb = XLSX.read(fileBuffer, { type: "buffer", cellStyles: false });
 
   const { clientName, dataAsOfDate } = parseValidationMeta(wb);
+  const strategies = detectStrategies(wb);
 
   return {
     clientName,
     generatedDate: new Date().toLocaleDateString("en-GB"),
     dataAsOfDate,
+    strategies,
+    perStrategy: parsePerStrategyData(wb, strategies),
     amountInvested: parseInvestmentSummarySheet(wb),
     overviewCashSummary: parseOverviewCashSummary(wb),
     currentAccountSummary: parseAccountSummary(wb),

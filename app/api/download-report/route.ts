@@ -11,16 +11,25 @@ const REPORTS_DIR = path.join(process.cwd(), "data", "reports");
 // Client names vary, so we resolve the file by matching the icode suffix.
 const ICODE_PATTERN = /^QUS[0-9]+$/i;
 
-async function findReportByIcode(icode: string): Promise<string | null> {
-  const suffix = `_${icode}.pdf`.toLowerCase();
+async function findReportByIcode(
+  icode: string,
+  strategy?: string | null,
+): Promise<string | null> {
   let entries: string[];
   try {
     entries = await fs.readdir(REPORTS_DIR);
   } catch {
     return null;
   }
-  const match = entries.find((name) => name.toLowerCase().endsWith(suffix));
-  return match ?? null;
+
+  if (strategy) {
+    const suffix = `_${icode}_${strategy}.pdf`.toLowerCase();
+    return entries.find((n) => n.toLowerCase().endsWith(suffix)) ?? null;
+  }
+
+  const suffix = `_${icode}.pdf`.toLowerCase();
+  const strategyPattern = new RegExp(`_${icode.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}_.+\\.pdf$`, "i");
+  return entries.find((n) => n.toLowerCase().endsWith(suffix) && !strategyPattern.test(n)) ?? null;
 }
 
 export async function GET(req: NextRequest) {
@@ -40,12 +49,13 @@ export async function GET(req: NextRequest) {
     const ownIcode = getEffectiveIcode(session);
 
     const icode = isAdmin && requestedIcode ? requestedIcode : ownIcode;
+    const strategy = searchParams.get("strategy")?.trim() || null;
 
     if (!icode || !ICODE_PATTERN.test(icode)) {
       return new NextResponse("Invalid or missing icode", { status: 400 });
     }
 
-    const fileName = await findReportByIcode(icode);
+    const fileName = await findReportByIcode(icode, strategy);
     if (!fileName) {
       return new NextResponse("Report not found", { status: 404 });
     }
@@ -66,9 +76,8 @@ export async function GET(req: NextRequest) {
       throw err;
     }
 
-    // Download as "<fname>_<lname>.pdf" — strip the "_Invst_Summary_<icode>" part.
-    const downloadName =
-      fileName.replace(/_Invst_Summary_QUS[0-9]+\.pdf$/i, "") + ".pdf";
+    const baseName = fileName.replace(/_Invst_Summary_QUS[0-9]+.*\.pdf$/i, "");
+    const downloadName = strategy ? `${baseName}_${strategy}.pdf` : `${baseName}.pdf`;
 
     return new NextResponse(new Uint8Array(file), {
       status: 200,
