@@ -46,7 +46,7 @@ export interface InvestmentSummaryData {
   };
 
   // Profit Redeployment sheet
-  profitRedeployment: Array<{ strategy: string; profits: number; note: string }>;
+  profitRedeployment: Array<{ strategy: string; profits: number; note: string; isHeader?: boolean }>;
 
   // Holdings sheets
   currentEquityHoldings: Array<{ name: string; type: string; amount: number }>;
@@ -170,13 +170,20 @@ function parseProfitRedeployment(wb: XLSX.WorkBook): InvestmentSummaryData["prof
   return dataRows(sheetRows(wb, "Profit Redeployment"))
     .filter((row) => {
       const s = String(row[0] || "").trim().toLowerCase();
-      return s && s !== "total profits" && s !== "active strategies";
+      return s && s !== "total profits";
     })
-    .map((row) => ({
-      strategy: String(row[0]).trim(),
-      profits: parseAmount(row[1]),
-      note: String(row[2] || "").trim(),
-    }));
+    .map((row) => {
+      const label = String(row[0]).trim();
+      const lower = label.toLowerCase();
+      if (lower === "active strategies" || lower === "inactive strategies") {
+        return { strategy: label, profits: 0, note: "", isHeader: true };
+      }
+      return {
+        strategy: label,
+        profits: parseAmount(row[1]),
+        note: String(row[2] || "").trim(),
+      };
+    });
 }
 
 function parseHoldingsSheet(

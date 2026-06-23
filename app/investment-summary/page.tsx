@@ -24,7 +24,7 @@ const formatter = new Intl.NumberFormat("en-IN", {
 });
 
 function fmt(n: number): string {
-  if (n < 0) return `(${formatter.format(Math.abs(n))})`;
+  if (n < 0) return `-${formatter.format(Math.abs(n))}`;
   return formatter.format(n);
 }
 
@@ -208,8 +208,6 @@ export default function InvestmentSummaryPage() {
     );
   }
 
-  const hasOverviewCash = !!(data.overviewCashSummary?.rows.length || data.overviewCashSummary?.adjustments.length);
-
   const hasEquityHoldings = data.currentEquityHoldings.length > 0;
   const hasMfHoldings = data.currentMfHoldings.length > 0;
   const hasHistoricalEquity = data.historicalEquityHoldings.length > 0;
@@ -254,14 +252,6 @@ export default function InvestmentSummaryPage() {
             >
               Overview
             </TabsTrigger>
-            {hasOverviewCash && (
-              <TabsTrigger
-                value="cashsummary"
-                className="text-xs sm:text-sm px-3 py-2 data-[state=active]:bg-logo-green data-[state=active]:text-button-text"
-              >
-                Cash Summary
-              </TabsTrigger>
-            )}
             {hasAnyHoldings && (
               <TabsTrigger
                 value="holdings"
@@ -362,19 +352,27 @@ export default function InvestmentSummaryPage() {
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-black/5 hover:bg-[#e5e7eb] border-b border-[#e5e7eb]">
-                          <TableHead className="py-2 text-xs font-medium text-card-text uppercase">Active Strategy</TableHead>
+                          <TableHead className="py-2 text-xs font-medium text-card-text uppercase">Strategy</TableHead>
                           <TableHead className="py-2 text-xs font-medium text-card-text uppercase text-right">Profits (₹)</TableHead>
                           <TableHead className="py-2 text-xs font-medium text-card-text uppercase">Note</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {data.profitRedeployment.map((row, i) => (
-                          <TableRow key={i} className="border-b border-[#e5e7eb]">
-                            <TableCell className="py-2 text-xs text-card-text font-medium">{row.strategy}</TableCell>
-                            <AmountCell value={row.profits} />
-                            <TableCell className="py-2 text-xs text-card-text-secondary">{row.note}</TableCell>
-                          </TableRow>
-                        ))}
+                        {data.profitRedeployment.map((row, i) =>
+                          row.isHeader ? (
+                            <TableRow key={i} className="bg-black/5 border-b border-[#e5e7eb]">
+                              <TableCell colSpan={3} className="py-2 text-xs font-semibold text-card-text uppercase">
+                                {row.strategy}
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            <TableRow key={i} className="border-b border-[#e5e7eb]">
+                              <TableCell className="py-2 text-xs text-card-text font-medium">{row.strategy}</TableCell>
+                              <AmountCell value={row.profits} />
+                              <TableCell className="py-2 text-xs text-card-text-secondary">{row.note}</TableCell>
+                            </TableRow>
+                          )
+                        )}
                       </TableBody>
                     </Table>
                   </div>
@@ -382,62 +380,6 @@ export default function InvestmentSummaryPage() {
               </Card>
             )}
           </TabsContent>
-
-          {/* Cash Summary Tab */}
-          {hasOverviewCash && data.overviewCashSummary && (
-            <TabsContent value="cashsummary" className="mt-4 space-y-4">
-              {data.overviewCashSummary.rows.length > 0 && (
-                <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm sm:text-base text-card-text">Overview Cash Summary</CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-black/5 hover:bg-[#e5e7eb] border-b border-[#e5e7eb]">
-                          <TableHead className="py-2 text-xs font-medium text-card-text uppercase">Particulars</TableHead>
-                          <TableHead className="py-2 text-xs font-medium text-card-text uppercase text-right">Amount (₹)</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {data.overviewCashSummary.rows.map((row, i) => (
-                          <TableRow key={i} className="border-b border-[#e5e7eb]">
-                            <TableCell className="py-2 text-xs text-card-text">{row.label}</TableCell>
-                            <AmountCell value={row.amount} />
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </CardContent>
-                </Card>
-              )}
-              {data.overviewCashSummary.adjustments.length > 0 && (
-                <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm sm:text-base text-card-text">Adjustments</CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-black/5 hover:bg-[#e5e7eb] border-b border-[#e5e7eb]">
-                          <TableHead className="py-2 text-xs font-medium text-card-text uppercase">Particulars</TableHead>
-                          <TableHead className="py-2 text-xs font-medium text-card-text uppercase text-right">Amount (₹)</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {data.overviewCashSummary.adjustments.map((row, i) => (
-                          <TableRow key={i} className="border-b border-[#e5e7eb]">
-                            <TableCell className="py-2 text-xs text-card-text">{row.label}</TableCell>
-                            <AmountCell value={row.amount} />
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </CardContent>
-                </Card>
-              )}
-            </TabsContent>
-          )}
 
           {/* Holdings Tab */}
           {hasAnyHoldings && (
