@@ -129,9 +129,17 @@ export default function InvestmentSummaryPage() {
     }
   }, [status, router]);
 
+  const icode = (session?.user as { icode?: string; impersonating?: { icode?: string }; accessType?: string } | undefined)
+    ?.accessType === "admin"
+    ? ((session?.user as { impersonating?: { icode?: string } })?.impersonating?.icode ?? (session?.user as { icode?: string })?.icode)
+    : (session?.user as { icode?: string })?.icode;
+
   useEffect(() => {
     if (status !== "authenticated") return;
-    fetch("/api/investment-summary")
+    setLoading(true);
+    setData(null);
+    setError(null);
+    fetch("/api/investment-summary", { cache: "no-store" })
       .then(async (res) => {
         if (res.status === 404) {
           setData(null);
@@ -147,7 +155,7 @@ export default function InvestmentSummaryPage() {
         setError(err.message || "Failed to load report");
         setLoading(false);
       });
-  }, [status]);
+  }, [status, icode]);
 
   const handleDownload = async () => {
     setDownloading(true);

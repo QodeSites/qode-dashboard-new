@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(data, {
       status: 200,
-      headers: { "Cache-Control": "private, max-age=300" },
+      headers: { "Cache-Control": "no-store" },
     });
   } catch (err) {
     console.error("investment-summary error:", err);
