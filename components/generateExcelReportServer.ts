@@ -65,6 +65,7 @@ export interface ServerExcelInput {
     totalReturn: number;
   };
   trailingReturns: Record<string, unknown>;
+  benchmarkReturns?: Record<string, string>;
   cashFlows: { date: string; amount: number }[];
   monthlyPnl: { [year: string]: MonthlyPnlYear } | null;
   quarterlyPnl: { [year: string]: QuarterlyPnlYear } | null;
@@ -89,20 +90,21 @@ function getTrailing(tr: Record<string, unknown>, longKey: string, shortKey: str
   return v !== undefined && v !== null ? (v as string | number) : null;
 }
 
-function buildCombinedTrailing(tr: Record<string, unknown>) {
+function buildCombinedTrailing(tr: Record<string, unknown>, bm?: Record<string, string>) {
+  const bmVal = (key: string): string | null => bm?.[key] ?? null;
   return {
-    fiveDays:      { portfolio: getTrailing(tr, "fiveDays",      "5d"),            benchmark: null },
-    tenDays:       { portfolio: getTrailing(tr, "tenDays",       "10d"),           benchmark: null },
-    fifteenDays:   { portfolio: getTrailing(tr, "fifteenDays",   "15d"),           benchmark: null },
-    oneMonth:      { portfolio: getTrailing(tr, "oneMonth",      "1m"),            benchmark: null },
-    threeMonths:   { portfolio: getTrailing(tr, "threeMonths",   "3m"),            benchmark: null },
-    sixMonths:     { portfolio: getTrailing(tr, "sixMonths",     "6m"),            benchmark: null },
-    oneYear:       { portfolio: getTrailing(tr, "oneYear",       "1y"),            benchmark: null },
-    twoYears:      { portfolio: getTrailing(tr, "twoYears",      "2y"),            benchmark: null },
-    fiveYears:     { portfolio: getTrailing(tr, "fiveYears",     "5y"),            benchmark: null },
-    sinceInception:{ portfolio: getTrailing(tr, "sinceInception","sinceInception"),benchmark: null },
-    MDD:           { portfolio: getTrailing(tr, "MDD",           "MDD"),           benchmark: null },
-    currentDD:     { portfolio: getTrailing(tr, "currentDD",     "currentDD"),     benchmark: null },
+    fiveDays:      { portfolio: getTrailing(tr, "fiveDays",      "5d"),            benchmark: bmVal("5d") },
+    tenDays:       { portfolio: getTrailing(tr, "tenDays",       "10d"),           benchmark: bmVal("10d") },
+    fifteenDays:   { portfolio: getTrailing(tr, "fifteenDays",   "15d"),           benchmark: bmVal("15d") },
+    oneMonth:      { portfolio: getTrailing(tr, "oneMonth",      "1m"),            benchmark: bmVal("1m") },
+    threeMonths:   { portfolio: getTrailing(tr, "threeMonths",   "3m"),            benchmark: bmVal("3m") },
+    sixMonths:     { portfolio: getTrailing(tr, "sixMonths",     "6m"),            benchmark: bmVal("6m") },
+    oneYear:       { portfolio: getTrailing(tr, "oneYear",       "1y"),            benchmark: bmVal("1y") },
+    twoYears:      { portfolio: getTrailing(tr, "twoYears",      "2y"),            benchmark: bmVal("2y") },
+    fiveYears:     { portfolio: getTrailing(tr, "fiveYears",     "5y"),            benchmark: bmVal("5y") },
+    sinceInception:{ portfolio: getTrailing(tr, "sinceInception","sinceInception"),benchmark: bmVal("sinceInception") },
+    MDD:           { portfolio: getTrailing(tr, "MDD",           "MDD"),           benchmark: bmVal("MDD") },
+    currentDD:     { portfolio: getTrailing(tr, "currentDD",     "currentDD"),     benchmark: bmVal("currentDD") },
   };
 }
 
@@ -121,13 +123,14 @@ function buildWorkbook(input: ServerExcelInput): XLSX.WorkBook {
     accountInfo,
     metrics,
     trailingReturns,
+    benchmarkReturns,
     cashFlows,
     monthlyPnl,
     quarterlyPnl,
   } = input;
 
   const includeFullSections = !isTotalPortfolio || hasNavBasedTotalPortfolio;
-  const combinedTrailing = buildCombinedTrailing(trailingReturns);
+  const combinedTrailing = buildCombinedTrailing(trailingReturns, benchmarkReturns);
 
   const wb = XLSX.utils.book_new();
   const wsData: any[][] = [];
@@ -178,17 +181,18 @@ function buildWorkbook(input: ServerExcelInput): XLSX.WorkBook {
       const cell = combinedTrailing[horizon.key as keyof typeof combinedTrailing];
       if (cell?.portfolio !== null && cell?.portfolio !== undefined) {
         let portfolioNum = parseFloat(String(cell.portfolio));
-        const benchmarkNum = 0; // no benchmark in server context
+        let bmNum: number | string = cell.benchmark != null ? parseFloat(String(cell.benchmark)) : "-";
 
         if (horizon.key === "MDD" || horizon.key === "currentDD") {
           portfolioNum = portfolioNum > 0 ? -portfolioNum : portfolioNum;
+          if (typeof bmNum === "number" && !isNaN(bmNum)) bmNum = bmNum > 0 ? -bmNum : bmNum;
         }
 
         wsData.push([
           "",
           horizon.label,
           isNaN(portfolioNum) ? 0 : portfolioNum,
-          benchmarkNum,
+          typeof bmNum === "number" && isNaN(bmNum) ? "-" : bmNum,
         ]);
       }
     }
@@ -404,6 +408,125 @@ function buildWorkbook(input: ServerExcelInput): XLSX.WorkBook {
 
   XLSX.utils.book_append_sheet(wb, ws, "Portfolio Data");
   return wb;
+}
+
+// ============================================================================
+// Benchmark fetcher — mirrors fetchBenchmarkReturns in app/dashboard/page.tsx
+// Calls the same external NIFTY 50 API and returns trailing return % strings.
+// Returns an empty record on failure so Excel benchmark columns stay blank.
+// ============================================================================
+
+export async function fetchBenchmarkForDateRange(
+  startDate: string,
+  endDate: string
+): Promise<Record<string, string>> {
+  const empty: Record<string, string> = {
+    "5d": "-", "10d": "-", "15d": "-", "1m": "-", "3m": "-", "6m": "-",
+    "1y": "-", "2y": "-", "5y": "-", "sinceInception": "-", "MDD": "-", "currentDD": "-",
+  };
+
+  if (!startDate || !endDate) return empty;
+
+  try {
+    const fetchStart = new Date(startDate);
+    fetchStart.setDate(fetchStart.getDate() - 10);
+    const fetchStartStr = fetchStart.toISOString().split("T")[0];
+
+    const response = await fetch(
+      "https://qode360-backend.qodeinvest.com/api/v1/returns/indices/?downloadNav=true",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ startDate: fetchStartStr, endDate, indices: ["NIFTY 50"] }),
+      }
+    );
+    if (!response.ok) return empty;
+
+    const result = await response.json();
+    const rawData: { date: string; nav: number }[] = result?.data?.data?.["NIFTY 50"] ?? [];
+    if (!rawData.length) return empty;
+
+    const bm = rawData.map((d) => ({ date: d.date, nav: d.nav.toString() }));
+
+    // Find effective start date (may need to step back to prev trading day)
+    const startTime = new Date(startDate).getTime();
+    const startExists = bm.some((d) => new Date(d.date).getTime() === startTime);
+    let effectiveStart = startDate;
+    if (!startExists) {
+      const prev = bm
+        .filter((d) => new Date(d.date).getTime() < startTime)
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      if (prev.length) effectiveStart = prev[0].date;
+    }
+
+    const filtered = bm.filter(
+      (d) => new Date(d.date) >= new Date(effectiveStart) && new Date(d.date) <= new Date(endDate)
+    );
+    if (!filtered.length) return empty;
+
+    const endDateObj = new Date(endDate);
+
+    const findNav = (target: Date): number => {
+      const exact = filtered.find((d) => new Date(d.date).toDateString() === target.toDateString());
+      if (exact) return parseFloat(exact.nav);
+      let closest: number | null = null;
+      let closestDiff = Infinity;
+      for (const d of filtered) {
+        const diff = target.getTime() - new Date(d.date).getTime();
+        if (diff >= 0 && diff < closestDiff) { closestDiff = diff; closest = parseFloat(d.nav); }
+      }
+      return closest ?? 0;
+    };
+
+    const calcReturn = (start: Date, end: Date): string => {
+      const s = findNav(start);
+      const e = findNav(end);
+      if (!s || !e) return "-";
+      const years = (end.getTime() - start.getTime()) / (365 * 24 * 60 * 60 * 1000);
+      const ret = years >= 1
+        ? (Math.pow(e / s, 1 / years) - 1) * 100
+        : ((e - s) / s) * 100;
+      return ret.toFixed(2);
+    };
+
+    const returns = { ...empty };
+
+    [
+      { key: "5d",  days: 5   },
+      { key: "10d", days: 10  },
+      { key: "15d", days: 15  },
+      { key: "1m",  days: 30  },
+      { key: "3m",  days: 90  },
+      { key: "6m",  days: 180 },
+      { key: "1y",  days: 365 },
+      { key: "2y",  days: 730 },
+      { key: "5y",  days: 1825},
+    ].forEach(({ key, days }) => {
+      const start = new Date(endDateObj);
+      start.setDate(endDateObj.getDate() - days);
+      returns[key] = calcReturn(start, endDateObj);
+    });
+
+    returns["sinceInception"] = calcReturn(new Date(filtered[0].date), endDateObj);
+
+    let peak = -Infinity;
+    let maxDD = 0;
+    for (const d of filtered) {
+      const nav = parseFloat(d.nav);
+      if (nav > peak) peak = nav;
+      const dd = ((nav - peak) / peak) * 100;
+      if (dd < maxDD) maxDD = dd;
+    }
+    const currentNav = parseFloat(filtered[filtered.length - 1].nav);
+    const currentDD = peak > 0 ? ((currentNav - peak) / peak) * 100 : 0;
+
+    returns["MDD"]       = (-Math.abs(maxDD)).toFixed(2);
+    returns["currentDD"] = (-Math.abs(currentDD)).toFixed(2);
+
+    return returns;
+  } catch {
+    return empty;
+  }
 }
 
 // ============================================================================

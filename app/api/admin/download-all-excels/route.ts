@@ -6,7 +6,7 @@ import { PortfolioApi } from "@/app/lib/sarla-utils";
 import { getEngineForQcode } from "@/app/lib/bifurcated-portfolio-utils";
 import { findByIcode } from "@/app/lib/bifurcated-clients-registry";
 import { getUserQcodes, calculatePortfolioMetrics, formatPortfolioStats } from "@/app/lib/portfolio-utils";
-import { generateExcelBufferServer, ServerExcelInput } from "@/components/generateExcelReportServer";
+import { generateExcelBufferServer, fetchBenchmarkForDateRange, ServerExcelInput } from "@/components/generateExcelReportServer";
 
 // ============================================================================
 // Types
@@ -19,6 +19,7 @@ interface PortfolioEntry {
     inceptionDate?: string | null;
     dataAsOfDate?: string | null;
     isActive?: boolean;
+    startDate?: string | null;
   };
   accountInfo?: {
     accountName: string;
@@ -31,6 +32,10 @@ interface PortfolioEntry {
 // Helpers
 // ============================================================================
 
+// Helper to pass parameters to PortfolioApi.GET and engine.handleGET.
+// These route handlers expect a Request object but only read searchParams.
+// No actual HTTP connection is made — this just constructs a Request object
+// in memory with the qcode in the URL. Works on any server/IP/environment.
 function makeMockRequest(url: string): Request {
   return new Request(url);
 }
@@ -66,11 +71,11 @@ async function fetchStrategies(
   const isSarla     = icode === "QUS0007";
   const isSatidham  = icode === "QUS0010";
   const bifurcated  = findByIcode(icode);
-  const isBifurcated = !!bifurcated && bifurcated.renderMode !== "single";
-
   // Sarla / Satidham — single API call returns all schemes
   if (isSarla || isSatidham) {
     const qcode = isSarla ? "QAC00041" : "QAC00046";
+    // Call PortfolioApi.GET with the qcode in the URL. No network request is made;
+    // PortfolioApi.GET only extracts searchParams and queries the database directly.
     const res  = await PortfolioApi.GET(makeMockRequest(`http://localhost/api/sarla-api?qcode=${qcode}`));
     const data = await res.json();
     return Object.entries(data).map(([strategyName, portRes]: [string, any]) => ({
@@ -80,10 +85,12 @@ async function fetchStrategies(
     }));
   }
 
-  // Multi-strategy bifurcated clients
-  if (isBifurcated && bifurcated) {
+  // All bifurcated clients (both multi-strategy and single-strategy).
+  // Their data lives in bifurcated_master_sheet_test, not master_sheet.
+  if (bifurcated) {
     const engine = getEngineForQcode(bifurcated.qcode);
     if (!engine) return [];
+    // Similar to Sarla/Satidham: pass qcode via URL param. No actual HTTP call.
     const res  = await engine.handleGET(makeMockRequest(`http://localhost/api/bifurcated-portfolio?qcode=${bifurcated.qcode}`));
     const data = await res.json();
     return Object.entries(data).map(([strategyName, portRes]: [string, any]) => ({
@@ -190,7 +197,22 @@ export async function GET(request: Request) {
 
       for (const strategy of strategies) {
         try {
-          const input  = toExcelInput(strategy, client.user_name ?? client.icode);
+          const input = toExcelInput(strategy, client.user_name ?? client.icode);
+
+          // Fetch NIFTY 50 benchmark returns for this strategy's date range.
+          // Fails silently — benchmark columns will be blank if the API is down.
+          const inceptionDate = strategy.metadata.inceptionDate ?? strategy.metadata.startDate;
+          if (inceptionDate && strategy.metadata.dataAsOfDate) {
+            try {
+              input.benchmarkReturns = await fetchBenchmarkForDateRange(
+                inceptionDate,
+                strategy.metadata.dataAsOfDate
+              );
+            } catch {
+              // leave benchmarkReturns undefined — Excel shows "-" in benchmark column
+            }
+          }
+
           const buffer = await generateExcelBufferServer(input);
           // Single strategy → ClientName.xlsx
           // Multiple strategies → ClientName - StrategyName.xlsx
