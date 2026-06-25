@@ -482,6 +482,43 @@ class BifurcatedPortfolioEngine {
     }));
   }
 
+  // Cash In/Out TABLE source (display only). Deliberately separate from
+  // getCashFlows so it does NOT affect Amount Invested — getAmountDeposited
+  // still derives from getCashFlows. Reads the broker's base/strategy
+  // "total portfolio" cash tag from the bifurcated master sheet:
+  //   Total Portfolio -> config.depositSystemTag (e.g. "Zerodha Total Portfolio",
+  //                      or "Total Portfolio Exposure" for Radiance)
+  //   a specific scheme -> that scheme's depositTag (e.g. "QAW++ Zerodha Total
+  //                        Portfolio"), from the scheme's inception onwards.
+  private async getCashFlowTableEntries(
+    qcode: string,
+    scheme: string
+  ): Promise<CashFlow[]> {
+    const isTotal = scheme === "Total Portfolio";
+    const schemeTags = isTotal ? null : this.getSchemeTagsAndDate(scheme);
+    const tag = isTotal ? this.config.depositSystemTag : schemeTags!.depositTag;
+
+    const data = await this.msTable.findMany({
+      where: {
+        qcode,
+        system_tag: tag,
+        ...(schemeTags ? { date: { gte: schemeTags.startDate } } : {}),
+        AND: [
+          { capital_in_out: { not: null } },
+          { capital_in_out: { not: new Decimal(0) } },
+        ],
+      },
+      select: { date: true, capital_in_out: true },
+      orderBy: { date: "asc" },
+    });
+
+    return data.map((entry: any) => ({
+      date: this.normalizeDate(entry.date),
+      amount: entry.capital_in_out?.toNumber() || 0,
+      dividend: 0,
+    }));
+  }
+
   private async getTotalProfit(
     qcode: string,
     scheme: string
@@ -1270,7 +1307,7 @@ class BifurcatedPortfolioEngine {
         const totalProfit = await this.getTotalProfit(qcode, scheme);
         const returns = await this.calculatePortfolioReturns(qcode, scheme);
         const historicalData = await this.getHistoricalData(qcode, scheme);
-        const cashFlows = await this.getCashFlows(qcode, scheme);
+        const cashFlows = await this.getCashFlowTableEntries(qcode, scheme);
 
         const rawEquityCurve = historicalData.map((d) => ({
           date: this.normalizeDate(d.date),
