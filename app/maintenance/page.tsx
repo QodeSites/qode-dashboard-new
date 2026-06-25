@@ -1,9 +1,17 @@
 "use client";
 
 import { signOut } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
 export default function MaintenancePage() {
+  const router = useRouter();
+
+  const handleSignOut = async () => {
+    await signOut({ redirect: false });
+    router.push("/");
+  };
+
   return (
     <div className="min-h-screen bg-primary-bg flex flex-col items-center justify-center px-4">
       <div className="max-w-md w-full text-center space-y-6">
@@ -29,7 +37,7 @@ export default function MaintenancePage() {
         </div>
 
         <Button
-          onClick={() => signOut({ callbackUrl: "/" })}
+          onClick={handleSignOut}
           className="bg-logo-green text-button-text hover:bg-logo-green/90 px-8"
         >
           Sign Out
