@@ -486,8 +486,12 @@ class BifurcatedPortfolioEngine {
   // getCashFlows so it does NOT affect Amount Invested — getAmountDeposited
   // still derives from getCashFlows. Reads the broker's base/strategy
   // "total portfolio" cash tag from the bifurcated master sheet:
-  //   Total Portfolio -> config.depositSystemTag (e.g. "Zerodha Total Portfolio",
-  //                      or "Total Portfolio Exposure" for Radiance)
+  //   Total Portfolio -> the broker BASE tag ("Zerodha Total Portfolio", or
+  //                      "Total Portfolio Exposure" for Radiance). NOTE:
+  //                      config.depositSystemTag is the FIRST scheme's prefixed
+  //                      exposure (e.g. "QAW++ Zerodha Total Portfolio"), so we
+  //                      strip the strategy prefix via the known base suffix to
+  //                      get the account-level series.
   //   a specific scheme -> that scheme's depositTag (e.g. "QAW++ Zerodha Total
   //                        Portfolio"), from the scheme's inception onwards.
   private async getCashFlowTableEntries(
@@ -496,7 +500,17 @@ class BifurcatedPortfolioEngine {
   ): Promise<CashFlow[]> {
     const isTotal = scheme === "Total Portfolio";
     const schemeTags = isTotal ? null : this.getSchemeTagsAndDate(scheme);
-    const tag = isTotal ? this.config.depositSystemTag : schemeTags!.depositTag;
+    // Broker-level base cash tags. depositSystemTag is a prefixed scheme exposure
+    // ("<strategy> <base>"); for Total Portfolio we read its base suffix.
+    const BASE_CASH_TAGS = [
+      "Zerodha Total Portfolio",
+      "Total Portfolio Exposure",
+      "Total Portfolio Value",
+    ];
+    const tag = isTotal
+      ? BASE_CASH_TAGS.find((b) => this.config.depositSystemTag.endsWith(b)) ??
+        this.config.depositSystemTag
+      : schemeTags!.depositTag;
 
     const data = await this.msTable.findMany({
       where: {
