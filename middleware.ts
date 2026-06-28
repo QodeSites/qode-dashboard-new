@@ -9,6 +9,20 @@ const SESSION_COOKIES = [
 
 export async function middleware(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+
+  const { pathname } = req.nextUrl;
+
+  // Guard internal routes
+  if (
+    pathname.startsWith("/internal") ||
+    pathname.startsWith("/api/internal")
+  ) {
+    if (token?.accessType !== "internal") {
+      return NextResponse.redirect(new URL("/login", req.url));
+    }
+    return NextResponse.next();
+  }
+
   const icode = token?.icode as string | undefined;
 
   if (icode && BLOCKED_ICODES.has(icode)) {
