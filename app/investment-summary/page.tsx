@@ -53,11 +53,44 @@ function getPageNumbers(currentPage: number, totalPages: number): (number | "...
   return pages;
 }
 
+function TypeBadge({ value }: { value: string }) {
+  if (!value) return <span className="text-gray-400">—</span>;
+  const lower = value.toLowerCase();
+  const badgeClass =
+    lower === "equity"
+      ? "bg-logo-green text-[#DABD38]"
+      : lower === "debt"
+        ? "bg-[#DABD38] text-logo-green"
+        : "bg-[#008455] text-white";
+  return (
+    <span className={`px-2 py-1 rounded text-xs font-medium ${badgeClass}`}>
+      {value}
+    </span>
+  );
+}
+
+function StrategyBadge({ value }: { value: string }) {
+  if (!value) return <span className="text-gray-400">—</span>;
+  return (
+    <span className="px-2 py-1 rounded text-xs bg-logo-green/10 text-logo-green font-medium">
+      {value}
+    </span>
+  );
+}
+
 function AmountCell({ value }: { value: number }) {
+  return (
+    <TableCell className="py-3 text-sm font-medium text-right tabular-nums text-gray-600">
+      {fmt(value)}
+    </TableCell>
+  );
+}
+
+function PnlAmountCell({ value }: { value: number }) {
   return (
     <TableCell
       className={`py-3 text-sm text-right font-medium tabular-nums ${
-        value < 0 ? "text-red-600" : "text-card-text"
+        value > 0 ? "text-green-600" : value < 0 ? "text-red-600" : "text-card-text"
       }`}
     >
       {fmt(value)}
@@ -70,7 +103,7 @@ function SectionCard({
   rows,
 }: {
   title: string;
-  rows: { label: string; value: number }[];
+  rows: { label: string; value: number; isBold?: boolean }[];
 }) {
   return (
     <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
@@ -83,14 +116,10 @@ function SectionCard({
             <TableBody>
               {rows.map((row, i) => (
                 <TableRow key={i} className="border-b border-gray-200">
-                  <TableCell className="py-3 text-sm text-gray-600">
+                  <TableCell className={`py-3 text-sm ${row.isBold ? "font-bold text-card-text" : "text-gray-600"}`}>
                     {row.label}
                   </TableCell>
-                  <TableCell
-                    className={`py-3 text-sm font-medium text-right tabular-nums ${
-                      row.value < 0 ? "text-red-600" : "text-card-text"
-                    }`}
-                  >
+                  <TableCell className={`py-3 text-sm text-right tabular-nums ${row.isBold ? "font-bold text-card-text" : "font-medium text-gray-600"}`}>
                     {fmt(row.value)}
                   </TableCell>
                 </TableRow>
@@ -109,10 +138,14 @@ function HoldingsTable({
   title,
   rows,
   nameCol = "Name",
+  itemLabel = "entry",
+  itemLabelPlural = "entries",
 }: {
   title: string;
   rows: HoldingRow[];
   nameCol?: string;
+  itemLabel?: string;
+  itemLabelPlural?: string;
 }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(10);
@@ -178,7 +211,7 @@ function HoldingsTable({
         {/* Top bar: count + page size selector */}
         <div className="flex items-center justify-between mb-3">
           <div className="text-sm text-card-text-secondary">
-            {rows.length} {rows.length !== 1 ? "entries" : "entry"} total
+            {rows.length} {rows.length !== 1 ? itemLabelPlural : itemLabel} total
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-card-text-secondary">Show</span>
@@ -197,7 +230,7 @@ function HoldingsTable({
                 ))}
               </SelectContent>
             </Select>
-            <span className="text-sm text-card-text-secondary">entries</span>
+            <span className="text-sm text-card-text-secondary">{itemLabelPlural}</span>
           </div>
         </div>
 
@@ -228,9 +261,13 @@ function HoldingsTable({
             <TableBody>
               {paginated.map((row, i) => (
                 <TableRow key={i} className="border-b border-gray-200">
-                  <TableCell className="py-3 text-sm text-card-text">{row.name}</TableCell>
-                  <TableCell className="py-3 text-sm text-gray-600">{row.type}</TableCell>
-                  <TableCell className="py-3 text-sm text-gray-600">{row.strategy}</TableCell>
+                  <TableCell className="py-3 text-sm font-medium text-card-text">{row.name}</TableCell>
+                  <TableCell className="py-3 text-sm text-gray-600">
+                    <TypeBadge value={row.type} />
+                  </TableCell>
+                  <TableCell className="py-3 text-sm text-gray-600">
+                    <StrategyBadge value={row.strategy} />
+                  </TableCell>
                   <AmountCell value={row.amount} />
                 </TableRow>
               ))}
@@ -242,7 +279,7 @@ function HoldingsTable({
         {rows.length > 0 && pageSize !== 0 && (
           <div className="flex items-center justify-between mt-4 flex-wrap gap-2">
             <div className="text-sm text-card-text-secondary">
-              Showing {startEntry} to {endEntry} of {rows.length} entries
+              Showing {startEntry} to {endEntry} of {rows.length} {itemLabelPlural}
             </div>
             {totalPages > 1 && (
               <div className="flex items-center gap-1">
@@ -285,7 +322,7 @@ function HoldingsTable({
         )}
         {rows.length > 0 && pageSize === 0 && (
           <div className="mt-3 text-sm text-card-text-secondary">
-            Showing all {rows.length} entries
+            Showing all {rows.length} {itemLabelPlural}
           </div>
         )}
       </CardContent>
@@ -351,7 +388,7 @@ function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
       <CardContent>
         <div className="flex items-center justify-between mb-3">
           <div className="text-sm text-card-text-secondary">
-            {rows.length} {rows.length !== 1 ? "entries" : "entry"} total
+            {rows.length} {rows.length !== 1 ? "transactions" : "transaction"} total
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-card-text-secondary">Show</span>
@@ -365,7 +402,7 @@ function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
                 ))}
               </SelectContent>
             </Select>
-            <span className="text-sm text-card-text-secondary">entries</span>
+            <span className="text-sm text-card-text-secondary">transactions</span>
           </div>
         </div>
         <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
@@ -388,9 +425,11 @@ function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
             <TableBody>
               {paginated.map((tx, i) => (
                 <TableRow key={i} className="border-b border-gray-200">
-                  <TableCell className="py-3 text-sm text-card-text">{tx.particulars}</TableCell>
+                  <TableCell className="py-3 text-sm font-medium text-card-text">{tx.particulars}</TableCell>
                   <TableCell className="py-3 text-sm text-gray-600 whitespace-nowrap">{tx.date}</TableCell>
-                  <TableCell className="py-3 text-sm text-gray-600">{tx.strategy}</TableCell>
+                  <TableCell className="py-3 text-sm text-gray-600">
+                    <StrategyBadge value={tx.strategy} />
+                  </TableCell>
                   <AmountCell value={tx.amount} />
                 </TableRow>
               ))}
@@ -399,7 +438,7 @@ function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
         </div>
         {rows.length > 0 && pageSize !== 0 && (
           <div className="flex items-center justify-between mt-4 flex-wrap gap-2">
-            <div className="text-sm text-card-text-secondary">Showing {startEntry} to {endEntry} of {rows.length} entries</div>
+            <div className="text-sm text-card-text-secondary">Showing {startEntry} to {endEntry} of {rows.length} transactions</div>
             {totalPages > 1 && (
               <div className="flex items-center gap-1">
                 <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={safePage <= 1} className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-card-text-secondary hover:text-card-text disabled:opacity-40 disabled:cursor-default cursor-pointer rounded-md hover:bg-black/5 transition-colors"><ChevronLeft className="h-4 w-4" />Prev</button>
@@ -412,7 +451,7 @@ function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
             )}
           </div>
         )}
-        {rows.length > 0 && pageSize === 0 && <div className="mt-3 text-sm text-card-text-secondary">Showing all {rows.length} entries</div>}
+        {rows.length > 0 && pageSize === 0 && <div className="mt-3 text-sm text-card-text-secondary">Showing all {rows.length} transactions</div>}
       </CardContent>
     </Card>
   );
@@ -476,7 +515,7 @@ function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
       <CardContent>
         <div className="flex items-center justify-between mb-3">
           <div className="text-sm text-card-text-secondary">
-            {rows.length} {rows.length !== 1 ? "entries" : "entry"} total
+            {rows.length} {rows.length !== 1 ? "transactions" : "transaction"} total
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-card-text-secondary">Show</span>
@@ -488,7 +527,7 @@ function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
                 ))}
               </SelectContent>
             </Select>
-            <span className="text-sm text-card-text-secondary">entries</span>
+            <span className="text-sm text-card-text-secondary">transactions</span>
           </div>
         </div>
         <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
@@ -512,8 +551,10 @@ function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
               {paginated.map((tx, i) => (
                 <TableRow key={i} className="border-b border-gray-200">
                   <TableCell className="py-3 text-sm text-gray-600 whitespace-nowrap">{tx.date}</TableCell>
-                  <TableCell className="py-3 text-sm text-card-text">{tx.transactionType}</TableCell>
-                  <TableCell className="py-3 text-sm text-gray-600">{tx.strategy}</TableCell>
+                  <TableCell className="py-3 text-sm font-medium text-card-text">{tx.transactionType}</TableCell>
+                  <TableCell className="py-3 text-sm text-gray-600">
+                    <StrategyBadge value={tx.strategy} />
+                  </TableCell>
                   <AmountCell value={tx.amount} />
                 </TableRow>
               ))}
@@ -522,7 +563,7 @@ function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
         </div>
         {rows.length > 0 && pageSize !== 0 && (
           <div className="flex items-center justify-between mt-4 flex-wrap gap-2">
-            <div className="text-sm text-card-text-secondary">Showing {startEntry} to {endEntry} of {rows.length} entries</div>
+            <div className="text-sm text-card-text-secondary">Showing {startEntry} to {endEntry} of {rows.length} transactions</div>
             {totalPages > 1 && (
               <div className="flex items-center gap-1">
                 <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={safePage <= 1} className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-card-text-secondary hover:text-card-text disabled:opacity-40 disabled:cursor-default cursor-pointer rounded-md hover:bg-black/5 transition-colors"><ChevronLeft className="h-4 w-4" />Prev</button>
@@ -535,7 +576,7 @@ function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
             )}
           </div>
         )}
-        {rows.length > 0 && pageSize === 0 && <div className="mt-3 text-sm text-card-text-secondary">Showing all {rows.length} entries</div>}
+        {rows.length > 0 && pageSize === 0 && <div className="mt-3 text-sm text-card-text-secondary">Showing all {rows.length} transactions</div>}
       </CardContent>
     </Card>
   );
@@ -594,12 +635,12 @@ function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
   return (
     <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
       <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg">
-        MF Transactions
+        Mutual Fund Transactions
       </CardTitle>
       <CardContent>
         <div className="flex items-center justify-between mb-3">
           <div className="text-sm text-card-text-secondary">
-            {rows.length} {rows.length !== 1 ? "entries" : "entry"} total
+            {rows.length} {rows.length !== 1 ? "transactions" : "transaction"} total
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-card-text-secondary">Show</span>
@@ -611,7 +652,7 @@ function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
                 ))}
               </SelectContent>
             </Select>
-            <span className="text-sm text-card-text-secondary">entries</span>
+            <span className="text-sm text-card-text-secondary">transactions</span>
           </div>
         </div>
         <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
@@ -634,9 +675,11 @@ function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
             <TableBody>
               {paginated.map((tx, i) => (
                 <TableRow key={i} className="border-b border-gray-200">
-                  <TableCell className="py-3 text-sm text-card-text">{tx.particulars}</TableCell>
+                  <TableCell className="py-3 text-sm font-medium text-card-text">{tx.particulars}</TableCell>
                   <TableCell className="py-3 text-sm text-gray-600 whitespace-nowrap">{tx.date}</TableCell>
-                  <TableCell className="py-3 text-sm text-gray-600">{tx.strategy}</TableCell>
+                  <TableCell className="py-3 text-sm text-gray-600">
+                    <StrategyBadge value={tx.strategy} />
+                  </TableCell>
                   <AmountCell value={tx.amount} />
                 </TableRow>
               ))}
@@ -645,7 +688,7 @@ function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
         </div>
         {rows.length > 0 && pageSize !== 0 && (
           <div className="flex items-center justify-between mt-4 flex-wrap gap-2">
-            <div className="text-sm text-card-text-secondary">Showing {startEntry} to {endEntry} of {rows.length} entries</div>
+            <div className="text-sm text-card-text-secondary">Showing {startEntry} to {endEntry} of {rows.length} transactions</div>
             {totalPages > 1 && (
               <div className="flex items-center gap-1">
                 <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={safePage <= 1} className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-card-text-secondary hover:text-card-text disabled:opacity-40 disabled:cursor-default cursor-pointer rounded-md hover:bg-black/5 transition-colors"><ChevronLeft className="h-4 w-4" />Prev</button>
@@ -658,7 +701,7 @@ function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
             )}
           </div>
         )}
-        {rows.length > 0 && pageSize === 0 && <div className="mt-3 text-sm text-card-text-secondary">Showing all {rows.length} entries</div>}
+        {rows.length > 0 && pageSize === 0 && <div className="mt-3 text-sm text-card-text-secondary">Showing all {rows.length} transactions</div>}
       </CardContent>
     </Card>
   );
@@ -829,7 +872,7 @@ export default function InvestmentSummaryPage() {
       <DashboardLayout>
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h1 className="text-xl font-semibold text-card-text">
+            <h1 className="text-2xl font-semibold text-card-text-secondary font-heading">
               Investment Summary
             </h1>
           </div>
@@ -860,11 +903,11 @@ export default function InvestmentSummaryPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold text-card-text">
+            <h1 className="text-2xl font-semibold text-card-text-secondary font-heading">
               {data.clientName}
               {selectedStrategy !== "ALL" && ` — ${selectedStrategy}`}
             </h1>
-            <p className="text-xs text-card-text-secondary mt-1">
+            <p className="text-gray-600 mt-1">
               Investment Summary &nbsp;·&nbsp; Data as of: {data.dataAsOfDate}
               {data.generatedDate && (
                 <span> &nbsp;·&nbsp; Generated: {data.generatedDate}</span>
@@ -934,7 +977,7 @@ export default function InvestmentSummaryPage() {
                 rows={[
                   { label: "Holdings", value: activeSummary.amountInvested.holdings },
                   { label: "Cash", value: activeSummary.amountInvested.cash },
-                  { label: "Total", value: activeSummary.amountInvested.total },
+                  { label: "Total", value: activeSummary.amountInvested.total, isBold: true },
                 ]}
               />
               <SectionCard
@@ -942,7 +985,7 @@ export default function InvestmentSummaryPage() {
                 rows={[
                   { label: "Total Cash Added", value: activeSummary.cashInvestmentSummary.totalCashAdded },
                   { label: "Profits & Capital Withdrawn", value: activeSummary.cashInvestmentSummary.profitsAndCapitalWithdrawn },
-                  { label: "Net Cash Balance", value: activeSummary.cashInvestmentSummary.netCashBalance },
+                  { label: "Net Cash Balance", value: activeSummary.cashInvestmentSummary.netCashBalance, isBold: true },
                 ]}
               />
               <SectionCard
@@ -950,7 +993,7 @@ export default function InvestmentSummaryPage() {
                 rows={[
                   { label: "Total Holdings Added", value: activeSummary.holdingsInvestmentSummary.totalHoldingsAdded },
                   { label: "Total Holdings Withdrawn", value: activeSummary.holdingsInvestmentSummary.totalHoldingsWithdrawn },
-                  { label: "Net Holding Balance", value: activeSummary.holdingsInvestmentSummary.netHoldingBalance },
+                  { label: "Net Holding Balance", value: activeSummary.holdingsInvestmentSummary.netHoldingBalance, isBold: true },
                 ]}
               />
             </div>
@@ -978,24 +1021,25 @@ export default function InvestmentSummaryPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {activeSummary.currentAccountSummary.map((row, i) => (
-                          <TableRow
-                            key={i}
-                            className={`border-b border-gray-200 ${
-                              row.particulars.toLowerCase().includes("account value")
-                                ? "font-semibold"
-                                : ""
-                            }`}
-                          >
-                            <TableCell className="py-3 text-sm text-card-text">
-                              {row.particulars}
-                            </TableCell>
-                            <AmountCell value={row.amount} />
-                            <TableCell className="py-3 text-sm text-right text-gray-600 tabular-nums">
-                              {row.percent > 0 ? `${row.percent.toFixed(2)}%` : "—"}
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                        {activeSummary.currentAccountSummary.map((row, i) => {
+                          const isTotalRow = row.particulars.toLowerCase().includes("account value");
+                          return (
+                            <TableRow
+                              key={i}
+                              className="border-b border-gray-200"
+                            >
+                              <TableCell className={`py-3 text-sm ${isTotalRow ? "font-bold text-card-text" : "text-card-text"}`}>
+                                {row.particulars}
+                              </TableCell>
+                              <TableCell className={`py-3 text-sm text-right tabular-nums ${isTotalRow ? "font-bold text-card-text" : "font-medium text-gray-600"}`}>
+                                {fmt(row.amount)}
+                              </TableCell>
+                              <TableCell className={`py-3 text-sm text-right tabular-nums ${isTotalRow ? "font-bold text-card-text" : "text-gray-600"}`}>
+                                {row.percent > 0 ? `${row.percent.toFixed(2)}%` : "—"}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>
@@ -1036,7 +1080,7 @@ export default function InvestmentSummaryPage() {
                           ) : (
                             <TableRow key={i} className="border-b border-gray-200">
                               <TableCell className="py-3 text-sm text-card-text font-medium">{row.strategy}</TableCell>
-                              <AmountCell value={row.profits} />
+                              <PnlAmountCell value={row.profits} />
                               <TableCell className="py-3 text-sm text-gray-600">{row.note}</TableCell>
                             </TableRow>
                           )
@@ -1052,10 +1096,10 @@ export default function InvestmentSummaryPage() {
           {/* Holdings Tab */}
           {hasAnyHoldings && (
             <TabsContent value="holdings" className="mt-4 space-y-4">
-              <HoldingsTable title="Current Equity Holdings" rows={activeHoldings.equity} nameCol="Stock Name" />
-              <HoldingsTable title="Current MF Holdings" rows={activeHoldings.mf} nameCol="Fund Name" />
-              <HoldingsTable title="Historical Equity Holdings" rows={activeHoldings.histEquity} nameCol="Stock Name" />
-              <HoldingsTable title="Historical MF Holdings" rows={activeHoldings.histMf} nameCol="Fund Name" />
+              <HoldingsTable title="Current Equity Holdings" rows={activeHoldings.equity} nameCol="Stock Name" itemLabel="stock" itemLabelPlural="stocks" />
+              <HoldingsTable title="Current Mutual Fund Holdings" rows={activeHoldings.mf} nameCol="Fund Name" itemLabel="mutual fund" itemLabelPlural="mutual funds" />
+              <HoldingsTable title="Historical Equity Holdings" rows={activeHoldings.histEquity} nameCol="Stock Name" itemLabel="stock" itemLabelPlural="stocks" />
+              <HoldingsTable title="Historical Mutual Fund Holdings" rows={activeHoldings.histMf} nameCol="Fund Name" itemLabel="mutual fund" itemLabelPlural="mutual funds" />
             </TabsContent>
           )}
 
