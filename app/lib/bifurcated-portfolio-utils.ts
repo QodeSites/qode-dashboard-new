@@ -17,7 +17,7 @@ import type {
 
 // ==================== Interfaces ====================
 
-interface CashFlow {
+export interface CashFlow {
   date: string;
   amount: number;
   dividend: number;

@@ -4,6 +4,7 @@
  * NO DATABASE WRITES — only the engine's read-only handleGET + Prisma SELECTs.
  */
 import { findByQcode } from "../app/lib/bifurcated-clients-registry";
+import { getPmsAccountSeries } from "../app/lib/pms-bridge";
 
 const ASHOK = "QAC00110";
 let failures = 0;
@@ -26,6 +27,22 @@ async function main() {
   }
   check("Zerodha schemes still present",
     !!pm["Scheme QAW++"] && !!pm["Scheme QAW+"] && !!pm["Total Portfolio"]);
+
+  console.log("== Task 2: PMS bridge ==");
+  const qaw = await getPmsAccountSeries("QAW00158");
+  check("QAW00158 row count = 83", qaw.daily.length === 83, `got ${qaw.daily.length}`);
+  check("QAW00158 currentValue", approx(qaw.currentValue, 23623722.55));
+  check("QAW00158 deposited", approx(qaw.deposited, 23338000));
+  check("QAW00158 totalProfit", approx(qaw.totalProfit, 285722.55));
+  check("QAW00158 inception 2026-04-08", qaw.daily[0]?.date === "2026-04-08", qaw.daily[0]?.date);
+
+  const qgf = await getPmsAccountSeries("QGF00157");
+  check("QGF00157 currentValue", approx(qgf.currentValue, 28081182.05));
+  check("QGF00157 totalProfit", approx(qgf.totalProfit, 4750336.05));
+
+  const qtf = await getPmsAccountSeries("QTF00161");
+  check("QTF00161 currentValue", approx(qtf.currentValue, 24026941.27));
+  check("QTF00161 totalProfit", approx(qtf.totalProfit, 695941.27));
 
   console.log(failures === 0 ? "\nALL PASS" : `\n${failures} FAILURE(S)`);
   process.exit(failures === 0 ? 0 : 1);
