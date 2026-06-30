@@ -16,7 +16,20 @@ const VISIBILITY_GATED_PATHS = [
 ];
 
 export async function middleware(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  // Behind a reverse proxy the internal connection is plain http, so derive
+  // the real protocol/host from the forwarded headers (falls back to nextUrl).
+  const proto =
+    req.headers.get("x-forwarded-proto") ??
+    req.nextUrl.protocol.replace(":", "");
+  const host = req.headers.get("host") ?? req.nextUrl.host;
+
+  const token = await getToken({
+    req,
+    secret: process.env.NEXTAUTH_SECRET,
+    // On https the cookie is `__Secure-next-auth.session-token`; without this
+    // getToken looks for the wrong cookie name behind an SSL-terminating proxy.
+    secureCookie: proto === "https",
+  });
   const icode = token?.icode as string | undefined;
   const accessType = token?.accessType as string | undefined;
 
@@ -40,10 +53,15 @@ export async function middleware(req: NextRequest) {
   const isClient = accessType === "client";
 
   if (isGatedPath && isClient && icode) {
-    const origin = req.nextUrl.origin;
     try {
       const res = await fetch(
-        `${origin}/api/dashboard-visibility/check?icode=${icode}`,
+        `${proto}://${host}/api/dashboard-visibility/check?icode=${icode}`,
+        {
+          // Forward the session cookie so the check runs in an authenticated
+          // context, and avoid following redirects (e.g. http→https) silently.
+          headers: { cookie: req.headers.get("cookie") ?? "" },
+          redirect: "manual",
+        },
       );
       if (res.ok) {
         const data = await res.json();
