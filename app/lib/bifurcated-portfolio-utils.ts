@@ -100,6 +100,67 @@ import { ASHWIN_CONFIG } from "./clients/ashwin";
 
 // ==================== Engine ====================
 
+export function computeTrailingReturnsFromCurve(
+  normalizedData: { date: string; nav: number }[],
+  sinceInceptionBase: number,
+  drawdownMetrics: { mdd: number; currentDD: number }
+): Record<string, number | null | string> {
+  const emptyReturns = {
+    "5d": null, "10d": null, "15d": null, "1m": null, "3m": null,
+    "6m": null, "1y": null, "2y": null, "5y": null, sinceInception: null,
+    MDD: drawdownMetrics.mdd, currentDD: drawdownMetrics.currentDD,
+  };
+  if (normalizedData.length === 0) return emptyReturns;
+
+  const lastEntry = normalizedData[normalizedData.length - 1];
+  const lastNav = lastEntry.nav;
+  const currentDate = lastEntry.date;
+  const oldestDate = normalizedData[0].date;
+  const dataRangeDays =
+    (new Date(currentDate).getTime() - new Date(oldestDate).getTime()) /
+    (1000 * 60 * 60 * 24);
+
+  const periods: Record<string, number | null> = {
+    "5d": 5, "10d": 10, "15d": 15, "1m": 30, "3m": 90,
+    "6m": 180, "1y": 365, "2y": 730, "5y": 1825, sinceInception: null,
+  };
+
+  const returns: Record<string, number | null | string> = {};
+  for (const [period, targetCount] of Object.entries(periods)) {
+    if (period === "sinceInception") {
+      const firstNav = sinceInceptionBase;
+      if (!firstNav) returns[period] = null;
+      else if (dataRangeDays > 365)
+        returns[period] = (Math.pow(lastNav / firstNav, 365 / dataRangeDays) - 1) * 100;
+      else returns[period] = (lastNav / firstNav - 1) * 100;
+      continue;
+    }
+    const requiredDays = targetCount as number;
+    if (requiredDays > dataRangeDays) { returns[period] = null; continue; }
+    const targetDate = new Date(currentDate);
+    targetDate.setDate(targetDate.getDate() - requiredDays);
+    if (targetDate < new Date(oldestDate)) { returns[period] = null; continue; }
+    const targetTime = targetDate.getTime();
+    let candidate: { date: string; nav: number } | null = null;
+    for (const dp of normalizedData) {
+      if (new Date(dp.date).getTime() <= targetTime) candidate = dp; else break;
+    }
+    if (!candidate) {
+      for (const dp of normalizedData) {
+        if (new Date(dp.date).getTime() >= targetTime) { candidate = dp; break; }
+      }
+    }
+    if (!candidate) { returns[period] = null; continue; }
+    const daysDiff = Math.abs(new Date(candidate.date).getTime() - targetTime) / (1000 * 60 * 60 * 24);
+    const maxAllowedDiff = requiredDays <= 30 ? 7 : 30;
+    if (daysDiff > maxAllowedDiff) { returns[period] = null; continue; }
+    returns[period] = (lastNav / candidate.nav - 1) * 100;
+  }
+  returns["MDD"] = drawdownMetrics.mdd;
+  returns["currentDD"] = drawdownMetrics.currentDD;
+  return returns;
+}
+
 class BifurcatedPortfolioEngine {
   private config: ClientConfig;
   private frozenData: FrozenSchemeData;
@@ -742,118 +803,15 @@ class BifurcatedPortfolioEngine {
       : (historicalData || []).map((entry) => ({ date: this.normalizeDate(entry.date), nav: entry.nav }))
           .filter((entry) => entry.date)
           .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    const emptyReturns = {
-      "5d": null,
-      "10d": null,
-      "15d": null,
-      "1m": null,
-      "3m": null,
-      "6m": null,
-      "1y": null,
-      "2y": null,
-      "5y": null,
-      sinceInception: null,
-      MDD: drawdownMetrics.mdd,
-      currentDD: drawdownMetrics.currentDD,
-    };
-
-    if (normalizedData.length === 0) return emptyReturns;
-
-    const lastEntry = normalizedData[normalizedData.length - 1];
-    const lastNav = lastEntry.nav;
-    const currentDate = lastEntry.date;
-    const oldestDate = normalizedData[0].date;
-    const dataRangeDays =
-      (new Date(currentDate).getTime() - new Date(oldestDate).getTime()) /
-      (1000 * 60 * 60 * 24);
-
-    const periods: Record<string, number | null> = {
-      "5d": 5,
-      "10d": 10,
-      "15d": 15,
-      "1m": 30,
-      "3m": 90,
-      "6m": 180,
-      "1y": 365,
-      "2y": 730,
-      "5y": 1825,
-      sinceInception: null,
-    };
-
-    const returns: Record<string, number | null | string> = {};
-
-    for (const [period, targetCount] of Object.entries(periods)) {
-      if (period === "sinceInception") {
-        // For shared-tag new scheme, use prevNav (previous day's close) as
-        // the base. For everything else, use 100 (scheme starts at NAV 100).
-        const firstNav =
-          scheme === this.config.newSchemeName && this.sharedNavTag
-            ? (historicalData?.[0]?.prevNav ?? normalizedData[0].nav)
-            : 100;
-        if (!firstNav) {
-          returns[period] = null;
-        } else if (dataRangeDays > 365) {
-          // Use CAGR for sinceInception when > 1 year, matching old flow
-          returns[period] = (Math.pow(lastNav / firstNav, 365 / dataRangeDays) - 1) * 100;
-        } else {
-          returns[period] = (lastNav / firstNav - 1) * 100;
-        }
-        continue;
-      }
-
-      const requiredDays = targetCount as number;
-      if (requiredDays > dataRangeDays) {
-        returns[period] = null;
-        continue;
-      }
-
-      const targetDate = new Date(currentDate);
-      targetDate.setDate(targetDate.getDate() - requiredDays);
-
-      if (targetDate < new Date(oldestDate)) {
-        returns[period] = null;
-        continue;
-      }
-
-      const targetTime = targetDate.getTime();
-      let candidate: { date: string; nav: number } | null = null;
-
-      for (const dataPoint of normalizedData) {
-        const dataTime = new Date(dataPoint.date).getTime();
-        if (dataTime <= targetTime) candidate = dataPoint;
-        else break;
-      }
-
-      if (!candidate) {
-        for (const dataPoint of normalizedData) {
-          const dataTime = new Date(dataPoint.date).getTime();
-          if (dataTime >= targetTime) {
-            candidate = dataPoint;
-            break;
-          }
-        }
-      }
-
-      if (!candidate) {
-        returns[period] = null;
-        continue;
-      }
-
-      const candidateTime = new Date(candidate.date).getTime();
-      const daysDiff =
-        Math.abs(candidateTime - targetTime) / (1000 * 60 * 60 * 24);
-      const maxAllowedDiff = requiredDays <= 30 ? 7 : 30;
-      if (daysDiff > maxAllowedDiff) {
-        returns[period] = null;
-        continue;
-      }
-
-      returns[period] = (lastNav / candidate.nav - 1) * 100;
-    }
-
-    returns["MDD"] = drawdownMetrics.mdd;
-    returns["currentDD"] = drawdownMetrics.currentDD;
-    return returns;
+    const sinceInceptionBase =
+      scheme === this.config.newSchemeName && this.sharedNavTag
+        ? (historicalData?.[0]?.prevNav ?? normalizedData[0]?.nav ?? 100)
+        : 100;
+    return computeTrailingReturnsFromCurve(
+      normalizedData,
+      sinceInceptionBase,
+      drawdownMetrics
+    );
   }
 
   private async calculateMonthlyPnL(
