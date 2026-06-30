@@ -47,6 +47,7 @@ model accounts {
   account_custodian_codes                                   account_custodian_codes[]
   pooled_account_allocations                                pooled_account_allocations[]
   pooled_account_users                                      pooled_account_users[]
+  strategy_config                                           strategy_config[]
 
   @@schema("public")
 }
@@ -352,6 +353,7 @@ model pms_master_sheet {
   cumulative_return_percent Decimal?  @db.Decimal(10, 4)
   created_at                DateTime? @default(now()) @db.Timestamptz(6)
 
+  @@unique([account_code, report_date], map: "pms_master_sheet_account_date_uq")
   @@schema("public")
 }
 
@@ -1038,6 +1040,15 @@ model yearly_performance {
   @@schema("public")
 }
 
+model dashboard_visibility {
+  id                Int      @id @default(autoincrement())
+  icode             String   @unique @db.VarChar(20)
+  dashboard_visible Boolean  @default(true)
+  updated_at        DateTime @default(now()) @db.Timestamp(6)
+
+  @@schema("public")
+}
+
 model bifurcated_equity_holding_test {
   id                Int      @id @default(autoincrement())
   qcode             String   @db.VarChar(20)
@@ -1082,5 +1093,28 @@ model bifurcated_mutual_fund_holding_sheet_test {
   strategy          String?  @db.VarChar(50)
 
   @@index([qcode, as_of_date], map: "idx_bif_mf_qcode_date")
+  @@schema("public")
+}
+
+model internal_config {
+  id         Int      @id
+  data       Json
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("public")
+}
+
+model strategy_config {
+  id          Int       @id @default(autoincrement())
+  qcode       String    @db.VarChar(20)
+  client_name String    @db.VarChar(255)
+  strategy    String    @db.VarChar(20)
+  start_date  DateTime  @db.Date
+  end_date    DateTime? @db.Date
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  overrides   Json?
+  accounts    accounts  @relation(fields: [qcode], references: [qcode], onDelete: Cascade, map: "fk_strategy_config_qcode")
+
+  @@index([qcode], map: "idx_strategy_config_qcode")
   @@schema("public")
 }
