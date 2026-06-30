@@ -12,7 +12,7 @@ export function AdminHeader() {
 
   const handleLogout = async () => {
     await signOut({ redirect: false });
-    router.push("/");
+    window.location.href = "/";
   };
 
   const adminName = session?.user?.name || "Admin";
