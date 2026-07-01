@@ -778,7 +778,7 @@ export default function InvestmentSummaryPage() {
   }, [data, selectedStrategy]);
 
   const activeHoldings = useMemo(() => {
-    if (!data) return { equity: [], mf: [], histEquity: [], histMf: [] };
+    if (!data) return { equity: [], mf: [] };
     const filter = <T extends { strategy: string }>(arr: T[]) =>
       selectedStrategy === "ALL"
         ? arr
@@ -786,8 +786,6 @@ export default function InvestmentSummaryPage() {
     return {
       equity: filter(data.currentEquityHoldings),
       mf: filter(data.currentMfHoldings),
-      histEquity: filter(data.historicalEquityHoldings),
-      histMf: filter(data.historicalMfHoldings),
     };
   }, [data, selectedStrategy]);
 
@@ -888,9 +886,7 @@ export default function InvestmentSummaryPage() {
 
   const hasAnyHoldings =
     activeHoldings.equity.length > 0 ||
-    activeHoldings.mf.length > 0 ||
-    activeHoldings.histEquity.length > 0 ||
-    activeHoldings.histMf.length > 0;
+    activeHoldings.mf.length > 0;
 
   const hasEquityTx = activeTransactions.equity.length > 0;
   const hasCashTx = activeTransactions.cash.length > 0;
@@ -1002,7 +998,7 @@ export default function InvestmentSummaryPage() {
             {activeSummary.currentAccountSummary.length > 0 && (
               <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
                 <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg">
-                  Current Account Summary — Zerodha
+                  Current Account Summary
                 </CardTitle>
                 <CardContent>
                   <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
@@ -1104,8 +1100,6 @@ export default function InvestmentSummaryPage() {
             <TabsContent value="holdings" className="mt-4 space-y-4">
               <HoldingsTable title="Current Equity Holdings" rows={activeHoldings.equity} nameCol="Stock Name" itemLabel="stock" itemLabelPlural="stocks" />
               <HoldingsTable title="Current Mutual Fund Holdings" rows={activeHoldings.mf} nameCol="Fund Name" itemLabel="mutual fund" itemLabelPlural="mutual funds" />
-              <HoldingsTable title="Historical Equity Holdings" rows={activeHoldings.histEquity} nameCol="Stock Name" itemLabel="stock" itemLabelPlural="stocks" />
-              <HoldingsTable title="Historical Mutual Fund Holdings" rows={activeHoldings.histMf} nameCol="Fund Name" itemLabel="mutual fund" itemLabelPlural="mutual funds" />
             </TabsContent>
           )}
 
