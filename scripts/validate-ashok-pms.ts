@@ -29,37 +29,44 @@ async function main() {
   check("Zerodha schemes still present",
     !!pm["Scheme QAW++"] && !!pm["Scheme QAW+"] && !!pm["Total Portfolio"]);
 
-  console.log("== Task 2: PMS bridge ==");
-  const qaw = await getPmsAccountSeries("QAW00158");
-  check("QAW00158 row count = 83", qaw.daily.length === 83, `got ${qaw.daily.length}`);
-  check("QAW00158 currentValue", approx(qaw.currentValue, 23623722.55));
-  check("QAW00158 deposited", approx(qaw.deposited, 23338000));
-  check("QAW00158 totalProfit", approx(qaw.totalProfit, 285722.55));
-  check("QAW00158 inception 2026-04-08", qaw.daily[0]?.date === "2026-04-08", qaw.daily[0]?.date);
+  console.log("== Task 2: PMS bridge (drift-proof invariants) ==");
+  for (const code of ["QAW00158", "QGF00157", "QTF00161"]) {
+    const s = await getPmsAccountSeries(code);
+    check(`${code} rows >= 83`, s.daily.length >= 83, `got ${s.daily.length}`);
+    check(`${code} inception 2026-04-08`, s.daily[0]?.date === "2026-04-08", s.daily[0]?.date);
+    check(`${code} currentValue == last daily value`,
+      approx(s.currentValue, s.daily[s.daily.length - 1].value, 0.001),
+      `cv=${s.currentValue} last=${s.daily[s.daily.length - 1].value}`);
+    // Money identity: portfolio value = capital in + P&L. Drift-proof.
+    check(`${code} value == deposited + profit`,
+      approx(s.currentValue, s.deposited + s.totalProfit, 0.01),
+      `cv=${s.currentValue} dep=${s.deposited} pnl=${s.totalProfit}`);
+  }
 
-  const qgf = await getPmsAccountSeries("QGF00157");
-  check("QGF00157 currentValue", approx(qgf.currentValue, 28081182.05));
-  check("QGF00157 totalProfit", approx(qgf.totalProfit, 4750336.05));
-
-  const qtf = await getPmsAccountSeries("QTF00161");
-  check("QTF00161 currentValue", approx(qtf.currentValue, 24026941.27));
-  check("QTF00161 totalProfit", approx(qtf.totalProfit, 695941.27));
-
-  console.log("== Task 4: PMS per-scheme views ==");
+  console.log("== Task 4: PMS per-scheme views (drift-proof) ==");
   const engine = getEngineForQcode(ASHOK)!;
   const res = await engine.handleGET(new Request(`http://local/api?qcode=${ASHOK}`));
   const data: Record<string, any> = await res.json();
-  for (const label of ["Scheme PMS QAW", "Scheme PMS QGF", "Scheme PMS QTF"]) {
+  const PMS_LABELS = ["Scheme PMS QAW", "Scheme PMS QGF", "Scheme PMS QTF"];
+  const PMS_CODES: Record<string, string> = {
+    "Scheme PMS QAW": "QAW00158", "Scheme PMS QGF": "QGF00157", "Scheme PMS QTF": "QTF00161",
+  };
+  for (const label of PMS_LABELS) {
     check(`response has "${label}"`, !!data[label]);
+    if (!data[label]) continue;
+    const d = data[label].data;
+    const bridge = await getPmsAccountSeries(PMS_CODES[label]);
+    check(`${label} currentExposure == bridge currentValue`,
+      approx(Number(d.currentExposure), bridge.currentValue, 0.001),
+      `resp=${d.currentExposure} bridge=${bridge.currentValue}`);
+    check(`${label} equity starts at 100`, approx(d.equityCurve[0]?.nav, 100, 0.1), `got ${d.equityCurve[0]?.nav}`);
+    check(`${label} inception 2026-04-08`,
+      data[label].metadata.inceptionDate === "2026-04-08", data[label].metadata.inceptionDate);
+    const c = d.equityCurve;
+    const expectedRet = (c[c.length - 1].nav / c[0].nav - 1) * 100;
+    check(`${label} return matches its curve`, approx(Number(d.return), expectedRet, 1),
+      `resp=${d.return} curve=${expectedRet.toFixed(2)}`);
   }
-  check("Scheme PMS QGF currentExposure", approx(Number(data["Scheme PMS QGF"].data.currentExposure), 28081182.05));
-  check("Scheme PMS QGF return ~20.36%",
-    approx(Number(data["Scheme PMS QGF"].data.return), 20.36, 5));
-  check("Scheme PMS QAW equity starts at 100",
-    approx(data["Scheme PMS QAW"].data.equityCurve[0]?.nav, 100, 0.1));
-  check("Scheme PMS QAW inception 2026-04-08",
-    data["Scheme PMS QAW"].metadata.inceptionDate === "2026-04-08",
-    data["Scheme PMS QAW"].metadata.inceptionDate);
 
   console.log(failures === 0 ? "\nALL PASS" : `\n${failures} FAILURE(S)`);
   process.exit(failures === 0 ? 0 : 1);
