@@ -505,11 +505,23 @@ interface StrategyPair {
   account_name: string;
   strategy: string;
   tag: string;
+  // split overrides — null means "use strategy_defaults for this field"
+  equity_pct: number | null;
+  debt_pct: number | null;
+  lc_pct: number | null;
+  cash_pct: number | null;
+  gold_pct: number | null;
+  lowvol_pct: number | null;
+  momentum_pct: number | null;
 }
 
 interface SeriesPoint {
   date: string;
   value: number;
+}
+
+function toNum(v: unknown): number | null {
+  return v != null ? Number(v) : null;
 }
 
 // one row per (qcode, strategy), latest config revision wins.
@@ -527,6 +539,13 @@ async function fetchStrategyPairs(
       account_name: c.account_name,
       strategy: c.strategy,
       tag: `${c.strategy} ${c[suffixField]}`,
+      equity_pct: toNum(c.equity_pct),
+      debt_pct: toNum(c.debt_pct),
+      lc_pct: toNum(c.lc_pct),
+      cash_pct: toNum(c.cash_pct),
+      gold_pct: toNum(c.gold_pct),
+      lowvol_pct: toNum(c.lowvol_pct),
+      momentum_pct: toNum(c.momentum_pct),
     });
   }
   return [...map.values()];
@@ -922,4 +941,240 @@ export async function computeStrategyBreakup(
   }
 
   return rows;
+}
+
+// ── Account Value Breakup ────────────────────────────────────────────────────
+
+// fixed instrument-category tag suffixes — these describe what bifurcation
+// always produces, not a per-client business setting, so unlike
+// exposure/profit tags they aren't sourced from client_strategy_configs
+const COMPONENT_TAGS = [
+  "Mutual Funds",
+  "Equity Stock Holdings",
+  "Bond Stock Holdings",
+  "Liquidcase Stock Holdings",
+  "Gold Stock Holdings",
+  "Low Vol Stock Holdings",
+  "Momentum Stock Holdings",
+] as const;
+
+export interface AccountRow {
+  qcode: string;
+  account_name: string;
+  strategy: string;
+  total_av: number;
+  equity_book: number;
+  debt_book: number;
+  equity_pct: number | null;
+  debt_pct: number | null;
+  diff_equity: number | null;
+  diff_debt: number | null;
+  liquid_case: number;
+  cash: number;
+  lc_pct: number | null;
+  cash_pct: number | null;
+  diff_lc: number | null;
+  diff_cash: number | null;
+}
+
+export interface EquityBreakupRow {
+  qcode: string;
+  account_name: string;
+  strategy: string;
+  equity_book: number;
+  equity_pct: number | null;
+  gold: number;
+  lowvol: number;
+  momentum: number;
+  gold_pct: number | null;
+  lowvol_pct: number | null;
+  momentum_pct: number | null;
+  diff_gold: number | null;
+  diff_lowvol: number | null;
+  diff_momentum: number | null;
+}
+
+export interface AccountValueBreakupResult {
+  accounts: AccountRow[];
+  equity_breakup: EquityBreakupRow[];
+}
+
+interface SplitConfig {
+  equity_pct: number | null;
+  debt_pct: number | null;
+  lc_pct: number | null;
+  cash_pct: number | null;
+  gold_pct: number | null;
+  lowvol_pct: number | null;
+  momentum_pct: number | null;
+}
+
+// client override (already on the pair) → strategy_defaults, per field
+async function resolveSplitConfigs(
+  pairs: StrategyPair[],
+): Promise<Map<string, SplitConfig>> {
+  const defaults = await prisma.strategy_defaults.findMany();
+  const defaultMap = new Map(defaults.map((d) => [d.strategy_name, d]));
+
+  const result = new Map<string, SplitConfig>();
+  for (const pair of pairs) {
+    const def = defaultMap.get(pair.strategy);
+    result.set(`${pair.qcode}|${pair.strategy}`, {
+      equity_pct: pair.equity_pct ?? toNum(def?.equity_pct),
+      debt_pct: pair.debt_pct ?? toNum(def?.debt_pct),
+      lc_pct: pair.lc_pct ?? toNum(def?.lc_pct),
+      cash_pct: pair.cash_pct ?? toNum(def?.cash_pct),
+      gold_pct: pair.gold_pct ?? toNum(def?.gold_pct),
+      lowvol_pct: pair.lowvol_pct ?? toNum(def?.lowvol_pct),
+      momentum_pct: pair.momentum_pct ?? toNum(def?.momentum_pct),
+    });
+  }
+  return result;
+}
+
+// latest portfolio_value per (qcode, tag) across every client × every tag
+// (total + 7 components) in one query — DISTINCT ON, no history fetched,
+// since this endpoint is a point-in-time snapshot, not a time series
+async function fetchLatestTagValues(
+  pairs: StrategyPair[],
+): Promise<Map<string, number>> {
+  const qcodes: string[] = [];
+  const tags: string[] = [];
+  for (const p of pairs) {
+    qcodes.push(p.qcode);
+    tags.push(p.tag);
+    for (const comp of COMPONENT_TAGS) {
+      qcodes.push(p.qcode);
+      tags.push(`${p.strategy} ${comp}`);
+    }
+  }
+
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT DISTINCT ON (b.qcode, b.system_tag) b.qcode, b.system_tag, b.portfolio_value
+     FROM bifurcated_master_sheet_test b
+     JOIN unnest($1::text[], $2::text[]) AS v(qcode, tag)
+       ON b.qcode = v.qcode AND b.system_tag = v.tag
+     WHERE b.portfolio_value IS NOT NULL
+     ORDER BY b.qcode, b.system_tag, b.date DESC`,
+    qcodes,
+    tags,
+  );
+
+  const map = new Map<string, number>();
+  for (const row of rows) {
+    map.set(`${row.qcode}|${row.system_tag}`, Number(row.portfolio_value) || 0);
+  }
+  return map;
+}
+
+export async function computeAccountValueBreakup(): Promise<AccountValueBreakupResult> {
+  const pairs = await fetchStrategyPairs("exposure_tag_suffix");
+  if (pairs.length === 0) return { accounts: [], equity_breakup: [] };
+
+  const [valueMap, splitMap] = await Promise.all([
+    fetchLatestTagValues(pairs),
+    resolveSplitConfigs(pairs),
+  ]);
+
+  const accounts: AccountRow[] = [];
+  const equity_breakup: EquityBreakupRow[] = [];
+
+  for (const pair of pairs) {
+    const total = valueMap.get(`${pair.qcode}|${pair.tag}`) ?? 0;
+    if (total === 0) continue; // no data for this strategy — nothing to report
+
+    const split = splitMap.get(`${pair.qcode}|${pair.strategy}`)!;
+
+    const mf = valueMap.get(`${pair.qcode}|${pair.strategy} Mutual Funds`) ?? 0;
+    const eqStock =
+      valueMap.get(`${pair.qcode}|${pair.strategy} Equity Stock Holdings`) ?? 0;
+    const bondStock =
+      valueMap.get(`${pair.qcode}|${pair.strategy} Bond Stock Holdings`) ?? 0;
+    const equity_book = mf + eqStock + bondStock;
+    const debt_book = total - equity_book;
+
+    const equity_pct = equity_book / total;
+    const debt_pct = debt_book / total;
+
+    const liquid_case =
+      valueMap.get(
+        `${pair.qcode}|${pair.strategy} Liquidcase Stock Holdings`,
+      ) ?? 0;
+    const cash = debt_book - liquid_case;
+    const lc_pct = liquid_case / total;
+    const cash_pct = cash / total;
+
+    accounts.push({
+      qcode: pair.qcode,
+      account_name: pair.account_name,
+      strategy: pair.strategy,
+      total_av: total,
+      equity_book,
+      debt_book,
+      equity_pct: round(equity_pct, 4),
+      debt_pct: round(debt_pct, 4),
+      diff_equity:
+        split.equity_pct != null
+          ? round(split.equity_pct - equity_pct, 4)
+          : null,
+      diff_debt:
+        split.debt_pct != null ? round(split.debt_pct - debt_pct, 4) : null,
+      liquid_case,
+      cash,
+      lc_pct: round(lc_pct, 4),
+      cash_pct: round(cash_pct, 4),
+      diff_lc: split.lc_pct != null ? round(split.lc_pct - lc_pct, 4) : null,
+      diff_cash:
+        split.cash_pct != null ? round(split.cash_pct - cash_pct, 4) : null,
+    });
+
+    // gate purely on resolved config — never a strategy-name check. A strategy
+    // whose gold/lowvol/momentum split isn't defined (client override AND
+    // strategy_defaults both null) simply has no equity sub-breakdown to show.
+    if (
+      split.gold_pct == null ||
+      split.lowvol_pct == null ||
+      split.momentum_pct == null
+    ) {
+      continue;
+    }
+
+    const gold =
+      valueMap.get(`${pair.qcode}|${pair.strategy} Gold Stock Holdings`) ?? 0;
+    const lowvol =
+      valueMap.get(`${pair.qcode}|${pair.strategy} Low Vol Stock Holdings`) ??
+      0;
+    const momentum =
+      valueMap.get(`${pair.qcode}|${pair.strategy} Momentum Stock Holdings`) ??
+      0;
+    const legSum = gold + lowvol + momentum;
+    const eqBk = legSum > 0 ? legSum : equity_book; // fall back to Section 1's figure if legs are missing
+
+    const gold_pct = eqBk > 0 ? gold / eqBk : null;
+    const lowvol_pct = eqBk > 0 ? lowvol / eqBk : null;
+    const momentum_pct = eqBk > 0 ? momentum / eqBk : null;
+
+    equity_breakup.push({
+      qcode: pair.qcode,
+      account_name: pair.account_name,
+      strategy: pair.strategy,
+      equity_book: eqBk,
+      equity_pct: round(equity_pct, 4),
+      gold,
+      lowvol,
+      momentum,
+      gold_pct: gold_pct != null ? round(gold_pct, 4) : null,
+      lowvol_pct: lowvol_pct != null ? round(lowvol_pct, 4) : null,
+      momentum_pct: momentum_pct != null ? round(momentum_pct, 4) : null,
+      diff_gold: gold_pct != null ? round(split.gold_pct - gold_pct, 4) : null,
+      diff_lowvol:
+        lowvol_pct != null ? round(split.lowvol_pct - lowvol_pct, 4) : null,
+      diff_momentum:
+        momentum_pct != null
+          ? round(split.momentum_pct - momentum_pct, 4)
+          : null,
+    });
+  }
+
+  return { accounts, equity_breakup };
 }
