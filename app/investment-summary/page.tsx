@@ -994,40 +994,44 @@ export default function InvestmentSummaryPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold text-card-text-secondary font-heading">
-              {data.clientName}
-              {selectedStrategy !== "ALL" && ` — ${selectedStrategy}`}
-            </h1>
-            <p className="text-gray-600 mt-1">
-              Investment Summary &nbsp;·&nbsp; Data as of: {data.dataAsOfDate}
-              {data.generatedDate && (
-                <span> &nbsp;·&nbsp; Generated: {data.generatedDate}</span>
-              )}
-            </p>
-          </div>
-          <div className="flex items-center gap-3 self-start sm:self-auto">
-            {isMultiStrategy && (
-              <Select value={selectedStrategy} onValueChange={setSelectedStrategy}>
-                <SelectTrigger className="w-[200px] bg-white/50 border-0 card-shadow">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">Total Portfolio</SelectItem>
-                  {data.strategies.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-        </div>
-
-        {/* Tabs */}
         <Tabs defaultValue="overview">
-          <div className="flex justify-between">
+          {/* Header — matches holding-summary layout */}
+          <div className="flex justify-between items-start">
+            <div className="space-y-2">
+              <h1 className="text-2xl font-semibold text-card-text-secondary font-heading">
+                Investment Summary
+                {selectedStrategy !== "ALL" && ` — ${selectedStrategy}`}
+              </h1>
+              <p className="text-gray-600 dark:text-gray-400">
+                {data.clientName}
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-3 justify-end">
+                <Button
+                  onClick={handleDownload}
+                  disabled={downloading || !canDownloadPdf}
+                  title={!canDownloadPdf ? "No PDF available for this strategy" : undefined}
+                  className="h-11 px-4 text-sm font-medium"
+                  variant="default"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  PDF
+                </Button>
+              </div>
+              {data.dataAsOfDate && (
+                <div className="text-right">
+                  <div className="text-xs text-card-text-secondary">
+                    Data as of: <strong>{data.dataAsOfDate}</strong>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Tabs + strategy selector row */}
+          <div className="flex items-center justify-between gap-3 mt-6 flex-wrap">
             <TabsList className="bg-white/60 card-shadow border-0 h-auto p-1 gap-1">
               <TabsTrigger
                 value="overview"
@@ -1052,15 +1056,19 @@ export default function InvestmentSummaryPage() {
                 </TabsTrigger>
               )}
             </TabsList>
-            <Button
-              onClick={handleDownload}
-              disabled={downloading || !canDownloadPdf}
-              title={!canDownloadPdf ? "No PDF available for this strategy" : undefined}
-              className="h-9 px-4 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Download PDF
-            </Button>
+            {isMultiStrategy && (
+              <Select value={selectedStrategy} onValueChange={setSelectedStrategy}>
+                <SelectTrigger className="w-[240px] bg-white/50 border-0 card-shadow">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Total Portfolio</SelectItem>
+                  {data.strategies.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           {/* Overview Tab */}
