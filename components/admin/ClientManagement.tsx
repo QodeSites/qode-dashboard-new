@@ -13,6 +13,7 @@ import {
 import { ClientCard } from "./ClientCard";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Download } from "lucide-react";
 
 interface Account {
@@ -43,6 +44,7 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
   const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
   const [isLoading, setIsLoading] = useState(true);
   const [exportingSet, setExportingSet] = useState<Set<string>>(new Set());
+  const [visibilityMap, setVisibilityMap] = useState<Record<string, boolean>>({});
 
   // Debounce search input
   useEffect(() => {
@@ -58,18 +60,44 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
       const params = new URLSearchParams();
       if (searchTerm) params.set("search", searchTerm);
 
-      const res = await fetch(`/api/admin/clients?${params}`, {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to fetch clients");
-      const data = await res.json();
-      setClients(data.clients);
+      const [clientsRes, visibilityRes] = await Promise.all([
+        fetch(`/api/admin/clients?${params}`, { credentials: "include" }),
+        fetch("/api/admin/dashboard-visibility", { credentials: "include" }),
+      ]);
+
+      if (!clientsRes.ok) throw new Error("Failed to fetch clients");
+      const clientsData = await clientsRes.json();
+      setClients(clientsData.clients);
+
+      if (visibilityRes.ok) {
+        const visibilityData = await visibilityRes.json();
+        setVisibilityMap(visibilityData.visibility ?? {});
+      }
     } catch (err) {
       console.error("Error fetching clients:", err);
     } finally {
       setIsLoading(false);
     }
   }, []);
+
+  const handleToggleVisibility = async (icode: string, visible: boolean) => {
+    // Optimistic update
+    setVisibilityMap((prev) => ({ ...prev, [icode]: visible }));
+    try {
+      const res = await fetch("/api/admin/dashboard-visibility", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ icode, dashboard_visible: visible }),
+      });
+      if (!res.ok) {
+        // Revert on failure
+        setVisibilityMap((prev) => ({ ...prev, [icode]: !visible }));
+      }
+    } catch {
+      setVisibilityMap((prev) => ({ ...prev, [icode]: !visible }));
+    }
+  };
 
   useEffect(() => {
     fetchClients(debouncedSearch);
@@ -202,6 +230,8 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
               accountCount={client.accountCount}
               onImpersonate={onImpersonate}
               isImpersonating={impersonatingIcode === client.icode}
+              dashboardVisible={visibilityMap[client.icode] ?? true}
+              onToggleVisibility={handleToggleVisibility}
             />
           ))}
         </div>
@@ -217,6 +247,7 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
                 <TableHead>Email</TableHead>
                 <TableHead>ICode</TableHead>
                 <TableHead className="text-center">Accounts</TableHead>
+                <TableHead className="text-center">Dashboard</TableHead>
                 <TableHead className="text-center">Download</TableHead>
                 <TableHead className="text-right">Action</TableHead>
               </TableRow>
@@ -237,6 +268,18 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
                   </TableCell>
                   <TableCell className="text-center">
                     {client.accountCount}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <div className="flex items-center justify-center gap-2">
+                      <span className={`text-xs font-medium ${(visibilityMap[client.icode] ?? true) ? "text-logo-green" : "text-card-text-secondary"}`}>
+                        {(visibilityMap[client.icode] ?? true) ? "On" : "Off"}
+                      </span>
+                      <Switch
+                        checked={visibilityMap[client.icode] ?? true}
+                        onCheckedChange={(checked) => handleToggleVisibility(client.icode, checked)}
+                        className="data-[state=checked]:bg-logo-green data-[state=unchecked]:bg-card-text-secondary/30"
+                      />
+                    </div>
                   </TableCell>
                   <TableCell className="text-center">
                     <DropdownMenu>
