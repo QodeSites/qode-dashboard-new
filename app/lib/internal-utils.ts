@@ -387,66 +387,85 @@ export function buildTagMetrics(nav: NavPoint[], rfr: number): TagMetrics {
 const NIFTY_URL =
   "https://qode360-backend.qodeinvest.com/api/v1/returns/indices/?downloadNav=true";
 
+// raw price fetch only — no metrics math, so it can be shared across many
+// clients' date ranges with a single external call instead of one per client
+async function fetchNiftyRawSeries(
+  startDate: Date,
+  endDate: Date,
+): Promise<{ date: string; nav: number }[] | null> {
+  const buf = new Date(startDate);
+  buf.setDate(buf.getDate() - 10);
+  const endStr = endDate.toISOString().split("T")[0];
+
+  const res = await fetch(NIFTY_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      startDate: buf.toISOString().split("T")[0],
+      endDate: endStr,
+      indices: ["NIFTY 50"],
+    }),
+  });
+  if (!res.ok) return null;
+  const json = await res.json();
+  const raw: { date: string; nav: number }[] = json?.data?.data?.["NIFTY 50"];
+  return Array.isArray(raw) && raw.length > 0 ? raw : null;
+}
+
+// pure — slices/derives metrics for one [startDate, endDate] window from an
+// already-fetched raw series, so N clients only cost 1 external fetch total
+function computeBenchmarkMetrics(
+  raw: { date: string; nav: number }[],
+  startDate: Date,
+  endDate: Date,
+): BenchmarkResult | null {
+  const startStr = startDate.toISOString().split("T")[0];
+  const endStr = endDate.toISOString().split("T")[0];
+
+  // Compare date strings directly — no timezone ambiguity
+  const earlier = raw.filter((p) => p.date < startStr);
+  if (earlier.length === 0) return null;
+  const ref = earlier[earlier.length - 1];
+  const refPrice = ref.nav;
+
+  const clipped = raw.filter((p) => p.date >= ref.date && p.date <= endStr);
+  if (clipped.length === 0) return null;
+
+  const last = clipped[clipped.length - 1];
+  const days =
+    (new Date(last.date).getTime() - new Date(ref.date).getTime()) / MS;
+  const si =
+    days < 365
+      ? last.nav / refPrice - 1
+      : (last.nav / refPrice) ** (365 / days) - 1;
+
+  let peak = refPrice,
+    maxDD = 0;
+  for (const p of clipped) {
+    if (p.nav > peak) peak = p.nav;
+    const dd = peak > 0 ? (p.nav - peak) / peak : 0;
+    if (dd < maxDD) maxDD = dd;
+  }
+
+  return {
+    since_inception: round(si, 4),
+    max_drawdown: round(maxDD, 4),
+    current_drawdown: round(peak > 0 ? (last.nav - peak) / peak : 0, 4),
+    series: clipped.map((p) => ({
+      date: p.date,
+      nav: parseFloat(((p.nav / refPrice) * 100).toFixed(4)),
+    })),
+  };
+}
+
 export async function fetchBenchmark(
   startDate: Date,
   endDate: Date,
 ): Promise<BenchmarkResult | null> {
-  const buf = new Date(startDate);
-  buf.setDate(buf.getDate() - 10);
-
-  // Use ISO date strings for comparison to avoid timezone drift
-  const startStr = startDate.toISOString().split("T")[0];
-  const endStr = endDate.toISOString().split("T")[0];
-
   try {
-    const res = await fetch(NIFTY_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        startDate: buf.toISOString().split("T")[0],
-        endDate: endStr,
-        indices: ["NIFTY 50"],
-      }),
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    const raw: { date: string; nav: number }[] = json?.data?.data?.["NIFTY 50"];
-    if (!Array.isArray(raw) || raw.length === 0) return null;
-
-    // Compare date strings directly — no timezone ambiguity
-    const earlier = raw.filter((p) => p.date < startStr);
-    if (earlier.length === 0) return null;
-    const ref = earlier[earlier.length - 1];
-    const refPrice = ref.nav;
-
-    const clipped = raw.filter((p) => p.date >= ref.date && p.date <= endStr);
-    if (clipped.length === 0) return null;
-
-    const last = clipped[clipped.length - 1];
-    const days =
-      (new Date(last.date).getTime() - new Date(ref.date).getTime()) / MS;
-    const si =
-      days < 365
-        ? last.nav / refPrice - 1
-        : (last.nav / refPrice) ** (365 / days) - 1;
-
-    let peak = refPrice,
-      maxDD = 0;
-    for (const p of clipped) {
-      if (p.nav > peak) peak = p.nav;
-      const dd = peak > 0 ? (p.nav - peak) / peak : 0;
-      if (dd < maxDD) maxDD = dd;
-    }
-
-    return {
-      since_inception: round(si, 4),
-      max_drawdown: round(maxDD, 4),
-      current_drawdown: round(peak > 0 ? (last.nav - peak) / peak : 0, 4),
-      series: clipped.map((p) => ({
-        date: p.date,
-        nav: parseFloat(((p.nav / refPrice) * 100).toFixed(4)),
-      })),
-    };
+    const raw = await fetchNiftyRawSeries(startDate, endDate);
+    if (!raw) return null;
+    return computeBenchmarkMetrics(raw, startDate, endDate);
   } catch {
     return null;
   }
@@ -493,8 +512,11 @@ interface SeriesPoint {
   value: number;
 }
 
-// one row per (qcode, strategy), latest config revision wins
-async function fetchStrategyPairs(): Promise<StrategyPair[]> {
+// one row per (qcode, strategy), latest config revision wins.
+// suffixField picks which tag family: exposure (AUM) or profit (NAV/returns).
+async function fetchStrategyPairs(
+  suffixField: "exposure_tag_suffix" | "profit_tag_suffix",
+): Promise<StrategyPair[]> {
   const configs = await prisma.client_strategy_configs.findMany({
     orderBy: [{ qcode: "asc" }, { strategy: "asc" }, { effective_from: "asc" }],
   });
@@ -504,7 +526,7 @@ async function fetchStrategyPairs(): Promise<StrategyPair[]> {
       qcode: c.qcode,
       account_name: c.account_name,
       strategy: c.strategy,
-      tag: `${c.strategy} ${c.exposure_tag_suffix}`,
+      tag: `${c.strategy} ${c[suffixField]}`,
     });
   }
   return [...map.values()];
@@ -560,7 +582,7 @@ function computeMom(
 }
 
 export async function computePortfolioSummary(): Promise<PortfolioSummaryResult> {
-  const pairs = await fetchStrategyPairs();
+  const pairs = await fetchStrategyPairs("exposure_tag_suffix");
   if (pairs.length === 0) {
     return {
       total_investors: 0,
@@ -631,4 +653,273 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
     aum_daily,
     strategy_aum_daily,
   };
+}
+
+// ── Strategy-wise Client Breakup ─────────────────────────────────────────────
+
+export interface StrategyBreakupRow {
+  qcode: string;
+  account_name: string;
+  strategy: string;
+  inception_date: string;
+  since_inception: number | null;
+  benchmark_return: number | null;
+  max_drawdown: number | null;
+  current_drawdown: number | null;
+  upside_capture: number | null;
+  downside_capture: number | null;
+  sharpe: number | null;
+  sortino: number | null;
+  calmar: number | null;
+  ann_volatility: number | null;
+  tracking_error: number | null;
+  information_ratio: number | null;
+  alpha: number | null;
+  beta: number | null;
+}
+
+// batched nav/prev_nav/drawdown/pnl fetch for every (qcode, profit_tag) pair —
+// same unnest-join pattern as Portfolio Summary, one round trip total
+async function fetchBulkNavSeries(
+  pairs: StrategyPair[],
+): Promise<Map<string, NavPoint[]>> {
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT b.qcode, b.system_tag, b.date, b.nav, b.prev_nav, b.drawdown, b.pnl
+     FROM bifurcated_master_sheet_test b
+     JOIN unnest($1::text[], $2::text[]) AS v(qcode, tag)
+       ON b.qcode = v.qcode AND b.system_tag = v.tag
+     WHERE b.nav IS NOT NULL
+     ORDER BY b.qcode, b.system_tag, b.date ASC`,
+    pairs.map((p) => p.qcode),
+    pairs.map((p) => p.tag),
+  );
+
+  const seriesMap = new Map<string, NavPoint[]>();
+  for (const row of rows) {
+    const key = `${row.qcode}|${row.system_tag}`;
+    if (!seriesMap.has(key)) seriesMap.set(key, []);
+    seriesMap.get(key)!.push({
+      date: row.date instanceof Date ? row.date : new Date(row.date),
+      nav: Number(row.nav) || 0,
+      prev_nav: row.prev_nav != null ? Number(row.prev_nav) : null,
+      drawdown: Number(row.drawdown) || 0,
+      pnl: Number(row.pnl) || 0,
+      portfolio_value: 0, // unused for this tab's metrics
+    });
+  }
+  return seriesMap;
+}
+
+// month-end value per calendar bucket, keyed by "YYYY-MM" — lets portfolio and
+// benchmark monthly returns be aligned by actual calendar month rather than by
+// position, which avoids misalignment when the two series start on different days
+function toMonthlyReturnMap(
+  series: { date: string; nav: number }[],
+): Map<string, number> {
+  const monthEnd = new Map<string, number>();
+  for (const p of series) monthEnd.set(p.date.slice(0, 7), p.nav); // rows are ascending, last write wins
+  const keys = [...monthEnd.keys()].sort();
+
+  const out = new Map<string, number>();
+  for (let i = 1; i < keys.length; i++) {
+    const prev = monthEnd.get(keys[i - 1])!;
+    const cur = monthEnd.get(keys[i])!;
+    if (prev > 0) out.set(keys[i], (cur / prev - 1) * 100);
+  }
+  return out;
+}
+
+// intersect portfolio + benchmark monthly returns on shared calendar-month keys
+function alignMonthlyReturns(
+  portfolioMonthly: MonthlyReturn[],
+  benchmarkMonthly: Map<string, number>,
+): { port: number[]; bm: number[] } {
+  const port: number[] = [];
+  const bm: number[] = [];
+  for (const m of portfolioMonthly) {
+    const key = `${m.year}-${String(MONTHS.indexOf(m.month) + 1).padStart(2, "0")}`;
+    const bmVal = benchmarkMonthly.get(key);
+    if (bmVal !== undefined) {
+      port.push(m.return_pct);
+      bm.push(bmVal);
+    }
+  }
+  return { port, bm };
+}
+
+// sample covariance (n-1), matching the existing std() convention in this file
+function covariance(a: number[], b: number[]): number {
+  if (a.length < 2) return 0;
+  const ma = mean(a);
+  const mb = mean(b);
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += (a[i] - ma) * (b[i] - mb);
+  return s / (a.length - 1);
+}
+
+export interface CaptureRatios {
+  upside_capture: number | null;
+  downside_capture: number | null;
+}
+
+// monthly upside/downside capture vs benchmark — port/bm must already be aligned
+export function calcCaptureRatios(port: number[], bm: number[]): CaptureRatios {
+  const empty: CaptureRatios = { upside_capture: null, downside_capture: null };
+  if (port.length < 3 || bm.length !== port.length) return empty;
+
+  const up: number[] = [];
+  const upBm: number[] = [];
+  const down: number[] = [];
+  const downBm: number[] = [];
+  for (let i = 0; i < bm.length; i++) {
+    if (bm[i] > 0) {
+      up.push(port[i]);
+      upBm.push(bm[i]);
+    } else if (bm[i] < 0) {
+      down.push(port[i]);
+      downBm.push(bm[i]);
+    }
+  }
+  if (upBm.length < 1 || downBm.length < 1) return empty;
+
+  const bmUpAvg = mean(upBm);
+  const bmDownAvg = mean(downBm);
+  return {
+    upside_capture:
+      Math.abs(bmUpAvg) > 1e-8 ? round(mean(up) / bmUpAvg, 4) : null,
+    downside_capture:
+      Math.abs(bmDownAvg) > 1e-8 ? round(mean(down) / bmDownAvg, 4) : null,
+  };
+}
+
+export interface ExtraRatios {
+  tracking_error: number | null;
+  information_ratio: number | null;
+  alpha: number | null;
+  beta: number | null;
+}
+
+// benchmark-relative ratios not covered by calcRatios — monthly basis, since
+// Capture Ratios above has no daily equivalent and these pair naturally with it
+export function calcExtraRatios(port: number[], bm: number[]): ExtraRatios {
+  const empty: ExtraRatios = {
+    tracking_error: null,
+    information_ratio: null,
+    alpha: null,
+    beta: null,
+  };
+  if (port.length < 6 || bm.length !== port.length) return empty;
+
+  const p = port.map((v) => v / 100);
+  const b = bm.map((v) => v / 100);
+  const diff = p.map((v, i) => v - b[i]);
+  const te = std(diff) * Math.sqrt(12);
+
+  let tracking_error: number | null = null;
+  let information_ratio: number | null = null;
+  if (te > 0) {
+    tracking_error = round(te, 4);
+    information_ratio = round(((mean(p) - mean(b)) * Math.sqrt(12)) / te, 3);
+  }
+
+  let alpha: number | null = null;
+  let beta: number | null = null;
+  const bmVar = std(b) ** 2;
+  if (bmVar > 0) {
+    const betaVal = covariance(p, b) / bmVar;
+    beta = round(betaVal, 3);
+    alpha = round((mean(p) - betaVal * mean(b)) * 12, 4);
+  }
+
+  return { tracking_error, information_ratio, alpha, beta };
+}
+
+export async function computeStrategyBreakup(
+  rfr: number,
+): Promise<StrategyBreakupRow[]> {
+  const pairs = await fetchStrategyPairs("profit_tag_suffix");
+  if (pairs.length === 0) return [];
+
+  const seriesMap = await fetchBulkNavSeries(pairs);
+
+  // one shared date span covers every client — Nifty gets fetched exactly once
+  let minStart: Date | null = null;
+  let maxEnd: Date | null = null;
+  for (const series of seriesMap.values()) {
+    if (series.length === 0) continue;
+    const s = series[0].date;
+    const e = series[series.length - 1].date;
+    if (!minStart || s < minStart) minStart = s;
+    if (!maxEnd || e > maxEnd) maxEnd = e;
+  }
+  let niftyRaw: { date: string; nav: number }[] | null = null;
+  if (minStart && maxEnd) {
+    try {
+      niftyRaw = await fetchNiftyRawSeries(minStart, maxEnd);
+    } catch {
+      niftyRaw = null; // benchmark-relative columns fall back to null, rest of the row still returns
+    }
+  }
+
+  const rows: StrategyBreakupRow[] = [];
+  for (const pair of pairs) {
+    const nav = seriesMap.get(`${pair.qcode}|${pair.tag}`);
+    if (!nav || nav.length === 0) continue; // no data — nothing to report
+
+    const monthly = calcMonthlyReturns(nav);
+    const clientStart = nav[0].date;
+    const clientEnd = nav[nav.length - 1].date;
+
+    // slice the shared raw series for this client's own window — no extra fetch
+    const bmMetrics = niftyRaw
+      ? computeBenchmarkMetrics(niftyRaw, clientStart, clientEnd)
+      : null;
+
+    let upside_capture: number | null = null;
+    let downside_capture: number | null = null;
+    let tracking_error: number | null = null;
+    let information_ratio: number | null = null;
+    let alpha: number | null = null;
+    let beta: number | null = null;
+
+    if (bmMetrics) {
+      const bmMonthly = toMonthlyReturnMap(bmMetrics.series);
+      const { port, bm } = alignMonthlyReturns(monthly, bmMonthly);
+      const cap = calcCaptureRatios(port, bm);
+      upside_capture = cap.upside_capture;
+      downside_capture = cap.downside_capture;
+      const extra = calcExtraRatios(port, bm);
+      tracking_error = extra.tracking_error;
+      information_ratio = extra.information_ratio;
+      alpha = extra.alpha;
+      beta = extra.beta;
+    }
+
+    // Sharpe/Sortino/Calmar/Vol reuse the existing daily-basis calcRatios —
+    // keeps this tab consistent with Client Dashboards (see commit discussion)
+    const ratios = calcRatios(nav, monthly, rfr);
+
+    rows.push({
+      qcode: pair.qcode,
+      account_name: pair.account_name,
+      strategy: pair.strategy,
+      inception_date: clientStart.toISOString().split("T")[0],
+      since_inception: calcSinceInception(nav),
+      benchmark_return: bmMetrics?.since_inception ?? null,
+      max_drawdown: calcMaxDrawdown(nav),
+      current_drawdown: calcCurrentDrawdown(nav),
+      upside_capture,
+      downside_capture,
+      sharpe: ratios.sharpe,
+      sortino: ratios.sortino,
+      calmar: ratios.calmar,
+      ann_volatility: ratios.ann_volatility,
+      tracking_error,
+      information_ratio,
+      alpha,
+      beta,
+    });
+  }
+
+  return rows;
 }
