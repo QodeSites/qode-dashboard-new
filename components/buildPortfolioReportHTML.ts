@@ -255,7 +255,7 @@ export function buildPortfolioReportHTML(
   // Mirrors app/dashboard/page.tsx:1312 so NAV-based total portfolios
   // (Dinesh, Arwani, Ashwin) get the full report, while sum-of-schemes
   // aggregates (Sarla, Satidham, classic bifurcated) stay cash-only.
-  const showFullPages = !isTotalPortfolio || hasNavBasedTotalPortfolio;
+  const showFullPages = !isTotalPortfolio || (hasNavBasedTotalPortfolio && !pmsBlendedTP);
 
   const html = `
 <!DOCTYPE html>
