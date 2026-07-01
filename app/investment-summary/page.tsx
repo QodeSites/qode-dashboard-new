@@ -132,7 +132,7 @@ function SectionCard({
   );
 }
 
-type HoldingRow = { name: string; type: string; strategy: string; amount: number };
+type HoldingRow = { name: string; type: string; broker?: string; exchange?: string; strategy: string; amount: number };
 
 function HoldingsTable({
   title,
@@ -261,7 +261,16 @@ function HoldingsTable({
             <TableBody>
               {paginated.map((row, i) => (
                 <TableRow key={i} className="border-b border-gray-200">
-                  <TableCell className="py-3 text-sm font-medium text-card-text text-left">{row.name}</TableCell>
+                  <TableCell className="py-3 text-sm text-left">
+                    <div className="font-medium text-card-text">{row.name}</div>
+                    {(row.broker || row.exchange) && (
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {row.exchange && row.exchange !== "NaN"
+                          ? `${row.exchange} • ${row.broker}`
+                          : row.broker}
+                      </div>
+                    )}
+                  </TableCell>
                   <TableCell className="py-3 text-sm text-gray-600 text-center">
                     <TypeBadge value={row.type} />
                   </TableCell>
@@ -340,7 +349,7 @@ function HoldingsTable({
   );
 }
 
-type EquityTxRow = { particulars: string; date: string; strategy: string; amount: number };
+type EquityTxRow = { name: string; capitalFlow: string; date: string; strategy: string; amount: number };
 
 function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
   const [currentPage, setCurrentPage] = useState(1);
@@ -384,7 +393,8 @@ function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
   const endEntry = Math.min(safePage * effectiveSize, rows.length);
 
   const cols: { key: keyof EquityTxRow; label: string; align: "left" | "center" }[] = [
-    { key: "particulars", label: "Particulars", align: "left" },
+    { key: "name", label: "Name", align: "left" },
+    { key: "capitalFlow", label: "Capital Inflow", align: "center" },
     { key: "date", label: "Date", align: "center" },
     { key: "strategy", label: "Strategy", align: "center" },
     { key: "amount", label: "Amount (₹)", align: "center" },
@@ -435,7 +445,8 @@ function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
             <TableBody>
               {paginated.map((tx, i) => (
                 <TableRow key={i} className="border-b border-gray-200">
-                  <TableCell className="py-3 text-sm font-medium text-card-text text-left">{tx.particulars}</TableCell>
+                  <TableCell className="py-3 text-sm font-medium text-card-text text-left">{tx.name}</TableCell>
+                  <TableCell className="py-3 text-sm text-gray-600 text-center">{tx.capitalFlow}</TableCell>
                   <TableCell className="py-3 text-sm text-gray-600 text-center whitespace-nowrap">{tx.date}</TableCell>
                   <TableCell className="py-3 text-sm text-gray-600 text-center">
                     <StrategyBadge value={tx.strategy} />
@@ -447,6 +458,7 @@ function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
             <tfoot className="sticky bottom-0 z-10">
               <TableRow className="bg-[#E9E8DE] border-t-2 border-gray-300">
                 <TableCell className="py-3 text-sm font-bold text-card-text text-left">Total</TableCell>
+                <TableCell />
                 <TableCell />
                 <TableCell />
                 <TableCell className="py-3 text-sm font-bold tabular-nums text-card-text text-center">
@@ -612,7 +624,7 @@ function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
   );
 }
 
-type MfTxRow = { particulars: string; date: string; strategy: string; amount: number };
+type MfTxRow = { name: string; capitalFlow: string; date: string; strategy: string; amount: number };
 
 function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
   const [currentPage, setCurrentPage] = useState(1);
@@ -656,7 +668,8 @@ function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
   const endEntry = Math.min(safePage * effectiveSize, rows.length);
 
   const cols: { key: keyof MfTxRow; label: string; align: "left" | "center" }[] = [
-    { key: "particulars", label: "Particulars", align: "left" },
+    { key: "name", label: "Name", align: "left" },
+    { key: "capitalFlow", label: "Capital Inflow", align: "center" },
     { key: "date", label: "Date", align: "center" },
     { key: "strategy", label: "Strategy", align: "center" },
     { key: "amount", label: "Amount (₹)", align: "center" },
@@ -705,7 +718,8 @@ function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
             <TableBody>
               {paginated.map((tx, i) => (
                 <TableRow key={i} className="border-b border-gray-200">
-                  <TableCell className="py-3 text-sm font-medium text-card-text">{tx.particulars}</TableCell>
+                  <TableCell className="py-3 text-sm font-medium text-card-text">{tx.name}</TableCell>
+                  <TableCell className="py-3 text-sm text-gray-600 text-center">{tx.capitalFlow}</TableCell>
                   <TableCell className="py-3 text-sm text-gray-600 whitespace-nowrap text-center">{tx.date}</TableCell>
                   <TableCell className="py-3 text-sm text-gray-600 text-center">
                     <StrategyBadge value={tx.strategy} />
@@ -717,6 +731,7 @@ function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
             <tfoot className="sticky bottom-0 z-10">
               <TableRow className="bg-[#E9E8DE] border-t-2 border-gray-300">
                 <TableCell className="py-3 text-sm font-bold text-card-text text-left">Total</TableCell>
+                <TableCell />
                 <TableCell />
                 <TableCell />
                 <TableCell className="py-3 text-sm font-bold tabular-nums text-card-text text-center">

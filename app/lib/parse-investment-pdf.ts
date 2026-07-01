@@ -61,12 +61,15 @@ export interface InvestmentSummaryData {
   currentEquityHoldings: Array<{
     name: string;
     type: string;
+    broker: string;
+    exchange: string;
     strategy: string;
     amount: number;
   }>;
   currentMfHoldings: Array<{
     name: string;
     type: string;
+    broker: string;
     strategy: string;
     amount: number;
   }>;
@@ -85,7 +88,8 @@ export interface InvestmentSummaryData {
 
   // Transaction sheets
   equityTransactions: Array<{
-    particulars: string;
+    name: string;
+    capitalFlow: string;
     date: string;
     strategy: string;
     amount: number;
@@ -97,7 +101,8 @@ export interface InvestmentSummaryData {
     amount: number;
   }>;
   mfTransactions: Array<{
-    particulars: string;
+    name: string;
+    capitalFlow: string;
     date: string;
     strategy: string;
     amount: number;
@@ -272,6 +277,41 @@ function parseProfitRedeployment(
     });
 }
 
+function parseEquityHoldingsSheet(
+  wb: XLSX.WorkBook,
+): Array<{ name: string; type: string; broker: string; exchange: string; strategy: string; amount: number }> {
+  return dataRows(sheetRows(wb, "Current Equity Holdings"))
+    .filter((row) => {
+      const n = String(row[0] || "").trim().toLowerCase();
+      return n && n !== "net" && !n.startsWith("no ") && n !== "stock name";
+    })
+    .map((row) => ({
+      name: String(row[0]).trim(),
+      type: String(row[1] || "").trim(),
+      broker: String(row[2] || "").trim(),
+      exchange: String(row[3] || "").trim(),
+      strategy: String(row[4] || "").trim(),
+      amount: parseAmount(row[5]),
+    }));
+}
+
+function parseMfHoldingsSheet(
+  wb: XLSX.WorkBook,
+): Array<{ name: string; type: string; broker: string; strategy: string; amount: number }> {
+  return dataRows(sheetRows(wb, "Current MF Holdings"))
+    .filter((row) => {
+      const n = String(row[0] || "").trim().toLowerCase();
+      return n && n !== "net" && !n.startsWith("no ") && n !== "fund name";
+    })
+    .map((row) => ({
+      name: String(row[0]).trim(),
+      type: String(row[1] || "").trim(),
+      broker: String(row[2] || "").trim(),
+      strategy: String(row[3] || "").trim(),
+      amount: parseAmount(row[4]),
+    }));
+}
+
 function parseHoldingsSheet(
   wb: XLSX.WorkBook,
   sheetName: string,
@@ -305,13 +345,14 @@ function parseEquityTransactions(
       const p = String(row[0] || "")
         .trim()
         .toLowerCase();
-      return p && p !== "particulars" && p !== "net";
+      return p && p !== "name" && p !== "net";
     })
     .map((row) => ({
-      particulars: String(row[0]).trim(),
-      date: String(row[1] || "").trim(),
-      strategy: String(row[2] || "").trim(),
-      amount: parseAmount(row[3]),
+      name: String(row[0]).trim(),
+      capitalFlow: String(row[1] || "").trim(),
+      date: String(row[2] || "").trim(),
+      strategy: String(row[3] || "").trim(),
+      amount: parseAmount(row[4]),
     }));
 }
 
@@ -341,13 +382,14 @@ function parseMfTransactions(
       const p = String(row[0] || "")
         .trim()
         .toLowerCase();
-      return p && p !== "particulars" && p !== "net";
+      return p && p !== "name" && p !== "net";
     })
     .map((row) => ({
-      particulars: String(row[0]).trim(),
-      date: String(row[1] || "").trim(),
-      strategy: String(row[2] || "").trim(),
-      amount: parseAmount(row[3]),
+      name: String(row[0]).trim(),
+      capitalFlow: String(row[1] || "").trim(),
+      date: String(row[2] || "").trim(),
+      strategy: String(row[3] || "").trim(),
+      amount: parseAmount(row[4]),
     }));
 }
 
@@ -445,8 +487,8 @@ export function parseInvestmentXlsx(fileBuffer: Buffer): MultiStrategyInvestment
     cashInvestmentSummary: parseCashInvestmentSummary(wb),
     holdingsInvestmentSummary: parseHoldingsInvestmentSummary(wb),
     profitRedeployment: parseProfitRedeployment(wb),
-    currentEquityHoldings: parseHoldingsSheet(wb, "Current Equity Holdings"),
-    currentMfHoldings: parseHoldingsSheet(wb, "Current MF Holdings"),
+    currentEquityHoldings: parseEquityHoldingsSheet(wb),
+    currentMfHoldings: parseMfHoldingsSheet(wb),
     historicalEquityHoldings: parseHoldingsSheet(
       wb,
       "Historical Equity Holdings",
