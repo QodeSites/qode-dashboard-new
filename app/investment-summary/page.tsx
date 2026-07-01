@@ -272,6 +272,16 @@ function HoldingsTable({
                 </TableRow>
               ))}
             </TableBody>
+            <tfoot className="sticky bottom-0 z-10">
+              <TableRow className="bg-[#E9E8DE] border-t-2 border-gray-300">
+                <TableCell className="py-3 text-sm font-bold text-card-text text-left">Total</TableCell>
+                <TableCell />
+                <TableCell />
+                <TableCell className="py-3 text-sm font-bold tabular-nums text-card-text text-center">
+                  {fmt(rows.reduce((sum, r) => sum + r.amount, 0))}
+                </TableCell>
+              </TableRow>
+            </tfoot>
           </Table>
         </div>
 
@@ -434,6 +444,16 @@ function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
                 </TableRow>
               ))}
             </TableBody>
+            <tfoot className="sticky bottom-0 z-10">
+              <TableRow className="bg-[#E9E8DE] border-t-2 border-gray-300">
+                <TableCell className="py-3 text-sm font-bold text-card-text text-left">Total</TableCell>
+                <TableCell />
+                <TableCell />
+                <TableCell className="py-3 text-sm font-bold tabular-nums text-card-text text-center">
+                  {fmt(rows.reduce((sum, r) => sum + r.amount, 0))}
+                </TableCell>
+              </TableRow>
+            </tfoot>
           </Table>
         </div>
         {rows.length > 0 && pageSize !== 0 && (
@@ -559,6 +579,16 @@ function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
                 </TableRow>
               ))}
             </TableBody>
+            <tfoot className="sticky bottom-0 z-10">
+              <TableRow className="bg-[#E9E8DE] border-t-2 border-gray-300">
+                <TableCell className="py-3 text-sm font-bold text-card-text text-left">Total</TableCell>
+                <TableCell />
+                <TableCell />
+                <TableCell className="py-3 text-sm font-bold tabular-nums text-card-text text-center">
+                  {fmt(rows.reduce((sum, r) => sum + r.amount, 0))}
+                </TableCell>
+              </TableRow>
+            </tfoot>
           </Table>
         </div>
         {rows.length > 0 && pageSize !== 0 && (
@@ -684,6 +714,16 @@ function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
                 </TableRow>
               ))}
             </TableBody>
+            <tfoot className="sticky bottom-0 z-10">
+              <TableRow className="bg-[#E9E8DE] border-t-2 border-gray-300">
+                <TableCell className="py-3 text-sm font-bold text-card-text text-left">Total</TableCell>
+                <TableCell />
+                <TableCell />
+                <TableCell className="py-3 text-sm font-bold tabular-nums text-card-text text-center">
+                  {fmt(rows.reduce((sum, r) => sum + r.amount, 0))}
+                </TableCell>
+              </TableRow>
+            </tfoot>
           </Table>
         </div>
         {rows.length > 0 && pageSize !== 0 && (
