@@ -1000,7 +1000,8 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     isTotalPortfolio: boolean,
     overrideAccountInfo?: { accountName: string; accountType: string; broker: string },
     exportMetadata?: { dataAsOfDate?: string | null; isActive?: boolean },
-    hasNavBasedTotalPortfolio: boolean = false
+    hasNavBasedTotalPortfolio: boolean = false,
+    pmsBlendedTP: boolean = false
   ) => {
     try {
       setExporting(true);
@@ -1039,6 +1040,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         strategyName,
         isTotalPortfolio,
         hasNavBasedTotalPortfolio,
+        pmsBlendedTP,
         isActive: exportMetadata?.isActive ?? metadata?.isActive ?? true,
         sessionUserName: session?.user?.name || "User",
         dataAsOfDate: exportMetadata?.dataAsOfDate ?? metadata?.dataAsOfDate,
@@ -1325,7 +1327,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
               PDF
             </Button>
             <Button
-              onClick={() => handleDownloadExcel(convertedStats, selectedStrategy, isTotalPortfolio, undefined, { dataAsOfDate: strategyData.metadata?.dataAsOfDate, isActive }, hasNavBasedTotalPortfolio)}
+              onClick={() => handleDownloadExcel(convertedStats, selectedStrategy, isTotalPortfolio, undefined, { dataAsOfDate: strategyData.metadata?.dataAsOfDate, isActive }, hasNavBasedTotalPortfolio, pmsBlendedTP)}
               disabled={exporting}
               className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
               variant="default"
