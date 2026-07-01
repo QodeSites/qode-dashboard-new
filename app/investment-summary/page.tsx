@@ -235,7 +235,7 @@ function HoldingsTable({
         </div>
 
         {/* Scrollable table area — fixed height for ~5 visible rows */}
-        <div className="overflow-x-auto overflow-y-auto h-[280px]">
+        <div className="overflow-x-auto overflow-y-auto max-h-[300px]">
           <Table className="min-w-full">
             <TableHeader className="sticky top-0 z-10">
               <TableRow className="bg-[#E9E8DE] hover:bg-[#E9E8DE] border-b border-gray-200">
@@ -405,7 +405,7 @@ function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
             <span className="text-sm text-card-text-secondary">transactions</span>
           </div>
         </div>
-        <div className="overflow-x-auto overflow-y-auto h-[280px]">
+        <div className="overflow-x-auto overflow-y-auto max-h-[300px]">
           <Table className="min-w-full">
             <TableHeader className="sticky top-0 z-10">
               <TableRow className="bg-[#E9E8DE] hover:bg-[#E9E8DE] border-b border-gray-200">
@@ -530,7 +530,7 @@ function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
             <span className="text-sm text-card-text-secondary">transactions</span>
           </div>
         </div>
-        <div className="overflow-x-auto overflow-y-auto h-[280px]">
+        <div className="overflow-x-auto overflow-y-auto max-h-[300px]">
           <Table className="min-w-full">
             <TableHeader className="sticky top-0 z-10">
               <TableRow className="bg-[#E9E8DE] hover:bg-[#E9E8DE] border-b border-gray-200">
@@ -655,7 +655,7 @@ function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
             <span className="text-sm text-card-text-secondary">transactions</span>
           </div>
         </div>
-        <div className="overflow-x-auto overflow-y-auto h-[280px]">
+        <div className="overflow-x-auto overflow-y-auto max-h-[300px]">
           <Table className="min-w-full">
             <TableHeader className="sticky top-0 z-10">
               <TableRow className="bg-[#E9E8DE] hover:bg-[#E9E8DE] border-b border-gray-200">
