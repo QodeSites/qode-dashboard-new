@@ -1298,6 +1298,12 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     const isActive = strategyData.metadata.isActive;
     const hasNavBasedTotalPortfolio = bifurcatedClient?.hasNavBasedTotalPortfolio ?? false;
 
+    // PMS-blended clients (Ashok) render their Total Portfolio Sarla/Satidham-style:
+    // absolute ₹ only, no NAV curve, no trailing table — but keep monthly.
+    const pmsBlendedTP =
+      isTotalPortfolio && (bifurcatedClient?.config?.pmsSchemes?.length ?? 0) > 0;
+    const effectiveNavBased = hasNavBasedTotalPortfolio && !pmsBlendedTP;
+
     return (
       <div className="space-y-6">
         <div className="flex flex-wrap items-center gap-3">
@@ -1336,9 +1342,9 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           isActive={isActive}
           returnViewType={returnViewType}
           setReturnViewType={setReturnViewType}
-          hasNavBasedTotalPortfolio={hasNavBasedTotalPortfolio}
+          hasNavBasedTotalPortfolio={effectiveNavBased}
         />
-        {(!isTotalPortfolio || hasNavBasedTotalPortfolio) && (
+        {(!isTotalPortfolio || effectiveNavBased) && (
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
             <div className="flex-1 min-w-0 sm:w-5/6">
               <RevenueChart
@@ -1357,6 +1363,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           monthlyPnl={convertedStats.monthlyPnl}
           showOnlyQuarterlyCash={false}
           showPmsQawView={false}
+          cashOnly={pmsBlendedTP}
         />
         {renderCashFlowsTable()}
         {isBifurcatedClient && !isActive && (
