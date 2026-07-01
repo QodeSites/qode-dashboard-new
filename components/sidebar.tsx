@@ -17,11 +17,12 @@ import { cn } from "@/lib/utils"
 import { signOut, useSession } from "next-auth/react"
 import { Button } from "./ui/button"
 import { useRouter } from "next/navigation"
-import { ChartCandlestickIcon } from "lucide-react"
+import { ChartCandlestickIcon, FileTextIcon } from "lucide-react"
 const navigation = [
   { name: "Home", href: "/", icon: HomeIcon },
   { name: "Portfolio", href: "/dashboard", icon: ChartBarIcon },
   { name: "Holdings Summary", href: "/holding-summary", icon: ChartCandlestickIcon },
+  { name: "Investment Summary", href: "/investment-summary", icon: FileTextIcon },
   { name: "Costs Summary", href: "/quarterly-fees", icon: CurrencyDollarIcon },
   { name: "Personal Details", href: "/personal-details", icon: UserCircleIcon },
 ];
