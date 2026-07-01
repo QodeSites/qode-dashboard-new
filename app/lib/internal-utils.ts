@@ -513,6 +513,9 @@ interface StrategyPair {
   gold_pct: number | null;
   lowvol_pct: number | null;
   momentum_pct: number | null;
+  psar_leverage: number | null;
+  psar_multiplier: number | null;
+  long_opt_pct: number | null;
 }
 
 interface SeriesPoint {
@@ -546,6 +549,9 @@ async function fetchStrategyPairs(
       gold_pct: toNum(c.gold_pct),
       lowvol_pct: toNum(c.lowvol_pct),
       momentum_pct: toNum(c.momentum_pct),
+      psar_leverage: toNum(c.psar_leverage),
+      psar_multiplier: toNum(c.psar_multiplier),
+      long_opt_pct: toNum(c.long_opt_pct),
     });
   }
   return [...map.values()];
@@ -697,10 +703,10 @@ export interface StrategyBreakupRow {
   beta: number | null;
 }
 
-// batched nav/prev_nav/drawdown/pnl fetch for every (qcode, profit_tag) pair —
+// batched nav/prev_nav/drawdown/pnl fetch for any list of (qcode, tag) pairs —
 // same unnest-join pattern as Portfolio Summary, one round trip total
 async function fetchBulkNavSeries(
-  pairs: StrategyPair[],
+  pairs: { qcode: string; tag: string }[],
 ): Promise<Map<string, NavPoint[]>> {
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `SELECT b.qcode, b.system_tag, b.date, b.nav, b.prev_nav, b.drawdown, b.pnl
@@ -723,7 +729,7 @@ async function fetchBulkNavSeries(
       prev_nav: row.prev_nav != null ? Number(row.prev_nav) : null,
       drawdown: Number(row.drawdown) || 0,
       pnl: Number(row.pnl) || 0,
-      portfolio_value: 0, // unused for this tab's metrics
+      portfolio_value: 0, // unused for these tabs' metrics
     });
   }
   return seriesMap;
@@ -859,7 +865,9 @@ export async function computeStrategyBreakup(
   const pairs = await fetchStrategyPairs("profit_tag_suffix");
   if (pairs.length === 0) return [];
 
-  const seriesMap = await fetchBulkNavSeries(pairs);
+  const seriesMap = await fetchBulkNavSeries(
+    pairs.map((p) => ({ qcode: p.qcode, tag: p.tag })),
+  );
 
   // one shared date span covers every client — Nifty gets fetched exactly once
   let minStart: Date | null = null;
@@ -1007,6 +1015,9 @@ interface SplitConfig {
   gold_pct: number | null;
   lowvol_pct: number | null;
   momentum_pct: number | null;
+  psar_leverage: number | null;
+  psar_multiplier: number | null;
+  long_opt_pct: number | null;
 }
 
 // client override (already on the pair) → strategy_defaults, per field
@@ -1027,6 +1038,9 @@ async function resolveSplitConfigs(
       gold_pct: pair.gold_pct ?? toNum(def?.gold_pct),
       lowvol_pct: pair.lowvol_pct ?? toNum(def?.lowvol_pct),
       momentum_pct: pair.momentum_pct ?? toNum(def?.momentum_pct),
+      psar_leverage: pair.psar_leverage ?? toNum(def?.psar_leverage),
+      psar_multiplier: pair.psar_multiplier ?? toNum(def?.psar_multiplier),
+      long_opt_pct: pair.long_opt_pct ?? toNum(def?.long_opt_pct),
     });
   }
   return result;
@@ -1177,4 +1191,118 @@ export async function computeAccountValueBreakup(): Promise<AccountValueBreakupR
   }
 
   return { accounts, equity_breakup };
+}
+
+// ── Sub-Strategy Performance ─────────────────────────────────────────────────
+
+interface SubStrategySectionDef {
+  label: string;
+  tag: string; // flat rollup tag suffix — pre-aggregated upstream, confirmed against real data
+  existsField:
+    | "long_opt_pct"
+    | "psar_leverage"
+    | "gold_pct"
+    | "lowvol_pct"
+    | "momentum_pct";
+  tier: 1 | 2 | null; // required psar_multiplier value, or null if the section has no tier split
+}
+
+// no strategy names anywhere — section membership is entirely config-driven
+const SUB_STRATEGY_SECTIONS: SubStrategySectionDef[] = [
+  {
+    label: "Long Options (1%)",
+    tag: "LONG",
+    existsField: "long_opt_pct",
+    tier: 1,
+  },
+  {
+    label: "Long Options (1.5%)",
+    tag: "LONG",
+    existsField: "long_opt_pct",
+    tier: 2,
+  },
+  { label: "PSAR 1x", tag: "PSAR", existsField: "psar_leverage", tier: 1 },
+  { label: "PSAR 2x", tag: "PSAR", existsField: "psar_leverage", tier: 2 },
+  {
+    label: "Gold",
+    tag: "Gold Stock Holdings",
+    existsField: "gold_pct",
+    tier: null,
+  },
+  {
+    label: "Momentum",
+    tag: "Momentum Stock Holdings",
+    existsField: "momentum_pct",
+    tier: null,
+  },
+  {
+    label: "Low Vol",
+    tag: "Low Vol Stock Holdings",
+    existsField: "lowvol_pct",
+    tier: null,
+  },
+  { label: "NLONG (1%)", tag: "NLONG", existsField: "long_opt_pct", tier: 1 },
+  { label: "SLONG (1%)", tag: "SLONG", existsField: "long_opt_pct", tier: 1 },
+  { label: "NLONG (1.5%)", tag: "NLONG", existsField: "long_opt_pct", tier: 2 },
+  { label: "SLONG (1.5%)", tag: "SLONG", existsField: "long_opt_pct", tier: 2 },
+  { label: "NPSAR 1x", tag: "NPSAR", existsField: "psar_leverage", tier: 1 },
+  { label: "SPSAR 1x", tag: "SPSAR", existsField: "psar_leverage", tier: 1 },
+  { label: "NPSAR 2x", tag: "NPSAR", existsField: "psar_leverage", tier: 2 },
+  { label: "SPSAR 2x", tag: "SPSAR", existsField: "psar_leverage", tier: 2 },
+];
+
+export interface SubStrategyRow {
+  section: string;
+  qcode: string;
+  account_name: string;
+  strategy: string;
+  monthly: MonthlyReturn[];
+  yearly: YearlyReturn[];
+}
+
+export async function computeSubStrategyPerformance(): Promise<
+  SubStrategyRow[]
+> {
+  const pairs = await fetchStrategyPairs("profit_tag_suffix");
+  if (pairs.length === 0) return [];
+
+  const splitMap = await resolveSplitConfigs(pairs);
+
+  // build every (qcode, tag) this response could possibly need, once, so the
+  // NAV fetch is a single batched round trip regardless of section count
+  const queries: { qcode: string; tag: string }[] = [];
+  for (const pair of pairs) {
+    const split = splitMap.get(`${pair.qcode}|${pair.strategy}`)!;
+    for (const sec of SUB_STRATEGY_SECTIONS) {
+      if (split[sec.existsField] == null) continue;
+      if (sec.tier != null && split.psar_multiplier !== sec.tier) continue;
+      queries.push({ qcode: pair.qcode, tag: `${pair.strategy} ${sec.tag}` });
+    }
+  }
+
+  const seriesMap = await fetchBulkNavSeries(queries);
+
+  const rows: SubStrategyRow[] = [];
+  for (const pair of pairs) {
+    const split = splitMap.get(`${pair.qcode}|${pair.strategy}`)!;
+    for (const sec of SUB_STRATEGY_SECTIONS) {
+      if (split[sec.existsField] == null) continue;
+      if (sec.tier != null && split.psar_multiplier !== sec.tier) continue;
+
+      const nav = seriesMap.get(`${pair.qcode}|${pair.strategy} ${sec.tag}`);
+      if (!nav || nav.length === 0) continue; // config says it should exist, data doesn't — nothing to report
+
+      const monthly = calcMonthlyReturns(nav);
+      rows.push({
+        section: sec.label,
+        qcode: pair.qcode,
+        account_name: pair.account_name,
+        strategy: pair.strategy,
+        monthly,
+        yearly: calcYearlyReturns(monthly),
+      });
+    }
+  }
+
+  return rows;
 }
