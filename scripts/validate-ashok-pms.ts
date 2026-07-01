@@ -6,6 +6,7 @@
 import { findByQcode } from "../app/lib/bifurcated-clients-registry";
 import { getPmsAccountSeries } from "../app/lib/pms-bridge";
 import { getEngineForQcode } from "../app/lib/bifurcated-portfolio-utils";
+import { buildCombinedHistorical } from "../app/lib/pms-blend";
 
 const ASHOK = "QAC00110";
 let failures = 0;
@@ -67,6 +68,45 @@ async function main() {
     check(`${label} return matches its curve`, approx(Number(d.return), expectedRet, 1),
       `resp=${d.return} curve=${expectedRet.toFixed(2)}`);
   }
+
+  console.log("== Task 5a: blend math (synthetic) ==");
+  // Two components: A flat (nav 10→10), B grows 10→11 on day 2, equal prior value.
+  const blended = buildCombinedHistorical([
+    { daily: [
+      { date: "2026-01-01", value: 100, nav: 10, pnl: 0, cashIn: 100 },
+      { date: "2026-01-02", value: 100, nav: 10, pnl: 0, cashIn: 0 },
+    ]},
+    { daily: [
+      { date: "2026-01-01", value: 100, nav: 10, pnl: 0, cashIn: 100 },
+      { date: "2026-01-02", value: 110, nav: 11, pnl: 10, cashIn: 0 },
+    ]},
+  ]);
+  // Day 1 base 100; day 2 = equal-weighted avg of (0%, +10%) = +5% → 105.
+  check("blend day1 nav = 100", approx(blended[0].nav, 100, 0.01));
+  check("blend day2 nav = 105", approx(blended[1].nav, 105, 0.01), `got ${blended[1]?.nav}`);
+
+  console.log("== Task 5b: blended Total Portfolio (drift-proof) ==");
+  const tp = data["Total Portfolio"].data;
+  // Total = sum of parts: TP current value ≈ Σ every scheme's currentExposure.
+  const PART_KEYS = ["Scheme QAW++", "Scheme QAW+", ...PMS_LABELS];
+  const sumCurrent = PART_KEYS.reduce((s, k) => s + Number(data[k].data.currentExposure), 0);
+  check("TP currentExposure == Σ scheme currentExposures",
+    approx(Number(tp.currentExposure), sumCurrent, 0.5),
+    `tp=${tp.currentExposure} sumParts=${sumCurrent}`);
+  const sumProfit = PART_KEYS.reduce((s, k) => s + Number(data[k].data.totalProfit), 0);
+  check("TP totalProfit == Σ scheme totalProfits",
+    approx(Number(tp.totalProfit), sumProfit, 0.5),
+    `tp=${tp.totalProfit} sumParts=${sumProfit}`);
+  // TP must exceed the 3 PMS accounts alone (it also holds the Zerodha QAW++).
+  const sumPms = PMS_LABELS.reduce((s, k) => s + Number(data[k].data.currentExposure), 0);
+  check("TP currentExposure > Σ PMS alone", Number(tp.currentExposure) > sumPms);
+  check("TP inception = 2026-04-08",
+    data["Total Portfolio"].metadata.inceptionDate === "2026-04-08",
+    data["Total Portfolio"].metadata.inceptionDate);
+  check("TP equity curve starts at 100",
+    approx(tp.equityCurve[0]?.nav, 100, 0.1), `got ${tp.equityCurve[0]?.nav}`);
+  check("TP equity curve monotonic dates",
+    tp.equityCurve.every((p: any, i: number, a: any[]) => i === 0 || a[i-1].date <= p.date));
 
   console.log(failures === 0 ? "\nALL PASS" : `\n${failures} FAILURE(S)`);
   process.exit(failures === 0 ? 0 : 1);

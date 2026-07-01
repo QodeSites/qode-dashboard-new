@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { Decimal } from "@prisma/client/runtime/library";
 import { EMPTY_FROZEN_DATA } from "./bifurcated-portfolio-data";
 import { getPmsAccountSeries } from "./pms-bridge";
+import { buildCombinedHistorical, type BlendComponent } from "./pms-blend";
 // Re-export types and builder from the cycle-free builder module so callers
 // that import from bifurcated-portfolio-utils keep working unchanged.
 export type {
@@ -1296,6 +1297,126 @@ class BifurcatedPortfolioEngine {
     };
   }
 
+  // ==================== PMS Blended Total Portfolio Builder ====================
+
+  private async buildPmsBlendedTotalPortfolio(
+    qcode: string
+  ): Promise<PortfolioResponse> {
+    // --- Zerodha component: daily value (QAW++ PV + QAW+ PV) + Qode nav curve.
+    const qawPlusPlus = "QAW++ Zerodha Total Portfolio";
+    const qawPlus = "QAW+ Zerodha Total Portfolio";
+    const [ppRows, pRows, qodeRows] = await Promise.all([
+      this.msTable.findMany({
+        where: { qcode, system_tag: qawPlusPlus },
+        select: { date: true, portfolio_value: true, capital_in_out: true, pnl: true },
+        orderBy: { date: "asc" },
+      }),
+      this.msTable.findMany({
+        where: { qcode, system_tag: qawPlus },
+        select: { date: true, portfolio_value: true, capital_in_out: true, pnl: true },
+        orderBy: { date: "asc" },
+      }),
+      this.msTable.findMany({
+        where: { qcode, system_tag: this.config.qodeTotalPortfolioTag, nav: { not: null } },
+        select: { date: true, nav: true },
+        orderBy: { date: "asc" },
+      }),
+    ]);
+
+    const byDate = (rows: any[]) => {
+      const m = new Map<string, any>();
+      for (const r of rows) m.set(this.normalizeDate(r.date), r);
+      return m;
+    };
+    const ppMap = byDate(ppRows), pMap = byDate(pRows), qodeMap = byDate(qodeRows);
+    const zerodhaDates = Array.from(qodeMap.keys()).sort();
+    const zerodhaDaily = zerodhaDates.map((date) => {
+      const pp = ppMap.get(date), p = pMap.get(date);
+      return {
+        date,
+        value: (Number(pp?.portfolio_value) || 0) + (Number(p?.portfolio_value) || 0),
+        nav: Number(qodeMap.get(date)?.nav) || 0,
+        pnl: (Number(pp?.pnl) || 0) + (Number(p?.pnl) || 0),
+        cashIn: (Number(pp?.capital_in_out) || 0) + (Number(p?.capital_in_out) || 0),
+      };
+    });
+
+    // --- PMS components.
+    const pmsSeries = await Promise.all(
+      (this.config.pmsSchemes ?? []).map((s) => getPmsAccountSeries(s.accountCode))
+    );
+    const components: BlendComponent[] = [
+      { daily: zerodhaDaily },
+      ...pmsSeries.map((s) => ({
+        daily: s.daily.map((d) => ({
+          date: d.date, value: d.value, nav: d.nav, pnl: d.pnl, cashIn: d.cashIn,
+        })),
+      })),
+    ];
+
+    const historicalData = buildCombinedHistorical(components);
+
+    // --- Reuse engine calc helpers on the combined curve.
+    const equityCurve = historicalData.map((d) => ({
+      date: this.normalizeDate(d.date), nav: d.nav,
+    }));
+    const drawdownMetrics = this.calculateDrawdownMetrics(equityCurve);
+    const trailingReturns = computeTrailingReturnsFromCurve(equityCurve, 100, drawdownMetrics);
+    const monthlyPnl = this.computeMonthlyPnLFromHistoricalData(historicalData, false);
+    const quarterlyPnl = this.computeQuarterlyPnLFromHistoricalData(historicalData, false);
+
+    const firstNav = equityCurve.length ? equityCurve[0].nav : 100;
+    const lastNav = equityCurve.length ? equityCurve[equityCurve.length - 1].nav : 100;
+    const days = historicalData.length >= 2
+      ? (historicalData[historicalData.length - 1].date.getTime() - historicalData[0].date.getTime()) / (1000 * 60 * 60 * 24)
+      : 0;
+    const ret = days < 365
+      ? (lastNav / firstNav - 1) * 100
+      : (Math.pow(lastNav / firstNav, 365 / days) - 1) * 100;
+
+    // --- Cards (additive): Zerodha + all PMS.
+    const zerodhaCurrent =
+      (Number(ppRows.at(-1)?.portfolio_value) || 0) +
+      (Number(pRows.at(-1)?.portfolio_value) || 0);
+    const currentValue = zerodhaCurrent + pmsSeries.reduce((s, x) => s + x.currentValue, 0);
+    const totalProfit =
+      historicalData.reduce((s, d) => s + d.pnl, 0); // Σ component pnl == Qode pnl + Σ PMS pnl
+    const deposited =
+      historicalData.reduce((s, d) => s + d.capitalInOut, 0);
+    const cashFlows = historicalData
+      .filter((d) => d.capitalInOut !== 0)
+      .map((d) => ({ date: this.normalizeDate(d.date), amount: d.capitalInOut, dividend: 0 }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const data: PortfolioData = {
+      amountDeposited: deposited.toFixed(2),
+      currentExposure: currentValue.toFixed(2),
+      return: ret.toFixed(2),
+      totalProfit: totalProfit.toFixed(2),
+      trailingReturns,
+      drawdown: drawdownMetrics.currentDD.toFixed(2),
+      maxDrawdown: drawdownMetrics.mdd.toFixed(2),
+      equityCurve,
+      drawdownCurve: drawdownMetrics.ddCurve.map((d) => ({ date: d.date, drawdown: d.value })),
+      quarterlyPnl, monthlyPnl, cashFlows,
+      strategyName: "Total Portfolio",
+    };
+
+    return {
+      data,
+      metadata: {
+        icode: "Total Portfolio", accountCount: 1,
+        lastUpdated: new Date().toISOString(),
+        filtersApplied: { accountType: null, broker: null, startDate: null, endDate: null },
+        inceptionDate: equityCurve.length ? equityCurve[0].date : null,
+        dataAsOfDate: historicalData.length
+          ? this.normalizeDate(historicalData[historicalData.length - 1].date)
+          : new Date().toISOString().split("T")[0],
+        strategyName: "Total Portfolio", isActive: true,
+      },
+    };
+  }
+
   // ==================== Main GET Handler ====================
 
   public async handleGET(request: Request): Promise<NextResponse> {
@@ -1319,6 +1440,11 @@ class BifurcatedPortfolioEngine {
             scheme,
             portfolioNames.isActive
           );
+          continue;
+        }
+
+        if (scheme === "Total Portfolio" && this.hasPms) {
+          results[scheme] = await this.buildPmsBlendedTotalPortfolio(qcode);
           continue;
         }
 
