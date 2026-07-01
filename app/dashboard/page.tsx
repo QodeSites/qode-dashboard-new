@@ -865,7 +865,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   };
 
   // Export handler functions
-  const handleDownloadPDF = async (convertedStats: Stats, strategyName: string, isTotalPortfolio: boolean, exportMetadata?: { inceptionDate?: string | null; dataAsOfDate?: string | null }, hasNavBasedTotalPortfolio: boolean = false) => {
+  const handleDownloadPDF = async (convertedStats: Stats, strategyName: string, isTotalPortfolio: boolean, exportMetadata?: { inceptionDate?: string | null; dataAsOfDate?: string | null }, hasNavBasedTotalPortfolio: boolean = false, pmsBlendedTP: boolean = false) => {
     try {
       setExporting(true);
       const cashFlows = convertedStats.cashFlows || [];
@@ -919,6 +919,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         strategyName,
         isTotalPortfolio,
         hasNavBasedTotalPortfolio,
+        pmsBlendedTP,
         isActive: true,
         dateFormatter,
         formatter: (v) =>
@@ -1315,7 +1316,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           </Button>
           <div className="flex gap-2 ml-auto">
             <Button
-              onClick={() => handleDownloadPDF(convertedStats, selectedStrategy, isTotalPortfolio, { inceptionDate: strategyData.metadata?.inceptionDate, dataAsOfDate: strategyData.metadata?.dataAsOfDate }, hasNavBasedTotalPortfolio)}
+              onClick={() => handleDownloadPDF(convertedStats, selectedStrategy, isTotalPortfolio, { inceptionDate: strategyData.metadata?.inceptionDate, dataAsOfDate: strategyData.metadata?.dataAsOfDate }, hasNavBasedTotalPortfolio, pmsBlendedTP)}
               disabled={exporting}
               className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
               variant="default"

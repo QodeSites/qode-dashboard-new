@@ -54,6 +54,7 @@ export interface PortfolioReportProps {
   strategyName?: string;
   isTotalPortfolio?: boolean;
   hasNavBasedTotalPortfolio?: boolean;
+  pmsBlendedTP?: boolean;
   isActive?: boolean;
   returnViewType?: "percent";
   showOnlyQuarterlyCash?: boolean;
@@ -138,6 +139,7 @@ export function buildPortfolioReportHTML(
     isActive = true,
     isTotalPortfolio = false,
     hasNavBasedTotalPortfolio = false,
+    pmsBlendedTP = false,
     dateFormatter = defaultDateFmt,
     formatter = defaultMoneyFmt,
     sessionUserName = "User",
@@ -226,9 +228,9 @@ export function buildPortfolioReportHTML(
     .map((year) => {
       const rec = (monthlyPnl as MonthlyPnl)[year];
       const months = rec?.months || {};
-      const row: any = { year, months: {}, totalPercent: rec?.totalPercent };
+      const row: any = { year, months: {}, totalPercent: rec?.totalPercent, totalCash: rec?.totalCash };
       monthOrderFull.forEach((m) => {
-        row.months[m] = { percent: months[m]?.percent ?? null };
+        row.months[m] = { percent: months[m]?.percent ?? null, cash: months[m]?.cash ?? null };
       });
       return row;
     });
@@ -457,6 +459,41 @@ export function buildPortfolioReportHTML(
             </table>
           </div>
         </div>
+        ${
+          pmsBlendedTP
+            ? `
+        <div class="section-header">Monthly Profit and Loss (₹)</div>
+        <div class="section no-split">
+          <div class="section-content">
+            <table class="monthly-table">
+              <thead>
+                <tr>
+                  <th>Year</th>
+                  ${monthOrderShort.map(m => `<th>${m}</th>`).join("")}
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${
+                  monthlyData.length
+                    ? monthlyData.map(row => `
+                      <tr>
+                        <td style="font-weight:600;">${row.year}</td>
+                        ${monthOrderFull.map(m => {
+                          const val = row.months[m]?.cash ?? null;
+                          return `<td class="${getPnlColorClass(val)}">${formatCashAmountNoSymbol(val)}</td>`;
+                        }).join("")}
+                        <td class="${getPnlColorClass(row.totalCash)}" style="font-weight:600;">${formatCashAmountNoSymbol(row.totalCash)}</td>
+                      </tr>`).join("")
+                    : `<tr><td colspan="14" style="text-align:center;">No data available</td></tr>`
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+        `
+            : ""
+        }
         `
     }
 
