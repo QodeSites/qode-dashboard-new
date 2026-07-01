@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Decimal } from "@prisma/client/runtime/library";
 import { EMPTY_FROZEN_DATA } from "./bifurcated-portfolio-data";
+import { getPmsAccountSeries } from "./pms-bridge";
 // Re-export types and builder from the cycle-free builder module so callers
 // that import from bifurcated-portfolio-utils keep working unchanged.
 export type {
@@ -178,6 +179,11 @@ class BifurcatedPortfolioEngine {
   // Whether old+new schemes share the same DB NAV tag (single query covers both periods)
   private get sharedNavTag(): boolean {
     return this.config.oldSchemeNavTag === this.config.navSystemTag;
+  }
+
+  // True when this client has at least one PMS scheme blended in.
+  private get hasPms(): boolean {
+    return (this.config.pmsSchemes?.length ?? 0) > 0;
   }
 
   // Redirects master_sheet reads to bifurcated_master_sheet_test when the client
@@ -1195,6 +1201,101 @@ class BifurcatedPortfolioEngine {
     return quarterlyPnl;
   }
 
+  // ==================== PMS Scheme Builder ====================
+
+  private async buildPmsSchemeData(
+    accountCode: string,
+    scheme: string,
+    isActive: boolean
+  ): Promise<PortfolioResponse> {
+    const series = await getPmsAccountSeries(accountCode);
+
+    if (series.daily.length === 0) {
+      // Defensive empty render — should not happen for Ashok's live accounts.
+      const empty: PortfolioData = {
+        amountDeposited: "0.00", currentExposure: "0.00", return: "0.00",
+        totalProfit: "0.00",
+        trailingReturns: { MDD: 0, currentDD: 0, sinceInception: null } as any,
+        drawdown: "0.00", maxDrawdown: "0.00", equityCurve: [],
+        drawdownCurve: [], quarterlyPnl: {}, monthlyPnl: {},
+        cashFlows: [], strategyName: scheme,
+      };
+      return {
+        data: empty,
+        metadata: {
+          icode: scheme, accountCount: 1,
+          lastUpdated: new Date().toISOString(),
+          filtersApplied: { accountType: null, broker: null, startDate: null, endDate: null },
+          inceptionDate: null, dataAsOfDate: new Date().toISOString().split("T")[0],
+          strategyName: scheme, isActive,
+        },
+      };
+    }
+
+    // Rebase unit NAV (base ~10) to display base 100.
+    const navBase = series.daily[0].nav || 1;
+    const factor = 100 / navBase;
+    const historicalData = series.daily.map((d, i) => ({
+      date: new Date(d.date),
+      nav: d.nav * factor,
+      prevNav: i === 0 ? 100 : series.daily[i - 1].nav * factor,
+      drawdown: 0,
+      pnl: d.pnl,
+      capitalInOut: d.cashIn,
+    }));
+
+    const equityCurve = historicalData.map((d) => ({
+      date: this.normalizeDate(d.date),
+      nav: d.nav,
+    }));
+    const drawdownMetrics = this.calculateDrawdownMetrics(equityCurve);
+
+    const firstNav = equityCurve[0].nav;   // == 100 after rebasing
+    const lastNav = equityCurve[equityCurve.length - 1].nav;
+    const days =
+      (historicalData[historicalData.length - 1].date.getTime() -
+        historicalData[0].date.getTime()) / (1000 * 60 * 60 * 24);
+    const ret =
+      days < 365
+        ? (lastNav / firstNav - 1) * 100
+        : (Math.pow(lastNav / firstNav, 365 / days) - 1) * 100;
+
+    const trailingReturns = computeTrailingReturnsFromCurve(
+      equityCurve, 100, drawdownMetrics
+    );
+    const monthlyPnl = this.computeMonthlyPnLFromHistoricalData(historicalData, true);
+    // Quarterly: use the pure helper identified in Step 2.
+    const quarterlyPnl = this.computeQuarterlyPnLFromHistoricalData(historicalData, true);
+
+    const data: PortfolioData = {
+      amountDeposited: series.deposited.toFixed(2),
+      currentExposure: series.currentValue.toFixed(2),
+      return: ret.toFixed(2),
+      totalProfit: series.totalProfit.toFixed(2),
+      trailingReturns,
+      drawdown: drawdownMetrics.currentDD.toFixed(2),
+      maxDrawdown: drawdownMetrics.mdd.toFixed(2),
+      equityCurve,
+      drawdownCurve: drawdownMetrics.ddCurve.map((d) => ({ date: d.date, drawdown: d.value })),
+      quarterlyPnl,
+      monthlyPnl,
+      cashFlows: series.cashFlows,
+      strategyName: scheme,
+    };
+
+    return {
+      data,
+      metadata: {
+        icode: scheme, accountCount: 1,
+        lastUpdated: new Date().toISOString(),
+        filtersApplied: { accountType: null, broker: null, startDate: null, endDate: null },
+        inceptionDate: equityCurve[0].date,
+        dataAsOfDate: this.normalizeDate(historicalData[historicalData.length - 1].date),
+        strategyName: scheme, isActive,
+      },
+    };
+  }
+
   // ==================== Main GET Handler ====================
 
   public async handleGET(request: Request): Promise<NextResponse> {
@@ -1211,6 +1312,15 @@ class BifurcatedPortfolioEngine {
 
       for (const scheme of schemes) {
         const portfolioNames = this.getPortfolioNames(scheme);
+
+        if (portfolioNames.pmsAccountCode) {
+          results[scheme] = await this.buildPmsSchemeData(
+            portfolioNames.pmsAccountCode,
+            scheme,
+            portfolioNames.isActive
+          );
+          continue;
+        }
 
         if (scheme === this.config.oldSchemeName) {
           results[scheme] = {

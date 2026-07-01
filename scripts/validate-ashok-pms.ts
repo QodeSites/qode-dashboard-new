@@ -5,6 +5,7 @@
  */
 import { findByQcode } from "../app/lib/bifurcated-clients-registry";
 import { getPmsAccountSeries } from "../app/lib/pms-bridge";
+import { getEngineForQcode } from "../app/lib/bifurcated-portfolio-utils";
 
 const ASHOK = "QAC00110";
 let failures = 0;
@@ -43,6 +44,22 @@ async function main() {
   const qtf = await getPmsAccountSeries("QTF00161");
   check("QTF00161 currentValue", approx(qtf.currentValue, 24026941.27));
   check("QTF00161 totalProfit", approx(qtf.totalProfit, 695941.27));
+
+  console.log("== Task 4: PMS per-scheme views ==");
+  const engine = getEngineForQcode(ASHOK)!;
+  const res = await engine.handleGET(new Request(`http://local/api?qcode=${ASHOK}`));
+  const data: Record<string, any> = await res.json();
+  for (const label of ["Scheme PMS QAW", "Scheme PMS QGF", "Scheme PMS QTF"]) {
+    check(`response has "${label}"`, !!data[label]);
+  }
+  check("Scheme PMS QGF currentExposure", approx(Number(data["Scheme PMS QGF"].data.currentExposure), 28081182.05));
+  check("Scheme PMS QGF return ~20.36%",
+    approx(Number(data["Scheme PMS QGF"].data.return), 20.36, 5));
+  check("Scheme PMS QAW equity starts at 100",
+    approx(data["Scheme PMS QAW"].data.equityCurve[0]?.nav, 100, 0.1));
+  check("Scheme PMS QAW inception 2026-04-08",
+    data["Scheme PMS QAW"].metadata.inceptionDate === "2026-04-08",
+    data["Scheme PMS QAW"].metadata.inceptionDate);
 
   console.log(failures === 0 ? "\nALL PASS" : `\n${failures} FAILURE(S)`);
   process.exit(failures === 0 ? 0 : 1);
