@@ -70,7 +70,7 @@ interface Metadata {
     startDate: string | null;
     endDate: string | null;
   };
-  inceptionDate: string;
+  inceptionDate: string | null;
   dataAsOfDate: string;
   strategyName: string;
   isActive: boolean;

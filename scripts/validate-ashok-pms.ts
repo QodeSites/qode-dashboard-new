@@ -102,6 +102,11 @@ async function main() {
   check("TP totalProfit == Σ scheme totalProfits",
     approx(Number(tp.totalProfit), sumProfit, 0.5),
     `tp=${tp.totalProfit} sumParts=${sumProfit}`);
+  // Money identity for the blended TP: currentValue == amountDeposited + totalProfit.
+  // Catches any future case where a component's pnl/cashflow is silently dropped.
+  check("TP money identity (value == invested + profit)",
+    approx(Number(tp.currentExposure), Number(tp.amountDeposited) + Number(tp.totalProfit), 0.5),
+    `cv=${tp.currentExposure} dep=${tp.amountDeposited} pnl=${tp.totalProfit}`);
   // TP must exceed the 3 PMS accounts alone (it also holds the Zerodha QAW++).
   const sumPms = PMS_LABELS.reduce((s, k) => s + Number(data[k].data.currentExposure), 0);
   check("TP currentExposure > Σ PMS alone", Number(tp.currentExposure) > sumPms);
