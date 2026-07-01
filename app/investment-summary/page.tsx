@@ -570,8 +570,8 @@ function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
             <TableBody>
               {paginated.map((tx, i) => (
                 <TableRow key={i} className="border-b border-gray-200">
-                  <TableCell className="py-3 text-sm font-medium text-card-text">{tx.transactionType}</TableCell>
-                  <TableCell className="py-3 text-sm text-gray-600 whitespace-nowrap text-center">{tx.date}</TableCell>
+                  <TableCell className="py-3 text-sm font-medium text-card-text">{tx.date}</TableCell>
+                  <TableCell className="py-3 text-sm text-gray-600 whitespace-nowrap text-center">{tx.transactionType}</TableCell>
                   <TableCell className="py-3 text-sm text-gray-600 text-center">
                     <StrategyBadge value={tx.strategy} />
                   </TableCell>
