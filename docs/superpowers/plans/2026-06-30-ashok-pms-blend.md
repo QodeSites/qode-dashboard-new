@@ -18,12 +18,12 @@
 - **Client identifiers:** Ashok Jogani HUF = `icode QUS00124`, `qcode QAC00110`.
 - **PMS scheme labels (exact):** `Scheme PMS QAW` (`QAW00158`), `Scheme PMS QGF` (`QGF00157`), `Scheme PMS QTF` (`QTF00161`).
 - **PMS unit NAV is base ~10** (rebase to 100 for display). **Zerodha component value** per date = `QAW++ Zerodha Total Portfolio`.portfolio_value + `QAW+ Zerodha Total Portfolio`.portfolio_value; **Zerodha component NAV** = the `Qode Total Portfolio` curve nav.
-- **Reference numbers (from read-only DB inspection 2026-06-30), for assertions:**
-  - `QAW00158`: currentValue `23623722.55`, deposited `23338000`, totalProfit `285722.55`, latest nav `10.1224`, rows `83`, inception `2026-04-08`.
-  - `QGF00157`: currentValue `28081182.05`, deposited `23330846`, totalProfit `4750336.05`, latest nav `12.0361`.
-  - `QTF00161`: currentValue `24026941.27`, deposited `23331000`, totalProfit `695941.27`, latest nav `10.2983`.
-  - `QAW++ Zerodha Total Portfolio` latest portfolio_value `49420802.37`; `QAW+ …` latest `0`.
-  - Blended TP current value ≈ `125152648.24` (≈ ₹12.52 Cr). Blended TP inception = `2026-04-08`. Σ PMS pnl = `5731999.87`.
+- **`pms_master_sheet` is LIVE data** — the data team appends a new row per account most days. Do NOT assert frozen point-in-time snapshots (currentValue / totalProfit / row count all drift daily). Assert **drift-proof invariants** instead:
+  - **Money identity (per account):** `currentValue ≈ deposited + totalProfit` (portfolio value = capital in + P&L). Holds exactly, drift-proof.
+  - **Self-consistency:** bridge `currentValue == last daily row's value`; a scheme's `return` matches `(equityCurve.last.nav / equityCurve.first.nav − 1) × 100` computed from its own curve.
+  - **Total = sum of parts:** blended TP `currentExposure ≈ Σ(each scheme's currentExposure)` and `totalProfit ≈ Σ(each scheme's totalProfit)` across `Scheme QAW++`, `Scheme QAW+`, and the 3 PMS schemes — all read from the same response.
+  - **Stable anchors:** every PMS account + the blended TP have inception `2026-04-08`; row count `≥ 83`; equity curves start at `100`.
+  - Point-in-time values observed 2026-06-30 (currentValue ~₹2.4/2.8/2.4 Cr per account; blended TP ~₹12.5 Cr) are for rough sanity only, NOT exact assertions.
 
 ---
 
@@ -300,21 +300,19 @@ import { getPmsAccountSeries } from "../app/lib/pms-bridge";
 And add, inside `main()` before the final summary:
 
 ```ts
-  console.log("== Task 2: PMS bridge ==");
-  const qaw = await getPmsAccountSeries("QAW00158");
-  check("QAW00158 row count = 83", qaw.daily.length === 83, `got ${qaw.daily.length}`);
-  check("QAW00158 currentValue", approx(qaw.currentValue, 23623722.55));
-  check("QAW00158 deposited", approx(qaw.deposited, 23338000));
-  check("QAW00158 totalProfit", approx(qaw.totalProfit, 285722.55));
-  check("QAW00158 inception 2026-04-08", qaw.daily[0]?.date === "2026-04-08", qaw.daily[0]?.date);
-
-  const qgf = await getPmsAccountSeries("QGF00157");
-  check("QGF00157 currentValue", approx(qgf.currentValue, 28081182.05));
-  check("QGF00157 totalProfit", approx(qgf.totalProfit, 4750336.05));
-
-  const qtf = await getPmsAccountSeries("QTF00161");
-  check("QTF00161 currentValue", approx(qtf.currentValue, 24026941.27));
-  check("QTF00161 totalProfit", approx(qtf.totalProfit, 695941.27));
+  console.log("== Task 2: PMS bridge (drift-proof invariants) ==");
+  for (const code of ["QAW00158", "QGF00157", "QTF00161"]) {
+    const s = await getPmsAccountSeries(code);
+    check(`${code} rows >= 83`, s.daily.length >= 83, `got ${s.daily.length}`);
+    check(`${code} inception 2026-04-08`, s.daily[0]?.date === "2026-04-08", s.daily[0]?.date);
+    check(`${code} currentValue == last daily value`,
+      approx(s.currentValue, s.daily[s.daily.length - 1].value, 0.001),
+      `cv=${s.currentValue} last=${s.daily[s.daily.length - 1].value}`);
+    // Money identity: portfolio value = capital in + P&L. Drift-proof.
+    check(`${code} value == deposited + profit`,
+      approx(s.currentValue, s.deposited + s.totalProfit, 0.01),
+      `cv=${s.currentValue} dep=${s.deposited} pnl=${s.totalProfit}`);
+  }
 ```
 
 - [ ] **Step 4: Run validation + build**
@@ -628,21 +626,33 @@ import { getEngineForQcode } from "../app/lib/bifurcated-portfolio-utils";
 Add inside `main()`:
 
 ```ts
-  console.log("== Task 4: PMS per-scheme views ==");
+  console.log("== Task 4: PMS per-scheme views (drift-proof) ==");
   const engine = getEngineForQcode(ASHOK)!;
   const res = await engine.handleGET(new Request(`http://local/api?qcode=${ASHOK}`));
   const data: Record<string, any> = await res.json();
-  for (const label of ["Scheme PMS QAW", "Scheme PMS QGF", "Scheme PMS QTF"]) {
+  const PMS_LABELS = ["Scheme PMS QAW", "Scheme PMS QGF", "Scheme PMS QTF"];
+  const PMS_CODES: Record<string, string> = {
+    "Scheme PMS QAW": "QAW00158", "Scheme PMS QGF": "QGF00157", "Scheme PMS QTF": "QTF00161",
+  };
+  for (const label of PMS_LABELS) {
     check(`response has "${label}"`, !!data[label]);
+    if (!data[label]) continue;
+    const d = data[label].data;
+    // currentExposure matches the bridge's live value (self-consistent, drift-proof).
+    const bridge = await getPmsAccountSeries(PMS_CODES[label]);
+    check(`${label} currentExposure == bridge currentValue`,
+      approx(Number(d.currentExposure), bridge.currentValue, 0.001),
+      `resp=${d.currentExposure} bridge=${bridge.currentValue}`);
+    // Equity rebased to base 100.
+    check(`${label} equity starts at 100`, approx(d.equityCurve[0]?.nav, 100, 0.1), `got ${d.equityCurve[0]?.nav}`);
+    check(`${label} inception 2026-04-08`,
+      data[label].metadata.inceptionDate === "2026-04-08", data[label].metadata.inceptionDate);
+    // return matches its own curve (short window → absolute return).
+    const c = d.equityCurve;
+    const expectedRet = (c[c.length - 1].nav / c[0].nav - 1) * 100;
+    check(`${label} return matches its curve`, approx(Number(d.return), expectedRet, 1),
+      `resp=${d.return} curve=${expectedRet.toFixed(2)}`);
   }
-  check("Scheme PMS QGF currentExposure", approx(Number(data["Scheme PMS QGF"].data.currentExposure), 28081182.05));
-  check("Scheme PMS QGF return ~20.36%",
-    approx(Number(data["Scheme PMS QGF"].data.return), 20.36, 5));
-  check("Scheme PMS QAW equity starts at 100",
-    approx(data["Scheme PMS QAW"].data.equityCurve[0]?.nav, 100, 0.1));
-  check("Scheme PMS QAW inception 2026-04-08",
-    data["Scheme PMS QAW"].metadata.inceptionDate === "2026-04-08",
-    data["Scheme PMS QAW"].metadata.inceptionDate);
 ```
 
 - [ ] **Step 6: Run validation + build + Dinesh regression**
@@ -963,14 +973,21 @@ In `handleGET`, immediately after the PMS-scheme routing block added in Task 4 S
 In `scripts/validate-ashok-pms.ts`, add inside `main()` (reusing `data` from Task 4):
 
 ```ts
-  console.log("== Task 5b: blended Total Portfolio ==");
+  console.log("== Task 5b: blended Total Portfolio (drift-proof) ==");
   const tp = data["Total Portfolio"].data;
-  check("TP current value ≈ ₹12.52 Cr",
-    approx(Number(tp.currentExposure), 125152648.24, 1),
-    `got ${tp.currentExposure}`);
-  check("TP totalProfit includes Σ PMS pnl (≥ 5.73M)",
-    Number(tp.totalProfit) >= 5731999.87 * 0.99,
-    `got ${tp.totalProfit}`);
+  // Total = sum of parts: TP current value ≈ Σ every scheme's currentExposure.
+  const PART_KEYS = ["Scheme QAW++", "Scheme QAW+", ...PMS_LABELS];
+  const sumCurrent = PART_KEYS.reduce((s, k) => s + Number(data[k].data.currentExposure), 0);
+  check("TP currentExposure == Σ scheme currentExposures",
+    approx(Number(tp.currentExposure), sumCurrent, 0.5),
+    `tp=${tp.currentExposure} sumParts=${sumCurrent}`);
+  const sumProfit = PART_KEYS.reduce((s, k) => s + Number(data[k].data.totalProfit), 0);
+  check("TP totalProfit == Σ scheme totalProfits",
+    approx(Number(tp.totalProfit), sumProfit, 0.5),
+    `tp=${tp.totalProfit} sumParts=${sumProfit}`);
+  // TP must exceed the 3 PMS accounts alone (it also holds the Zerodha QAW++).
+  const sumPms = PMS_LABELS.reduce((s, k) => s + Number(data[k].data.currentExposure), 0);
+  check("TP currentExposure > Σ PMS alone", Number(tp.currentExposure) > sumPms);
   check("TP inception = 2026-04-08",
     data["Total Portfolio"].metadata.inceptionDate === "2026-04-08",
     data["Total Portfolio"].metadata.inceptionDate);
