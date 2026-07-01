@@ -17,7 +17,7 @@ export default function DistributorLayout({ children }: DistributorLayoutProps) 
 
   const handleLogout = async () => {
     await signOut({ redirect: false });
-    router.push("/");
+    window.location.href = "/";
   };
 
   return (

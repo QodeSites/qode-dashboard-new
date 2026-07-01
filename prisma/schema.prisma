@@ -1040,6 +1040,15 @@ model yearly_performance {
   @@schema("public")
 }
 
+model dashboard_visibility {
+  id                Int      @id @default(autoincrement())
+  icode             String   @unique @db.VarChar(20)
+  dashboard_visible Boolean  @default(true)
+  updated_at        DateTime @default(now()) @db.Timestamp(6)
+
+  @@schema("public")
+}
+
 model bifurcated_equity_holding_test {
   id                Int      @id @default(autoincrement())
   qcode             String   @db.VarChar(20)

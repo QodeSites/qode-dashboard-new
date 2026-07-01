@@ -16,7 +16,7 @@ export default function Header({ setSidebarOpen }: HeaderProps) {
   const handleLogout = async () => {
     try {
       await signOut({ redirect: false });
-      router.push("/");
+      window.location.href = "/";
     } catch (error) {
       console.error("Logout error:", error);
     }
