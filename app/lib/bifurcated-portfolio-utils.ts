@@ -1381,6 +1381,15 @@ class BifurcatedPortfolioEngine {
     const currentValue = zerodhaCurrent + pmsSeries.reduce((s, x) => s + x.currentValue, 0);
     const totalProfit =
       historicalData.reduce((s, d) => s + d.pnl, 0); // Σ component pnl == Qode pnl + Σ PMS pnl
+    // Sum of REAL net cashflows across every component (Zerodha QAW++/QAW+ +
+    // the 3 PMS accounts). This is the economically correct "Amount Invested"
+    // and satisfies the money identity: currentValue = amountDeposited +
+    // totalProfit. It therefore does NOT equal the sum of the displayed
+    // per-scheme amountDeposited cards — inactive schemes (Scheme QAW+) show ₹0
+    // via displayAmountInvestedAsZero while their real (net-negative wind-down)
+    // flows are still counted here, matching the generic engine's existing
+    // Total Portfolio behavior (it, too, counts inactive schemes' real flows
+    // under the hood).
     const deposited =
       historicalData.reduce((s, d) => s + d.capitalInOut, 0);
     const cashFlows = historicalData

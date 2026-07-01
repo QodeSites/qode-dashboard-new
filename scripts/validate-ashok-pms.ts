@@ -87,6 +87,11 @@ async function main() {
 
   console.log("== Task 5b: blended Total Portfolio (drift-proof) ==");
   const tp = data["Total Portfolio"].data;
+  // NOTE: we deliberately do NOT assert `TP amountDeposited == Σ scheme
+  // amountDeposited`. Inactive schemes (Scheme QAW+) display ₹0 via
+  // displayAmountInvestedAsZero while the TP counts their real net flows, so
+  // that identity is false by design. The money identity
+  // (currentValue == amountDeposited + totalProfit) is the correct cross-check.
   // Total = sum of parts: TP current value ≈ Σ every scheme's currentExposure.
   const PART_KEYS = ["Scheme QAW++", "Scheme QAW+", ...PMS_LABELS];
   const sumCurrent = PART_KEYS.reduce((s, k) => s + Number(data[k].data.currentExposure), 0);
