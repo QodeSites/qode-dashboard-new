@@ -89,7 +89,7 @@ function AmountCell({ value }: { value: number }) {
 function PnlAmountCell({ value }: { value: number }) {
   return (
     <TableCell
-      className={`py-3 text-sm text-right font-medium tabular-nums ${
+      className={`py-3 text-sm text-center font-medium tabular-nums ${
         value > 0 ? "text-green-600" : value < 0 ? "text-red-600" : "text-card-text"
       }`}
     >
@@ -1061,10 +1061,10 @@ export default function InvestmentSummaryPage() {
                           <TableHead className="py-3 text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
                             Strategy
                           </TableHead>
-                          <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
+                          <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE] text-center">
                             Profits (₹)
                           </TableHead>
-                          <TableHead className="py-3 text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
+                          <TableHead className="py-3 text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE] text-center">
                             Note
                           </TableHead>
                         </TableRow>
@@ -1073,15 +1073,21 @@ export default function InvestmentSummaryPage() {
                         {activeProfitRedeployment.map((row, i) =>
                           row.isHeader ? (
                             <TableRow key={i} className="bg-black/5 border-b border-gray-200">
-                              <TableCell colSpan={3} className="py-3 text-sm font-semibold text-card-text uppercase">
+                              <TableCell colSpan={1} className="py-3 text-sm font-semibold text-card-text">
                                 {row.strategy}
+                              </TableCell>
+                              <TableCell colSpan={1} className="py-3 text-sm font-semibold text-card-text text-center">
+                                Profits (₹)
+                              </TableCell>
+                              <TableCell colSpan={1} className="py-3 text-sm font-semibold text-card-text text-center">
+                                Note
                               </TableCell>
                             </TableRow>
                           ) : (
                             <TableRow key={i} className="border-b border-gray-200">
                               <TableCell className="py-3 text-sm text-card-text font-medium">{row.strategy}</TableCell>
                               <PnlAmountCell value={row.profits} />
-                              <TableCell className="py-3 text-sm text-gray-600">{row.note}</TableCell>
+                              <TableCell className="py-3 text-sm text-gray-600 text-center">{row.note}</TableCell>
                             </TableRow>
                           )
                         )}
