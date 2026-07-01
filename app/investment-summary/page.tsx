@@ -80,7 +80,7 @@ function StrategyBadge({ value }: { value: string }) {
 
 function AmountCell({ value }: { value: number }) {
   return (
-    <TableCell className="py-3 text-sm font-medium text-right tabular-nums text-gray-600">
+    <TableCell className="py-3 text-sm font-medium text-center tabular-nums text-gray-600">
       {fmt(value)}
     </TableCell>
   );
@@ -119,7 +119,7 @@ function SectionCard({
                   <TableCell className={`py-3 text-sm ${row.isBold ? "font-bold text-card-text" : "text-gray-600"}`}>
                     {row.label}
                   </TableCell>
-                  <TableCell className={`py-3 text-sm text-right tabular-nums ${row.isBold ? "font-bold text-card-text" : "font-medium text-gray-600"}`}>
+                  <TableCell className={`py-3 text-sm text-center tabular-nums ${row.isBold ? "font-bold text-card-text" : "font-medium text-gray-600"}`}>
                     {fmt(row.value)}
                   </TableCell>
                 </TableRow>
@@ -241,16 +241,16 @@ function HoldingsTable({
               <TableRow className="bg-[#E9E8DE] hover:bg-[#E9E8DE] border-b border-gray-200">
                 {([
                   { key: "name" as keyof HoldingRow, label: nameCol, align: "left" },
-                  { key: "type" as keyof HoldingRow, label: "Type", align: "left" },
-                  { key: "strategy" as keyof HoldingRow, label: "Strategy", align: "left" },
-                  { key: "amount" as keyof HoldingRow, label: "Amount (₹)", align: "right" },
+                  { key: "type" as keyof HoldingRow, label: "Type", align: "center" },
+                  { key: "strategy" as keyof HoldingRow, label: "Strategy", align: "center" },
+                  { key: "amount" as keyof HoldingRow, label: "Amount (₹)", align: "center" },
                 ] as { key: keyof HoldingRow; label: string; align: "left" | "right" }[]).map(({ key, label, align }) => (
                   <TableHead
                     key={key}
                     onClick={() => handleSort(key)}
                     className={`py-3 text-${align} text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE] cursor-pointer select-none`}
                   >
-                    <div className={`flex items-center gap-1 ${align === "right" ? "justify-end" : ""}`}>
+                    <div className={`flex items-center gap-1 ${align === "left" ? "justify-start" : "justify-center"}`}>
                       {label}
                       <SortIcon col={key} />
                     </div>
@@ -261,14 +261,14 @@ function HoldingsTable({
             <TableBody>
               {paginated.map((row, i) => (
                 <TableRow key={i} className="border-b border-gray-200">
-                  <TableCell className="py-3 text-sm font-medium text-card-text">{row.name}</TableCell>
-                  <TableCell className="py-3 text-sm text-gray-600">
+                  <TableCell className="py-3 text-sm font-medium text-card-text text-left">{row.name}</TableCell>
+                  <TableCell className="py-3 text-sm text-gray-600 text-center">
                     <TypeBadge value={row.type} />
                   </TableCell>
-                  <TableCell className="py-3 text-sm text-gray-600">
+                  <TableCell className="py-3 text-sm text-gray-600 text-center">
                     <StrategyBadge value={row.strategy} />
                   </TableCell>
-                  <AmountCell value={row.amount} />
+                  <TableCell className="py-3 text-sm font-medium tabular-nums text-gray-600 text-center">{fmt(row.amount)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -373,11 +373,11 @@ function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
   const startEntry = rows.length === 0 ? 0 : (safePage - 1) * effectiveSize + 1;
   const endEntry = Math.min(safePage * effectiveSize, rows.length);
 
-  const cols: { key: keyof EquityTxRow; label: string; align: "left" | "right" }[] = [
+  const cols: { key: keyof EquityTxRow; label: string; align: "left" | "center" }[] = [
     { key: "particulars", label: "Particulars", align: "left" },
-    { key: "date", label: "Date", align: "left" },
-    { key: "strategy", label: "Strategy", align: "left" },
-    { key: "amount", label: "Amount (₹)", align: "right" },
+    { key: "date", label: "Date", align: "center" },
+    { key: "strategy", label: "Strategy", align: "center" },
+    { key: "amount", label: "Amount (₹)", align: "center" },
   ];
 
   return (
@@ -415,7 +415,7 @@ function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
                     onClick={() => handleSort(key)}
                     className={`py-3 text-${align} text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE] cursor-pointer select-none`}
                   >
-                    <div className={`flex items-center gap-1 ${align === "right" ? "justify-end" : ""}`}>
+                    <div className={`flex items-center gap-1 ${align === "left" ? "justify-start" : "justify-center"}`}>
                       {label}<SortIcon col={key} />
                     </div>
                   </TableHead>
@@ -425,12 +425,12 @@ function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
             <TableBody>
               {paginated.map((tx, i) => (
                 <TableRow key={i} className="border-b border-gray-200">
-                  <TableCell className="py-3 text-sm font-medium text-card-text">{tx.particulars}</TableCell>
-                  <TableCell className="py-3 text-sm text-gray-600 whitespace-nowrap">{tx.date}</TableCell>
-                  <TableCell className="py-3 text-sm text-gray-600">
+                  <TableCell className="py-3 text-sm font-medium text-card-text text-left">{tx.particulars}</TableCell>
+                  <TableCell className="py-3 text-sm text-gray-600 text-center whitespace-nowrap">{tx.date}</TableCell>
+                  <TableCell className="py-3 text-sm text-gray-600 text-center">
                     <StrategyBadge value={tx.strategy} />
                   </TableCell>
-                  <AmountCell value={tx.amount} />
+                  <TableCell className="py-3 text-sm font-medium tabular-nums text-gray-600 text-center">{fmt(tx.amount)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -500,11 +500,11 @@ function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
   const startEntry = rows.length === 0 ? 0 : (safePage - 1) * effectiveSize + 1;
   const endEntry = Math.min(safePage * effectiveSize, rows.length);
 
-  const cols: { key: keyof CashTxRow; label: string; align: "left" | "right" }[] = [
-    { key: "date", label: "Date", align: "left" },
+  const cols: { key: keyof CashTxRow; label: string; align: "left" | "center" }[] = [
     { key: "transactionType", label: "Type", align: "left" },
-    { key: "strategy", label: "Strategy", align: "left" },
-    { key: "amount", label: "Amount (₹)", align: "right" },
+    { key: "date", label: "Date", align: "center" },
+    { key: "strategy", label: "Strategy", align: "center" },
+    { key: "amount", label: "Amount (₹)", align: "center" },
   ];
 
   return (
@@ -540,7 +540,7 @@ function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
                     onClick={() => handleSort(key)}
                     className={`py-3 text-${align} text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE] cursor-pointer select-none`}
                   >
-                    <div className={`flex items-center gap-1 ${align === "right" ? "justify-end" : ""}`}>
+                    <div className={`flex items-center gap-1 ${align === "left" ? "justify-start" : "justify-center"}`}>
                       {label}<SortIcon col={key} />
                     </div>
                   </TableHead>
@@ -550,9 +550,9 @@ function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
             <TableBody>
               {paginated.map((tx, i) => (
                 <TableRow key={i} className="border-b border-gray-200">
-                  <TableCell className="py-3 text-sm text-gray-600 whitespace-nowrap">{tx.date}</TableCell>
                   <TableCell className="py-3 text-sm font-medium text-card-text">{tx.transactionType}</TableCell>
-                  <TableCell className="py-3 text-sm text-gray-600">
+                  <TableCell className="py-3 text-sm text-gray-600 whitespace-nowrap text-center">{tx.date}</TableCell>
+                  <TableCell className="py-3 text-sm text-gray-600 text-center">
                     <StrategyBadge value={tx.strategy} />
                   </TableCell>
                   <AmountCell value={tx.amount} />
@@ -625,11 +625,11 @@ function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
   const startEntry = rows.length === 0 ? 0 : (safePage - 1) * effectiveSize + 1;
   const endEntry = Math.min(safePage * effectiveSize, rows.length);
 
-  const cols: { key: keyof MfTxRow; label: string; align: "left" | "right" }[] = [
+  const cols: { key: keyof MfTxRow; label: string; align: "left" | "center" }[] = [
     { key: "particulars", label: "Particulars", align: "left" },
-    { key: "date", label: "Date", align: "left" },
-    { key: "strategy", label: "Strategy", align: "left" },
-    { key: "amount", label: "Amount (₹)", align: "right" },
+    { key: "date", label: "Date", align: "center" },
+    { key: "strategy", label: "Strategy", align: "center" },
+    { key: "amount", label: "Amount (₹)", align: "center" },
   ];
 
   return (
@@ -665,7 +665,7 @@ function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
                     onClick={() => handleSort(key)}
                     className={`py-3 text-${align} text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE] cursor-pointer select-none`}
                   >
-                    <div className={`flex items-center gap-1 ${align === "right" ? "justify-end" : ""}`}>
+                    <div className={`flex items-center gap-1 ${align === "left" ? "justify-start" : "justify-center"}`}>
                       {label}<SortIcon col={key} />
                     </div>
                   </TableHead>
@@ -676,8 +676,8 @@ function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
               {paginated.map((tx, i) => (
                 <TableRow key={i} className="border-b border-gray-200">
                   <TableCell className="py-3 text-sm font-medium text-card-text">{tx.particulars}</TableCell>
-                  <TableCell className="py-3 text-sm text-gray-600 whitespace-nowrap">{tx.date}</TableCell>
-                  <TableCell className="py-3 text-sm text-gray-600">
+                  <TableCell className="py-3 text-sm text-gray-600 whitespace-nowrap text-center">{tx.date}</TableCell>
+                  <TableCell className="py-3 text-sm text-gray-600 text-center">
                     <StrategyBadge value={tx.strategy} />
                   </TableCell>
                   <AmountCell value={tx.amount} />
@@ -1008,10 +1008,10 @@ export default function InvestmentSummaryPage() {
                           <TableHead className="py-3 text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
                             Particulars
                           </TableHead>
-                          <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
+                          <TableHead className="py-3 text-center text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
                             Amount (₹)
                           </TableHead>
-                          <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
+                          <TableHead className="py-3 text-center text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
                             %
                           </TableHead>
                         </TableRow>
@@ -1027,10 +1027,10 @@ export default function InvestmentSummaryPage() {
                               <TableCell className={`py-3 text-sm ${isTotalRow ? "font-bold text-card-text" : "text-card-text"}`}>
                                 {row.particulars}
                               </TableCell>
-                              <TableCell className={`py-3 text-sm text-right tabular-nums ${isTotalRow ? "font-bold text-card-text" : "font-medium text-gray-600"}`}>
+                              <TableCell className={`py-3 text-sm text-center tabular-nums ${isTotalRow ? "font-bold text-card-text" : "font-medium text-gray-600"}`}>
                                 {fmt(row.amount)}
                               </TableCell>
-                              <TableCell className={`py-3 text-sm text-right tabular-nums ${isTotalRow ? "font-bold text-card-text" : "text-gray-600"}`}>
+                              <TableCell className={`py-3 text-sm text-center tabular-nums ${isTotalRow ? "font-bold text-card-text" : "text-gray-600"}`}>
                                 {row.percent > 0 ? `${row.percent.toFixed(2)}%` : "—"}
                               </TableCell>
                             </TableRow>
@@ -1057,7 +1057,7 @@ export default function InvestmentSummaryPage() {
                           <TableHead className="py-3 text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
                             Strategy
                           </TableHead>
-                          <TableHead className="py-3 text-right text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE] text-center">
+                          <TableHead className="py-3 text-center text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE] text-center">
                             Profits (₹)
                           </TableHead>
                           <TableHead className="py-3 text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE] text-center">
