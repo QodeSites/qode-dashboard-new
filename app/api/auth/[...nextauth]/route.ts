@@ -52,6 +52,29 @@ export const authOptions = {
           };
         }
 
+        // Internal credentials
+        const internalEmails = (process.env.INTERNAL_EMAILS || "")
+          .split(",")
+          .map((e) => e.trim().toLowerCase())
+          .filter(Boolean);
+        const internalPasswords = (process.env.INTERNAL_PASSWORDS || "")
+          .split(",")
+          .map((p) => p.trim().toLowerCase())
+          .filter(Boolean);
+
+        const internalIndex = internalEmails.indexOf(identifierLower);
+        if (
+          internalIndex !== -1 &&
+          internalPasswords[internalIndex] === passwordLower
+        ) {
+          return {
+            id: "internal",
+            name: internalEmails[internalIndex].split("@")[0],
+            email: internalEmails[internalIndex],
+            accessType: "internal" as const,
+          };
+        }
+
         // Regular client auth
         const user = await prisma.clients.findFirst({
           where: {

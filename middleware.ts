@@ -16,6 +16,8 @@ const VISIBILITY_GATED_PATHS = [
 ];
 
 export async function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+
   // Behind a reverse proxy the internal connection is plain http, so derive
   // the real protocol/host from the forwarded headers (falls back to nextUrl).
   const proto =
@@ -30,6 +32,18 @@ export async function middleware(req: NextRequest) {
     // getToken looks for the wrong cookie name behind an SSL-terminating proxy.
     secureCookie: proto === "https",
   });
+
+  // Guard internal routes
+  if (
+    pathname.startsWith("/internal") ||
+    pathname.startsWith("/api/internal")
+  ) {
+    if (token?.accessType !== "internal") {
+      return NextResponse.redirect(new URL("/login", req.url));
+    }
+    return NextResponse.next();
+  }
+
   const icode = token?.icode as string | undefined;
   const accessType = token?.accessType as string | undefined;
 
@@ -46,7 +60,6 @@ export async function middleware(req: NextRequest) {
   }
 
   // Dashboard visibility check — only for client users on gated paths
-  const pathname = req.nextUrl.pathname;
   const isGatedPath = VISIBILITY_GATED_PATHS.some(
     (p) => pathname === p || pathname.startsWith(p + "/"),
   );
