@@ -31,6 +31,51 @@ type ApiResponse = MultiStrategyInvestmentData & {
   strategyPdfAvailability?: Record<string, boolean>;
 };
 
+const DISTRIBUTION_COLORS = [
+  "bg-logo-green",
+  "bg-[#DABD38]",
+  "bg-[#008455]",
+  "bg-[#5B7FA6]",
+  "bg-[#A05195]",
+];
+
+function AccountDistributionChart({
+  rows,
+}: {
+  rows: { label: string; value: number; pct: number }[];
+}) {
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="space-y-4">
+      <div className="w-full h-8 bg-gray-200 rounded-lg overflow-hidden flex">
+        {rows.map((r, i) =>
+          r.pct > 0 ? (
+            <div
+              key={r.label}
+              className={`${DISTRIBUTION_COLORS[i % DISTRIBUTION_COLORS.length]} h-full flex items-center justify-center text-white text-xs font-medium`}
+              style={{ width: `${r.pct}%` }}
+            >
+              {r.pct > 10 ? `${r.pct.toFixed(2)}%` : ""}
+            </div>
+          ) : null
+        )}
+      </div>
+      <div className="flex flex-wrap gap-6">
+        {rows.map((r, i) => (
+          <div key={r.label} className="flex items-center gap-2">
+            <div className={`w-4 h-4 ${DISTRIBUTION_COLORS[i % DISTRIBUTION_COLORS.length]} rounded`} />
+            <div className="text-sm">
+              <span className="font-medium text-card-text">{r.label}</span>
+              <div className="text-sm text-gray-600">{formatter.format(r.value)}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const formatter = new Intl.NumberFormat("en-IN", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
@@ -1110,7 +1155,14 @@ export default function InvestmentSummaryPage() {
                   <span>Current Account Summary</span>
                   <InfoMarker text={INVESTMENT_SUMMARY_INFO.currentAccountSummary} />
                 </CardTitle>
-                <CardContent>
+                <CardContent className="space-y-6">
+                  {/* Distribution chart */}
+                  <AccountDistributionChart
+                    rows={activeSummary.currentAccountSummary
+                      .filter((r) => !r.particulars.toLowerCase().includes("account value") && r.amount > 0)
+                      .map((r) => ({ label: r.particulars, value: r.amount, pct: r.percent }))}
+                  />
+                  {/* Table */}
                   <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
                     <Table className="min-w-full">
                       <TableHeader className="sticky top-0 z-10">
@@ -1130,10 +1182,7 @@ export default function InvestmentSummaryPage() {
                         {activeSummary.currentAccountSummary.map((row, i) => {
                           const isTotalRow = row.particulars.toLowerCase().includes("account value");
                           return (
-                            <TableRow
-                              key={i}
-                              className="border-b border-gray-200"
-                            >
+                            <TableRow key={i} className="border-b border-gray-200">
                               <TableCell className={`py-3 text-sm ${isTotalRow ? "font-bold text-card-text" : "text-card-text"}`}>
                                 {row.particulars}
                               </TableCell>
