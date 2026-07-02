@@ -1298,6 +1298,10 @@ const SUB_STRATEGY_SECTIONS: SubStrategySectionDef[] = [
   { label: "SPSAR 2x", tag: "SPSAR", existsField: "psar_leverage", tier: 2 },
 ];
 
+export const SUB_STRATEGY_SECTION_ORDER = SUB_STRATEGY_SECTIONS.map(
+  (s) => s.label,
+);
+
 export interface SubStrategyRow {
   section: string;
   qcode: string;

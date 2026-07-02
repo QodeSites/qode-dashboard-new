@@ -3,7 +3,11 @@ import type {
   StrategyBreakupRow,
   AccountRow,
   EquityBreakupRow,
+  SubStrategyRow,
+  MonthlyReturn,
+  YearlyReturn,
 } from "./internal-utils";
+import { SUB_STRATEGY_SECTION_ORDER } from "./internal-utils";
 
 // brand palette — pulled from the reference exports, shared by every report
 export const XL_COLORS = {
@@ -13,6 +17,7 @@ export const XL_COLORS = {
   negative: "FFFFEBEE",
   positiveText: "FF1B5E20",
   negativeText: "FFC62828",
+  totalHeader: "FFDABD38",
   white: "FFFFFFFF",
 };
 
@@ -107,6 +112,14 @@ export function writePlainPctCell(
 export function writeMoneyCell(cell: ExcelJS.Cell, value: number | null): void {
   cell.value = value == null ? "—" : value;
   if (value != null) cell.numFmt = MONEY_FMT;
+}
+
+// ₹ amount, sign-colored — same coloring as writePctCell, money format instead
+export function writeColoredMoneyCell(
+  cell: ExcelJS.Cell,
+  value: number | null,
+): void {
+  writeColoredPct(cell, value, MONEY_FMT);
 }
 
 // plain 3-decimal ratio, never colored, "—" for null
@@ -494,5 +507,130 @@ export function buildAccountValueBreakupWorkbook(result: {
   writeSection3(ws, row, equity, widths);
 
   widths.apply(ws);
+  return wb;
+}
+
+// ── Sub-Strategy Performance ─────────────────────────────────────────────────
+
+const GRID_HEADERS = [
+  "Client",
+  "Year",
+  ...MONTHS.map((m) => m.toUpperCase()),
+  "Total",
+];
+
+function writeGridHeaderRow(
+  ws: ExcelJS.Worksheet,
+  row: number,
+  widths: ColumnWidthTracker,
+): void {
+  const r = ws.getRow(row);
+  GRID_HEADERS.forEach((h, i) => {
+    const col = 2 + i;
+    const cell = r.getCell(col);
+    cell.value = h;
+    cell.font = { bold: true };
+    const isMonth = i >= 2 && i < GRID_HEADERS.length - 1;
+    if (isMonth) {
+      cell.fill = fill(XL_COLORS.title);
+      cell.font = { bold: true, color: { argb: XL_COLORS.white } };
+    } else if (i === GRID_HEADERS.length - 1) {
+      cell.fill = fill(XL_COLORS.totalHeader);
+    } else {
+      cell.fill = fill(XL_COLORS.sectionHeader);
+    }
+    widths.see(col, h);
+  });
+}
+
+// one grid builder shared by both sheets — only the value/writer differ
+function writeSubStrategyGrid(
+  ws: ExcelJS.Worksheet,
+  rows: SubStrategyRow[],
+  valueOf: (m: MonthlyReturn) => number,
+  totalOf: (y: YearlyReturn) => number,
+  writeCell: (cell: ExcelJS.Cell, value: number | null) => void,
+  widths: ColumnWidthTracker,
+): void {
+  const bySection = new Map<string, SubStrategyRow[]>();
+  for (const r of rows) {
+    if (!bySection.has(r.section)) bySection.set(r.section, []);
+    bySection.get(r.section)!.push(r);
+  }
+
+  let row = 1;
+  for (const section of SUB_STRATEGY_SECTION_ORDER) {
+    const secRows = bySection.get(section);
+    if (!secRows || secRows.length === 0) continue;
+
+    writeTitle(ws, section, row, 1 + GRID_HEADERS.length);
+    row++;
+    writeGridHeaderRow(ws, row, widths);
+    row++;
+
+    for (const r of secRows) {
+      const clientLabel = `${r.account_name} ${r.strategy}`;
+      const monthMap = new Map(
+        r.monthly.map((m) => [`${m.year}-${m.month.slice(0, 3)}`, m]),
+      );
+
+      r.yearly.forEach((y, i) => {
+        const dr = ws.getRow(row);
+        const nameCell = dr.getCell(2);
+        const yearCell = dr.getCell(3);
+        if (i === 0) {
+          nameCell.value = clientLabel;
+          nameCell.font = { bold: true };
+          nameCell.fill = fill(XL_COLORS.sectionHeader);
+          yearCell.fill = fill(XL_COLORS.sectionHeader);
+          widths.see(2, clientLabel);
+        }
+        yearCell.value = y.year;
+        yearCell.font = { bold: true };
+
+        MONTHS.forEach((m, mi) => {
+          const entry = monthMap.get(`${y.year}-${m}`);
+          writeCell(dr.getCell(4 + mi), entry ? valueOf(entry) : null);
+        });
+
+        const totalCell = dr.getCell(4 + MONTHS.length);
+        writeCell(totalCell, totalOf(y));
+        totalCell.font = { bold: true };
+        row++;
+      });
+    }
+    row += 2; // blank row between sections
+  }
+}
+
+export function buildSubStrategyWorkbook(
+  rows: SubStrategyRow[],
+): ExcelJS.Workbook {
+  const wb = new ExcelJS.Workbook();
+
+  const pctWs = wb.addWorksheet("% Returns");
+  const pctWidths = new ColumnWidthTracker();
+  writeSubStrategyGrid(
+    pctWs,
+    rows,
+    (m) => m.return_pct / 100,
+    (y) => y.return_pct / 100,
+    writePctCell,
+    pctWidths,
+  );
+  pctWidths.apply(pctWs);
+
+  const rsWs = wb.addWorksheet("₹ Returns");
+  const rsWidths = new ColumnWidthTracker();
+  writeSubStrategyGrid(
+    rsWs,
+    rows,
+    (m) => m.pnl_inr,
+    (y) => y.pnl_inr,
+    writeColoredMoneyCell,
+    rsWidths,
+  );
+  rsWidths.apply(rsWs);
+
   return wb;
 }
