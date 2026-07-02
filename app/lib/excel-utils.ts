@@ -6,6 +6,7 @@ import type {
   SubStrategyRow,
   MonthlyReturn,
   YearlyReturn,
+  StrategyMonthlyRow,
 } from "./internal-utils";
 import { SUB_STRATEGY_SECTION_ORDER } from "./internal-utils";
 
@@ -544,6 +545,55 @@ function writeGridHeaderRow(
 }
 
 // one grid builder shared by both sheets — only the value/writer differ
+interface MonthlyGridRow {
+  account_name: string;
+  strategy: string;
+  monthly: MonthlyReturn[];
+  yearly: YearlyReturn[];
+}
+
+// writes one client's rows (one per year) starting at `row`, returns next free row
+function writeClientYearRows(
+  ws: ExcelJS.Worksheet,
+  row: number,
+  r: MonthlyGridRow,
+  valueOf: (m: MonthlyReturn) => number,
+  totalOf: (y: YearlyReturn) => number,
+  writeCell: (cell: ExcelJS.Cell, value: number | null) => void,
+  widths: ColumnWidthTracker,
+): number {
+  const clientLabel = `${r.account_name} ${r.strategy}`;
+  const monthMap = new Map(
+    r.monthly.map((m) => [`${m.year}-${m.month.slice(0, 3)}`, m]),
+  );
+
+  r.yearly.forEach((y, i) => {
+    const dr = ws.getRow(row);
+    const nameCell = dr.getCell(2);
+    const yearCell = dr.getCell(3);
+    if (i === 0) {
+      nameCell.value = clientLabel;
+      nameCell.font = { bold: true };
+      nameCell.fill = fill(XL_COLORS.sectionHeader);
+      yearCell.fill = fill(XL_COLORS.sectionHeader);
+      widths.see(2, clientLabel);
+    }
+    yearCell.value = y.year;
+    yearCell.font = { bold: true };
+
+    MONTHS.forEach((m, mi) => {
+      const entry = monthMap.get(`${y.year}-${m}`);
+      writeCell(dr.getCell(4 + mi), entry ? valueOf(entry) : null);
+    });
+
+    const totalCell = dr.getCell(4 + MONTHS.length);
+    writeCell(totalCell, totalOf(y));
+    totalCell.font = { bold: true };
+    row++;
+  });
+  return row;
+}
+
 function writeSubStrategyGrid(
   ws: ExcelJS.Worksheet,
   rows: SubStrategyRow[],
@@ -569,35 +619,15 @@ function writeSubStrategyGrid(
     row++;
 
     for (const r of secRows) {
-      const clientLabel = `${r.account_name} ${r.strategy}`;
-      const monthMap = new Map(
-        r.monthly.map((m) => [`${m.year}-${m.month.slice(0, 3)}`, m]),
+      row = writeClientYearRows(
+        ws,
+        row,
+        r,
+        valueOf,
+        totalOf,
+        writeCell,
+        widths,
       );
-
-      r.yearly.forEach((y, i) => {
-        const dr = ws.getRow(row);
-        const nameCell = dr.getCell(2);
-        const yearCell = dr.getCell(3);
-        if (i === 0) {
-          nameCell.value = clientLabel;
-          nameCell.font = { bold: true };
-          nameCell.fill = fill(XL_COLORS.sectionHeader);
-          yearCell.fill = fill(XL_COLORS.sectionHeader);
-          widths.see(2, clientLabel);
-        }
-        yearCell.value = y.year;
-        yearCell.font = { bold: true };
-
-        MONTHS.forEach((m, mi) => {
-          const entry = monthMap.get(`${y.year}-${m}`);
-          writeCell(dr.getCell(4 + mi), entry ? valueOf(entry) : null);
-        });
-
-        const totalCell = dr.getCell(4 + MONTHS.length);
-        writeCell(totalCell, totalOf(y));
-        totalCell.font = { bold: true };
-        row++;
-      });
     }
     row += 2; // blank row between sections
   }
@@ -623,6 +653,93 @@ export function buildSubStrategyWorkbook(
   const rsWs = wb.addWorksheet("₹ Returns");
   const rsWidths = new ColumnWidthTracker();
   writeSubStrategyGrid(
+    rsWs,
+    rows,
+    (m) => m.pnl_inr,
+    (y) => y.pnl_inr,
+    writeColoredMoneyCell,
+    rsWidths,
+  );
+  rsWidths.apply(rsWs);
+
+  return wb;
+}
+
+// ── Strategy-wise Monthly Returns ────────────────────────────────────────────
+
+const MONTHLY_RETURNS_HEADERS = [
+  "",
+  ...MONTHS.map((m) => m.toUpperCase()),
+  "Total",
+];
+
+function writeStrategyMonthlyGrid(
+  ws: ExcelJS.Worksheet,
+  rows: StrategyMonthlyRow[],
+  valueOf: (m: MonthlyReturn) => number,
+  totalOf: (y: YearlyReturn) => number,
+  writeCell: (cell: ExcelJS.Cell, value: number | null) => void,
+  widths: ColumnWidthTracker,
+): void {
+  writeTitle(
+    ws,
+    "Strategy-wise Client Monthly & Yearly Returns",
+    1,
+    2 + MONTHLY_RETURNS_HEADERS.length,
+  );
+
+  const byStrategy = new Map<string, StrategyMonthlyRow[]>();
+  for (const r of rows) {
+    if (!byStrategy.has(r.strategy)) byStrategy.set(r.strategy, []);
+    byStrategy.get(r.strategy)!.push(r);
+  }
+
+  let row = 3;
+  for (const strategy of [...byStrategy.keys()].sort()) {
+    writeSectionHeader(
+      ws,
+      row,
+      `${strategy} Clients`,
+      MONTHLY_RETURNS_HEADERS,
+      widths,
+    );
+    row++;
+
+    for (const r of byStrategy.get(strategy)!) {
+      row = writeClientYearRows(
+        ws,
+        row,
+        r,
+        valueOf,
+        totalOf,
+        writeCell,
+        widths,
+      );
+    }
+    row += 2; // blank row between buckets
+  }
+}
+
+export function buildStrategyMonthlyWorkbook(
+  rows: StrategyMonthlyRow[],
+): ExcelJS.Workbook {
+  const wb = new ExcelJS.Workbook();
+
+  const pctWs = wb.addWorksheet("% Returns");
+  const pctWidths = new ColumnWidthTracker();
+  writeStrategyMonthlyGrid(
+    pctWs,
+    rows,
+    (m) => m.return_pct / 100,
+    (y) => y.return_pct / 100,
+    writePctCell,
+    pctWidths,
+  );
+  pctWidths.apply(pctWs);
+
+  const rsWs = wb.addWorksheet("₹ Returns");
+  const rsWidths = new ColumnWidthTracker();
+  writeStrategyMonthlyGrid(
     rsWs,
     rows,
     (m) => m.pnl_inr,

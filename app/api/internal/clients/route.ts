@@ -21,12 +21,13 @@ export async function GET() {
 
   const result = [];
   for (const [qcode, rows] of grouped) {
-    const active = rows.filter(
+    // client-level gate: needs at least one active strategy to appear at all
+    const hasActive = rows.some(
       (r) => !r.effective_to || r.effective_to >= today,
     );
-    if (active.length === 0) continue;
+    if (!hasActive) continue;
 
-    // combined.effective_from = oldest date across ALL configs (not just active)
+    // combined.effective_from = oldest date across ALL configs
     const minFrom = rows.reduce<Date>(
       (min, r) => (r.effective_from < min ? r.effective_from : min),
       rows[0].effective_from,
@@ -41,7 +42,9 @@ export async function GET() {
       qcode,
       account_name: rows[0].account_name,
       strategies: [
-        ...active.map((r) => ({
+        // once a client is active, list every strategy, active or lapsed —
+        // effective_to already tells the consumer which is which
+        ...rows.map((r) => ({
           id: r.id,
           strategy: r.strategy,
           effective_from: r.effective_from.toISOString().split("T")[0],
