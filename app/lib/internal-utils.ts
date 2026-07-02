@@ -689,6 +689,18 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
   };
 }
 
+// resolves payload override → global_config, no hardcoded fallback — shared
+// by every route that needs an rfr instead of each duplicating the lookup
+export async function resolveRiskFreeRate(
+  payloadValue?: number | null,
+): Promise<number | null> {
+  if (payloadValue != null) return payloadValue;
+  const cfg = await prisma.global_config.findUnique({
+    where: { key: "RISK_FREE_RATE" },
+  });
+  return cfg ? parseFloat(cfg.value) : null;
+}
+
 // ── Strategy-wise Client Breakup ─────────────────────────────────────────────
 
 export interface StrategyBreakupRow {
