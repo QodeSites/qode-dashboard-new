@@ -45,9 +45,9 @@ model accounts {
   account_access_account_access_target_account_idToaccounts account_access[]             @relation("account_access_target_account_idToaccounts")
   account_aum                                               account_aum?
   account_custodian_codes                                   account_custodian_codes[]
+  client_strategy_configs                                   client_strategy_configs[]
   pooled_account_allocations                                pooled_account_allocations[]
   pooled_account_users                                      pooled_account_users[]
-  client_strategy_configs                                   client_strategy_configs[]
 
   @@schema("public")
 }
