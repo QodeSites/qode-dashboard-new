@@ -1306,3 +1306,41 @@ export async function computeSubStrategyPerformance(): Promise<
 
   return rows;
 }
+
+// ── Strategy-wise Monthly Returns ────────────────────────────────────────────
+
+export interface StrategyMonthlyRow {
+  qcode: string;
+  account_name: string;
+  strategy: string;
+  monthly: MonthlyReturn[];
+  yearly: YearlyReturn[];
+}
+
+export async function computeStrategyMonthlyReturns(): Promise<
+  StrategyMonthlyRow[]
+> {
+  const pairs = await fetchStrategyPairs("profit_tag_suffix");
+  if (pairs.length === 0) return [];
+
+  const seriesMap = await fetchBulkNavSeries(
+    pairs.map((p) => ({ qcode: p.qcode, tag: p.tag })),
+  );
+
+  const rows: StrategyMonthlyRow[] = [];
+  for (const pair of pairs) {
+    const nav = seriesMap.get(`${pair.qcode}|${pair.tag}`);
+    if (!nav || nav.length === 0) continue; // no data — nothing to report
+
+    const monthly = calcMonthlyReturns(nav);
+    rows.push({
+      qcode: pair.qcode,
+      account_name: pair.account_name,
+      strategy: pair.strategy,
+      monthly,
+      yearly: calcYearlyReturns(monthly),
+    });
+  }
+
+  return rows;
+}
