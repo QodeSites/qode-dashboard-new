@@ -1028,7 +1028,7 @@ export interface AccountValueBreakupResult {
   equity_breakup: EquityBreakupRow[];
 }
 
-interface SplitConfig {
+export interface SplitConfig {
   equity_pct: number | null;
   debt_pct: number | null;
   lc_pct: number | null;
@@ -1102,7 +1102,14 @@ async function fetchLatestTagValues(
   return map;
 }
 
-export async function computeAccountValueBreakup(): Promise<AccountValueBreakupResult> {
+export interface SplitOverride extends Partial<SplitConfig> {
+  qcode: string;
+  strategy: string;
+}
+
+export async function computeAccountValueBreakup(
+  override?: SplitOverride,
+): Promise<AccountValueBreakupResult> {
   const pairs = await fetchStrategyPairs("exposure_tag_suffix");
   if (pairs.length === 0) return { accounts: [], equity_breakup: [] };
 
@@ -1110,6 +1117,25 @@ export async function computeAccountValueBreakup(): Promise<AccountValueBreakupR
     fetchLatestTagValues(pairs),
     resolveSplitConfigs(pairs),
   ]);
+
+  if (override) {
+    const key = `${override.qcode}|${override.strategy}`;
+    const base = splitMap.get(key);
+    if (!base) {
+      throw new Error(
+        `No client-strategy pair found for override: ${override.qcode} / ${override.strategy}`,
+      );
+    }
+    splitMap.set(key, {
+      equity_pct: override.equity_pct ?? base.equity_pct,
+      debt_pct: override.debt_pct ?? base.debt_pct,
+      lc_pct: override.lc_pct ?? base.lc_pct,
+      cash_pct: override.cash_pct ?? base.cash_pct,
+      gold_pct: override.gold_pct ?? base.gold_pct,
+      lowvol_pct: override.lowvol_pct ?? base.lowvol_pct,
+      momentum_pct: override.momentum_pct ?? base.momentum_pct,
+    });
+  }
 
   const accounts: AccountRow[] = [];
   const equity_breakup: EquityBreakupRow[] = [];

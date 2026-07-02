@@ -1,5 +1,9 @@
 import ExcelJS from "exceljs";
-import type { StrategyBreakupRow } from "./internal-utils";
+import type {
+  StrategyBreakupRow,
+  AccountRow,
+  EquityBreakupRow,
+} from "./internal-utils";
 
 // brand palette — pulled from the reference exports, shared by every report
 export const XL_COLORS = {
@@ -13,6 +17,9 @@ export const XL_COLORS = {
 };
 
 const PCT_FMT = '+0.00%;[Red]-0.00%;"—"';
+const DIFF_PCT_FMT = "+0.00%;[Red](0.00%)";
+const PLAIN_PCT_FMT = "0.00%";
+const MONEY_FMT = "₹#,##0;[Red](₹#,##0)";
 const RATIO_FMT = "0.000";
 const MONTHS = [
   "Jan",
@@ -58,17 +65,48 @@ export class ColumnWidthTracker {
 
 // % + sign-colored fill/text, "—" for null — used by every percentage-shaped column
 export function writePctCell(cell: ExcelJS.Cell, value: number | null): void {
+  writeColoredPct(cell, value, PCT_FMT);
+}
+
+// same coloring, parens instead of minus for negative — Account Value Breakup's diff style
+export function writeDiffPctCell(
+  cell: ExcelJS.Cell,
+  value: number | null,
+): void {
+  writeColoredPct(cell, value, DIFF_PCT_FMT);
+}
+
+function writeColoredPct(
+  cell: ExcelJS.Cell,
+  value: number | null,
+  fmt: string,
+): void {
   if (value == null) {
     cell.value = "—";
     return;
   }
   cell.value = value;
-  cell.numFmt = PCT_FMT;
+  cell.numFmt = fmt;
   const positive = value >= 0;
   cell.fill = fill(positive ? XL_COLORS.positive : XL_COLORS.negative);
   cell.font = {
     color: { argb: positive ? XL_COLORS.positiveText : XL_COLORS.negativeText },
   };
+}
+
+// plain %, no color — factual splits rather than diffs (Equity%, LC%, etc.)
+export function writePlainPctCell(
+  cell: ExcelJS.Cell,
+  value: number | null,
+): void {
+  cell.value = value == null ? "—" : value;
+  if (value != null) cell.numFmt = PLAIN_PCT_FMT;
+}
+
+// ₹ amount, no color, "—" for null
+export function writeMoneyCell(cell: ExcelJS.Cell, value: number | null): void {
+  cell.value = value == null ? "—" : value;
+  if (value != null) cell.numFmt = MONEY_FMT;
 }
 
 // plain 3-decimal ratio, never colored, "—" for null
@@ -87,15 +125,16 @@ export function formatDate(iso: string): string {
 export function writeTitle(
   ws: ExcelJS.Worksheet,
   title: string,
+  row: number,
   lastCol: number,
 ): void {
-  ws.mergeCells(1, 2, 1, lastCol);
-  const cell = ws.getCell(1, 2);
+  ws.mergeCells(row, 2, row, lastCol);
+  const cell = ws.getCell(row, 2);
   cell.value = title;
   cell.font = { bold: true, color: { argb: XL_COLORS.white } };
   cell.fill = fill(XL_COLORS.title);
   cell.alignment = { horizontal: "center", vertical: "middle" };
-  ws.getRow(1).height = HEADER_ROW_HEIGHT;
+  ws.getRow(row).height = HEADER_ROW_HEIGHT;
 }
 
 // tan section-banner row: bucket label in col B, wrapped headers across the rest
@@ -159,7 +198,7 @@ export function buildStrategyBreakupWorkbook(
   const widths = new ColumnWidthTracker();
   const lastCol = 3 + COLUMNS.length; // client + date + metric columns
 
-  writeTitle(ws, "Strategy-wise Client Breakup", lastCol);
+  writeTitle(ws, "Strategy-wise Client Breakup", 1, lastCol);
 
   const buckets = new Map<string, StrategyBreakupRow[]>();
   for (const r of rows) {
@@ -202,6 +241,257 @@ export function buildStrategyBreakupWorkbook(
     }
     row += 2; // blank row between buckets
   }
+
+  widths.apply(ws);
+  return wb;
+}
+
+// ── Account Value Breakup ────────────────────────────────────────────────────
+
+// "QYE++" -> { family: "QYE", leverage: "++" } — no hardcoded strategy names
+function splitStrategy(strategy: string): { family: string; leverage: string } {
+  const leverage = strategy.endsWith("++") ? "++" : "+";
+  return { family: strategy.slice(0, -leverage.length), leverage };
+}
+
+function writeHeaderRow(
+  ws: ExcelJS.Worksheet,
+  row: number,
+  headers: string[],
+  widths: ColumnWidthTracker,
+): void {
+  headers.forEach((h, i) => {
+    const col = 2 + i;
+    const cell = ws.getRow(row).getCell(col);
+    cell.value = h;
+    cell.font = { bold: true };
+    cell.fill = fill(XL_COLORS.sectionHeader);
+    widths.see(col, h);
+  });
+}
+
+function writeTotalCell(
+  ws: ExcelJS.Worksheet,
+  row: number,
+  col: number,
+  value: number,
+  isLabel: boolean,
+): void {
+  const cell = ws.getRow(row).getCell(col);
+  cell.value = value;
+  cell.font = { bold: true, color: { argb: XL_COLORS.white } };
+  cell.fill = fill(XL_COLORS.title);
+  if (!isLabel) cell.numFmt = MONEY_FMT;
+}
+
+function writeSection1(
+  ws: ExcelJS.Worksheet,
+  startRow: number,
+  rows: AccountRow[],
+  widths: ColumnWidthTracker,
+): number {
+  const headers = [
+    "Strategy",
+    "Leverage",
+    "Client Name",
+    "Total AV",
+    "Equity Book",
+    "Debt Book",
+    "Equity (%)",
+    "Debt (%)",
+    "Diff EQ",
+    "Diff Debt",
+  ];
+  writeTitle(ws, "Account Value Break-up", startRow, 1 + headers.length);
+  const headerRow = startRow + 1;
+  writeHeaderRow(ws, headerRow, headers, widths);
+
+  let r = headerRow + 1;
+  let totalAv = 0;
+  for (const row of rows) {
+    const { family, leverage } = splitStrategy(row.strategy);
+    const dr = ws.getRow(r);
+    dr.getCell(2).value = family;
+    dr.getCell(2).fill = fill("FFF5F5F5");
+    dr.getCell(3).value = leverage;
+    dr.getCell(3).fill = fill("FFF5F5F5");
+    const clientLabel = `${row.account_name} ${row.strategy}`;
+    dr.getCell(4).value = clientLabel;
+    dr.getCell(4).font = { bold: true };
+    widths.see(4, clientLabel);
+
+    writeMoneyCell(dr.getCell(5), row.total_av);
+    writeMoneyCell(dr.getCell(6), row.equity_book);
+    writeMoneyCell(dr.getCell(7), row.debt_book);
+    writePlainPctCell(dr.getCell(8), row.equity_pct);
+    writePlainPctCell(dr.getCell(9), row.debt_pct);
+    writeDiffPctCell(dr.getCell(10), row.diff_equity);
+    writeDiffPctCell(dr.getCell(11), row.diff_debt);
+    totalAv += row.total_av;
+    r++;
+  }
+
+  ws.getRow(r).getCell(4).value = "Total AUM";
+  ws.getRow(r).getCell(4).font = {
+    bold: true,
+    color: { argb: XL_COLORS.white },
+  };
+  ws.getRow(r).getCell(4).fill = fill(XL_COLORS.title);
+  writeTotalCell(ws, r, 5, totalAv, false);
+  return r + 2;
+}
+
+function writeSection2(
+  ws: ExcelJS.Worksheet,
+  startRow: number,
+  rows: AccountRow[],
+  widths: ColumnWidthTracker,
+): number {
+  const headers = [
+    "Leverage",
+    "Client Name",
+    "Debt Book",
+    "% of Total AV",
+    "Liquid Case",
+    "Cash",
+    "LC (%)",
+    "Cash (%)",
+    "Diff LC",
+    "Diff Cash",
+  ];
+  writeTitle(ws, "Debt Book Break-up", startRow, 1 + headers.length);
+  const headerRow = startRow + 1;
+  writeHeaderRow(ws, headerRow, headers, widths);
+
+  let r = headerRow + 1;
+  let totalDebt = 0,
+    totalLc = 0,
+    totalCash = 0;
+  for (const row of rows) {
+    const { leverage } = splitStrategy(row.strategy);
+    const dr = ws.getRow(r);
+    dr.getCell(2).value = leverage;
+    dr.getCell(2).fill = fill("FFF5F5F5");
+    const clientLabel = `${row.account_name} ${row.strategy}`;
+    dr.getCell(3).value = clientLabel;
+    dr.getCell(3).font = { bold: true };
+    widths.see(3, clientLabel);
+
+    writeMoneyCell(dr.getCell(4), row.debt_book);
+    writePlainPctCell(dr.getCell(5), row.debt_pct);
+    writeMoneyCell(dr.getCell(6), row.liquid_case);
+    writeMoneyCell(dr.getCell(7), row.cash);
+    writePlainPctCell(dr.getCell(8), row.lc_pct);
+    writePlainPctCell(dr.getCell(9), row.cash_pct);
+    writeDiffPctCell(dr.getCell(10), row.diff_lc);
+    writeDiffPctCell(dr.getCell(11), row.diff_cash);
+    totalDebt += row.debt_book;
+    totalLc += row.liquid_case;
+    totalCash += row.cash;
+    r++;
+  }
+
+  ws.getRow(r).getCell(3).value = "Total";
+  ws.getRow(r).getCell(3).font = {
+    bold: true,
+    color: { argb: XL_COLORS.white },
+  };
+  ws.getRow(r).getCell(3).fill = fill(XL_COLORS.title);
+  writeTotalCell(ws, r, 4, totalDebt, false);
+  writeTotalCell(ws, r, 6, totalLc, false);
+  writeTotalCell(ws, r, 7, totalCash, false);
+  return r + 2;
+}
+
+function writeSection3(
+  ws: ExcelJS.Worksheet,
+  startRow: number,
+  rows: EquityBreakupRow[],
+  widths: ColumnWidthTracker,
+): number {
+  const headers = [
+    "Strategy",
+    "Client Name",
+    "Equity Book",
+    "% of Total AV",
+    "Gold",
+    "Low Vol",
+    "Momentum",
+    "Gold %",
+    "Low Vol %",
+    "Mom %",
+    "Diff Gold",
+    "Diff Low Vol",
+    "Diff Mom",
+  ];
+  writeTitle(ws, "Equity Book Break-up", startRow, 1 + headers.length);
+  const headerRow = startRow + 1;
+  writeHeaderRow(ws, headerRow, headers, widths);
+
+  let r = headerRow + 1;
+  let totalEq = 0,
+    totalGold = 0,
+    totalLowVol = 0,
+    totalMom = 0;
+  for (const row of rows) {
+    const { family } = splitStrategy(row.strategy);
+    const dr = ws.getRow(r);
+    dr.getCell(2).value = family;
+    dr.getCell(2).fill = fill("FFF5F5F5");
+    const clientLabel = `${row.account_name} ${row.strategy}`;
+    dr.getCell(3).value = clientLabel;
+    dr.getCell(3).font = { bold: true };
+    widths.see(3, clientLabel);
+
+    writeMoneyCell(dr.getCell(4), row.equity_book);
+    writePlainPctCell(dr.getCell(5), row.equity_pct);
+    writeMoneyCell(dr.getCell(6), row.gold);
+    writeMoneyCell(dr.getCell(7), row.lowvol);
+    writeMoneyCell(dr.getCell(8), row.momentum);
+    writePlainPctCell(dr.getCell(9), row.gold_pct);
+    writePlainPctCell(dr.getCell(10), row.lowvol_pct);
+    writePlainPctCell(dr.getCell(11), row.momentum_pct);
+    writeDiffPctCell(dr.getCell(12), row.diff_gold);
+    writeDiffPctCell(dr.getCell(13), row.diff_lowvol);
+    writeDiffPctCell(dr.getCell(14), row.diff_momentum);
+    totalEq += row.equity_book;
+    totalGold += row.gold;
+    totalLowVol += row.lowvol;
+    totalMom += row.momentum;
+    r++;
+  }
+
+  ws.getRow(r).getCell(3).value = "Total";
+  ws.getRow(r).getCell(3).font = {
+    bold: true,
+    color: { argb: XL_COLORS.white },
+  };
+  ws.getRow(r).getCell(3).fill = fill(XL_COLORS.title);
+  writeTotalCell(ws, r, 4, totalEq, false);
+  writeTotalCell(ws, r, 6, totalGold, false);
+  writeTotalCell(ws, r, 7, totalLowVol, false);
+  writeTotalCell(ws, r, 8, totalMom, false);
+  return r + 2;
+}
+
+export function buildAccountValueBreakupWorkbook(result: {
+  accounts: AccountRow[];
+  equity_breakup: EquityBreakupRow[];
+}): ExcelJS.Workbook {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Account Value Break-up");
+  const widths = new ColumnWidthTracker();
+
+  const accounts = [...result.accounts].sort((a, b) =>
+    a.account_name.localeCompare(b.account_name),
+  );
+  const equity = [...result.equity_breakup].sort((a, b) =>
+    a.account_name.localeCompare(b.account_name),
+  );
+
+  let row = writeSection1(ws, 2, accounts, widths);
+  row = writeSection2(ws, row, accounts, widths);
+  writeSection3(ws, row, equity, widths);
 
   widths.apply(ws);
   return wb;
