@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 
 export async function requireAdmin() {
   const session = await getServerSession(authOptions);
@@ -40,4 +41,12 @@ export function getEffectiveIcode(session: any): string | null {
 
   // Regular client
   return session.user.icode || null;
+}
+
+export async function checkDashboardVisibility(icode: string): Promise<boolean> {
+  const row = await prisma.dashboard_visibility.findUnique({
+    where: { icode },
+    select: { dashboard_visible: true },
+  });
+  return row ? row.dashboard_visible : true;
 }
