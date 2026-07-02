@@ -7,13 +7,16 @@ import {
   buildTagMetrics,
 } from "@/app/lib/internal-utils";
 
-const DEFAULT_RFR = 0.065;
-
 export async function POST(req: Request) {
   const { error } = await requireInternal();
   if (error) return error;
 
-  let body: { qcode?: string; strategy?: string; risk_free_rate?: number };
+  let body: {
+    qcode?: string;
+    strategy?: string;
+    risk_free_rate?: number;
+    as_of?: string;
+  };
   try {
     body = await req.json();
   } catch {
@@ -29,13 +32,30 @@ export async function POST(req: Request) {
       { status: 400 },
     );
 
-  // Resolve risk-free rate: payload → global_config → fallback
+  let asOf: Date | null = null;
+  if (body.as_of) {
+    asOf = new Date(body.as_of);
+    if (isNaN(asOf.getTime())) {
+      return NextResponse.json(
+        { error: "Invalid as_of date" },
+        { status: 400 },
+      );
+    }
+  }
+
+  // Resolve risk-free rate: payload → global_config (no hardcoded fallback)
   let rfr = body.risk_free_rate ?? null;
   if (rfr == null) {
     const cfg = await prisma.global_config.findUnique({
       where: { key: "RISK_FREE_RATE" },
     });
-    rfr = cfg ? parseFloat(cfg.value) : DEFAULT_RFR;
+    if (!cfg) {
+      return NextResponse.json(
+        { error: "RISK_FREE_RATE is not configured in global_config" },
+        { status: 503 },
+      );
+    }
+    rfr = parseFloat(cfg.value);
   }
 
   // All configs for this client (active + historical)
@@ -73,10 +93,10 @@ export async function POST(req: Request) {
     benchmarkStart = match.effective_from;
   }
 
-  // Parallel: targeted DB query + Nifty fetch
+  // Parallel: targeted DB query + Nifty fetch, both cut off at asOf when given
   const [tagData, benchmark] = await Promise.all([
-    fetchTagData(qcode, strategy, allPrefixes),
-    fetchBenchmark(benchmarkStart, new Date()),
+    fetchTagData(qcode, strategy, allPrefixes, asOf ?? undefined),
+    fetchBenchmark(benchmarkStart, asOf ?? new Date()),
   ]);
 
   if (Object.keys(tagData).length === 0) {
@@ -86,7 +106,7 @@ export async function POST(req: Request) {
     );
   }
 
-  // Latest date across all returned tags
+  // Latest date across all returned tags — reflects the asOf cutoff automatically
   let dataAsOf = "";
   for (const series of Object.values(tagData)) {
     if (series.length > 0) {
@@ -102,13 +122,9 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json({
-    meta: {
-      qcode,
-      account_name: configs[0].account_name,
-      strategy,
-      data_as_of: dataAsOf,
-      risk_free_rate: rfr,
-    },
+    account_name: configs[0].account_name,
+    data_as_of: dataAsOf,
+    risk_free_rate: rfr,
     benchmark,
     profit_tag: profitTag,
     tags,

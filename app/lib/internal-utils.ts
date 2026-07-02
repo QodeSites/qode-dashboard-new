@@ -72,40 +72,49 @@ export async function fetchTagData(
   qcode: string,
   strategy: string, // strategy name e.g. "QYE++" or "combined"
   allPrefixes: string[], // all known strategy prefixes for this client
+  asOf?: Date, // optional cutoff — omit for latest available
 ): Promise<Record<string, NavPoint[]>> {
   let rows: any[];
 
   if (strategy === "combined") {
     if (allPrefixes.length === 0) {
+      const dateClause = asOf ? " AND date <= $2" : "";
+      const params: any[] = asOf ? [qcode, asOf] : [qcode];
       rows = await prisma.$queryRawUnsafe<any[]>(
         `SELECT system_tag, date, nav, prev_nav, drawdown, pnl, portfolio_value
          FROM bifurcated_master_sheet_test
-         WHERE qcode = $1 AND nav IS NOT NULL
+         WHERE qcode = $1 AND nav IS NOT NULL${dateClause}
          ORDER BY system_tag, date ASC`,
-        qcode,
+        ...params,
       );
     } else {
       const excludes = allPrefixes
         .map((_, i) => `system_tag NOT LIKE $${i + 2}`)
         .join(" AND ");
+      const dateIdx = allPrefixes.length + 2;
+      const dateClause = asOf ? ` AND date <= $${dateIdx}` : "";
+      const params: any[] = [qcode, ...allPrefixes.map((p) => `${p} %`)];
+      if (asOf) params.push(asOf);
       rows = await prisma.$queryRawUnsafe<any[]>(
         `SELECT system_tag, date, nav, prev_nav, drawdown, pnl, portfolio_value
          FROM bifurcated_master_sheet_test
-         WHERE qcode = $1 AND nav IS NOT NULL AND ${excludes}
+         WHERE qcode = $1 AND nav IS NOT NULL AND ${excludes}${dateClause}
          ORDER BY system_tag, date ASC`,
-        qcode,
-        ...allPrefixes.map((p) => `${p} %`),
+        ...params,
       );
     }
   } else {
+    const dateClause = asOf ? " AND date <= $3" : "";
+    const params: any[] = asOf
+      ? [qcode, `${strategy} %`, asOf]
+      : [qcode, `${strategy} %`];
     rows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT system_tag, date, nav, prev_nav, drawdown, pnl, portfolio_value
        FROM bifurcated_master_sheet_test
        WHERE qcode = $1 AND nav IS NOT NULL
-         AND system_tag LIKE $2
+         AND system_tag LIKE $2${dateClause}
        ORDER BY system_tag, date ASC`,
-      qcode,
-      `${strategy} %`,
+      ...params,
     );
   }
 
