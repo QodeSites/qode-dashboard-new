@@ -494,6 +494,7 @@ export interface InvestorAum {
   strategy: string;
   since: string;
   aum: number;
+  until: string | null;
 }
 
 export interface PortfolioSummaryResult {
@@ -525,6 +526,7 @@ interface StrategyPair {
   psar_leverage: number | null;
   psar_multiplier: number | null;
   long_opt_pct: number | null;
+  effective_to: string | null;
 }
 
 interface SeriesPoint {
@@ -561,6 +563,9 @@ async function fetchStrategyPairs(
       psar_leverage: toNum(c.psar_leverage),
       psar_multiplier: toNum(c.psar_multiplier),
       long_opt_pct: toNum(c.long_opt_pct),
+      effective_to: c.effective_to
+        ? c.effective_to.toISOString().split("T")[0]
+        : null,
     });
   }
   return [...map.values()];
@@ -665,6 +670,7 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
       strategy: pair.strategy,
       since: series[0].date,
       aum: series[series.length - 1].value,
+      until: pair.effective_to,
     });
 
     allSeries.push(series);
@@ -722,6 +728,7 @@ export interface StrategyBreakupRow {
   information_ratio: number | null;
   alpha: number | null;
   beta: number | null;
+  end_date: string | null;
 }
 
 // batched nav/prev_nav/drawdown/pnl fetch for any list of (qcode, tag) pairs —
@@ -966,6 +973,7 @@ export async function computeStrategyBreakup(
       information_ratio,
       alpha,
       beta,
+      end_date: pair.effective_to,
     });
   }
 
