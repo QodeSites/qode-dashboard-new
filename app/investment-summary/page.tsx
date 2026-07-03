@@ -948,9 +948,11 @@ export default function InvestmentSummaryPage() {
   const activeProfitRedeployment = useMemo(() => {
     if (!data) return [];
     if (selectedStrategy === "ALL") return data.profitRedeployment;
-    return data.profitRedeployment.filter(
-      (r) => r.isHeader || r.strategy === selectedStrategy,
-    );
+    return data.profitRedeployment.filter((row) => {
+      if (row.isHeader) return false;
+      const norm = row.strategy.replace(/^Scheme\s+/i, "");
+      return norm === selectedStrategy;
+    });
   }, [data, selectedStrategy]);
 
   const canDownloadPdf =
@@ -1045,7 +1047,7 @@ export default function InvestmentSummaryPage() {
             <div className="space-y-2">
               <h1 className="text-2xl font-semibold text-card-text-secondary font-heading">
                 Investment Summary
-                {selectedStrategy !== "ALL" && ` — ${selectedStrategy}`}
+                {selectedStrategy !== "ALL" && ` — Scheme ${selectedStrategy}`}
               </h1>
               <p className="text-gray-600 dark:text-gray-400">
                 {data.clientName}
@@ -1109,7 +1111,7 @@ export default function InvestmentSummaryPage() {
                 <SelectContent>
                   <SelectItem value="ALL">Total Portfolio</SelectItem>
                   {data.strategies.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                    <SelectItem key={s} value={s}>Scheme {s}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
