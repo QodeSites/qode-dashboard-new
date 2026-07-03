@@ -317,7 +317,7 @@ function writeSection1(
     "Diff Debt",
   ];
   writeTitle(ws, "Account Value Break-up", startRow, 1 + headers.length);
-  const headerRow = startRow + 1;
+  const headerRow = startRow + 2;
   writeHeaderRow(ws, headerRow, headers, widths);
 
   let r = headerRow + 1;
@@ -374,7 +374,7 @@ function writeSection2(
     "Diff Cash",
   ];
   writeTitle(ws, "Debt Book Break-up", startRow, 1 + headers.length);
-  const headerRow = startRow + 1;
+  const headerRow = startRow + 2;
   writeHeaderRow(ws, headerRow, headers, widths);
 
   let r = headerRow + 1;
@@ -439,7 +439,7 @@ function writeSection3(
     "Diff Mom",
   ];
   writeTitle(ws, "Equity Book Break-up", startRow, 1 + headers.length);
-  const headerRow = startRow + 1;
+  const headerRow = startRow + 2;
   writeHeaderRow(ws, headerRow, headers, widths);
 
   let r = headerRow + 1;
@@ -614,7 +614,7 @@ function writeSubStrategyGrid(
     if (!secRows || secRows.length === 0) continue;
 
     writeTitle(ws, section, row, 1 + GRID_HEADERS.length);
-    row++;
+    row += 2;
     writeGridHeaderRow(ws, row, widths);
     row++;
 
