@@ -890,7 +890,11 @@ export function calcExtraRatios(port: number[], bm: number[]): ExtraRatios {
 export async function computeStrategyBreakup(
   rfr: number,
 ): Promise<StrategyBreakupRow[]> {
-  const pairs = await fetchStrategyPairs("profit_tag_suffix");
+  const allPairs = await fetchStrategyPairs("profit_tag_suffix");
+  const today = new Date().toISOString().split("T")[0];
+  const pairs = allPairs.filter(
+    (p) => !p.effective_to || p.effective_to >= today,
+  );
   if (pairs.length === 0) return [];
 
   const seriesMap = await fetchBulkNavSeries(
