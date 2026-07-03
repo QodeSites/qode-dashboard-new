@@ -156,12 +156,21 @@ export async function buildAumSnapshot(
     ? links.filter((l) => l.icode === filterIcode)
     : links;
 
-  const investors: AumSnapshotRow[] = [];
   const errors: AumSnapshot["errors"] = [];
 
   // qcode-keyed engines are cached so multiple icodes on one pooled account
   // don't recompute; the normal pipeline is per-icode.
   const byQcode = new Map<string, Values>();
+
+  // An icode can be linked to several qcodes (e.g. Satidham's owner also has
+  // a regular account). Zoho holds ONE record per icode, so emit exactly one
+  // row per icode, preferring the special calculators over the generic one.
+  const SOURCE_PRIORITY: Record<AumSnapshotRow["source"], number> = {
+    sarla_satidham: 3,
+    bifurcated: 2,
+    normal: 1,
+  };
+  const bestByIcode = new Map<string, AumSnapshotRow>();
 
   for (const { icode, qcode } of wanted) {
     if (qcode === SATIDHAM_EFFECTIVE_QCODE) continue;
@@ -180,13 +189,20 @@ export async function buildAumSnapshot(
       }
 
       if (!values) continue;
-      investors.push({
+      const row: AumSnapshotRow = {
         icode,
         qcode,
         currentAum: round2(values.currentAum),
         investedAmount: round2(values.investedAmount),
         source: values.source,
-      });
+      };
+      const existing = bestByIcode.get(icode);
+      if (
+        !existing ||
+        SOURCE_PRIORITY[row.source] > SOURCE_PRIORITY[existing.source]
+      ) {
+        bestByIcode.set(icode, row);
+      }
     } catch (err) {
       errors.push({
         icode,
@@ -195,6 +211,8 @@ export async function buildAumSnapshot(
       });
     }
   }
+
+  const investors = [...bestByIcode.values()];
 
   return {
     asOf: new Date().toISOString(),
