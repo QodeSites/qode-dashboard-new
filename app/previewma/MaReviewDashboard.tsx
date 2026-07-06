@@ -330,26 +330,6 @@ export function MaReviewDashboard() {
             {topTab === "sub-strategy" && <SubStrategyPerformance />}
             {topTab === "strategy-monthly" && <StrategyMonthlyReturns />}
           </div>
-
-          {/* Export to Excel */}
-          <div className="mt-12 pt-8 border-t border-logo-green/10">
-            <h2 className="font-serif text-xl text-logo-green mb-4">📥 Export to Excel</h2>
-            <div className="flex flex-col sm:flex-row gap-4">
-              <button className="inline-flex items-center justify-center gap-2 rounded-lg bg-logo-green px-5 py-3 text-sm font-medium text-button-text hover:bg-logo-green/90 transition-colors sm:w-64">
-                <Download className="h-4 w-4" />
-                Generate Excel Report
-              </button>
-              <div className="flex-1 rounded-lg bg-[#e8f0ed] px-4 py-3 text-sm text-card-text">
-                <strong>{clientCount !== null ? `${clientCount} sheet(s)` : "One sheet per client"}</strong> — one
-                per client. Each cell contains a live{" "}
-                <strong>Excel formula</strong> referencing the raw data.
-                <br />
-                For Sub-Strategy Performance with all cross-client references, use{" "}
-                <strong>Export Audit Workbook</strong> in the Sub-Strategy tab above.
-              </div>
-            </div>
-          </div>
-
         </div>
       </div>
     </div>

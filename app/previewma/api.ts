@@ -89,6 +89,7 @@ export interface PortfolioSummaryInvestor {
   strategy: string;
   since: string;
   aum: number;
+  until: string | null;
 }
 
 export interface PortfolioSummaryResponse {
@@ -125,6 +126,7 @@ export interface StrategyBreakupRow {
   information_ratio: number | null;
   alpha: number | null;
   beta: number | null;
+  end_date: string | null;
 }
 
 // ─── Account Value Breakup ────────────────────────────────────────────────────
