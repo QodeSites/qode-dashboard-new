@@ -270,19 +270,22 @@ function PortfolioSummaryInner({ data }: { data: PortfolioSummaryResponse }) {
       .map(([date, vals]) => ({ date, ...vals }));
   }, [strategy_aum_daily, strategyFreq]);
 
-  // Strategy AUM breakdown from investors
+  // Active = until is null; inactive = until has a date
+  const activeInvestors = useMemo(() => investors.filter((inv) => !inv.until), [investors]);
+
+  // Strategy AUM breakdown — active investors only
   const strategyBreakdown = useMemo(() => {
     const map = new Map<string, number>();
-    investors.forEach((inv) => map.set(inv.strategy, (map.get(inv.strategy) || 0) + inv.aum));
+    activeInvestors.forEach((inv) => map.set(inv.strategy, (map.get(inv.strategy) || 0) + inv.aum));
     return Array.from(map.entries()).map(([name, aum]) => ({ name, aum, pct: (aum / total_aum) * 100 })).sort((a, b) => b.aum - a.aum);
-  }, [investors, total_aum]);
+  }, [activeInvestors, total_aum]);
 
-  // Investor count per strategy
+  // Investor count per strategy — active only
   const strategyInvestorCount = useMemo(() => {
     const map = new Map<string, number>();
-    investors.forEach((inv) => map.set(inv.strategy, (map.get(inv.strategy) || 0) + 1));
+    activeInvestors.forEach((inv) => map.set(inv.strategy, (map.get(inv.strategy) || 0) + 1));
     return map;
-  }, [investors]);
+  }, [activeInvestors]);
 
   // First investment by month bar chart
   const firstInvestmentByMonth = useMemo(() => {
@@ -308,14 +311,14 @@ function PortfolioSummaryInner({ data }: { data: PortfolioSummaryResponse }) {
     }));
   }, [strategyBreakdown, strategyInvestorCount]);
 
-  // Investor AUM donut
+  // Investor AUM donut — active investors only
   const investorAumDonut = useMemo(() => {
-    return [...investors]
+    return [...activeInvestors]
       .sort((a, b) => b.aum - a.aum)
       .map((inv) => ({ name: inv.account_name, value: inv.aum, color: stratColor(inv.strategy) }));
-  }, [investors]);
+  }, [activeInvestors]);
 
-  const sortedInvestors = useMemo(() => [...investors].sort((a, b) => b.aum - a.aum), [investors]);
+  const sortedInvestors = useMemo(() => [...activeInvestors].sort((a, b) => b.aum - a.aum), [activeInvestors]);
 
   return (
     <div>

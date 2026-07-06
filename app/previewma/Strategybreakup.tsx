@@ -272,7 +272,8 @@ export function StrategyBreakup({ riskFreeRate = 0.065, fetchTrigger = 0 }: Stra
   // Group rows by strategy, in preferred order
   const grouped = useMemo(() => {
     const map = new Map<string, StrategyBreakupRow[]>();
-    data.forEach((row) => {
+    // Only show active clients (end_date is null)
+    data.filter((row) => !row.end_date).forEach((row) => {
       if (!map.has(row.strategy)) map.set(row.strategy, []);
       map.get(row.strategy)!.push(row);
     });

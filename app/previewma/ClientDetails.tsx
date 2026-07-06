@@ -7,7 +7,6 @@ import {
   Line,
   AreaChart,
   Area,
-  ComposedChart,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -547,38 +546,6 @@ function ChartsTab({
     new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
 
   // Custom tooltip for the composite drawdown chart
-  const DrawdownTooltip = ({ active, payload, label }: any) => {
-    if (!active || !payload?.length) return null;
-    const perf = payload.filter((p: any) => p.dataKey?.startsWith("nav__"));
-    const dd = payload.filter((p: any) => p.dataKey?.startsWith("dd__"));
-    return (
-      <div className="rounded-lg bg-white border border-logo-green/10 shadow-lg px-3 py-2.5 text-xs">
-        <p className="font-semibold text-card-text mb-1.5">{fmtDate(label)}</p>
-        {perf.length > 0 && (
-          <div className="mb-1.5">
-            <p className="font-medium text-card-text mb-0.5">Performance:</p>
-            {perf.map((p: any) => (
-              <p key={p.dataKey} className="flex items-center gap-1 text-card-text-secondary">
-                <span className="inline-block h-2 w-2 rounded-full" style={{ background: p.color }} />
-                {p.dataKey.replace("nav__", "")}: {p.value?.toFixed(2) ?? "—"}
-              </p>
-            ))}
-          </div>
-        )}
-        {dd.length > 0 && (
-          <div>
-            <p className="font-medium text-card-text mb-0.5">Drawdown:</p>
-            {dd.map((p: any) => (
-              <p key={p.dataKey} className="flex items-center gap-1 text-card-text-secondary">
-                <span className="inline-block h-2 w-2 rounded-full" style={{ background: p.color }} />
-                {p.dataKey.replace("dd__", "")}: {p.value != null ? `${p.value.toFixed(2)}%` : "—"}
-              </p>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
 
   return (
     <div>
@@ -712,172 +679,110 @@ function ChartsTab({
         </div>
       )}
 
-      {/* Drawdown — composite chart per tag: NAV perf line + drawdown area, benchmark overlay */}
+      {/* Drawdown — single AreaChart, all strategies as filled areas, no lines */}
       {selectedChartTypes.includes("Drawdown") && selectedTags.length > 0 && (
-        <div className="space-y-5 mb-5">
-          {selectedTags.map((tagName, i) => {
-            const color = CHART_COLORS[i % CHART_COLORS.length];
-            const benchColor = "#E07B39";
-            return (
-              <div key={tagName} className="bg-white rounded-lg border border-logo-green/10 p-4">
-                <div className="text-sm font-semibold text-card-text mb-3">{tagName}</div>
-                <ResponsiveContainer width="100%" height={240}>
-                  <ComposedChart data={comparisonData}>
-                    <CartesianGrid stroke="#E8E4D4" vertical={false} />
-                    <XAxis dataKey="date" tick={{ fontSize: 9, fill: "#555" }} minTickGap={50} tickFormatter={fmtDate} />
-                    {/* Left axis: drawdown % */}
-                    <YAxis
-                      yAxisId="dd"
-                      orientation="left"
-                      tick={{ fontSize: 9, fill: "#555" }}
-                      width={40}
-                      tickFormatter={(v) => `${v.toFixed(0)}%`}
-                      label={{ value: "Drawdown", angle: -90, position: "insideLeft", offset: 10, style: { fontSize: 9, fill: "#888" } }}
-                    />
-                    {/* Right axis: NAV */}
-                    <YAxis
-                      yAxisId="nav"
-                      orientation="right"
-                      tick={{ fontSize: 9, fill: "#555" }}
-                      width={35}
-                      domain={["auto", "auto"]}
-                    />
-                    <Tooltip content={<DrawdownTooltip />} />
-                    {/* Portfolio drawdown area */}
-                    <Area
-                      yAxisId="dd"
-                      type="monotone"
-                      dataKey={`dd__${tagName}`}
-                      name={`dd__${tagName}`}
-                      stroke={color}
-                      fill={color}
-                      fillOpacity={0.15}
-                      strokeWidth={1.5}
-                      dot={false}
-                      connectNulls
-                    />
-                    {/* Portfolio NAV line */}
-                    <Line
-                      yAxisId="nav"
-                      type="monotone"
-                      dataKey={`nav__${tagName}`}
-                      name={`nav__${tagName}`}
-                      stroke={color}
-                      strokeWidth={2}
-                      dot={false}
-                      connectNulls
-                    />
-                    {/* Benchmark drawdown area */}
-                    {compareNifty && (
-                      <Area
-                        yAxisId="dd"
-                        type="monotone"
-                        dataKey="dd__Nifty50"
-                        name="dd__Nifty50"
-                        stroke={benchColor}
-                        fill={benchColor}
-                        fillOpacity={0.12}
-                        strokeWidth={1.5}
-                        strokeDasharray="4 2"
-                        dot={false}
-                        connectNulls
-                      />
-                    )}
-                    {/* Benchmark NAV line */}
-                    {compareNifty && (
-                      <Line
-                        yAxisId="nav"
-                        type="monotone"
-                        dataKey="nav__Nifty50"
-                        name="nav__Nifty50"
-                        stroke={benchColor}
-                        strokeWidth={1.5}
-                        strokeDasharray="4 2"
-                        dot={false}
-                        connectNulls
-                      />
-                    )}
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Monthly Returns Heatmap */}
-      {selectedChartTypes.includes("Monthly Returns Heatmap") && selectedTags.length > 0 && (
-        <div className="space-y-5">
-          {selectedTags.map((tagName) => {
-            const tag = tags[tagName];
-            if (!tag) return null;
-            return (
-              <div key={tagName} className="bg-white rounded-lg border border-logo-green/10 p-4">
-                <MonthlyHeatmap tag={tag} name={tagName} />
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function MonthlyHeatmap({ tag, name }: { tag: TagDetail; name: string }) {
-  const years = useMemo(() => {
-    const ys = Array.from(new Set(tag.monthly.map((m) => m.year))).sort();
-    return ys;
-  }, [tag.monthly]);
-
-  const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-
-  return (
-    <div>
-      <div className="text-xs font-serif text-logo-green mb-2 ml-1">Monthly Returns Heatmap — {name}</div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs border-collapse">
-          <thead>
-            <tr>
-              <th className="px-2 py-1 text-left text-card-text-secondary font-medium w-12">Year</th>
-              {MONTH_SHORT.map((m) => (
-                <th key={m} className="px-1 py-1 text-center text-card-text-secondary font-medium">{m}</th>
+        <div className="bg-white rounded-lg border border-logo-green/10 p-4 mb-5">
+          <div className="text-sm font-semibold text-card-text mb-3">Drawdown (%)</div>
+          <ResponsiveContainer width="100%" height={260}>
+            <AreaChart data={comparisonData}>
+              <CartesianGrid stroke="#E8E4D4" vertical={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 9, fill: "#555" }} minTickGap={50} tickFormatter={fmtDate} />
+              <YAxis tick={{ fontSize: 9, fill: "#555" }} width={40} tickFormatter={(v) => `${v.toFixed(0)}%`} />
+              <Tooltip
+                labelFormatter={fmtDate}
+                formatter={(v: number, name: string) => [v != null ? `${v.toFixed(2)}%` : "—", name.replace("dd__", "")]}
+              />
+              <Legend formatter={(v) => v.replace("dd__", "")} wrapperStyle={{ fontSize: 11 }} />
+              {tagLines.map((l) => (
+                <Area
+                  key={l.key}
+                  type="monotone"
+                  dataKey={`dd__${l.key}`}
+                  name={`dd__${l.key}`}
+                  stroke={l.color}
+                  fill={l.color}
+                  fillOpacity={0.15}
+                  strokeWidth={1.5}
+                  dot={false}
+                  connectNulls
+                />
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {years.map((yr) => {
-              const rowData: Record<string, number | null> = {};
-              tag.monthly.filter((m) => m.year === yr).forEach((m) => {
-                rowData[m.month] = m.return_pct;
-              });
-              return (
-                <tr key={yr}>
-                  <td className="px-2 py-1 font-semibold text-card-text">{yr}</td>
-                  {MONTH_SHORT.map((monthName) => {
-                    const val = rowData[monthName] ?? null;
-                    const bg =
-                      val === null ? "bg-transparent" :
-                      val >= 3 ? "bg-green-700 text-white" :
-                      val >= 1 ? "bg-green-400 text-white" :
-                      val >= 0 ? "bg-green-100 text-green-800" :
-                      val >= -1 ? "bg-red-100 text-red-700" :
-                      val >= -3 ? "bg-red-400 text-white" :
-                      "bg-red-700 text-white";
-                    return (
-                      <td key={monthName} className={`px-1 py-1 text-center rounded-sm ${bg}`}>
-                        {val === null ? "" : `${val >= 0 ? "+" : ""}${val.toFixed(1)}%`}
-                      </td>
-                    );
-                  })}
+              {compareNifty && (
+                <Area
+                  type="monotone"
+                  dataKey="dd__Nifty50"
+                  name="dd__Nifty50"
+                  stroke="#E07B39"
+                  fill="#E07B39"
+                  fillOpacity={0.12}
+                  strokeWidth={1.5}
+                  strokeDasharray="4 2"
+                  dot={false}
+                  connectNulls
+                />
+              )}
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Monthly Returns Heatmap — single combined table, one row-group per strategy */}
+      {selectedChartTypes.includes("Monthly Returns Heatmap") && selectedTags.length > 0 && (
+        <div className="bg-white rounded-lg border border-logo-green/10 p-4">
+          <div className="text-sm font-semibold text-card-text mb-3">Monthly Returns Heatmap</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr>
+                  <th className="px-2 py-1 text-left text-card-text-secondary font-medium w-28">Strategy / Year</th>
+                  {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((m) => (
+                    <th key={m} className="px-1 py-1 text-center text-card-text-secondary font-medium">{m}</th>
+                  ))}
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody>
+                {selectedTags.map((tagName, ti) => {
+                  const tag = tags[tagName];
+                  if (!tag) return null;
+                  const years = Array.from(new Set(tag.monthly.map((m) => m.year))).sort() as number[];
+                  const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                  return years.map((yr, yi) => {
+                    const rowData: Record<string, number | null> = {};
+                    tag.monthly.filter((m) => m.year === yr).forEach((m) => { rowData[m.month] = m.return_pct; });
+                    return (
+                      <tr key={`${tagName}-${yr}`} className={yi === 0 && ti > 0 ? "border-t-2 border-logo-green/20" : "border-t border-logo-green/5"}>
+                        <td className="px-2 py-1 font-semibold text-card-text whitespace-nowrap">
+                          {yi === 0 ? (
+                            <span className="flex flex-col">
+                              <span className="text-logo-green truncate max-w-[100px]" title={tagName}>{tagName.length > 14 ? tagName.slice(0, 12) + "…" : tagName}</span>
+                              <span className="text-card-text-secondary font-normal">{yr}</span>
+                            </span>
+                          ) : (
+                            <span className="text-card-text-secondary font-normal pl-1">{yr}</span>
+                          )}
+                        </td>
+                        {MONTH_SHORT.map((monthName) => {
+                          const val = rowData[monthName] ?? null;
+                          const bg = val === null ? "bg-transparent" : val >= 3 ? "bg-green-700 text-white" : val >= 1 ? "bg-green-400 text-white" : val >= 0 ? "bg-green-100 text-green-800" : val >= -1 ? "bg-red-100 text-red-700" : val >= -3 ? "bg-red-400 text-white" : "bg-red-700 text-white";
+                          return (
+                            <td key={monthName} className={`px-1 py-1 text-center rounded-sm ${bg}`}>
+                              {val === null ? "" : `${val >= 0 ? "+" : ""}${val.toFixed(1)}%`}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  });
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
 
 
 export function ClientDetail({ data, tagFilter }: { data: ClientDashboardResponse; tagFilter: string[] }) {
