@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, BarChart3, CreditCard } from "lucide-react";
+import { ArrowRight, BarChart3, CreditCard, LogOut } from "lucide-react";
+import { signOut } from "next-auth/react";
 
 interface AppCardConfig {
   title: string;
@@ -48,11 +49,10 @@ function AppCard({ app }: { app: AppCardConfig }) {
 
       <div className="flex items-center justify-between mt-6">
         <span
-          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium tracking-wide ${
-            isLive
+          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium tracking-wide ${isLive
               ? "bg-green-100 text-green-700"
               : "bg-gray-100 text-gray-500"
-          }`}
+            }`}
         >
           {isLive ? "LIVE" : "COMING SOON"}
         </span>
@@ -68,11 +68,10 @@ function AppCard({ app }: { app: AppCardConfig }) {
 
   const footer = (
     <div
-      className={`rounded-b-2xl -mt-2 px-6 py-4 text-center text-sm font-medium ${
-        isLive
+      className={`rounded-b-2xl -mt-2 px-6 py-4 text-center text-sm font-medium ${isLive
           ? "bg-logo-green text-button-text"
           : "bg-gray-200 text-gray-500"
-      }`}
+        }`}
     >
       {isLive ? (
         <span className="inline-flex items-center gap-2">
@@ -103,7 +102,22 @@ function AppCard({ app }: { app: AppCardConfig }) {
 
 export function ManagedAccountsLanding() {
   return (
+          
     <div className="min-h-screen bg-primary-bg px-4 sm:px-6 py-16 sm:py-20">
+      {/* Logout — fixed top right */}
+      <div className="fixed top-4 right-4 z-50">
+        <button
+          onClick={async () => {
+            await signOut({ redirect: false });
+            window.location.href = "/";
+          }}
+          className="rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2 shadow-sm"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+          Logout
+        </button>
+      </div>
+
       <div className="max-w-5xl mx-auto">
         {/* Eyebrow */}
         <div className="flex items-center justify-center gap-3 mb-6">
@@ -113,8 +127,8 @@ export function ManagedAccountsLanding() {
           </span>
           <span className="h-px w-10 bg-card-text-secondary/30" />
         </div>
-
         {/* Logo */}
+
         <h1 className="font-serif text-5xl sm:text-6xl text-center text-logo-green mb-6">
           Qode
         </h1>

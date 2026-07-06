@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { BLOCKED_ICODES } from "@/lib/blocked-icodes";
 
 export const authOptions = {
+  trustHost: true,
   providers: [
     CredentialsProvider({
       name: "Credentials",
@@ -17,7 +18,7 @@ export const authOptions = {
         }
 
         const identifierLower = credentials.identifier.toLowerCase();
-        const passwordLower = credentials.password.toLowerCase();
+      const passwordLower = credentials.password.toLowerCase();
 
         // Check admin credentials from env
         const adminEmails = (process.env.ADMIN_EMAILS || "")
@@ -35,7 +36,7 @@ export const authOptions = {
             id: "admin",
             name: adminEmails[adminIndex].split("@")[0],
             email: adminEmails[adminIndex],
-            accessType: "admin" as const,
+            accessType: "admin",
           };
         }
 
@@ -48,7 +49,7 @@ export const authOptions = {
             id: "distributor",
             name: "Distributor",
             email: "dist@qodeinvest.com",
-            accessType: "distributor" as const,
+            accessType: "distributor",
           };
         }
 
@@ -71,7 +72,7 @@ export const authOptions = {
             id: "internal",
             name: internalEmails[internalIndex].split("@")[0],
             email: internalEmails[internalIndex],
-            accessType: "internal" as const,
+            accessType: "internal",
           };
         }
 
@@ -98,7 +99,7 @@ export const authOptions = {
           icode: user.icode,
           name: user.user_name,
           email: user.email,
-          accessType: "client" as const,
+          accessType: "client",
         };
       },
     }),

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { signOut } from "next-auth/react";
 import {
   ArrowLeft,
   RefreshCw,
@@ -16,6 +17,7 @@ import {
   Download,
   Settings2,
   X,
+  LogOut,
 } from "lucide-react";
 import { UnderlineTabs } from "./UnderlineTabs";
 
@@ -107,9 +109,8 @@ export function MaReviewDashboard() {
 
       {/* ── Left drawer ──────────────────────────────────────────────── */}
       <aside
-        className={`fixed top-0 left-0 h-full w-80 z-40 bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-in-out ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className={`fixed top-0 left-0 h-full w-80 z-40 bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-in-out ${sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
       >
         {/* Drawer header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-logo-green/10 flex-shrink-0">
@@ -290,14 +291,20 @@ export function MaReviewDashboard() {
                 <Settings2 className="h-3.5 w-3.5" />
                 Settings
               </button>
+              <input
+                type="text"
+                defaultValue="2026/06/19"
+                readOnly
+                className="rounded-lg border border-logo-green/15 bg-primary-bg/60 px-4 py-2 text-sm text-card-text w-36"
+              />
               <button className="rounded-lg border border-logo-green/20 bg-white px-5 py-2 text-sm font-medium text-card-text hover:bg-primary-bg/40 transition-colors flex items-center gap-2">
                 <RefreshCw className="h-3.5 w-3.5" />
                 Refresh
               </button>
-              {/* <button className="rounded-lg bg-logo-green px-5 py-2 text-sm font-medium text-button-text hover:bg-logo-green/90 transition-colors flex items-center gap-2">
+              <button className="rounded-lg bg-logo-green px-5 py-2 text-sm font-medium text-button-text hover:bg-logo-green/90 transition-colors flex items-center gap-2">
                 <Upload className="h-3.5 w-3.5" />
                 Upload
-              </button> */}
+              </button>
             </div>
           </div>
 
