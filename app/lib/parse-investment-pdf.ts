@@ -37,6 +37,13 @@ export interface InvestmentSummaryData {
     percent: number;
   }>;
 
+  // Holdings Bifurcation sheet
+  holdingsBifurcation: Array<{
+    type: string;
+    amount: number;
+    percent: number;
+  }>;
+
   // Cash / Holdings Investment Summary sheets
   cashInvestmentSummary: {
     totalCashAdded: number;
@@ -115,6 +122,7 @@ export interface StrategyInvestmentData {
   cashInvestmentSummary: InvestmentSummaryData["cashInvestmentSummary"];
   holdingsInvestmentSummary: InvestmentSummaryData["holdingsInvestmentSummary"];
   currentAccountSummary: InvestmentSummaryData["currentAccountSummary"];
+  holdingsBifurcation: InvestmentSummaryData["holdingsBifurcation"];
 }
 
 export interface MultiStrategyInvestmentData extends InvestmentSummaryData {
@@ -248,6 +256,22 @@ function parseAccountSummary(
     .filter((row) => String(row[0] || "").trim())
     .map((row) => ({
       particulars: String(row[0]).trim(),
+      amount: parseAmount(row[1]),
+      percent: parsePercent(row[2]),
+    }));
+}
+
+function parseHoldingsBifurcation(
+  wb: XLSX.WorkBook,
+  sheetName = "Current Account Summary",
+): InvestmentSummaryData["holdingsBifurcation"] {
+  return dataRows(sheetRows(wb, sheetName))
+    .filter((row) => {
+      const label = String(row[0] || "").trim().toLowerCase();
+      return label && label !== "total";
+    })
+    .map((row) => ({
+      type: String(row[0]).trim(),
       amount: parseAmount(row[1]),
       percent: parsePercent(row[2]),
     }));
@@ -460,6 +484,7 @@ function parsePerStrategyData(
       cashInvestmentSummary: parseCashInvestmentSummary(wb, `Cash Inv ${s}`),
       holdingsInvestmentSummary: parseHoldingsInvestmentSummary(wb, `Holdings Inv ${s}`),
       currentAccountSummary: parseAccountSummary(wb, `Acct Summary ${s}`),
+      holdingsBifurcation: parseHoldingsBifurcation(wb, `Acct Summary ${s}`),
     };
   }
   return result;
@@ -484,6 +509,7 @@ export function parseInvestmentXlsx(fileBuffer: Buffer): MultiStrategyInvestment
     amountInvested: parseInvestmentSummarySheet(wb),
     overviewCashSummary: parseOverviewCashSummary(wb),
     currentAccountSummary: parseAccountSummary(wb),
+    holdingsBifurcation: parseHoldingsBifurcation(wb),
     cashInvestmentSummary: parseCashInvestmentSummary(wb),
     holdingsInvestmentSummary: parseHoldingsInvestmentSummary(wb),
     profitRedeployment: parseProfitRedeployment(wb),

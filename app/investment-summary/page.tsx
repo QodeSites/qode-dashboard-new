@@ -915,6 +915,7 @@ export default function InvestmentSummaryPage() {
         cashInvestmentSummary: data.cashInvestmentSummary,
         holdingsInvestmentSummary: data.holdingsInvestmentSummary,
         currentAccountSummary: data.currentAccountSummary,
+        holdingsBifurcation: data.holdingsBifurcation,
       };
     }
     return data.perStrategy[selectedStrategy] ?? null;
@@ -1148,8 +1149,8 @@ export default function InvestmentSummaryPage() {
               />
             </div>
 
-            {/* Current Account Summary */}
-            {activeSummary.currentAccountSummary.length > 0 && (
+            {/* Holdings Bifurcation */}
+            {activeSummary.holdingsBifurcation.length > 0 && (
               <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
                 <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg flex items-center justify-between">
                   <span>Current Account Summary</span>
@@ -1158,9 +1159,9 @@ export default function InvestmentSummaryPage() {
                 <CardContent className="space-y-6">
                   {/* Distribution chart */}
                   <AccountDistributionChart
-                    rows={activeSummary.currentAccountSummary
-                      .filter((r) => !r.particulars.toLowerCase().includes("account value") && r.amount > 0)
-                      .map((r) => ({ label: r.particulars, value: r.amount, pct: r.percent }))}
+                    rows={activeSummary.holdingsBifurcation
+                      .filter((r) => r.amount > 0)
+                      .map((r) => ({ label: r.type, value: r.amount, pct: r.percent }))}
                   />
                   {/* Table */}
                   <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
@@ -1168,7 +1169,7 @@ export default function InvestmentSummaryPage() {
                       <TableHeader className="sticky top-0 z-10">
                         <TableRow className="bg-[#E9E8DE] hover:bg-[#E9E8DE] border-b border-gray-200">
                           <TableHead className="py-3 text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
-                            Particulars
+                            Type
                           </TableHead>
                           <TableHead className="py-3 text-center text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
                             Amount (₹)
@@ -1179,17 +1180,17 @@ export default function InvestmentSummaryPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {activeSummary.currentAccountSummary.map((row, i) => {
-                          const isTotalRow = row.particulars.toLowerCase().includes("account value");
+                        {activeSummary.holdingsBifurcation.map((row, i) => {
+                          const isTotal = row.type.toLowerCase() === "total";
                           return (
                             <TableRow key={i} className="border-b border-gray-200">
-                              <TableCell className={`py-3 text-sm ${isTotalRow ? "font-bold text-card-text" : "text-card-text"}`}>
-                                {row.particulars}
+                              <TableCell className={`py-3 text-sm ${isTotal ? "font-bold text-card-text" : "text-card-text"}`}>
+                                {row.type}
                               </TableCell>
-                              <TableCell className={`py-3 text-sm text-center tabular-nums ${isTotalRow ? "font-bold text-card-text" : "font-medium text-gray-600"}`}>
+                              <TableCell className={`py-3 text-sm text-center tabular-nums ${isTotal ? "font-bold text-card-text" : "font-medium text-gray-600"}`}>
                                 {fmt(row.amount)}
                               </TableCell>
-                              <TableCell className={`py-3 text-sm text-center tabular-nums ${isTotalRow ? "font-bold text-card-text" : "text-gray-600"}`}>
+                              <TableCell className={`py-3 text-sm text-center tabular-nums ${isTotal ? "font-bold text-card-text" : "text-gray-600"}`}>
                                 {row.percent > 0 ? `${row.percent.toFixed(2)}%` : "—"}
                               </TableCell>
                             </TableRow>
