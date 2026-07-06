@@ -647,6 +647,24 @@ model prop_account_default_tags {
   @@schema("public")
 }
 
+model sync_jobs {
+  id            Int       @id @default(autoincrement())
+  job_type      String    @db.VarChar(20)
+  status        String    @db.VarChar(20)
+  started_at    DateTime  @default(now()) @db.Timestamptz(6)
+  finished_at   DateTime? @db.Timestamptz(6)
+  triggered_by  String    @db.VarChar(50)
+  report_date   String?   @db.VarChar(10)
+  client_filter String?   @db.VarChar(200)
+  error_message String?
+  result_json   Json?
+  log_output    String?
+
+  @@index([status])
+  @@index([started_at(sort: Desc)])
+  @@schema("public")
+}
+
 model refresh_tokens {
   id          String    @id @db.Uuid
   user_id     String    @db.VarChar(255)
