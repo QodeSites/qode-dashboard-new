@@ -36,6 +36,50 @@ export const JOB_TIMEOUT_MINUTES = 30;
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10MB
 
 // ---------------------------------------------------------------------------
+// Staging vs live resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Admins always review from staging (that's the point of the staging step);
+ * clients only ever see live. After a publish both directories are identical,
+ * so the admin view stays seamless.
+ *
+ * Ordered list: the first dir containing the requested file wins. Staging may
+ * be empty on a fresh setup — falling back to live keeps the admin view from
+ * breaking before the first generation.
+ */
+export function reportsDirsForAccess(isAdmin: boolean): string[] {
+  return isAdmin ? [STAGING_DIR, LIVE_DIR] : [LIVE_DIR];
+}
+
+export interface StagingManifest {
+  job_id: number | null;
+  report_date?: string;
+  finished?: string;
+  generated_by?: string;
+}
+
+/**
+ * Reads staging/manifest.json written by run_sync.sh (server jobs) or
+ * run_local_reports.ps1 (local manual runs, job_id = null).
+ */
+export async function readStagingManifest(): Promise<StagingManifest | null> {
+  const { promises: fs } = await import("fs");
+  try {
+    const raw = await fs.readFile(path.join(STAGING_DIR, "manifest.json"), "utf-8");
+    const parsed = JSON.parse(raw);
+    return {
+      job_id: typeof parsed.job_id === "number" ? parsed.job_id : null,
+      report_date: parsed.report_date,
+      finished: parsed.finished,
+      generated_by: parsed.generated_by,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // File whitelist + validation rules
 // ---------------------------------------------------------------------------
 

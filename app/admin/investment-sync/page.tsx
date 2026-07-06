@@ -48,6 +48,17 @@ interface FileInfo {
   modifiedAt: string | null;
 }
 
+interface StagingInfo {
+  fileCount: number;
+  manifest: {
+    job_id: number | null;
+    report_date?: string;
+    finished?: string;
+    generated_by?: string;
+  } | null;
+  publishable: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -83,6 +94,7 @@ export default function InvestmentSyncPage() {
 
   const [current, setCurrent] = useState<SyncJob | null>(null);
   const [lastGenerate, setLastGenerate] = useState<SyncJob | null>(null);
+  const [staging, setStaging] = useState<StagingInfo | null>(null);
   const [history, setHistory] = useState<SyncJob[]>([]);
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [reportDate, setReportDate] = useState(todayStr());
@@ -108,6 +120,7 @@ export default function InvestmentSyncPage() {
         const d = await statusRes.json();
         setCurrent(d.current);
         setLastGenerate(d.lastGenerate);
+        setStaging(d.staging ?? null);
         setHistory(d.history ?? []);
       }
       if (filesRes.ok) {
@@ -220,8 +233,15 @@ export default function InvestmentSyncPage() {
   // Derived state
   // -------------------------------------------------------------------------
 
+  // Publishable when staging holds a manifest-verified set. Server-generated
+  // sets additionally need the last generate job to have succeeded; local
+  // manual runs (manifest.job_id === null) only need the staging files.
+  const stagingFromServerJob = staging?.manifest?.job_id != null;
   const canPublish =
-    !isRunning && !busy && lastGenerate?.status === "success";
+    !isRunning &&
+    !busy &&
+    !!staging?.publishable &&
+    (!stagingFromServerJob || lastGenerate?.status === "success");
 
   const validationRows: ValidationRow[] = Array.isArray(lastGenerate?.result_json)
     ? (lastGenerate!.result_json as ValidationRow[])
@@ -455,7 +475,19 @@ export default function InvestmentSyncPage() {
           )}
 
           {/* Push to Live */}
-          <div className="pt-2 border-t border-card-text-secondary/10">
+          <div className="pt-2 border-t border-card-text-secondary/10 space-y-2">
+            {staging && staging.fileCount > 0 && (
+              <p className="text-xs text-card-text-secondary">
+                Staging: {staging.fileCount} files
+                {staging.manifest?.report_date && ` · report date ${staging.manifest.report_date}`}
+                {staging.manifest
+                  ? staging.manifest.job_id != null
+                    ? ` · from job #${staging.manifest.job_id}`
+                    : " · from a local manual run"
+                  : " · no manifest (regenerate before publishing)"}
+                {" — you're reviewing this set; clients still see the previous live reports."}
+              </p>
+            )}
             <Button
               onClick={handlePublish}
               disabled={!canPublish}
@@ -464,8 +496,12 @@ export default function InvestmentSyncPage() {
               <Rocket className="h-4 w-4" /> Push to Live
             </Button>
             {!canPublish && !isRunning && (
-              <p className="mt-1.5 text-xs text-card-text-secondary">
-                Enabled after a successful generation.
+              <p className="text-xs text-card-text-secondary">
+                {!staging || staging.fileCount === 0
+                  ? "Nothing in staging yet — run a generation first."
+                  : !staging.manifest
+                    ? "Staging has no manifest — regenerate before publishing."
+                    : "Enabled after a successful generation."}
               </p>
             )}
           </div>

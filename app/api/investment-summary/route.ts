@@ -5,38 +5,52 @@ import { getEffectiveIcode } from "@/app/lib/admin-utils";
 import { promises as fs } from "fs";
 import path from "path";
 import { parseInvestmentXlsx } from "@/app/lib/parse-investment-pdf";
+import { reportsDirsForAccess } from "@/app/lib/sync-utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const REPORTS_DIR = path.join(process.cwd(), "data", "reports");
 const ICODE_PATTERN = /^QUS[0-9]+$/i;
 
-async function findReportByIcode(icode: string): Promise<string | null> {
+// Admins review from reports_staging (falling back to live); clients see live.
+async function findReportByIcode(
+  icode: string,
+  dirs: string[],
+): Promise<{ dir: string; fileName: string } | null> {
   const suffix = `_${icode}.xlsx`.toLowerCase();
-  let entries: string[];
-  try {
-    entries = await fs.readdir(REPORTS_DIR);
-  } catch {
-    return null;
+  for (const dir of dirs) {
+    let entries: string[];
+    try {
+      entries = await fs.readdir(dir);
+    } catch {
+      continue;
+    }
+    const fileName = entries.find((n) => n.toLowerCase().endsWith(suffix));
+    if (fileName) return { dir, fileName };
   }
-  return entries.find((n) => n.toLowerCase().endsWith(suffix)) ?? null;
+  return null;
 }
 
-async function findStrategyPdfs(icode: string): Promise<Record<string, boolean>> {
-  let entries: string[];
-  try {
-    entries = await fs.readdir(REPORTS_DIR);
-  } catch {
-    return {};
-  }
-  const result: Record<string, boolean> = {};
+async function findStrategyPdfs(
+  icode: string,
+  dirs: string[],
+): Promise<Record<string, boolean>> {
   const pattern = new RegExp(`_${icode}_(.+)\\.pdf$`, "i");
-  for (const name of entries) {
-    const match = name.match(pattern);
-    if (match) result[match[1]] = true;
+  for (const dir of dirs) {
+    let entries: string[];
+    try {
+      entries = await fs.readdir(dir);
+    } catch {
+      continue;
+    }
+    const result: Record<string, boolean> = {};
+    for (const name of entries) {
+      const match = name.match(pattern);
+      if (match) result[match[1]] = true;
+    }
+    if (Object.keys(result).length > 0) return result;
   }
-  return result;
+  return {};
 }
 
 export async function GET(req: NextRequest) {
@@ -57,13 +71,14 @@ export async function GET(req: NextRequest) {
       return new NextResponse("Invalid or missing icode", { status: 400 });
     }
 
-    const fileName = await findReportByIcode(icode);
-    if (!fileName) {
+    const dirs = reportsDirsForAccess(isAdmin);
+    const found = await findReportByIcode(icode, dirs);
+    if (!found) {
       return NextResponse.json({ error: "Report not found" }, { status: 404 });
     }
 
-    const resolved = path.resolve(REPORTS_DIR, fileName);
-    if (!resolved.startsWith(path.resolve(REPORTS_DIR) + path.sep)) {
+    const resolved = path.resolve(found.dir, found.fileName);
+    if (!resolved.startsWith(path.resolve(found.dir) + path.sep)) {
       return new NextResponse("Invalid path", { status: 400 });
     }
 
@@ -78,7 +93,7 @@ export async function GET(req: NextRequest) {
     }
 
     const data = parseInvestmentXlsx(fileBuffer);
-    const strategyPdfAvailability = await findStrategyPdfs(icode);
+    const strategyPdfAvailability = await findStrategyPdfs(icode, dirs);
 
     return NextResponse.json(
       { ...data, strategyPdfAvailability },
