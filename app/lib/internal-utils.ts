@@ -1407,3 +1407,150 @@ export async function computeStrategyMonthlyReturns(): Promise<
 
   return rows;
 }
+
+// ── Compare ───────────────────────────────────────────────────────────────
+
+export interface CompareSelection {
+  qcode: string;
+  system_tag: string;
+}
+
+export interface CompareResult {
+  qcode: string;
+  system_tag: string;
+  metrics: Omit<TagMetrics, "ratios"> | null;
+  benchmark_overview: {
+    since_inception: number | null;
+    max_drawdown: number | null;
+    current_drawdown: number | null;
+  } | null;
+}
+
+export interface CompareOutput {
+  benchmark_series: { date: string; nav: number }[];
+  results: CompareResult[];
+}
+
+export async function computeCompare(
+  selections: CompareSelection[],
+): Promise<CompareOutput> {
+  if (selections.length === 0) return { benchmark_series: [], results: [] };
+
+  const seriesMap = await fetchBulkNavSeries(
+    selections.map((s) => ({ qcode: s.qcode, tag: s.system_tag })),
+  );
+
+  // no rfr needed — ratios are stripped, so 0 is just a placeholder input
+  const built = selections.map((s) => {
+    const nav = seriesMap.get(`${s.qcode}|${s.system_tag}`);
+    if (!nav || nav.length === 0) return { s, nav: null, metrics: null };
+    const { ratios: _ratios, ...metrics } = buildTagMetrics(nav, 0);
+    return { s, nav, metrics };
+  });
+
+  // shared window across every selection — one Nifty fetch regardless of count
+  let minStart: Date | null = null;
+  let maxEnd: Date | null = null;
+  for (const b of built) {
+    if (!b.nav) continue;
+    const start = b.nav[0].date;
+    const end = b.nav[b.nav.length - 1].date;
+    if (!minStart || start < minStart) minStart = start;
+    if (!maxEnd || end > maxEnd) maxEnd = end;
+  }
+
+  const niftyRaw =
+    minStart && maxEnd ? await fetchNiftyRawSeries(minStart, maxEnd) : null;
+
+  // chart line: one series, rebased at the oldest selection's start
+  const chartBenchmark =
+    niftyRaw && minStart && maxEnd
+      ? computeBenchmarkMetrics(niftyRaw, minStart, maxEnd)
+      : null;
+
+  const results: CompareResult[] = built.map(({ s, nav, metrics }) => {
+    if (!nav || !metrics) {
+      return {
+        qcode: s.qcode,
+        system_tag: s.system_tag,
+        metrics: null,
+        benchmark_overview: null,
+      };
+    }
+    // overview card: rebased at THIS selection's own start, not the shared one
+    const objBenchmark = niftyRaw
+      ? computeBenchmarkMetrics(niftyRaw, nav[0].date, nav[nav.length - 1].date)
+      : null;
+
+    return {
+      qcode: s.qcode,
+      system_tag: s.system_tag,
+      metrics,
+      benchmark_overview: objBenchmark
+        ? {
+            since_inception: objBenchmark.since_inception,
+            max_drawdown: objBenchmark.max_drawdown,
+            current_drawdown: objBenchmark.current_drawdown,
+          }
+        : null,
+    };
+  });
+
+  return { benchmark_series: chartBenchmark?.series ?? [], results };
+}
+
+// ── System Tags ───────────────────────────────────────────────────────────
+
+// all distinct strategies configured for a client — resolves "combined" views
+async function fetchClientStrategies(qcode: string): Promise<string[]> {
+  const configs = await prisma.client_strategy_configs.findMany({
+    where: { qcode },
+    select: { strategy: true },
+  });
+  return [...new Set(configs.map((c) => c.strategy))];
+}
+
+// distinct tags for a qcode + strategy. "combined" mirrors fetchTagData's
+// combined branch — tags matching none of the client's known strategy prefixes
+export async function fetchSystemTags(
+  qcode: string,
+  strategy: string,
+): Promise<string[]> {
+  let rows: { system_tag: string }[];
+
+  if (strategy === "combined") {
+    const allPrefixes = await fetchClientStrategies(qcode);
+    if (allPrefixes.length === 0) {
+      rows = await prisma.$queryRawUnsafe<{ system_tag: string }[]>(
+        `SELECT DISTINCT system_tag
+         FROM bifurcated_master_sheet_test
+         WHERE qcode = $1
+         ORDER BY system_tag`,
+        qcode,
+      );
+    } else {
+      const excludes = allPrefixes
+        .map((_, i) => `system_tag NOT LIKE $${i + 2}`)
+        .join(" AND ");
+      rows = await prisma.$queryRawUnsafe<{ system_tag: string }[]>(
+        `SELECT DISTINCT system_tag
+         FROM bifurcated_master_sheet_test
+         WHERE qcode = $1 AND ${excludes}
+         ORDER BY system_tag`,
+        qcode,
+        ...allPrefixes.map((p) => `${p} %`),
+      );
+    }
+  } else {
+    rows = await prisma.$queryRawUnsafe<{ system_tag: string }[]>(
+      `SELECT DISTINCT system_tag
+       FROM bifurcated_master_sheet_test
+       WHERE qcode = $1 AND system_tag LIKE $2
+       ORDER BY system_tag`,
+      qcode,
+      `${strategy} %`,
+    );
+  }
+
+  return rows.map((r) => r.system_tag);
+}
