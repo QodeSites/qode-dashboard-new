@@ -1498,3 +1498,59 @@ export async function computeCompare(
 
   return { benchmark_series: chartBenchmark?.series ?? [], results };
 }
+
+// ── System Tags ───────────────────────────────────────────────────────────
+
+// all distinct strategies configured for a client — resolves "combined" views
+async function fetchClientStrategies(qcode: string): Promise<string[]> {
+  const configs = await prisma.client_strategy_configs.findMany({
+    where: { qcode },
+    select: { strategy: true },
+  });
+  return [...new Set(configs.map((c) => c.strategy))];
+}
+
+// distinct tags for a qcode + strategy. "combined" mirrors fetchTagData's
+// combined branch — tags matching none of the client's known strategy prefixes
+export async function fetchSystemTags(
+  qcode: string,
+  strategy: string,
+): Promise<string[]> {
+  let rows: { system_tag: string }[];
+
+  if (strategy === "combined") {
+    const allPrefixes = await fetchClientStrategies(qcode);
+    if (allPrefixes.length === 0) {
+      rows = await prisma.$queryRawUnsafe<{ system_tag: string }[]>(
+        `SELECT DISTINCT system_tag
+         FROM bifurcated_master_sheet_test
+         WHERE qcode = $1
+         ORDER BY system_tag`,
+        qcode,
+      );
+    } else {
+      const excludes = allPrefixes
+        .map((_, i) => `system_tag NOT LIKE $${i + 2}`)
+        .join(" AND ");
+      rows = await prisma.$queryRawUnsafe<{ system_tag: string }[]>(
+        `SELECT DISTINCT system_tag
+         FROM bifurcated_master_sheet_test
+         WHERE qcode = $1 AND ${excludes}
+         ORDER BY system_tag`,
+        qcode,
+        ...allPrefixes.map((p) => `${p} %`),
+      );
+    }
+  } else {
+    rows = await prisma.$queryRawUnsafe<{ system_tag: string }[]>(
+      `SELECT DISTINCT system_tag
+       FROM bifurcated_master_sheet_test
+       WHERE qcode = $1 AND system_tag LIKE $2
+       ORDER BY system_tag`,
+      qcode,
+      `${strategy} %`,
+    );
+  }
+
+  return rows.map((r) => r.system_tag);
+}
