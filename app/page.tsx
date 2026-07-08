@@ -13,11 +13,13 @@ export default function Home() {
 
   const accessType = (session?.user as any)?.accessType;
 
-  useEffect(() => {
-    if (status === "authenticated" && accessType === "admin") {
-      router.replace("/dashboard");
-    }
-  }, [status, accessType, router]);
+useEffect(() => {
+  if (status === "authenticated") {
+    if (accessType === "admin") router.replace("/dashboard");
+    if (accessType === "distributor") router.replace("/distributor");
+  }
+}, [status, accessType, router]);
+
 
   if (status === "loading") {
     return (
@@ -52,6 +54,13 @@ export default function Home() {
       </div>
     );
   }
+  if (accessType === "distributor") {
+  return (
+    <div className="min-h-screen bg-primary-bg flex items-center justify-center w-full">
+      <div className="text-logo-green text-xl font-heading">Redirecting…</div>
+    </div>
+  );
+}
 
   // Client / distributor — standard HomePage with sidebar
   return (
