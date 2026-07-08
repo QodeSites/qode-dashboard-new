@@ -4,19 +4,19 @@ import "next-auth/jwt";
 declare module "next-auth" {
   interface User {
     icode?: string;
-    accessType?: "admin" | "client" | "distributor";
+    accessType?: "admin" | "internal" | "distributor" | "client";
+    internalUserId?: string;
   }
+
   interface Session {
     user: {
-      icode?: string;
       name?: string | null;
       email?: string | null;
-      accessType?: "admin" | "client" | "distributor";
-      impersonating?: {
-        icode: string;
-        name: string;
-        email: string;
-      } | null;
+      image?: string | null;
+      icode?: string;
+      accessType?: "admin" | "internal" | "distributor" | "client";
+      internalUserId?: string;
+      impersonating?: string | null;
     };
   }
 }
@@ -24,11 +24,8 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     icode?: string;
-    accessType?: "admin" | "client" | "distributor";
-    impersonating?: {
-      icode: string;
-      name: string;
-      email: string;
-    } | null;
+    accessType?: "admin" | "internal" | "distributor" | "client";
+    internalUserId?: string;
+    impersonating?: string | null;
   }
 }

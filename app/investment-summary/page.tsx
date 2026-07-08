@@ -33,22 +33,13 @@ type ApiResponse = MultiStrategyInvestmentData & {
   strategyPdfAvailability?: Record<string, boolean>;
 };
 
-// Sarla/Satidham-only: live Zerodha vs PMS allocation, sourced straight from
-// /api/sarla-api (same endpoint app/holding-summary/page.tsx uses) rather than
-// the parsed PDF report, since that report never carries a broker split.
-interface SarlaHolding {
-  debtEquity: string;
-  valueAsOfToday: number;
-}
-
+// Sarla/Satidham-only: the Zerodha side of the allocation tables comes from
+// the parsed xlsx report (holdingsBifurcation); only the PMS account's current
+// exposure is fetched live from /api/sarla-api (same endpoint
+// app/holding-summary/page.tsx uses), since the report never carries it.
 interface SarlaSchemeResponse {
   data?: {
     currentExposure?: string;
-    holdingsSummary?: {
-      equityHoldings?: SarlaHolding[];
-      debtHoldings?: SarlaHolding[];
-      mutualFundHoldings?: SarlaHolding[];
-    };
   };
 }
 
@@ -890,7 +881,8 @@ export default function InvestmentSummaryPage() {
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [selectedStrategy, setSelectedStrategy] = useState<string>("ALL");
-  const [liveAllocation, setLiveAllocation] = useState<LiveAllocation | null>(null);
+  // PMS account's live current exposure (₹). null = not applicable / failed.
+  const [pmsAum, setPmsAum] = useState<number | null>(null);
   // Gates the whole page render so the two PMS tables don't pop in after the
   // rest of the page has already rendered — starts true so we don't flash a
   // "loaded" page before we even know if this account needs the live fetch.
@@ -922,7 +914,7 @@ export default function InvestmentSummaryPage() {
 
   useEffect(() => {
     if (status !== "authenticated" || (!isSarla && !isSatidham)) {
-      setLiveAllocation(null);
+      setPmsAum(null);
       setLiveAllocationLoading(false);
       return;
     }
@@ -930,76 +922,64 @@ export default function InvestmentSummaryPage() {
 
     const qcode = isSarla ? "QAC00041" : "QAC00046";
     const accountCode = isSarla ? "AC5" : "AC8";
-    const zerodhaScheme = isSarla ? "Scheme B" : "Total Portfolio";
-    const pmsScheme = "Scheme PMS QAW";
-
-    const groupByAssetClass = (holdings: SarlaHolding[] | undefined) => {
-      const totals = { hybrid: 0, debt: 0, equity: 0 };
-      (holdings || []).forEach((h) => {
-        const category = h.debtEquity?.toLowerCase();
-        const val = h.valueAsOfToday || 0;
-        if (category === "equity") totals.equity += val;
-        else if (category === "debt") totals.debt += val;
-        else totals.hybrid += val;
-      });
-      return totals;
-    };
 
     fetch(`/api/sarla-api?qcode=${qcode}&accountCode=${accountCode}`, { cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) return;
         const json: Record<string, SarlaSchemeResponse> = await res.json();
-
-        const zerodhaAum = parseFloat(json[zerodhaScheme]?.data?.currentExposure || "0") || 0;
-        const pmsAum = parseFloat(json[pmsScheme]?.data?.currentExposure || "0") || 0;
-
-        const zerodhaHoldingsSummary = json[zerodhaScheme]?.data?.holdingsSummary;
-        const zerodhaAssetClasses = groupByAssetClass([
-          ...(zerodhaHoldingsSummary?.equityHoldings || []),
-          ...(zerodhaHoldingsSummary?.debtHoldings || []),
-          ...(zerodhaHoldingsSummary?.mutualFundHoldings || []),
-        ]);
-        const zerodhaInvested = zerodhaAssetClasses.hybrid + zerodhaAssetClasses.debt + zerodhaAssetClasses.equity;
-        const zerodhaCash = Math.max(0, zerodhaAum - zerodhaInvested);
-
-        const zerodhaRow: LiveAllocationRow = {
-          label: "Zerodha",
-          hybrid: zerodhaAssetClasses.hybrid,
-          debt: zerodhaAssetClasses.debt,
-          equity: zerodhaAssetClasses.equity,
-          cash: zerodhaCash,
-          total: zerodhaAum,
-        };
-        const pmsRow: LiveAllocationRow = {
-          label: "PMS",
-          hybrid: 0,
-          debt: 0,
-          equity: 0,
-          cash: pmsAum,
-          total: pmsAum,
-        };
-        const grandTotalRow: LiveAllocationRow = {
-          label: "Grand total",
-          hybrid: zerodhaRow.hybrid + pmsRow.hybrid,
-          debt: zerodhaRow.debt + pmsRow.debt,
-          equity: zerodhaRow.equity + pmsRow.equity,
-          cash: zerodhaRow.cash + pmsRow.cash,
-          total: zerodhaRow.total + pmsRow.total,
-        };
-
-        const combined = zerodhaAum + pmsAum;
-        setLiveAllocation({
-          currentAllocation: [zerodhaRow, pmsRow, grandTotalRow],
-          currentAccountAllocation: [
-            { label: "Zerodha", amount: zerodhaAum, percent: combined > 0 ? (zerodhaAum / combined) * 100 : 0 },
-            { label: "PMS", amount: pmsAum, percent: combined > 0 ? (pmsAum / combined) * 100 : 0 },
-            { label: "Account Value", amount: combined, percent: 100, isTotal: true },
-          ],
-        });
+        setPmsAum(parseFloat(json["Scheme PMS QAW"]?.data?.currentExposure || "0") || 0);
       })
-      .catch(() => setLiveAllocation(null))
+      .catch(() => setPmsAum(null))
       .finally(() => setLiveAllocationLoading(false));
   }, [status, isSarla, isSatidham]);
+
+  // Zerodha side comes from the parsed xlsx report (holdingsBifurcation —
+  // same figures the backend Excel pipeline produced); only the PMS exposure
+  // is live. Mirrors the tech-team prototype: Zerodha bifurcation is whatever
+  // the report already says, PMS is appended as a full-cash row.
+  const liveAllocation = useMemo<LiveAllocation | null>(() => {
+    if (pmsAum === null || !data) return null;
+
+    const bucket = (frag: string) =>
+      data.holdingsBifurcation.find((r) => r.type.toLowerCase().includes(frag))?.amount ?? 0;
+
+    const zerodhaRow: LiveAllocationRow = {
+      label: "Zerodha",
+      hybrid: bucket("hybrid"),
+      debt: bucket("debt"),
+      equity: bucket("equity"),
+      cash: bucket("cash"),
+      total: 0,
+    };
+    zerodhaRow.total = zerodhaRow.hybrid + zerodhaRow.debt + zerodhaRow.equity + zerodhaRow.cash;
+
+    const pmsRow: LiveAllocationRow = {
+      label: "PMS",
+      hybrid: 0,
+      debt: 0,
+      equity: 0,
+      cash: pmsAum,
+      total: pmsAum,
+    };
+    const grandTotalRow: LiveAllocationRow = {
+      label: "Grand total",
+      hybrid: zerodhaRow.hybrid + pmsRow.hybrid,
+      debt: zerodhaRow.debt + pmsRow.debt,
+      equity: zerodhaRow.equity + pmsRow.equity,
+      cash: zerodhaRow.cash + pmsRow.cash,
+      total: zerodhaRow.total + pmsRow.total,
+    };
+
+    const combined = zerodhaRow.total + pmsAum;
+    return {
+      currentAllocation: [zerodhaRow, pmsRow, grandTotalRow],
+      currentAccountAllocation: [
+        { label: "Zerodha", amount: zerodhaRow.total, percent: combined > 0 ? (zerodhaRow.total / combined) * 100 : 0 },
+        { label: "PMS", amount: pmsAum, percent: combined > 0 ? (pmsAum / combined) * 100 : 0 },
+        { label: "Account Value", amount: combined, percent: 100, isTotal: true },
+      ],
+    };
+  }, [pmsAum, data]);
 
   useEffect(() => {
     if (status !== "authenticated") return;

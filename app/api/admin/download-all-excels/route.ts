@@ -182,9 +182,6 @@ export async function GET(request: Request) {
 
     for (const client of clients) {
       const accounts = client.pooled_account_users.map((pau) => pau.accounts);
-      const folderName = `${client.user_name ?? client.icode} (${client.icode})`;
-      const folder = masterZip.folder(folderName)!;
-
       let strategies: PortfolioEntry[] = [];
       try {
         strategies = await fetchStrategies(client.icode, accounts);
@@ -219,7 +216,7 @@ export async function GET(request: Request) {
           const fileName = strategies.length === 1
             ? `${clientName}.xlsx`
             : `${clientName} - ${strategy.strategyName.replace(/[/\\?%*:|"<>]/g, "_")}.xlsx`;
-          folder.file(fileName, buffer);
+          masterZip.file(fileName, buffer);
           totalFiles++;
         } catch (e) {
           errors.push(`${client.icode}/${strategy.strategyName} — ${String(e)}`);

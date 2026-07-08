@@ -35,6 +35,12 @@ import { RAJ_GOSHAR_CONFIG } from "./clients/Raj_Goshar_single";
 import { ASHIKA_PROP_CONFIG } from "./clients/ashika_prop1";
 import { ASHIKA_PROP_2_CONFIG } from "./clients/ashika_prop2";
 import { VBW005_CONFIG } from "./clients/VBW005_single";
+import { MSG_PARTNERS_LLP_CONFIG } from "./clients/msg_single";
+import { RAGHVENDRA_SINGH_CONFIG } from "./clients/raghav_single";
+import { HARSH_MEHTA_CONFIG } from "./clients/harsh_mehta_single";
+import { MONICA_MEHTA_CONFIG } from "./clients/monica_mehta_single";
+import { SANJAY_MEHTA_CONFIG } from "./clients/sanjay_mehta_single";
+import { DIAMANTAIRE_EXPORTS_PVT_LTD_CONFIG } from "./clients/dxp_single";
 
 // Single source of truth for clients whose data lives in
 // bifurcated_master_sheet_test. Add a new entry here when onboarding a new
@@ -368,6 +374,66 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     hasNavBasedTotalPortfolio: true,
     renderMode: "single",
     broker: "radiance",
+  },
+  {
+    icode: "QUS00130",
+    qcode: "QAC00116",
+    displayName: "MSG Partners LLP",
+    config: MSG_PARTNERS_LLP_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00131",
+    qcode: "QAC00117",
+    displayName: "Harsh Mehta",
+    config: HARSH_MEHTA_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00132",
+    qcode: "QAC00118",
+    displayName: "Raghvendra Singh",
+    config: RAGHVENDRA_SINGH_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00133",
+    qcode: "QAC00119",
+    displayName: "Diamantaire Exports Pvt Ltd",
+    config: DIAMANTAIRE_EXPORTS_PVT_LTD_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00135",
+    qcode: "QAC00121",
+    displayName: "Monica Mehta",
+    config: MONICA_MEHTA_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00134",
+    qcode: "QAC00120",
+    displayName: "Sanjay Mehta",
+    config: SANJAY_MEHTA_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
   },
 ];
 

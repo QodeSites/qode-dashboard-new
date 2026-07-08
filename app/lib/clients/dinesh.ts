@@ -14,10 +14,12 @@ export const DINESH_GOEL_CONFIG = defineBifurcatedClient({
       exposure: "QYE++ Zerodha Total Portfolio", // hint: detected "QYE++ Zerodha Total Portfolio"
       profit: "QYE++ Total Portfolio Value",
     },
-    "Scheme QTF++": {
+    "Scheme QTF+": {
       inceptionDate: "2025-08-26",
-      exposure: "QTF++ Zerodha Total Portfolio", // hint: detected "QTF++ Zerodha Total Portfolio"
-      profit: "QTF++ Zerodha Total Portfolio",
+      // Data team renamed this scheme's tags from "QTF++ ..." to "QTF+ ..." in
+      // bifurcated_master_sheet_test (the old QTF++ tags now have 0 rows).
+      exposure: "QTF+ Zerodha Total Portfolio",
+      profit: "QTF+ Zerodha Total Portfolio",
       inactive: true,
     },
   },
