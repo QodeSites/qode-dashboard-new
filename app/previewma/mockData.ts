@@ -386,6 +386,7 @@ export const PORTFOLIO_SUMMARY = {
 
 export const TOP_TABS = [
   { key: "client-dashboards", label: "Client Dashboards", icon: "user" },
+  { key: "comparison", label: "Comparison", icon: "trending", },
   { key: "portfolio-summary", label: "Portfolio Summary", icon: "pin" },
   { key: "strategy-breakup", label: "Strategy-wise Client Breakup", icon: "file" },
   { key: "account-value", label: "Account Value Breakup", icon: "briefcase" },

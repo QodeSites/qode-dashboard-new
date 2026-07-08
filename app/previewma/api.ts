@@ -289,4 +289,12 @@ export async function fetchStrategyMonthlyReturns(): Promise<StrategyMonthlyEntr
   return apiFetch<StrategyMonthlyEntry[]>("/api/internal/portfolio-review/strategy-monthly-returns");
 }
 
+
+export async function fetchSystemTags(qcode: string, strategy: string): Promise<string[]> {
+  return apiFetch<string[]>("/api/internal/system-tags", {
+    method: "POST",
+    body: JSON.stringify({ qcode, strategy }),
+  });
+}
+
 export { ApiError };
