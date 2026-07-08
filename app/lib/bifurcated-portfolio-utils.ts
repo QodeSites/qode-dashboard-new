@@ -1443,10 +1443,18 @@ class BifurcatedPortfolioEngine {
     // under the hood).
     const deposited =
       historicalData.reduce((s, d) => s + d.capitalInOut, 0);
-    const cashFlows = historicalData
-      .filter((d) => d.capitalInOut !== 0)
-      .map((d) => ({ date: this.normalizeDate(d.date), amount: d.capitalInOut, dividend: 0 }))
-      .sort((a, b) => a.date.localeCompare(b.date));
+    // Displayed cash In/Out TABLE only — deliberately separate from `deposited`
+    // (Amount Invested) above, which stays derived from the blended capitalInOut.
+    // Source the Zerodha portion from the account-level base "Zerodha Total
+    // Portfolio" tag via getCashFlowTableEntries (the same reader non-PMS
+    // bifurcated clients use), merged with each PMS account's own cash flows.
+    // Totals are unchanged (base == Σ strategy tags); this shows the clean
+    // account-level Zerodha entry instead of the internal QAW+→QAW++ roll-over.
+    const zerodhaTableFlows = await this.getCashFlowTableEntries(qcode, "Total Portfolio");
+    const pmsTableFlows = pmsSeries.flatMap((s) => s.cashFlows);
+    const cashFlows = [...zerodhaTableFlows, ...pmsTableFlows].sort((a, b) =>
+      a.date.localeCompare(b.date)
+    );
 
     const data: PortfolioData = {
       amountDeposited: deposited.toFixed(2),
