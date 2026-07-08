@@ -29,6 +29,7 @@ import StrategyBreakup from "./Strategybreakup";
 import AccountValueBreakup from "./Accountvaluebreakup";
 import SubStrategyPerformance from "./Substrategyperformance";
 import StrategyMonthlyReturns from "./Strategymonthlyreturn";
+import ComparisonTab from "./ComparisonTab";
 
 
 const TOP_TAB_ICONS: Record<string, React.ReactNode> = {
@@ -279,9 +280,6 @@ export function MaReviewDashboard() {
 
           {/* Data bar + Settings toggle */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-            <p className="text-xs text-card-text-secondary">
-              🚀 Data: <strong className="text-card-text">2026/06/19</strong> &middot; not yet computed
-            </p>
             <div className="flex items-center gap-3">
               {/* Settings toggle button */}
               <button
@@ -290,20 +288,6 @@ export function MaReviewDashboard() {
               >
                 <Settings2 className="h-3.5 w-3.5" />
                 Settings
-              </button>
-              <input
-                type="text"
-                defaultValue="2026/06/19"
-                readOnly
-                className="rounded-lg border border-logo-green/15 bg-primary-bg/60 px-4 py-2 text-sm text-card-text w-36"
-              />
-              <button className="rounded-lg border border-logo-green/20 bg-white px-5 py-2 text-sm font-medium text-card-text hover:bg-primary-bg/40 transition-colors flex items-center gap-2">
-                <RefreshCw className="h-3.5 w-3.5" />
-                Refresh
-              </button>
-              <button className="rounded-lg bg-logo-green px-5 py-2 text-sm font-medium text-button-text hover:bg-logo-green/90 transition-colors flex items-center gap-2">
-                <Upload className="h-3.5 w-3.5" />
-                Upload
               </button>
             </div>
           </div>
@@ -331,11 +315,13 @@ export function MaReviewDashboard() {
                 onTagFilterDefault={handleTagFilterDefault}
               />
             )}
+            {topTab === "comparison" && <ComparisonTab />}
             {topTab === "portfolio-summary" && <PortfolioSummary />}
             {topTab === "strategy-breakup" && <StrategyBreakup riskFreeRate={riskFree / 100} fetchTrigger={fetchTrigger} />}
             {topTab === "account-value" && <AccountValueBreakup />}
             {topTab === "sub-strategy" && <SubStrategyPerformance />}
             {topTab === "strategy-monthly" && <StrategyMonthlyReturns />}
+
           </div>
         </div>
       </div>

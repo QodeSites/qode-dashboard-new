@@ -620,6 +620,11 @@ function computeMom(
   };
 }
 
+// shared "is this strategy still active" check — same rule everywhere it's used
+function isActive(until: string | null, today: string): boolean {
+  return !until || until >= today;
+}
+
 export async function computePortfolioSummary(): Promise<PortfolioSummaryResult> {
   const pairs = await fetchStrategyPairs("exposure_tag_suffix");
   if (pairs.length === 0) {
@@ -658,7 +663,9 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
 
   const investors: InvestorAum[] = [];
   const allSeries: SeriesPoint[][] = [];
+  const activeSeries: SeriesPoint[][] = [];
   const strategySeries = new Map<string, SeriesPoint[][]>();
+  const today = new Date().toISOString().split("T")[0];
 
   for (const pair of pairs) {
     const series = seriesMap.get(`${pair.qcode}|${pair.tag}`);
@@ -674,21 +681,25 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
     });
 
     allSeries.push(series);
+    if (isActive(pair.effective_to, today)) activeSeries.push(series);
     if (!strategySeries.has(pair.strategy))
       strategySeries.set(pair.strategy, []);
     strategySeries.get(pair.strategy)!.push(series);
   }
 
   const aum_daily = mergeFfillSum(allSeries);
+  const activeAumDaily = mergeFfillSum(activeSeries); // active-only, feeds mom only
   const strategy_aum_daily: Record<string, AumPoint[]> = {};
   for (const [strategy, list] of strategySeries) {
     strategy_aum_daily[strategy] = mergeFfillSum(list);
   }
 
+  const activeInvestors = investors.filter((inv) => isActive(inv.until, today));
+
   return {
-    total_investors: investors.length,
-    total_aum: investors.reduce((s, inv) => s + inv.aum, 0),
-    mom: computeMom(aum_daily),
+    total_investors: activeInvestors.length,
+    total_aum: activeInvestors.reduce((s, inv) => s + inv.aum, 0),
+    mom: computeMom(activeAumDaily),
     investors,
     aum_daily,
     strategy_aum_daily,
@@ -892,9 +903,7 @@ export async function computeStrategyBreakup(
 ): Promise<StrategyBreakupRow[]> {
   const allPairs = await fetchStrategyPairs("profit_tag_suffix");
   const today = new Date().toISOString().split("T")[0];
-  const pairs = allPairs.filter(
-    (p) => !p.effective_to || p.effective_to >= today,
-  );
+  const pairs = allPairs.filter((p) => isActive(p.effective_to, today));
   if (pairs.length === 0) return [];
 
   const seriesMap = await fetchBulkNavSeries(
@@ -1436,22 +1445,37 @@ export async function computeCompare(
 ): Promise<CompareOutput> {
   if (selections.length === 0) return { benchmark_series: [], results: [] };
 
+  // dedupe before querying — a repeated pair would otherwise double-match
+  // rows in fetchBulkNavSeries' unnest join, corrupting that series with
+  // doubled NAV points, not just wasting a redundant compute pass
+  const uniquePairs = new Map<string, CompareSelection>();
+  for (const s of selections) uniquePairs.set(`${s.qcode}|${s.system_tag}`, s);
+  const unique = [...uniquePairs.values()];
+
   const seriesMap = await fetchBulkNavSeries(
-    selections.map((s) => ({ qcode: s.qcode, tag: s.system_tag })),
+    unique.map((s) => ({ qcode: s.qcode, tag: s.system_tag })),
   );
 
   // no rfr needed — ratios are stripped, so 0 is just a placeholder input
-  const built = selections.map((s) => {
-    const nav = seriesMap.get(`${s.qcode}|${s.system_tag}`);
-    if (!nav || nav.length === 0) return { s, nav: null, metrics: null };
+  const built = new Map<
+    string,
+    { nav: NavPoint[] | null; metrics: Omit<TagMetrics, "ratios"> | null }
+  >();
+  for (const s of unique) {
+    const key = `${s.qcode}|${s.system_tag}`;
+    const nav = seriesMap.get(key);
+    if (!nav || nav.length === 0) {
+      built.set(key, { nav: null, metrics: null });
+      continue;
+    }
     const { ratios: _ratios, ...metrics } = buildTagMetrics(nav, 0);
-    return { s, nav, metrics };
-  });
+    built.set(key, { nav, metrics });
+  }
 
-  // shared window across every selection — one Nifty fetch regardless of count
+  // shared window across every unique pair — one Nifty fetch regardless of count
   let minStart: Date | null = null;
   let maxEnd: Date | null = null;
-  for (const b of built) {
+  for (const b of built.values()) {
     if (!b.nav) continue;
     const start = b.nav[0].date;
     const end = b.nav[b.nav.length - 1].date;
@@ -1468,8 +1492,31 @@ export async function computeCompare(
       ? computeBenchmarkMetrics(niftyRaw, minStart, maxEnd)
       : null;
 
-  const results: CompareResult[] = built.map(({ s, nav, metrics }) => {
-    if (!nav || !metrics) {
+  // overview card per unique pair: rebased at THAT pair's own start — cached
+  // so a repeated pair reuses this instead of re-slicing the raw series
+  const overviewCache = new Map<string, CompareResult["benchmark_overview"]>();
+  function benchmarkOverview(key: string, nav: NavPoint[]) {
+    if (overviewCache.has(key)) return overviewCache.get(key)!;
+    const obj = niftyRaw
+      ? computeBenchmarkMetrics(niftyRaw, nav[0].date, nav[nav.length - 1].date)
+      : null;
+    const result = obj
+      ? {
+          since_inception: obj.since_inception,
+          max_drawdown: obj.max_drawdown,
+          current_drawdown: obj.current_drawdown,
+        }
+      : null;
+    overviewCache.set(key, result);
+    return result;
+  }
+
+  // rebuild in the ORIGINAL request order/count — duplicates in the request
+  // still get one result entry each, just reusing the cached computation
+  const results: CompareResult[] = selections.map((s) => {
+    const key = `${s.qcode}|${s.system_tag}`;
+    const b = built.get(key)!;
+    if (!b.nav || !b.metrics) {
       return {
         qcode: s.qcode,
         system_tag: s.system_tag,
@@ -1477,22 +1524,11 @@ export async function computeCompare(
         benchmark_overview: null,
       };
     }
-    // overview card: rebased at THIS selection's own start, not the shared one
-    const objBenchmark = niftyRaw
-      ? computeBenchmarkMetrics(niftyRaw, nav[0].date, nav[nav.length - 1].date)
-      : null;
-
     return {
       qcode: s.qcode,
       system_tag: s.system_tag,
-      metrics,
-      benchmark_overview: objBenchmark
-        ? {
-            since_inception: objBenchmark.since_inception,
-            max_drawdown: objBenchmark.max_drawdown,
-            current_drawdown: objBenchmark.current_drawdown,
-          }
-        : null,
+      metrics: b.metrics,
+      benchmark_overview: benchmarkOverview(key, b.nav),
     };
   });
 
