@@ -14,6 +14,12 @@ interface SchemeTagConfig {
   startDate: Date;
 }
 
+export interface PmsSchemeInput {
+  schemeName: string;   // dropdown label, e.g. "Scheme PMS QAW"
+  accountCode: string;  // pms_master_sheet.account_code, e.g. "QAW00158"
+  inactive?: boolean;   // default false
+}
+
 export interface PortfolioConfig {
   current: string;
   metrics: string;
@@ -21,6 +27,10 @@ export interface PortfolioConfig {
   isActive: boolean;
   tags?: SchemeTagConfig;
   displayAmountInvestedAsZero?: boolean;
+  // When set, this scheme is a PMS scheme sourced from pms_master_sheet by this
+  // account_code (NOT from bifurcated_master_sheet_test). The engine routes it
+  // through the PMS bridge instead of msTable.
+  pmsAccountCode?: string;
 }
 
 export interface ClientConfig {
@@ -37,6 +47,9 @@ export interface ClientConfig {
   oldSchemeNavTag: string;
   qodeTotalPortfolioTag?: string;
   portfolioMapping: Record<string, PortfolioConfig>;
+  // PMS accounts blended into this client (Ashok). Empty/undefined for everyone
+  // else. Presence of entries is what flips the engine's hasPms gate.
+  pmsSchemes?: PmsSchemeInput[];
 }
 
 export interface DefineBifurcatedClientInput {
@@ -72,6 +85,9 @@ export interface DefineBifurcatedClientInput {
   // Optional overrides — rarely needed.
   qodeTotalPortfolioTag?: string; // default: "Qode Total Portfolio"
   accountCode?: string;            // default: "" (field is vestigial here)
+  // Optional PMS accounts to surface as extra schemes + fold into Total
+  // Portfolio. Sourced from pms_master_sheet by account_code.
+  pms?: PmsSchemeInput[];
 }
 
 export function defineBifurcatedClient(
@@ -110,6 +126,16 @@ export function defineBifurcatedClient(
       },
     };
   }
+  for (const pms of input.pms ?? []) {
+    portfolioMapping[pms.schemeName] = {
+      current: pms.accountCode,
+      metrics: pms.accountCode,
+      nav: pms.accountCode,
+      isActive: !pms.inactive,
+      displayAmountInvestedAsZero: !!pms.inactive,
+      pmsAccountCode: pms.accountCode,
+    };
+  }
 
   return {
     clientName: input.name,
@@ -126,6 +152,7 @@ export function defineBifurcatedClient(
     qodeTotalPortfolioTag:
       input.qodeTotalPortfolioTag ?? "Qode Total Portfolio",
     portfolioMapping,
+    pmsSchemes: input.pms ?? [],
   };
 }
 
