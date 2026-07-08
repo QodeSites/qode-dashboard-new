@@ -26,10 +26,34 @@ import { Download, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown } 
 import type { MultiStrategyInvestmentData } from "@/app/lib/parse-investment-pdf";
 import { Tooltip } from "@/components/ui/tooltip";
 import { INVESTMENT_SUMMARY_INFO } from "@/lib/investment-summary-info-config";
+import { printInvestmentSummaryReport, type LiveAllocation, type LiveAllocationRow } from "./print-report";
+import { withProfitRedeploymentOverrides } from "./profit-redeployment-overrides";
 
 type ApiResponse = MultiStrategyInvestmentData & {
   strategyPdfAvailability?: Record<string, boolean>;
 };
+
+// Sarla/Satidham-only: live Zerodha vs PMS allocation, sourced straight from
+// /api/sarla-api (same endpoint app/holding-summary/page.tsx uses) rather than
+// the parsed PDF report, since that report never carries a broker split.
+interface SarlaHolding {
+  debtEquity: string;
+  valueAsOfToday: number;
+}
+
+interface SarlaSchemeResponse {
+  data?: {
+    currentExposure?: string;
+    holdingsSummary?: {
+      equityHoldings?: SarlaHolding[];
+      debtHoldings?: SarlaHolding[];
+      mutualFundHoldings?: SarlaHolding[];
+    };
+  };
+}
+
+const SARLA_ICODE = "QUS0007";
+const SATIDHAM_ICODE = "QUS0010";
 
 const DISTRIBUTION_COLORS = [
   "bg-logo-green",
@@ -121,6 +145,14 @@ function StrategyBadge({ value }: { value: string }) {
   return (
     <span className="px-2 py-1 rounded text-xs bg-logo-green/10 text-logo-green font-medium">
       {value}
+    </span>
+  );
+}
+
+function PercentBadge({ value, bold = false }: { value: number; bold?: boolean }) {
+  return (
+    <span className={`tabular-nums text-gray-600 ${bold ? "text-sm font-bold text-card-text" : "text-xs"}`}>
+      {value.toFixed(2)}%
     </span>
   );
 }
@@ -858,6 +890,11 @@ export default function InvestmentSummaryPage() {
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [selectedStrategy, setSelectedStrategy] = useState<string>("ALL");
+  const [liveAllocation, setLiveAllocation] = useState<LiveAllocation | null>(null);
+  // Gates the whole page render so the two PMS tables don't pop in after the
+  // rest of the page has already rendered — starts true so we don't flash a
+  // "loaded" page before we even know if this account needs the live fetch.
+  const [liveAllocationLoading, setLiveAllocationLoading] = useState(true);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -879,6 +916,90 @@ export default function InvestmentSummaryPage() {
           ?.impersonating?.icode ??
         (session?.user as { icode?: string })?.icode)
       : (session?.user as { icode?: string })?.icode;
+
+  const isSarla = icode === SARLA_ICODE;
+  const isSatidham = icode === SATIDHAM_ICODE;
+
+  useEffect(() => {
+    if (status !== "authenticated" || (!isSarla && !isSatidham)) {
+      setLiveAllocation(null);
+      setLiveAllocationLoading(false);
+      return;
+    }
+    setLiveAllocationLoading(true);
+
+    const qcode = isSarla ? "QAC00041" : "QAC00046";
+    const accountCode = isSarla ? "AC5" : "AC8";
+    const zerodhaScheme = isSarla ? "Scheme B" : "Total Portfolio";
+    const pmsScheme = "Scheme PMS QAW";
+
+    const groupByAssetClass = (holdings: SarlaHolding[] | undefined) => {
+      const totals = { hybrid: 0, debt: 0, equity: 0 };
+      (holdings || []).forEach((h) => {
+        const category = h.debtEquity?.toLowerCase();
+        const val = h.valueAsOfToday || 0;
+        if (category === "equity") totals.equity += val;
+        else if (category === "debt") totals.debt += val;
+        else totals.hybrid += val;
+      });
+      return totals;
+    };
+
+    fetch(`/api/sarla-api?qcode=${qcode}&accountCode=${accountCode}`, { cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const json: Record<string, SarlaSchemeResponse> = await res.json();
+
+        const zerodhaAum = parseFloat(json[zerodhaScheme]?.data?.currentExposure || "0") || 0;
+        const pmsAum = parseFloat(json[pmsScheme]?.data?.currentExposure || "0") || 0;
+
+        const zerodhaHoldingsSummary = json[zerodhaScheme]?.data?.holdingsSummary;
+        const zerodhaAssetClasses = groupByAssetClass([
+          ...(zerodhaHoldingsSummary?.equityHoldings || []),
+          ...(zerodhaHoldingsSummary?.debtHoldings || []),
+          ...(zerodhaHoldingsSummary?.mutualFundHoldings || []),
+        ]);
+        const zerodhaInvested = zerodhaAssetClasses.hybrid + zerodhaAssetClasses.debt + zerodhaAssetClasses.equity;
+        const zerodhaCash = Math.max(0, zerodhaAum - zerodhaInvested);
+
+        const zerodhaRow: LiveAllocationRow = {
+          label: "Zerodha",
+          hybrid: zerodhaAssetClasses.hybrid,
+          debt: zerodhaAssetClasses.debt,
+          equity: zerodhaAssetClasses.equity,
+          cash: zerodhaCash,
+          total: zerodhaAum,
+        };
+        const pmsRow: LiveAllocationRow = {
+          label: "PMS",
+          hybrid: 0,
+          debt: 0,
+          equity: 0,
+          cash: pmsAum,
+          total: pmsAum,
+        };
+        const grandTotalRow: LiveAllocationRow = {
+          label: "Grand total",
+          hybrid: zerodhaRow.hybrid + pmsRow.hybrid,
+          debt: zerodhaRow.debt + pmsRow.debt,
+          equity: zerodhaRow.equity + pmsRow.equity,
+          cash: zerodhaRow.cash + pmsRow.cash,
+          total: zerodhaRow.total + pmsRow.total,
+        };
+
+        const combined = zerodhaAum + pmsAum;
+        setLiveAllocation({
+          currentAllocation: [zerodhaRow, pmsRow, grandTotalRow],
+          currentAccountAllocation: [
+            { label: "Zerodha", amount: zerodhaAum, percent: combined > 0 ? (zerodhaAum / combined) * 100 : 0 },
+            { label: "PMS", amount: pmsAum, percent: combined > 0 ? (pmsAum / combined) * 100 : 0 },
+            { label: "Account Value", amount: combined, percent: 100, isTotal: true },
+          ],
+        });
+      })
+      .catch(() => setLiveAllocation(null))
+      .finally(() => setLiveAllocationLoading(false));
+  }, [status, isSarla, isSatidham]);
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -948,48 +1069,39 @@ export default function InvestmentSummaryPage() {
 
   const activeProfitRedeployment = useMemo(() => {
     if (!data) return [];
-    if (selectedStrategy === "ALL") return data.profitRedeployment;
+    if (selectedStrategy === "ALL") return withProfitRedeploymentOverrides(icode, data.profitRedeployment);
     return data.profitRedeployment.filter((row) => {
       if (row.isHeader) return false;
       const norm = row.strategy.replace(/^Scheme\s+/i, "");
       return norm === selectedStrategy;
     });
-  }, [data, selectedStrategy]);
+  }, [data, selectedStrategy, icode]);
 
-  const canDownloadPdf =
-    selectedStrategy === "ALL" ||
-    !!data?.strategyPdfAvailability?.[selectedStrategy];
-
-  const handleDownload = async () => {
+  // Generated client-side (same "hidden iframe + window.print()" pattern used
+  // in app/holding-summary/page.tsx) instead of fetching the backend-rendered
+  // PDF, since the backend PDF pipeline (investment-summary-pdf) only reads
+  // the finished .xlsx and has no access to the live PMS data this page
+  // already fetches. Building the PDF here means the two PMS tables
+  // (Current Account Allocation / Current Allocation) are included whenever
+  // they're on screen.
+  const handleDownloadPDF = () => {
+    if (!data || !activeSummary) return;
     setDownloading(true);
-    try {
-      const params = new URLSearchParams();
-      if (selectedStrategy !== "ALL") {
-        params.set("strategy", selectedStrategy);
-      }
-      const url = `/api/download-report${params.toString() ? `?${params}` : ""}`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        alert("Report not available for download.");
-        return;
-      }
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = blobUrl;
-      const disposition = res.headers.get("Content-Disposition") || "";
-      const nameMatch = disposition.match(/filename="?([^"]+)"?/);
-      a.download = nameMatch?.[1] || "Investment_Summary.pdf";
-      a.click();
-      URL.revokeObjectURL(blobUrl);
-    } catch {
-      alert("Failed to download report.");
-    } finally {
-      setDownloading(false);
-    }
+    printInvestmentSummaryReport({
+      data,
+      activeSummary,
+      activeHoldings,
+      activeTransactions,
+      activeProfitRedeployment,
+      liveAllocation,
+      selectedStrategy,
+      fmt,
+    })
+      .catch((e) => console.error(e))
+      .finally(() => setDownloading(false));
   };
 
-  if (status === "loading" || loading) {
+  if (status === "loading" || loading || liveAllocationLoading) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center min-h-[400px]">
@@ -1058,9 +1170,8 @@ export default function InvestmentSummaryPage() {
             <div className="flex flex-col gap-2">
               <div className="flex gap-3 justify-end">
                 <Button
-                  onClick={handleDownload}
-                  disabled={downloading || !canDownloadPdf}
-                  title={!canDownloadPdf ? "No PDF available for this strategy" : undefined}
+                  onClick={handleDownloadPDF}
+                  disabled={downloading}
                   className="h-11 px-4 text-sm font-medium"
                   variant="default"
                 >
@@ -1205,6 +1316,120 @@ export default function InvestmentSummaryPage() {
               </Card>
             )}
 
+            {/* Current Account Allocation — Sarla/Satidham only, live Zerodha vs PMS split */}
+            {liveAllocation && (
+              <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
+                <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg flex items-center justify-between">
+                  <span>Current Account Allocation</span>
+                  <InfoMarker text={INVESTMENT_SUMMARY_INFO.currentAccountAllocation} />
+                </CardTitle>
+                <CardContent className="space-y-6">
+                  <AccountDistributionChart
+                    rows={liveAllocation.currentAccountAllocation
+                      .filter((r) => !r.isTotal && r.amount > 0)
+                      .map((r) => ({ label: r.label, value: r.amount, pct: r.percent }))}
+                  />
+                  <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
+                    <Table className="min-w-full">
+                      <TableHeader className="sticky top-0 z-10">
+                        <TableRow className="bg-[#E9E8DE] hover:bg-[#E9E8DE] border-b border-gray-200">
+                          <TableHead className="py-3 text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
+                            Particulars
+                          </TableHead>
+                          <TableHead className="py-3 text-center text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
+                            Amount (₹)
+                          </TableHead>
+                          <TableHead className="py-3 text-center text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
+                            %
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {liveAllocation.currentAccountAllocation.map((row, i) => (
+                          <TableRow key={i} className="border-b border-gray-200">
+                            <TableCell className={`py-3 text-sm ${row.isTotal ? "font-bold text-card-text" : "text-card-text"}`}>
+                              {row.label}
+                            </TableCell>
+                            <TableCell className={`py-3 text-sm text-center tabular-nums ${row.isTotal ? "font-bold text-card-text" : "font-medium text-gray-600"}`}>
+                              {fmt(row.amount)}
+                            </TableCell>
+                            <TableCell className="py-3 text-center">
+                              <PercentBadge value={row.percent} bold={row.isTotal} />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Current Allocation — Sarla/Satidham only, Hybrid/Debt/Equity/Cash split by Zerodha vs PMS */}
+            {liveAllocation && (
+              <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
+                <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg flex items-center justify-between">
+                  <span>Current Allocation</span>
+                  <InfoMarker text={INVESTMENT_SUMMARY_INFO.currentAllocation} />
+                </CardTitle>
+                <CardContent>
+                  <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
+                    <Table className="min-w-full">
+                      <TableHeader className="sticky top-0 z-10">
+                        <TableRow className="bg-[#E9E8DE] hover:bg-[#E9E8DE] border-b border-gray-200">
+                          <TableHead className="py-3 text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
+                            Scheme
+                          </TableHead>
+                          <TableHead className="py-3 text-center text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
+                            Hybrid (₹)
+                          </TableHead>
+                          <TableHead className="py-3 text-center text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
+                            Debt (₹)
+                          </TableHead>
+                          <TableHead className="py-3 text-center text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
+                            Equity (₹)
+                          </TableHead>
+                          <TableHead className="py-3 text-center text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
+                            Cash + Liquidcase (₹)
+                          </TableHead>
+                          <TableHead className="py-3 text-center text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE]">
+                            Total (₹)
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {liveAllocation.currentAllocation.map((row, i) => {
+                          const isGrandTotal = row.label === "Grand total";
+                          const boldClass = isGrandTotal ? "font-bold text-card-text" : "font-medium text-gray-600";
+                          const pctRow = row.total > 0
+                            ? [row.hybrid, row.debt, row.equity, row.cash].map((v) => (v / row.total) * 100)
+                            : [0, 0, 0, 0];
+                          const amounts = [row.hybrid, row.debt, row.equity, row.cash];
+                          return (
+                            <TableRow key={i} className="border-b border-gray-200">
+                              <TableCell className={`py-3 text-sm ${isGrandTotal ? "font-bold text-card-text" : "text-card-text"}`}>
+                                {row.label}
+                              </TableCell>
+                              {amounts.map((amount, j) => (
+                                <TableCell key={j} className="py-3 text-center">
+                                  <div className={`text-sm tabular-nums ${boldClass}`}>{fmt(amount)}</div>
+                                  <div className="mt-1"><PercentBadge value={pctRow[j]} /></div>
+                                </TableCell>
+                              ))}
+                              <TableCell className="py-3 text-center">
+                                <div className={`text-sm tabular-nums ${boldClass}`}>{fmt(row.total)}</div>
+                                <div className="mt-1"><PercentBadge value={100} bold /></div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Profit Redeployment Summary */}
             {activeProfitRedeployment.length > 0 && (
               <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
@@ -1243,8 +1468,8 @@ export default function InvestmentSummaryPage() {
                               </TableCell>
                             </TableRow>
                           ) : (
-                            <TableRow key={i} className="border-b border-gray-200">
-                              <TableCell className="py-3 text-sm text-card-text font-medium">{row.strategy}</TableCell>
+                            <TableRow key={i} className={`border-b border-gray-200 ${row.isTotal ? "bg-black/5" : ""}`}>
+                              <TableCell className={`py-3 text-sm text-card-text ${row.isTotal ? "font-bold" : "font-medium"}`}>{row.strategy}</TableCell>
                               <PnlAmountCell value={row.profits} />
                               <TableCell className="py-3 text-sm text-gray-600 text-center">{row.note}</TableCell>
                             </TableRow>

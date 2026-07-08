@@ -62,6 +62,7 @@ export interface InvestmentSummaryData {
     profits: number;
     note: string;
     isHeader?: boolean;
+    isTotal?: boolean;
   }>;
 
   // Holdings sheets

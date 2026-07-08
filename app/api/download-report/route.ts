@@ -4,32 +4,38 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { getEffectiveIcode } from "@/app/lib/admin-utils";
 import { promises as fs } from "fs";
 import path from "path";
-
-const REPORTS_DIR = path.join(process.cwd(), "data", "reports");
+import { reportsDirsForAccess } from "@/app/lib/sync-utils";
 
 // Reports are stored as "<ClientName>_Invst_Summary_<icode>.pdf".
 // Client names vary, so we resolve the file by matching the icode suffix.
+// Admins review from reports_staging (falling back to live); clients see live.
 const ICODE_PATTERN = /^QUS[0-9]+$/i;
 
 async function findReportByIcode(
   icode: string,
+  dirs: string[],
   strategy?: string | null,
-): Promise<string | null> {
-  let entries: string[];
-  try {
-    entries = await fs.readdir(REPORTS_DIR);
-  } catch {
-    return null;
-  }
+): Promise<{ dir: string; fileName: string } | null> {
+  for (const dir of dirs) {
+    let entries: string[];
+    try {
+      entries = await fs.readdir(dir);
+    } catch {
+      continue;
+    }
 
-  if (strategy) {
-    const suffix = `_${icode}_${strategy}.pdf`.toLowerCase();
-    return entries.find((n) => n.toLowerCase().endsWith(suffix)) ?? null;
+    let fileName: string | undefined;
+    if (strategy) {
+      const suffix = `_${icode}_${strategy}.pdf`.toLowerCase();
+      fileName = entries.find((n) => n.toLowerCase().endsWith(suffix));
+    } else {
+      const suffix = `_${icode}.pdf`.toLowerCase();
+      const strategyPattern = new RegExp(`_${icode.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}_.+\\.pdf$`, "i");
+      fileName = entries.find((n) => n.toLowerCase().endsWith(suffix) && !strategyPattern.test(n));
+    }
+    if (fileName) return { dir, fileName };
   }
-
-  const suffix = `_${icode}.pdf`.toLowerCase();
-  const strategyPattern = new RegExp(`_${icode.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}_.+\\.pdf$`, "i");
-  return entries.find((n) => n.toLowerCase().endsWith(suffix) && !strategyPattern.test(n)) ?? null;
+  return null;
 }
 
 export async function GET(req: NextRequest) {
@@ -55,14 +61,16 @@ export async function GET(req: NextRequest) {
       return new NextResponse("Invalid or missing icode", { status: 400 });
     }
 
-    const fileName = await findReportByIcode(icode, strategy);
-    if (!fileName) {
+    const dirs = reportsDirsForAccess(isAdmin);
+    const found = await findReportByIcode(icode, dirs, strategy);
+    if (!found) {
       return new NextResponse("Report not found", { status: 404 });
     }
+    const { dir, fileName } = found;
 
-    // Guard against path traversal — the resolved file must stay in REPORTS_DIR.
-    const resolved = path.resolve(REPORTS_DIR, fileName);
-    if (!resolved.startsWith(path.resolve(REPORTS_DIR) + path.sep)) {
+    // Guard against path traversal — the resolved file must stay in its reports dir.
+    const resolved = path.resolve(dir, fileName);
+    if (!resolved.startsWith(path.resolve(dir) + path.sep)) {
       return new NextResponse("Invalid path", { status: 400 });
     }
 

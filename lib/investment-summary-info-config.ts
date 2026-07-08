@@ -16,6 +16,12 @@ export const INVESTMENT_SUMMARY_INFO = {
   profitRedeploymentSummary:
     "Profits earned from one strategy that were put back into another strategy to grow your money further.",
 
+  currentAccountAllocation:
+    "How your total investment is currently split between your Zerodha-managed account and your PMS account.",
+
+  currentAllocation:
+    "How your Zerodha and PMS accounts are currently allocated across Hybrid, Debt, Equity, and Cash + Liquid funds.",
+
   // Holdings tab
   currentEquityHoldings:
     "The list of stocks you currently own in your portfolio.",
