@@ -15,6 +15,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Download } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 
 interface Account {
   qcode: string;
@@ -45,6 +53,10 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
   const [isLoading, setIsLoading] = useState(true);
   const [exportingSet, setExportingSet] = useState<Set<string>>(new Set());
   const [visibilityMap, setVisibilityMap] = useState<Record<string, boolean>>({});
+  const [pendingToggle, setPendingToggle] = useState<{ icode: string; visible: boolean } | null>(null);
+  const [password, setPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Debounce search input
   useEffect(() => {
@@ -80,23 +92,42 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
     }
   }, []);
 
-  const handleToggleVisibility = async (icode: string, visible: boolean) => {
-    // Optimistic update
-    setVisibilityMap((prev) => ({ ...prev, [icode]: visible }));
+  const handleToggleVisibility = (icode: string, visible: boolean) => {
+    setPendingToggle({ icode, visible });
+    setPassword("");
+    setPasswordError("");
+  };
+
+  const handleConfirmVisibility = async () => {
+    if (!pendingToggle) return;
+    setIsSubmitting(true);
+    setPasswordError("");
+
+    const { icode, visible } = pendingToggle;
+
     try {
       const res = await fetch("/api/admin/dashboard-visibility", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ icode, dashboard_visible: visible }),
+        body: JSON.stringify({ icode, dashboard_visible: visible, password }),
       });
       if (!res.ok) {
-        // Revert on failure
-        setVisibilityMap((prev) => ({ ...prev, [icode]: !visible }));
+        if (res.status === 403) {
+          setPasswordError("Incorrect password");
+          setIsSubmitting(false);
+          return;
+        }
+        setPasswordError("Failed to update visibility");
+        setIsSubmitting(false);
+        return;
       }
+      setVisibilityMap((prev) => ({ ...prev, [icode]: visible }));
+      setPendingToggle(null);
     } catch {
-      setVisibilityMap((prev) => ({ ...prev, [icode]: !visible }));
+      setPasswordError("Something went wrong");
     }
+    setIsSubmitting(false);
   };
 
   useEffect(() => {
@@ -167,10 +198,15 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
         <div className="relative flex-1">
           <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-card-text-secondary" />
           <Input
+            type="search"
             placeholder="Search clients by name, email, or client code..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9 bg-white/50"
+            autoComplete="off"
+            data-form-type="other"
+            data-lpignore="true"
+            data-1p-ignore
           />
         </div>
         <div className="flex items-center border rounded-lg overflow-hidden">
@@ -335,6 +371,46 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
         </div>
       )}
 
+      <Dialog open={pendingToggle !== null} onOpenChange={(open) => { if (!open) setPendingToggle(null); }}>
+        <DialogContent className="sm:max-w-sm border-logo-green/20 bg-primary-bg">
+          <DialogHeader>
+            <DialogTitle className="text-card-text font-heading text-xl">Confirm Visibility Change</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-card-text-secondary">
+              Enter the admin password to {pendingToggle?.visible ? "enable" : "disable"} dashboard visibility for <span className="font-semibold text-card-text">{pendingToggle?.icode}</span>.
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="visibility-password" className="text-card-text text-xs font-medium">Password</Label>
+              <Input
+                id="visibility-password"
+                type="password"
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setPasswordError(""); }}
+                onKeyDown={(e) => { if (e.key === "Enter" && password) handleConfirmVisibility(); }}
+                placeholder="Enter password"
+                className="border-logo-green/20 bg-white focus-visible:ring-logo-green/30"
+                autoFocus
+              />
+              {passwordError && (
+                <p className="text-xs text-red-600 mt-1">{passwordError}</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setPendingToggle(null)} disabled={isSubmitting} className="border-logo-green/20 text-card-text hover:bg-logo-green/5">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmVisibility}
+              disabled={isSubmitting || !password}
+              className="bg-logo-green text-button-text hover:bg-logo-green/90"
+            >
+              {isSubmitting ? "Confirming..." : "Confirm"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
