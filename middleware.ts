@@ -44,6 +44,17 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Guard partner routes
+  if (
+    pathname.startsWith("/partner") ||
+    pathname.startsWith("/api/partner")
+  ) {
+    if (token?.accessType !== "partner") {
+      return NextResponse.redirect(new URL("/", req.url));
+    }
+    return NextResponse.next();
+  }
+
   const icode = token?.icode as string | undefined;
   const accessType = token?.accessType as string | undefined;
 

@@ -113,9 +113,36 @@ model clients {
   remarks                    String?                      @default("NA")
   created_at                 DateTime                     @default(now())
   password                   String?
+  partner_clients            partner_clients[]
   pooled_account_allocations pooled_account_allocations[]
   pooled_account_users       pooled_account_users[]
 
+  @@schema("public")
+}
+
+model partners {
+  id              Int               @id @default(autoincrement())
+  email           String            @unique
+  password        String
+  name            String
+  active          Boolean           @default(true)
+  created_at      DateTime          @default(now())
+  updated_at      DateTime          @default(now()) @updatedAt
+  partner_clients partner_clients[]
+
+  @@schema("public")
+}
+
+model partner_clients {
+  id         Int      @id @default(autoincrement())
+  partner_id Int
+  icode      String
+  created_at DateTime @default(now())
+  clients    clients  @relation(fields: [icode], references: [icode])
+  partners   partners @relation(fields: [partner_id], references: [id], onDelete: Cascade)
+
+  @@unique([partner_id, icode])
+  @@index([partner_id])
   @@schema("public")
 }
 

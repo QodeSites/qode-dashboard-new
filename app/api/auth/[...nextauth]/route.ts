@@ -76,6 +76,21 @@ export const authOptions = {
           };
         }
 
+        // Partner (distributor) credentials — DB-backed via `partners` table.
+        // Checked before client auth so partner emails resolve to the partner role.
+        const partner = await prisma.partners.findFirst({
+          where: { email: identifierLower, active: true },
+        });
+        if (partner && partner.password === credentials.password) {
+          return {
+            id: partner.id.toString(),
+            name: partner.name,
+            email: partner.email,
+            accessType: "partner",
+            partnerId: partner.id.toString(),
+          };
+        }
+
         // Regular client auth
         const user = await prisma.clients.findFirst({
           where: {
@@ -117,10 +132,15 @@ export const authOptions = {
         token.name = user.name;
         token.email = user.email;
         token.accessType = user.accessType || "client";
+        token.partnerId = user.partnerId;
       }
-      // Support session updates for impersonation (admin only)
+      // Support session updates for impersonation (admin + partner).
+      // NOTE: for partners this only records the requested target in the token;
+      // the token cannot hit the DB, so every data request must independently
+      // re-verify the target icode is inside the partner's book server-side
+      // (see getEffectiveIcodeChecked / partnerCanAccessIcode in admin-utils).
       if (trigger === "update" && session?.impersonating !== undefined) {
-        if (token.accessType === "admin") {
+        if (token.accessType === "admin" || token.accessType === "partner") {
           token.impersonating = session.impersonating;
         }
       }
@@ -132,6 +152,7 @@ export const authOptions = {
         session.user.name = token.name;
         session.user.email = token.email;
         session.user.accessType = token.accessType || "client";
+        session.user.partnerId = token.partnerId;
         session.user.impersonating = token.impersonating || null;
       }
       return session;
