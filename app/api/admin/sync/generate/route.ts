@@ -50,7 +50,8 @@ export async function POST(req: NextRequest) {
       env: { ...process.env, SYNC_JOB_ID: String(job.id) },
     });
     // Detach: the HTTP request returns immediately; the script updates
-    // the sync_jobs row itself when it finishes (via update_job.py).
+    // the sync_jobs row itself when it finishes (via notify_job.py calling
+    // back into /api/internal/sync/jobs/:id).
     child.unref();
 
     child.on("error", async (spawnErr) => {

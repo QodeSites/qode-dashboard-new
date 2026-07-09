@@ -8,6 +8,7 @@
  * client data tables are never written.
  */
 import { prisma } from "@/lib/prisma";
+import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import * as XLSX from "xlsx";
 
@@ -111,7 +112,6 @@ export const FILE_RULES: Record<string, FileRule> = {
       "base_folder",
       "filename_prefix",
       "output_file_name",
-      "icode",
     ],
   },
   "system_tags.yaml": {
@@ -254,4 +254,31 @@ export async function getRunningJob() {
     where: { status: "running" },
     orderBy: { started_at: "desc" },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Internal (machine-to-machine) auth for cron / run_sync.sh
+// ---------------------------------------------------------------------------
+
+/**
+ * cron_generate.sh and run_sync.sh have no NextAuth session, so they
+ * authenticate with a shared secret instead (SYNC_INTERNAL_TOKEN, read from
+ * the same .env as DATABASE_URL). This replaces raw psycopg2 connections
+ * from Python — libpq couldn't parse Prisma's DATABASE_URL (?schema=public
+ * plus an unescaped '@' in the password), so job creation/updates now go
+ * through this app's own Prisma connection instead.
+ */
+export function verifyInternalToken(req: NextRequest): NextResponse | null {
+  const expected = process.env.SYNC_INTERNAL_TOKEN;
+  if (!expected) {
+    return NextResponse.json(
+      { error: "SYNC_INTERNAL_TOKEN not configured on server" },
+      { status: 500 },
+    );
+  }
+  const provided = req.headers.get("x-internal-token");
+  if (provided !== expected) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  return null;
 }
