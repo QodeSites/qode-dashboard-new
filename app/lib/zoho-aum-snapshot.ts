@@ -51,6 +51,12 @@ const SATIDHAM_EFFECTIVE_QCODE = "QAC00066";
 const SARLA_SCHEME = "Scheme B";
 const SATIDHAM_SCHEME = "Scheme QAW++";
 
+// Bifurcated clients whose Zoho snapshot should read a specific scheme
+// instead of the default "Total Portfolio" aggregate.
+const BIFURCATED_SCHEME_OVERRIDE: Record<string, string> = {
+  QAC00110: "Scheme QAW++", // Ashok Jogani HUF — divided account, use QAW++
+};
+
 interface Values {
   currentAum: number;
   investedAmount: number;
@@ -77,10 +83,12 @@ async function fromBifurcatedEngine(qcode: string): Promise<Values> {
     { data: { amountDeposited: string; currentExposure: string } }
   >;
 
-  // Multi-scheme clients: "Total Portfolio" is the aggregate the dashboard
-  // headlines. Single-strategy clients: exactly one scheme key.
-  const key =
-    "Total Portfolio" in results
+  // Per-qcode override takes priority, then "Total Portfolio" aggregate,
+  // then the sole scheme key (single-strategy clients).
+  const override = BIFURCATED_SCHEME_OVERRIDE[qcode];
+  const key = override && override in results
+    ? override
+    : "Total Portfolio" in results
       ? "Total Portfolio"
       : Object.keys(results)[0];
   const data = results[key]?.data;
