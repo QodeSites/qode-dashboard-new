@@ -26,6 +26,8 @@ interface ClientCardProps {
   isImpersonating?: boolean;
   dashboardVisible?: boolean;
   onToggleVisibility?: (icode: string, visible: boolean) => void;
+  showVisibilityToggle?: boolean;
+  showCsvExport?: boolean;
 }
 
 export function ClientCard({
@@ -38,6 +40,8 @@ export function ClientCard({
   isImpersonating,
   dashboardVisible = true,
   onToggleVisibility,
+  showVisibilityToggle = true,
+  showCsvExport = true,
 }: ClientCardProps) {
   const [exporting, setExporting] = useState(false);
 
@@ -88,19 +92,21 @@ export function ClientCard({
           </Badge>
         </div>
 
-        <div className="flex items-center justify-between mb-3 px-1">
-          <span className="text-xs text-card-text-secondary">Dashboard Access</span>
-          <div className="flex items-center gap-2">
-            <span className={`text-xs font-medium ${dashboardVisible ? "text-logo-green" : "text-card-text-secondary"}`}>
-              {dashboardVisible ? "On" : "Off"}
-            </span>
-            <Switch
-              checked={dashboardVisible}
-              onCheckedChange={(checked) => onToggleVisibility?.(icode, checked)}
-              className="data-[state=checked]:bg-logo-green data-[state=unchecked]:bg-card-text-secondary/30"
-            />
+        {showVisibilityToggle && (
+          <div className="flex items-center justify-between mb-3 px-1">
+            <span className="text-xs text-card-text-secondary">Dashboard Access</span>
+            <div className="flex items-center gap-2">
+              <span className={`text-xs font-medium ${dashboardVisible ? "text-logo-green" : "text-card-text-secondary"}`}>
+                {dashboardVisible ? "On" : "Off"}
+              </span>
+              <Switch
+                checked={dashboardVisible}
+                onCheckedChange={(checked) => onToggleVisibility?.(icode, checked)}
+                className="data-[state=checked]:bg-logo-green data-[state=unchecked]:bg-card-text-secondary/30"
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="mb-4">
           <div className="text-center p-2 bg-primary-bg rounded-lg">
@@ -113,8 +119,8 @@ export function ClientCard({
           <div className="flex justify-between">
             <div className="mb-4 space-y-1">
               {accounts.slice(0, 3).map((account) => (
-                <div 
-                key={account.qcode} 
+                <div
+                key={account.qcode}
                 className="text-xs"
                 >
                 <div className="flex w-full justify-between">
@@ -130,39 +136,41 @@ export function ClientCard({
                 </p>
               )}
             </div>
-            <span className="text-card-text-secondary truncate">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    disabled={exporting}
-                    className="h-6 w-[90px] px-2 text-xs font-medium bg-logo-green text-button-text hover:bg-logo-green/90 flex items-center justify-center"
-                  >
-                    {exporting ? (
-                      <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
-                    ) : (
-                      <>
-                        <Download className="h-4 w-4 mr-1" />
-                        CSV
-                      </>
-                    )}
-                  </Button>
-                </DropdownMenuTrigger>
-
-                <DropdownMenuContent className="w-30 bg-white border border-gray-200 shadow-md rounded-md">
-                  {accounts.map((acc) => (
-                    <DropdownMenuItem
-                      className="text-sm font-bold cursor-pointer px-3 py-2 rounded-sm 
-                      hover:bg-logo-green/10 focus:bg-logo-green/10 
-                      hover:text-gray-700 focus:text-gray-700 text-gray-700"
-                      key={acc.qcode}
-                      onClick={() => handleDownloadCsv([acc.qcode])}
+            {showCsvExport && (
+              <span className="text-card-text-secondary truncate">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      disabled={exporting}
+                      className="h-6 w-[90px] px-2 text-xs font-medium bg-logo-green text-button-text hover:bg-logo-green/90 flex items-center justify-center"
                     >
-                      <Download className="h-2 w-2 mr-1" />{acc.qcode}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </span>
+                      {exporting ? (
+                        <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
+                      ) : (
+                        <>
+                          <Download className="h-4 w-4 mr-1" />
+                          CSV
+                        </>
+                      )}
+                    </Button>
+                  </DropdownMenuTrigger>
+
+                  <DropdownMenuContent className="w-30 bg-white border border-gray-200 shadow-md rounded-md">
+                    {accounts.map((acc) => (
+                      <DropdownMenuItem
+                        className="text-sm font-bold cursor-pointer px-3 py-2 rounded-sm
+                        hover:bg-logo-green/10 focus:bg-logo-green/10
+                        hover:text-gray-700 focus:text-gray-700 text-gray-700"
+                        key={acc.qcode}
+                        onClick={() => handleDownloadCsv([acc.qcode])}
+                      >
+                        <Download className="h-2 w-2 mr-1" />{acc.qcode}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </span>
+            )}
           </div>
         )}
 

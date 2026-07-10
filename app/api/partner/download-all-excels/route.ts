@@ -1,29 +1,55 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/app/lib/admin-utils";
+import {
+  requirePartner,
+  getPartnerBookIcodes,
+  partnerCanAccessIcode,
+} from "@/app/lib/admin-utils";
 import { buildExcelZipForClients } from "@/app/lib/excel-export-utils";
 
 /**
- * GET /api/admin/download-all-excels
- * GET /api/admin/download-all-excels?icode=QUS0007   ← single client
+ * GET /api/partner/download-all-excels
+ * GET /api/partner/download-all-excels?icode=QUS0007   ← single client (must be in book)
  *
- * Admin-only. Returns a .zip containing one folder per client and one
- * .xlsx per strategy inside each folder.
+ * Partner-only. Returns a .zip containing one .xlsx per strategy per client,
+ * restricted to the authenticated partner's book (partner_clients).
  */
 export async function GET(request: Request) {
-  const { error } = await requireAdmin();
+  const { error, session } = await requirePartner();
   if (error) return error;
+
+  const partnerId = parseInt(session!.user.partnerId ?? "", 10);
+  if (!partnerId || Number.isNaN(partnerId)) {
+    return NextResponse.json({ error: "Partner not resolved" }, { status: 403 });
+  }
 
   const { searchParams } = new URL(request.url);
   const icodeFilter = searchParams.get("icode");
 
+  if (icodeFilter) {
+    const allowed = await partnerCanAccessIcode(partnerId, icodeFilter);
+    if (!allowed) {
+      return NextResponse.json(
+        { error: "Client is not in your book" },
+        { status: 403 }
+      );
+    }
+  }
+
   try {
-    // Fetch clients
-    const where: Record<string, unknown> = { pooled_account_users: { some: {} } };
-    if (icodeFilter) where.icode = icodeFilter;
+    const bookIcodes = icodeFilter
+      ? [icodeFilter]
+      : await getPartnerBookIcodes(partnerId);
+
+    if (bookIcodes.length === 0) {
+      return NextResponse.json(
+        { error: "No clients in your book" },
+        { status: 404 }
+      );
+    }
 
     const clients = await prisma.clients.findMany({
-      where,
+      where: { icode: { in: bookIcodes }, pooled_account_users: { some: {} } },
       select: {
         icode: true,
         user_name: true,
@@ -58,7 +84,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const label = icodeFilter ?? "all_clients";
+    const label = icodeFilter ?? "partner_book";
     const date  = new Date().toISOString().slice(0, 10);
 
     return new Response(zipBuffer, {
@@ -69,7 +95,7 @@ export async function GET(request: Request) {
       },
     });
   } catch (err) {
-    console.error("Admin download-all-excels error:", err);
+    console.error("Partner download-all-excels error:", err);
     return NextResponse.json({ error: "Failed to generate portfolio Excels" }, { status: 500 });
   }
 }

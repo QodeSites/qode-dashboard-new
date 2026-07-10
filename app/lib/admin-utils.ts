@@ -142,6 +142,18 @@ export async function getEffectiveIcodeChecked(
   return session.user.icode || null;
 }
 
+/**
+ * Returns all icodes in the given partner's book. Used to scope
+ * stats/visibility/excel-export queries to the partner's clients.
+ */
+export async function getPartnerBookIcodes(partnerId: number): Promise<string[]> {
+  const rows = await prisma.partner_clients.findMany({
+    where: { partner_id: partnerId },
+    select: { icode: true },
+  });
+  return rows.map((r) => r.icode);
+}
+
 export async function checkDashboardVisibility(icode: string): Promise<boolean> {
   const row = await prisma.dashboard_visibility.findUnique({
     where: { icode },
