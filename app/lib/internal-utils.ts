@@ -571,10 +571,15 @@ async function fetchStrategyPairs(
   return [...map.values()];
 }
 
-// carry-forward sum across N series onto the union of their dates — single pass
-function mergeFfillSum(seriesList: SeriesPoint[][]): AumPoint[] {
+// carry-forward sum across N series onto the union of their dates — single pass.
+// each series stops contributing once `d` passes its own `until` (if set) —
+// prevents lapsed/switched strategies from being counted forever.
+function mergeFfillSum(
+  seriesList: { series: SeriesPoint[]; until: string | null }[],
+): AumPoint[] {
   const dateSet = new Set<string>();
-  for (const s of seriesList) for (const p of s) dateSet.add(p.date);
+  for (const { series } of seriesList)
+    for (const p of series) dateSet.add(p.date);
   const dates = [...dateSet].sort();
 
   const idx = new Array(seriesList.length).fill(0);
@@ -584,12 +589,12 @@ function mergeFfillSum(seriesList: SeriesPoint[][]): AumPoint[] {
   for (const d of dates) {
     let sum = 0;
     for (let i = 0; i < seriesList.length; i++) {
-      const s = seriesList[i];
-      while (idx[i] < s.length && s[idx[i]].date <= d) {
-        last[i] = s[idx[i]].value;
+      const { series, until } = seriesList[i];
+      while (idx[i] < series.length && series[idx[i]].date <= d) {
+        last[i] = series[idx[i]].value;
         idx[i]++;
       }
-      sum += last[i];
+      if (!until || d <= until) sum += last[i];
     }
     out.push({ date: d, aum: sum });
   }
@@ -662,9 +667,11 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
   }
 
   const investors: InvestorAum[] = [];
-  const allSeries: SeriesPoint[][] = [];
-  const activeSeries: SeriesPoint[][] = [];
-  const strategySeries = new Map<string, SeriesPoint[][]>();
+  const allSeries: { series: SeriesPoint[]; until: string | null }[] = [];
+  const strategySeries = new Map<
+    string,
+    { series: SeriesPoint[]; until: string | null }[]
+  >();
   const today = new Date().toISOString().split("T")[0];
 
   for (const pair of pairs) {
@@ -680,15 +687,15 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
       until: pair.effective_to,
     });
 
-    allSeries.push(series);
-    if (isActive(pair.effective_to, today)) activeSeries.push(series);
+    const entry = { series, until: pair.effective_to };
+    allSeries.push(entry);
     if (!strategySeries.has(pair.strategy))
       strategySeries.set(pair.strategy, []);
-    strategySeries.get(pair.strategy)!.push(series);
+    strategySeries.get(pair.strategy)!.push(entry);
   }
 
+  // per-series cutoff is now baked in, so this is accurate for any date — mom included
   const aum_daily = mergeFfillSum(allSeries);
-  const activeAumDaily = mergeFfillSum(activeSeries); // active-only, feeds mom only
   const strategy_aum_daily: Record<string, AumPoint[]> = {};
   for (const [strategy, list] of strategySeries) {
     strategy_aum_daily[strategy] = mergeFfillSum(list);
@@ -699,7 +706,7 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
   return {
     total_investors: activeInvestors.length,
     total_aum: activeInvestors.reduce((s, inv) => s + inv.aum, 0),
-    mom: computeMom(activeAumDaily),
+    mom: computeMom(aum_daily),
     investors,
     aum_daily,
     strategy_aum_daily,
