@@ -24,8 +24,6 @@ import {
 } from "@/components/ui/select";
 import { Download, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import type { MultiStrategyInvestmentData } from "@/app/lib/parse-investment-pdf";
-import { Tooltip } from "@/components/ui/tooltip";
-import { INVESTMENT_SUMMARY_INFO } from "@/lib/investment-summary-info-config";
 import { printInvestmentSummaryReport, type LiveAllocation, type LiveAllocationRow } from "./print-report";
 import { withProfitRedeploymentOverrides } from "./profit-redeployment-overrides";
 
@@ -168,52 +166,17 @@ function PnlAmountCell({ value }: { value: number }) {
   );
 }
 
-function InfoMarker({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <span
-      className="relative inline-flex items-center"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-    >
-      <button
-        type="button"
-        aria-label="More info"
-        className="flex items-center"
-      >
-        <span className="bg-logo-green rounded-full h-4 w-4 flex items-center justify-center">
-          <svg className="h-4 w-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M10 0a10 10 0 1010 10A10 10 0 0010 0zm0 18a8 8 0 118-8 8 8 0 01-8 8zm1-13H9v2h2zm0 3H9v6h2z" />
-          </svg>
-        </span>
-      </button>
-      {open && (
-        <div
-          role="tooltip"
-          style={{ width: 280 }}
-          className="absolute z-[9999] right-0 top-full mt-2 rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-xs leading-relaxed font-normal text-white shadow-lg whitespace-normal break-words"
-        >
-          {text}
-        </div>
-      )}
-    </span>
-  );
-}
-
 function SectionCard({
   title,
   rows,
-  infoText,
 }: {
   title: string;
   rows: { label: string; value: number; isBold?: boolean }[];
-  infoText?: string;
 }) {
   return (
     <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
       <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg flex items-center justify-between">
         <span>{title}</span>
-        {infoText && <InfoMarker text={infoText} />}
       </CardTitle>
       <CardContent>
         <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
@@ -245,14 +208,12 @@ function HoldingsTable({
   nameCol = "Name",
   itemLabel = "entry",
   itemLabelPlural = "entries",
-  infoText,
 }: {
   title: string;
   rows: HoldingRow[];
   nameCol?: string;
   itemLabel?: string;
   itemLabelPlural?: string;
-  infoText?: string;
 }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(10);
@@ -313,7 +274,6 @@ function HoldingsTable({
     <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
       <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg flex items-center justify-between">
         <span>{title}</span>
-        {infoText && <InfoMarker text={infoText} />}
       </CardTitle>
       <CardContent>
         {/* Top bar: count + page size selector */}
@@ -459,7 +419,7 @@ function HoldingsTable({
 
 type EquityTxRow = { name: string; capitalFlow: string; date: string; strategy: string; amount: number };
 
-function EquityTransactionTable({ rows, infoText }: { rows: EquityTxRow[]; infoText?: string }) {
+function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(10);
   const [sortKey, setSortKey] = useState<keyof EquityTxRow | null>(null);
@@ -512,7 +472,6 @@ function EquityTransactionTable({ rows, infoText }: { rows: EquityTxRow[]; infoT
     <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
       <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg flex items-center justify-between">
         <span>Equity Transactions</span>
-        {infoText && <InfoMarker text={infoText} />}
       </CardTitle>
       <CardContent>
         <div className="flex items-center justify-between mb-3">
@@ -600,7 +559,7 @@ function EquityTransactionTable({ rows, infoText }: { rows: EquityTxRow[]; infoT
 
 type CashTxRow = { date: string; transactionType: string; strategy: string; amount: number };
 
-function CashTransactionTable({ rows, infoText }: { rows: CashTxRow[]; infoText?: string }) {
+function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(10);
   const [sortKey, setSortKey] = useState<keyof CashTxRow | null>(null);
@@ -652,7 +611,6 @@ function CashTransactionTable({ rows, infoText }: { rows: CashTxRow[]; infoText?
     <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
       <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg flex items-center justify-between">
         <span>Cash Transactions</span>
-        {infoText && <InfoMarker text={infoText} />}
       </CardTitle>
       <CardContent>
         <div className="flex items-center justify-between mb-3">
@@ -736,7 +694,7 @@ function CashTransactionTable({ rows, infoText }: { rows: CashTxRow[]; infoText?
 
 type MfTxRow = { name: string; capitalFlow: string; date: string; strategy: string; amount: number };
 
-function MfTransactionTable({ rows, infoText }: { rows: MfTxRow[]; infoText?: string }) {
+function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(10);
   const [sortKey, setSortKey] = useState<keyof MfTxRow | null>(null);
@@ -789,7 +747,6 @@ function MfTransactionTable({ rows, infoText }: { rows: MfTxRow[]; infoText?: st
     <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
       <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg flex items-center justify-between">
         <span>Mutual Fund Transactions</span>
-        {infoText && <InfoMarker text={infoText} />}
       </CardTitle>
       <CardContent>
         <div className="flex items-center justify-between mb-3">
@@ -1178,14 +1135,6 @@ export default function InvestmentSummaryPage() {
               >
                 Overview
               </TabsTrigger>
-              {hasAnyHoldings && (
-                <TabsTrigger
-                  value="holdings"
-                  className="text-xs sm:text-sm px-3 py-2 data-[state=active]:bg-logo-green data-[state=active]:text-button-text"
-                >
-                  Holdings
-                </TabsTrigger>
-              )}
               {hasAnyTx && (
                 <TabsTrigger
                   value="transactions"
@@ -1215,7 +1164,6 @@ export default function InvestmentSummaryPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <SectionCard
                 title="Amount Invested"
-                infoText={INVESTMENT_SUMMARY_INFO.amountInvested}
                 rows={[
                   { label: "Holdings", value: activeSummary.amountInvested.holdings },
                   { label: "Cash", value: activeSummary.amountInvested.cash },
@@ -1224,7 +1172,6 @@ export default function InvestmentSummaryPage() {
               />
               <SectionCard
                 title="Cash Investment Summary"
-                infoText={INVESTMENT_SUMMARY_INFO.cashInvestmentSummary}
                 rows={[
                   { label: "Total Cash Added", value: activeSummary.cashInvestmentSummary.totalCashAdded },
                   { label: "Profits & Capital Withdrawn", value: activeSummary.cashInvestmentSummary.profitsAndCapitalWithdrawn },
@@ -1233,7 +1180,6 @@ export default function InvestmentSummaryPage() {
               />
               <SectionCard
                 title="Holdings Investment Summary"
-                infoText={INVESTMENT_SUMMARY_INFO.holdingsInvestmentSummary}
                 rows={[
                   { label: "Total Holdings Added", value: activeSummary.holdingsInvestmentSummary.totalHoldingsAdded },
                   { label: "Total Holdings Withdrawn", value: activeSummary.holdingsInvestmentSummary.totalHoldingsWithdrawn },
@@ -1247,7 +1193,6 @@ export default function InvestmentSummaryPage() {
               <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
                 <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg flex items-center justify-between">
                   <span>Current Account Summary</span>
-                  <InfoMarker text={INVESTMENT_SUMMARY_INFO.currentAccountSummary} />
                 </CardTitle>
                 <CardContent className="space-y-6">
                   {/* Distribution chart */}
@@ -1301,7 +1246,6 @@ export default function InvestmentSummaryPage() {
               <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
                 <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg flex items-center justify-between">
                   <span>Current Account Allocation</span>
-                  <InfoMarker text={INVESTMENT_SUMMARY_INFO.currentAccountAllocation} />
                 </CardTitle>
                 <CardContent className="space-y-6">
                   <AccountDistributionChart
@@ -1350,7 +1294,6 @@ export default function InvestmentSummaryPage() {
               <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
                 <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg flex items-center justify-between">
                   <span>Current Allocation</span>
-                  <InfoMarker text={INVESTMENT_SUMMARY_INFO.currentAllocation} />
                 </CardTitle>
                 <CardContent>
                   <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
@@ -1415,7 +1358,6 @@ export default function InvestmentSummaryPage() {
               <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
                 <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg flex items-center justify-between">
                   <span>Profit Redeployment Summary</span>
-                  <InfoMarker text={INVESTMENT_SUMMARY_INFO.profitRedeploymentSummary} />
                 </CardTitle>
                 <CardContent>
                   <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
@@ -1462,21 +1404,12 @@ export default function InvestmentSummaryPage() {
               </Card>
             )}
           </TabsContent>
-
-          {/* Holdings Tab */}
-          {hasAnyHoldings && (
-            <TabsContent value="holdings" className="mt-4 space-y-4">
-              <HoldingsTable title="Current Equity Holdings" rows={activeHoldings.equity} nameCol="Stock Name" itemLabel="stock" itemLabelPlural="stocks" infoText={INVESTMENT_SUMMARY_INFO.currentEquityHoldings} />
-              <HoldingsTable title="Current Mutual Fund Holdings" rows={activeHoldings.mf} nameCol="Fund Name" itemLabel="mutual fund" itemLabelPlural="mutual funds" infoText={INVESTMENT_SUMMARY_INFO.currentMfHoldings} />
-            </TabsContent>
-          )}
-
           {/* Transactions Tab */}
           {hasAnyTx && (
             <TabsContent value="transactions" className="mt-4 space-y-4">
-              {hasEquityTx && <EquityTransactionTable rows={activeTransactions.equity} infoText={INVESTMENT_SUMMARY_INFO.equityTransactions} />}
-              {hasCashTx && <CashTransactionTable rows={activeTransactions.cash} infoText={INVESTMENT_SUMMARY_INFO.cashTransactions} />}
-              {hasMfTx && <MfTransactionTable rows={activeTransactions.mf} infoText={INVESTMENT_SUMMARY_INFO.mfTransactions} />}
+              {hasEquityTx && <EquityTransactionTable rows={activeTransactions.equity} />}
+              {hasCashTx && <CashTransactionTable rows={activeTransactions.cash} />}
+              {hasMfTx && <MfTransactionTable rows={activeTransactions.mf} />}
             </TabsContent>
           )}
         </Tabs>
