@@ -282,3 +282,118 @@ export function verifyInternalToken(req: NextRequest): NextResponse | null {
   }
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// Publish: copy staging -> live (atomic swap with backup)
+// ---------------------------------------------------------------------------
+
+export class PublishError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/**
+ * Shared by the admin "Publish" button and cron's auto-publish step
+ * (POST /api/cron/sync-jobs/publish, fired by cron_generate.sh right after
+ * a successful weekly generate). Same manifest/staleness checks and
+ * copy-then-swap logic either way -- only `triggeredBy` differs, which ends
+ * up in the sync_jobs audit row.
+ */
+export async function publishStagingToLive(triggeredBy: string) {
+  const { promises: fs } = await import("fs");
+
+  const running = await getRunningJob();
+  if (running) {
+    throw new PublishError("A job is already running", 409);
+  }
+
+  let entries: string[];
+  try {
+    entries = (await fs.readdir(STAGING_DIR)).filter(
+      (n) => !n.startsWith(".") && n !== "manifest.json",
+    );
+  } catch {
+    entries = [];
+  }
+  if (entries.length === 0) {
+    throw new PublishError("Staging directory is empty", 400);
+  }
+
+  const manifest = await readStagingManifest();
+  if (!manifest) {
+    throw new PublishError(
+      "Staging has no manifest.json — regenerate before publishing (unverifiable staging sets can't go live)",
+      409,
+    );
+  }
+
+  if (manifest.job_id !== null) {
+    const lastGenerate = await prisma.sync_jobs.findFirst({
+      where: { job_type: "generate" },
+      orderBy: { started_at: "desc" },
+    });
+    if (!lastGenerate || lastGenerate.status !== "success") {
+      throw new PublishError(
+        "Last generation did not succeed — run Generate & Validate first",
+        400,
+      );
+    }
+    if (manifest.job_id !== lastGenerate.id) {
+      throw new PublishError(
+        "Staging files don't match the last successful generation — re-run Generate first",
+        409,
+      );
+    }
+  }
+
+  const job = await prisma.sync_jobs.create({
+    data: {
+      job_type: "publish",
+      status: "running",
+      triggered_by: triggeredBy,
+      report_date: manifest.report_date ?? null,
+    },
+  });
+
+  try {
+    // Copy-then-swap: staging is KEPT so the admin view (which reads
+    // staging) stays intact and both dirs end up identical after publish.
+    const tempDir = LIVE_DIR + "_publishing";
+    await fs.rm(tempDir, { recursive: true, force: true });
+    await fs.cp(STAGING_DIR, tempDir, { recursive: true });
+
+    await fs.rm(BACKUP_DIR, { recursive: true, force: true });
+    try {
+      await fs.rename(LIVE_DIR, BACKUP_DIR);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; // first publish: no live dir yet
+    }
+    await fs.rename(tempDir, LIVE_DIR);
+
+    const result = {
+      publishedFiles: entries.length,
+      fromGenerateJob: manifest.job_id,
+      reportDate: manifest.report_date ?? null,
+    };
+
+    await prisma.sync_jobs.update({
+      where: { id: job.id },
+      data: { status: "success", finished_at: new Date(), result_json: result },
+    });
+
+    return result;
+  } catch (swapErr) {
+    await prisma.sync_jobs.update({
+      where: { id: job.id },
+      data: {
+        status: "failed",
+        finished_at: new Date(),
+        error_message: `Publish failed: ${swapErr instanceof Error ? swapErr.message : swapErr}`,
+      },
+    });
+    throw swapErr;
+  }
+}
