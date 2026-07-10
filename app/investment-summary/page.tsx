@@ -1234,6 +1234,17 @@ export default function InvestmentSummaryPage() {
                             </TableRow>
                           );
                         })}
+                        {activeSummary.holdingsBifurcation.length > 0 && (
+                          <TableRow className="border-b border-gray-200">
+                            <TableCell className="py-3 text-sm font-bold text-card-text">Total</TableCell>
+                            <TableCell className="py-3 text-sm text-center tabular-nums font-bold text-card-text">
+                              {fmt(activeSummary.holdingsBifurcation.reduce((sum, r) => sum + r.amount, 0))}
+                            </TableCell>
+                            <TableCell className="py-3 text-sm text-center tabular-nums font-bold text-card-text">
+                              {activeSummary.holdingsBifurcation.reduce((sum, r) => sum + r.percent, 0).toFixed(2)}%
+                            </TableCell>
+                          </TableRow>
+                        )}
                       </TableBody>
                     </Table>
                   </div>
