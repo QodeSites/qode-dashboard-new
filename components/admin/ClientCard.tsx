@@ -3,7 +3,6 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { EyeIcon } from "@heroicons/react/24/outline";
 import { Download } from "lucide-react";
 import { useState } from "react";
@@ -24,8 +23,6 @@ interface ClientCardProps {
   accountCount: number;
   onImpersonate: (icode: string) => void;
   isImpersonating?: boolean;
-  dashboardVisible?: boolean;
-  onToggleVisibility?: (icode: string, visible: boolean) => void;
 }
 
 export function ClientCard({
@@ -36,8 +33,6 @@ export function ClientCard({
   accountCount,
   onImpersonate,
   isImpersonating,
-  dashboardVisible = true,
-  onToggleVisibility,
 }: ClientCardProps) {
   const [exporting, setExporting] = useState(false);
 
@@ -86,20 +81,6 @@ export function ClientCard({
           <Badge variant="outline" className="shrink-0 ml-2 text-xs">
             {icode}
           </Badge>
-        </div>
-
-        <div className="flex items-center justify-between mb-3 px-1">
-          <span className="text-xs text-card-text-secondary">Dashboard Access</span>
-          <div className="flex items-center gap-2">
-            <span className={`text-xs font-medium ${dashboardVisible ? "text-logo-green" : "text-card-text-secondary"}`}>
-              {dashboardVisible ? "On" : "Off"}
-            </span>
-            <Switch
-              checked={dashboardVisible}
-              onCheckedChange={(checked) => onToggleVisibility?.(icode, checked)}
-              className="data-[state=checked]:bg-logo-green data-[state=unchecked]:bg-card-text-secondary/30"
-            />
-          </div>
         </div>
 
         <div className="mb-4">
