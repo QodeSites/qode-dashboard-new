@@ -262,11 +262,21 @@ function parseAccountSummary(
     }));
 }
 
+// Standard categories every "Current Account Summary" table should show,
+// in this fixed order, even when a client has zero in that category —
+// keeps the table structure consistent across all schemes/clients.
+const STANDARD_BIFURCATION_TYPES = [
+  { label: "Equity", match: "equity" },
+  { label: "Debt", match: "debt" },
+  { label: "Hybrid", match: "hybrid" },
+  { label: "Cash & Liquid", match: "cash" },
+];
+
 function parseHoldingsBifurcation(
   wb: XLSX.WorkBook,
   sheetName = "Current Account Summary",
 ): InvestmentSummaryData["holdingsBifurcation"] {
-  return dataRows(sheetRows(wb, sheetName))
+  const rows = dataRows(sheetRows(wb, sheetName))
     .filter((row) => {
       const label = String(row[0] || "").trim().toLowerCase();
       return label && label !== "total";
@@ -276,6 +286,20 @@ function parseHoldingsBifurcation(
       amount: parseAmount(row[1]),
       percent: parsePercent(row[2]),
     }));
+
+  const used = new Set<number>();
+  const standardRows = STANDARD_BIFURCATION_TYPES.map(({ label, match }) => {
+    const idx = rows.findIndex((r, i) => !used.has(i) && r.type.toLowerCase().includes(match));
+    if (idx === -1) return { type: label, amount: 0, percent: 0 };
+    used.add(idx);
+    return rows[idx];
+  });
+
+  // Any row that isn't one of the standard categories (e.g. an "Others"
+  // bucket) is kept, appended after the standard rows in its original order.
+  const extraRows = rows.filter((_, i) => !used.has(i));
+
+  return [...standardRows, ...extraRows];
 }
 
 function parseProfitRedeployment(
