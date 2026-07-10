@@ -43,6 +43,7 @@ interface SarlaSchemeResponse {
 
 const SARLA_ICODE = "QUS0007";
 const SATIDHAM_ICODE = "QUS0010";
+const SATIDHAM_NEW_ICODE = "QUS00081";
 
 const DISTRIBUTION_COLORS = [
   "bg-logo-green",
@@ -867,7 +868,7 @@ export default function InvestmentSummaryPage() {
       : (session?.user as { icode?: string })?.icode;
 
   const isSarla = icode === SARLA_ICODE;
-  const isSatidham = icode === SATIDHAM_ICODE;
+  const isSatidham = icode === SATIDHAM_ICODE || icode === SATIDHAM_NEW_ICODE;
 
   useEffect(() => {
     if (status !== "authenticated" || (!isSarla && !isSatidham)) {
@@ -1029,7 +1030,7 @@ export default function InvestmentSummaryPage() {
       activeSummary,
       activeHoldings,
       activeTransactions,
-      activeProfitRedeployment,
+      activeProfitRedeployment: isSarla || isSatidham ? activeProfitRedeployment : [],
       liveAllocation,
       selectedStrategy,
       fmt,
@@ -1353,8 +1354,8 @@ export default function InvestmentSummaryPage() {
               </Card>
             )}
 
-            {/* Profit Redeployment Summary */}
-            {activeProfitRedeployment.length > 0 && (
+            {/* Profit Redeployment Summary — Sarla and Satidham only */}
+            {(isSarla || isSatidham) && activeProfitRedeployment.length > 0 && (
               <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
                 <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg flex items-center justify-between">
                   <span>Profit Redeployment Summary</span>
@@ -1370,9 +1371,6 @@ export default function InvestmentSummaryPage() {
                           <TableHead className="py-3 text-center text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE] text-center">
                             Profits (₹)
                           </TableHead>
-                          <TableHead className="py-3 text-sm font-medium text-card-text tracking-wider bg-[#E9E8DE] text-center">
-                            Note
-                          </TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1385,15 +1383,11 @@ export default function InvestmentSummaryPage() {
                               <TableCell colSpan={1} className="py-3 text-sm font-semibold text-card-text text-center">
                                 Profits (₹)
                               </TableCell>
-                              <TableCell colSpan={1} className="py-3 text-sm font-semibold text-card-text text-center">
-                                Note
-                              </TableCell>
                             </TableRow>
                           ) : (
                             <TableRow key={i} className={`border-b border-gray-200 ${row.isTotal ? "bg-black/5" : ""}`}>
                               <TableCell className={`py-3 text-sm text-card-text ${row.isTotal ? "font-bold" : "font-medium"}`}>{row.strategy}</TableCell>
                               <PnlAmountCell value={row.profits} />
-                              <TableCell className="py-3 text-sm text-gray-600 text-center">{row.note}</TableCell>
                             </TableRow>
                           )
                         )}
