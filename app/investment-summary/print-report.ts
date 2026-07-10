@@ -203,14 +203,13 @@ export function printInvestmentSummaryReport(params: PrintReportParams): Promise
     <div class="section">
       <div class="section-title">Profit Redeployment Summary</div>
       <table>
-        <thead><tr><th>Strategy</th><th>Profits</th><th>Redeployed To</th></tr></thead>
+        <thead><tr><th>Strategy</th><th>Profits</th></tr></thead>
         <tbody>
           ${activeProfitRedeployment.map((row) => row.isHeader ? `
-              <tr class="sub-header"><td colspan="3">${row.strategy}</td></tr>`
+              <tr class="sub-header"><td colspan="2">${row.strategy}</td></tr>`
             : `<tr${row.isTotal ? ' class="total"' : ""}>
                 <td>${row.strategy}</td>
                 <td class="${row.profits >= 0 ? "status-pass" : "status-fail"}">${money(row.profits)}</td>
-                <td>${row.note || "—"}</td>
               </tr>`).join("")}
         </tbody>
       </table>

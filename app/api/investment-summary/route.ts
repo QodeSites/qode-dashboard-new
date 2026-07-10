@@ -12,6 +12,13 @@ export const dynamic = "force-dynamic";
 
 const ICODE_PATTERN = /^QUS[0-9]+$/i;
 
+// Satidham (New, QUS00081) has no investment-summary report of its own —
+// it's linked to the old Satidham account (QUS0010) via "Scheme QAW++
+// QUS00081", so its report lookup uses QUS0010's file instead.
+const REPORT_ICODE_ALIAS: Record<string, string> = {
+  QUS00081: "QUS0010",
+};
+
 // Admins review from reports_staging (falling back to live); clients see live.
 async function findReportByIcode(
   icode: string,
@@ -71,8 +78,10 @@ export async function GET(req: NextRequest) {
       return new NextResponse("Invalid or missing icode", { status: 400 });
     }
 
+    const reportIcode = REPORT_ICODE_ALIAS[icode] ?? icode;
+
     const dirs = reportsDirsForAccess(isAdmin);
-    const found = await findReportByIcode(icode, dirs);
+    const found = await findReportByIcode(reportIcode, dirs);
     if (!found) {
       return NextResponse.json({ error: "Report not found" }, { status: 404 });
     }
@@ -93,7 +102,7 @@ export async function GET(req: NextRequest) {
     }
 
     const data = parseInvestmentXlsx(fileBuffer);
-    const strategyPdfAvailability = await findStrategyPdfs(icode, dirs);
+    const strategyPdfAvailability = await findStrategyPdfs(reportIcode, dirs);
 
     return NextResponse.json(
       { ...data, strategyPdfAvailability },
