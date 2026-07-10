@@ -45,6 +45,9 @@ const SARLA_ICODE = "QUS0007";
 const SATIDHAM_ICODE = "QUS0010";
 const SATIDHAM_NEW_ICODE = "QUS00081";
 
+// Equity/MF transaction tables exclude QAW-family strategies (Cash transactions still show them)
+const QAW_STRATEGIES = new Set(["QAW", "QAW+", "QAW++"]);
+
 const DISTRIBUTION_COLORS = [
   "bg-logo-green",
   "bg-[#DABD38]",
@@ -998,9 +1001,11 @@ export default function InvestmentSummaryPage() {
       selectedStrategy === "ALL"
         ? arr
         : arr.filter((r) => r.strategy === selectedStrategy);
+    const excludeQaw = <T extends { strategy: string }>(arr: T[]) =>
+      arr.filter((r) => !QAW_STRATEGIES.has(r.strategy));
     return {
-      equity: filter(data.equityTransactions),
-      mf: filter(data.mfTransactions),
+      equity: excludeQaw(filter(data.equityTransactions)),
+      mf: excludeQaw(filter(data.mfTransactions)),
       cash: filter(data.cashTransactions),
     };
   }, [data, selectedStrategy]);
