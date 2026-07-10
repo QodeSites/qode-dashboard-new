@@ -6,7 +6,10 @@
 // print dialog — same pattern as app/holding-summary/page.tsx's
 // handleDownloadPDF. Kept in its own module so the print/HTML-building logic
 // doesn't bloat page.tsx.
-import type { MultiStrategyInvestmentData, StrategyInvestmentData } from "@/app/lib/parse-investment-pdf";
+import type {
+  MultiStrategyInvestmentData,
+  StrategyInvestmentData,
+} from "@/app/lib/parse-investment-pdf";
 
 export interface LiveAllocationRow {
   label: string;
@@ -19,7 +22,12 @@ export interface LiveAllocationRow {
 
 export interface LiveAllocation {
   currentAllocation: LiveAllocationRow[];
-  currentAccountAllocation: { label: string; amount: number; percent: number; isTotal?: boolean }[];
+  currentAccountAllocation: {
+    label: string;
+    amount: number;
+    percent: number;
+    isTotal?: boolean;
+  }[];
 }
 
 interface PrintReportParams {
@@ -103,46 +111,109 @@ function buildCss(): string {
     thead { display: table-header-group; }
 
     .report-footer { margin-top:6mm; padding-top:3mm; font-size:7pt; color:#888; text-align:center; }
+
+    .stat-cards-grid { display:flex; gap:4mm; margin-bottom:5mm; page-break-inside:avoid; }
+    .stat-card { flex:1; background-color:rgba(255,255,255,0.5); border-radius:2mm; padding:4mm; }
+    .stat-card-items { display:flex; }
+    .stat-item { flex:1; text-align:center; }
+    .stat-item-label { font-size:7.5pt; color:#1a1a1a; }
+    .stat-item-value { margin-top:2mm; font-size:8pt; font-weight:700; color:#37584F; font-family:'Lato', Helvetica, Arial, sans-serif; }
   `;
 }
 
 const typeBadge = (v: string) => {
   const norm = (v || "").trim().toLowerCase();
-  if (norm === "equity") return `<span class="badge badge-equity">Equity</span>`;
+  if (norm === "equity")
+    return `<span class="badge badge-equity">Equity</span>`;
   if (norm === "debt") return `<span class="badge badge-debt">Debt</span>`;
-  if (norm === "hybrid") return `<span class="badge badge-hybrid">Hybrid</span>`;
+  if (norm === "hybrid")
+    return `<span class="badge badge-hybrid">Hybrid</span>`;
   return v || "";
 };
-const strategyBadge = (v: string) => (v ? `<span class="badge-strategy">${v}</span>` : "");
+const strategyBadge = (v: string) =>
+  v ? `<span class="badge-strategy">${v}</span>` : "";
 
-export function printInvestmentSummaryReport(params: PrintReportParams): Promise<void> {
-  const { data, activeSummary, activeHoldings, activeTransactions, activeProfitRedeployment, liveAllocation, selectedStrategy, fmt } = params;
+export function printInvestmentSummaryReport(
+  params: PrintReportParams,
+): Promise<void> {
+  const {
+    data,
+    activeSummary,
+    activeHoldings,
+    activeTransactions,
+    activeProfitRedeployment,
+    liveAllocation,
+    selectedStrategy,
+    fmt,
+  } = params;
 
   const money = (n: number) => `${n < 0 ? "-" : ""}₹ ${fmt(Math.abs(n))}`;
-  const todayStr = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  const todayStr = new Date().toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 
-  const twoCol = (title: string, rows: { label: string; value: number; isBold?: boolean }[]) => `
-    <div class="section">
-      <div class="section-title">${title}</div>
-      <div class="summary-table-wrap">
-      <table>
-        <colgroup><col style="width:70%;" /><col style="width:30%;" /></colgroup>
-        <thead><tr><th>Particulars</th><th>Amount</th></tr></thead>
-        <tbody>
-          ${rows.map((r) => `
-            <tr${r.isBold ? ' class="total"' : ""}>
-              <td>${r.label}</td><td>${money(r.value)}</td>
-            </tr>`).join("")}
-        </tbody>
-      </table>
+  const statCard = (items: { label: string; value: number }[]) => `
+    <div class="stat-card">
+      <div class="stat-card-items">
+        ${items
+          .map(
+            (item) => `
+          <div class="stat-item">
+            <div class="stat-item-label">${item.label}</div>
+            <div class="stat-item-value">${money(item.value)}</div>
+          </div>`,
+          )
+          .join("")}
       </div>
+    </div>`;
+
+  const statCardsHTML = `
+    <div class="stat-cards-grid">
+      ${statCard([
+        {
+          label: "Capital In",
+          value:
+            activeSummary.cashInvestmentSummary.totalCashAdded +
+            activeSummary.holdingsInvestmentSummary.totalHoldingsAdded,
+        },
+        {
+          label: "Capital Out",
+          value:
+            activeSummary.cashInvestmentSummary.profitsAndCapitalWithdrawn +
+            activeSummary.holdingsInvestmentSummary.totalHoldingsWithdrawn,
+        },
+      ])}
+      ${statCard([
+        {
+          label: "Cash In",
+          value: activeSummary.cashInvestmentSummary.totalCashAdded,
+        },
+        {
+          label: "Cash Out",
+          value: activeSummary.cashInvestmentSummary.profitsAndCapitalWithdrawn,
+        },
+      ])}
+      ${statCard([
+        {
+          label: "Holding Added",
+          value: activeSummary.holdingsInvestmentSummary.totalHoldingsAdded,
+        },
+        {
+          label: "Holding Withdrawn",
+          value: activeSummary.holdingsInvestmentSummary.totalHoldingsWithdrawn,
+        },
+      ])}
     </div>`;
 
   const threeCol = (
     title: string,
     headers: [string, string, string],
     rows: { a: string; b: string; c: string; isBold?: boolean }[],
-  ) => rows.length ? `
+  ) =>
+    rows.length
+      ? `
     <div class="section">
       <div class="section-title">${title}</div>
       <div class="summary-table-wrap">
@@ -150,16 +221,23 @@ export function printInvestmentSummaryReport(params: PrintReportParams): Promise
         <colgroup><col style="width:50%;" /><col style="width:25%;" /><col style="width:25%;" /></colgroup>
         <thead><tr><th>${headers[0]}</th><th>${headers[1]}</th><th>${headers[2]}</th></tr></thead>
         <tbody>
-          ${rows.map((r) => `
+          ${rows
+            .map(
+              (r) => `
             <tr${r.isBold ? ' class="total"' : ""}>
               <td>${r.a}</td><td>${r.b}</td><td>${r.c}</td>
-            </tr>`).join("")}
+            </tr>`,
+            )
+            .join("")}
         </tbody>
       </table>
       </div>
-    </div>` : "";
+    </div>`
+      : "";
 
-  const genericTable = (title: string, headers: string[], rows: string[][]) => rows.length ? `
+  const genericTable = (title: string, headers: string[], rows: string[][]) =>
+    rows.length
+      ? `
     <div class="section">
       <div class="section-title">${title}</div>
       <table>
@@ -168,14 +246,23 @@ export function printInvestmentSummaryReport(params: PrintReportParams): Promise
           ${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}
         </tbody>
       </table>
-    </div>` : "";
+    </div>`
+      : "";
 
   // ── Live PMS tables (Sarla/Satidham only) ──────────────────────────────
-  const liveAllocationHTML = liveAllocation && selectedStrategy === "ALL" ? `
-    ${threeCol("Current Account Allocation", ["Particulars", "Amount", "%"],
+  const liveAllocationHTML =
+    liveAllocation && selectedStrategy === "ALL"
+      ? `
+    ${threeCol(
+      "Current Account Allocation",
+      ["Particulars", "Amount", "%"],
       liveAllocation.currentAccountAllocation.map((r) => ({
-        a: r.label, b: money(r.amount), c: `${r.percent.toFixed(2)}%`, isBold: r.isTotal,
-      })))}
+        a: r.label,
+        b: money(r.amount),
+        c: `${r.percent.toFixed(2)}%`,
+        isBold: r.isTotal,
+      })),
+    )}
     <div class="section">
       <div class="section-title">Current Allocation</div>
       <table>
@@ -183,9 +270,10 @@ export function printInvestmentSummaryReport(params: PrintReportParams): Promise
           <th>Scheme</th><th>Hybrid</th><th>Debt</th><th>Equity</th><th>Cash + Liquidcase</th><th>Total</th>
         </tr></thead>
         <tbody>
-          ${liveAllocation.currentAllocation.map((row) => {
-            const isGrand = row.label === "Grand total";
-            return `<tr${isGrand ? ' class="total"' : ""}>
+          ${liveAllocation.currentAllocation
+            .map((row) => {
+              const isGrand = row.label === "Grand total";
+              return `<tr${isGrand ? ' class="total"' : ""}>
               <td>${row.label}</td>
               <td>${money(row.hybrid)}</td>
               <td>${money(row.debt)}</td>
@@ -193,34 +281,45 @@ export function printInvestmentSummaryReport(params: PrintReportParams): Promise
               <td>${money(row.cash)}</td>
               <td>${money(row.total)}</td>
             </tr>`;
-          }).join("")}
+            })
+            .join("")}
         </tbody>
       </table>
-    </div>` : "";
+    </div>`
+      : "";
 
   // ── Profit Redeployment Summary ─────────────────────────────────────────
-  const profitRedeploymentHTML = activeProfitRedeployment.length ? `
+  const profitRedeploymentHTML = activeProfitRedeployment.length
+    ? `
     <div class="section">
       <div class="section-title">Profit Redeployment Summary</div>
       <table>
         <thead><tr><th>Strategy</th><th>Profits</th></tr></thead>
         <tbody>
-          ${activeProfitRedeployment.map((row) => row.isHeader ? `
+          ${activeProfitRedeployment
+            .map((row) =>
+              row.isHeader
+                ? `
               <tr class="sub-header"><td colspan="2">${row.strategy}</td></tr>`
-            : `<tr${row.isTotal ? ' class="total"' : ""}>
+                : `<tr${row.isTotal ? ' class="total"' : ""}>
                 <td>${row.strategy}</td>
                 <td class="${row.profits >= 0 ? "status-pass" : "status-fail"}">${money(row.profits)}</td>
-              </tr>`).join("")}
+              </tr>`,
+            )
+            .join("")}
         </tbody>
       </table>
-    </div>` : "";
+    </div>`
+    : "";
 
   // ── Current Account Summary (from parsed xlsx, distinct from live PMS) ──
   const currentAccountSummaryHTML = threeCol(
     "Current Account Summary (Report)",
     ["Particulars", "Amount", "%"],
     activeSummary.currentAccountSummary.map((r) => ({
-      a: r.particulars, b: money(r.amount), c: `${r.percent.toFixed(2)}%`,
+      a: r.particulars,
+      b: money(r.amount),
+      c: `${r.percent.toFixed(2)}%`,
     })),
   );
 
@@ -229,36 +328,103 @@ export function printInvestmentSummaryReport(params: PrintReportParams): Promise
   // breakdown (as its "Zerodha" row) plus the PMS row and grand total, so
   // showing both was a duplicate of the same numbers.
   const showLegacyBifurcation = !(liveAllocation && selectedStrategy === "ALL");
-  const holdingsBifurcationHTML = showLegacyBifurcation ? threeCol(
-    "Holdings Bifurcation",
-    ["Type", "Amount", "%"],
-    activeSummary.holdingsBifurcation.map((r) => ({
-      a: typeBadge(r.type), b: money(r.amount), c: `${r.percent.toFixed(2)}%`,
-    })),
-  ) : "";
+  const holdingsBifurcationHTML = showLegacyBifurcation
+    ? threeCol(
+        "Holdings Bifurcation",
+        ["Type", "Amount", "%"],
+        activeSummary.holdingsBifurcation.map((r) => ({
+          a: typeBadge(r.type),
+          b: money(r.amount),
+          c: `${r.percent.toFixed(2)}%`,
+        })),
+      )
+    : "";
 
   // ── Holdings & Transactions ──────────────────────────────────────────────
   const filterByStrategy = <T extends { strategy: string }>(arr: T[]) =>
-    selectedStrategy === "ALL" ? arr : arr.filter((r) => r.strategy === selectedStrategy);
+    selectedStrategy === "ALL"
+      ? arr
+      : arr.filter((r) => r.strategy === selectedStrategy);
 
   const holdingsHTML = [
-    genericTable("Current Equity Holdings", ["Stock Name", "Type", "Broker", "Exchange", "Strategy", "Amount"],
-      activeHoldings.equity.map((h) => [h.name, typeBadge(h.type), h.broker, h.exchange, strategyBadge(h.strategy), money(h.amount)])),
-    genericTable("Current Mutual Fund Holdings", ["Fund Name", "Type", "Broker", "Strategy", "Amount"],
-      activeHoldings.mf.map((h) => [h.name, typeBadge(h.type), h.broker, strategyBadge(h.strategy), money(h.amount)])),
-    genericTable("Historical Equity Holdings", ["Stock Name", "Type", "Strategy", "Amount"],
-      filterByStrategy(data.historicalEquityHoldings).map((h) => [h.name, typeBadge(h.type), strategyBadge(h.strategy), money(h.amount)])),
-    genericTable("Historical Mutual Fund Holdings", ["Fund Name", "Type", "Strategy", "Amount"],
-      filterByStrategy(data.historicalMfHoldings).map((h) => [h.name, typeBadge(h.type), strategyBadge(h.strategy), money(h.amount)])),
+    genericTable(
+      "Current Equity Holdings",
+      ["Stock Name", "Type", "Broker", "Exchange", "Strategy", "Amount"],
+      activeHoldings.equity.map((h) => [
+        h.name,
+        typeBadge(h.type),
+        h.broker,
+        h.exchange,
+        strategyBadge(h.strategy),
+        money(h.amount),
+      ]),
+    ),
+    genericTable(
+      "Current Mutual Fund Holdings",
+      ["Fund Name", "Type", "Broker", "Strategy", "Amount"],
+      activeHoldings.mf.map((h) => [
+        h.name,
+        typeBadge(h.type),
+        h.broker,
+        strategyBadge(h.strategy),
+        money(h.amount),
+      ]),
+    ),
+    genericTable(
+      "Historical Equity Holdings",
+      ["Stock Name", "Type", "Strategy", "Amount"],
+      filterByStrategy(data.historicalEquityHoldings).map((h) => [
+        h.name,
+        typeBadge(h.type),
+        strategyBadge(h.strategy),
+        money(h.amount),
+      ]),
+    ),
+    genericTable(
+      "Historical Mutual Fund Holdings",
+      ["Fund Name", "Type", "Strategy", "Amount"],
+      filterByStrategy(data.historicalMfHoldings).map((h) => [
+        h.name,
+        typeBadge(h.type),
+        strategyBadge(h.strategy),
+        money(h.amount),
+      ]),
+    ),
   ].join("");
 
   const transactionsHTML = [
-    genericTable("Equity Transactions", ["Stock Name", "Capital Flow", "Date", "Strategy", "Amount"],
-      activeTransactions.equity.map((t) => [t.name, t.capitalFlow, t.date, strategyBadge(t.strategy), money(t.amount)])),
-    genericTable("Cash Transactions", ["Date", "Transaction Type", "Strategy", "Amount"],
-      activeTransactions.cash.map((t) => [t.date, t.transactionType, strategyBadge(t.strategy), money(t.amount)])),
-    genericTable("Mutual Fund Transactions", ["Fund Name", "Capital Flow", "Date", "Strategy", "Amount"],
-      activeTransactions.mf.map((t) => [t.name, t.capitalFlow, t.date, strategyBadge(t.strategy), money(t.amount)])),
+    genericTable(
+      "Equity Transactions",
+      ["Stock Name", "Capital Flow", "Date", "Strategy", "Amount"],
+      activeTransactions.equity.map((t) => [
+        t.name,
+        t.capitalFlow,
+        t.date,
+        strategyBadge(t.strategy),
+        money(t.amount),
+      ]),
+    ),
+    genericTable(
+      "Cash Transactions",
+      ["Date", "Transaction Type", "Strategy", "Amount"],
+      activeTransactions.cash.map((t) => [
+        t.date,
+        t.transactionType,
+        strategyBadge(t.strategy),
+        money(t.amount),
+      ]),
+    ),
+    genericTable(
+      "Mutual Fund Transactions",
+      ["Fund Name", "Capital Flow", "Date", "Strategy", "Amount"],
+      activeTransactions.mf.map((t) => [
+        t.name,
+        t.capitalFlow,
+        t.date,
+        strategyBadge(t.strategy),
+        money(t.amount),
+      ]),
+    ),
   ].join("");
 
   const headerHTML = `
@@ -275,21 +441,7 @@ export function printInvestmentSummaryReport(params: PrintReportParams): Promise
 
   const contentHTML = `
     ${headerHTML}
-    ${twoCol("Amount Invested", [
-      { label: "Holdings", value: activeSummary.amountInvested.holdings },
-      { label: "Cash", value: activeSummary.amountInvested.cash },
-      { label: "Total", value: activeSummary.amountInvested.total, isBold: true },
-    ])}
-    ${twoCol("Cash Investment Summary", [
-      { label: "Total Cash Added", value: activeSummary.cashInvestmentSummary.totalCashAdded },
-      { label: "Profits & Capital Withdrawn", value: activeSummary.cashInvestmentSummary.profitsAndCapitalWithdrawn },
-      { label: "Net Cash Balance", value: activeSummary.cashInvestmentSummary.netCashBalance, isBold: true },
-    ])}
-    ${twoCol("Holdings Investment Summary", [
-      { label: "Total Holdings Added", value: activeSummary.holdingsInvestmentSummary.totalHoldingsAdded },
-      { label: "Total Holdings Withdrawn", value: activeSummary.holdingsInvestmentSummary.totalHoldingsWithdrawn },
-      { label: "Net Holding Balance", value: activeSummary.holdingsInvestmentSummary.netHoldingBalance, isBold: true },
-    ])}
+    ${statCardsHTML}
     ${holdingsBifurcationHTML}
     ${liveAllocationHTML}
     ${currentAccountSummaryHTML}
@@ -304,7 +456,9 @@ export function printInvestmentSummaryReport(params: PrintReportParams): Promise
     <style>${buildCss()}</style></head><body><div class="report-body">${contentHTML}</div></body></html>`;
 
   return new Promise((resolve) => {
-    const existingFrame = document.getElementById("investment-summary-print-frame") as HTMLIFrameElement | null;
+    const existingFrame = document.getElementById(
+      "investment-summary-print-frame",
+    ) as HTMLIFrameElement | null;
     if (existingFrame) existingFrame.remove();
 
     const iframe = document.createElement("iframe");

@@ -170,37 +170,28 @@ function PnlAmountCell({ value }: { value: number }) {
   );
 }
 
-function SectionCard({
+function GroupCard({
   title,
-  rows,
+  items,
 }: {
   title: string;
-  rows: { label: string; value: number; isBold?: boolean }[];
+  items: { label: string; value: number }[];
 }) {
   return (
-    <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-      <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg flex items-center justify-between">
-        <span>{title}</span>
-      </CardTitle>
-      <CardContent>
-        <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
-          <Table className="min-w-full">
-            <TableBody>
-              {rows.map((row, i) => (
-                <TableRow key={i} className="border-b border-gray-200">
-                  <TableCell className={`py-3 text-sm ${row.isBold ? "font-bold text-card-text" : "text-gray-600"}`}>
-                    {row.label}
-                  </TableCell>
-                  <TableCell className={`py-3 text-sm text-center tabular-nums ${row.isBold ? "font-bold text-card-text" : "font-medium text-gray-600"}`}>
-                    {fmt(row.value)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+    <div className="bg-white/50 rounded-md backdrop-blur-sm card-shadow overflow-visible">
+      <div className="p-4">
+        <div className="grid grid-cols-2 gap-4">
+          {items.map((item) => (
+            <div key={item.label} className="flex flex-col">
+              <div className="text-xs font-normal text-card-text truncate text-center">{item.label}</div>
+              <div className="mt-2 text-xl font-[500] text-card-text-secondary font-heading text-center">
+                ₹ {fmt(item.value)}
+              </div>
+            </div>
+          ))}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -1168,28 +1159,31 @@ export default function InvestmentSummaryPage() {
           {/* Overview Tab */}
           <TabsContent value="overview" className="mt-4 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <SectionCard
+              <GroupCard
                 title="Amount Invested"
-                rows={[
-                  { label: "Holdings", value: activeSummary.amountInvested.holdings },
-                  { label: "Cash", value: activeSummary.amountInvested.cash },
-                  { label: "Total", value: activeSummary.amountInvested.total, isBold: true },
+                items={[
+                  {
+                    label: "Capital In",
+                    value: activeSummary.cashInvestmentSummary.totalCashAdded + activeSummary.holdingsInvestmentSummary.totalHoldingsAdded,
+                  },
+                  {
+                    label: "Capital Out",
+                    value: activeSummary.cashInvestmentSummary.profitsAndCapitalWithdrawn + activeSummary.holdingsInvestmentSummary.totalHoldingsWithdrawn,
+                  },
                 ]}
               />
-              <SectionCard
-                title="Cash Investment Summary"
-                rows={[
-                  { label: "Total Cash Added", value: activeSummary.cashInvestmentSummary.totalCashAdded },
-                  { label: "Profits & Capital Withdrawn", value: activeSummary.cashInvestmentSummary.profitsAndCapitalWithdrawn },
-                  { label: "Net Cash Balance", value: activeSummary.cashInvestmentSummary.netCashBalance, isBold: true },
+              <GroupCard
+                title="Cash"
+                items={[
+                  { label: "Cash In", value: activeSummary.cashInvestmentSummary.totalCashAdded },
+                  { label: "Cash Out", value: activeSummary.cashInvestmentSummary.profitsAndCapitalWithdrawn },
                 ]}
               />
-              <SectionCard
-                title="Holdings Investment Summary"
-                rows={[
-                  { label: "Total Holdings Added", value: activeSummary.holdingsInvestmentSummary.totalHoldingsAdded },
-                  { label: "Total Holdings Withdrawn", value: activeSummary.holdingsInvestmentSummary.totalHoldingsWithdrawn },
-                  { label: "Net Holding Balance", value: activeSummary.holdingsInvestmentSummary.netHoldingBalance, isBold: true },
+              <GroupCard
+                title="Holdings"
+                items={[
+                  { label: "Holding Added", value: activeSummary.holdingsInvestmentSummary.totalHoldingsAdded },
+                  { label: "Holding Withdrawn", value: activeSummary.holdingsInvestmentSummary.totalHoldingsWithdrawn },
                 ]}
               />
             </div>
