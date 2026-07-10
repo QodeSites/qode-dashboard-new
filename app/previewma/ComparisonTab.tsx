@@ -337,23 +337,15 @@ export function ComparisonTab() {
     return lines;
   }, [compareData, compareNifty, clients]);
 
-  // Monthly returns grouped by client
+  // One row-group per tag (client name + tag as label)
   const monthlyGroups = useMemo(() => {
     if (!compareData) return [];
-    // Group results by qcode
-    const clientMap = new Map<string, CompareResult[]>();
-    compareData.results.forEach((r) => {
-      if (!clientMap.has(r.qcode)) clientMap.set(r.qcode, []);
-      clientMap.get(r.qcode)!.push(r);
-    });
-
-    return Array.from(clientMap.entries()).map(([qcode, results]) => {
-      const client = clients.find((c) => c.qcode === qcode);
-      // All years across all tags for this client
-      const years = Array.from(new Set(
-        results.flatMap((r) => r.metrics.monthly.map((m) => m.year))
-      )).sort() as number[];
-      return { qcode, clientName: client?.account_name || qcode, results, years };
+    return compareData.results.map((r) => {
+      const client = clients.find((c) => c.qcode === r.qcode);
+      const clientName = client?.account_name || r.qcode;
+      const label = `${clientName} ${r.system_tag}`;
+      const years = Array.from(new Set(r.metrics.monthly.map((m) => m.year))).sort() as number[];
+      return { label, result: r, years };
     });
   }, [compareData, clients]);
 
@@ -558,56 +550,56 @@ export function ComparisonTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {monthlyGroups.map(({ qcode, clientName, results, years }, gi) => (
+                  {monthlyGroups.map(({ label, result: r, years }, gi) => (
                     years.map((yr, yi) => (
-                      <tr key={`${qcode}-${yr}`}
+                      <tr key={`${r.qcode}-${r.system_tag}-${yr}`}
                         className={`border-t ${yi === 0 && gi > 0 ? "border-t-2 border-logo-green/20" : "border-logo-green/5"}`}>
                         <td className="px-3 py-2 font-medium text-card-text">
-                          {yi === 0 ? <span className="truncate block max-w-[120px]" title={clientName}>{clientName}</span> : null}
+                          {yi === 0 ? (
+                            <span className="block text-xs whitespace-nowrap" title={label}>{label}</span>
+                          ) : null}
                         </td>
                         <td className="px-3 py-2 text-card-text-secondary">{yr}</td>
 
                         {returnFreq === "monthly" && MONTHS.map((mName) => {
-                          const vals = results.map((r) => {
-                            const m = r.metrics.monthly.find((m) => m.year === yr && m.month === mName);
-                            return { tag: r.system_tag, v: m?.return_pct ?? null };
-                          });
+                          const m = r.metrics.monthly.find((m) => m.year === yr && m.month === mName);
+                          const v = m?.return_pct ?? null;
+                          const tagSuffix = r.system_tag.split(" ").slice(-1)[0];
                           return (
                             <td key={mName} className="px-2 py-2 text-right">
-                              {vals.map(({ tag, v }) => (
-                                <div key={tag} className={v === null ? "text-card-text-secondary/30" : v >= 0 ? "text-green-700" : "text-red-600"}>
-                                  {v === null ? "—" : fmtPct(v)}
-                                </div>
-                              ))}
+                              <div className={`flex items-center justify-end gap-1 ${v === null ? "text-card-text-secondary/30" : v >= 0 ? "text-green-700" : "text-red-600"}`}>
+                                {v !== null && <span className="text-[10px] text-card-text-secondary/60">{tagSuffix}</span>}
+                                {v === null ? "—" : fmtPct(v)}
+                              </div>
                             </td>
                           );
                         })}
 
                         {returnFreq === "quarterly" && ["Q1","Q2","Q3","Q4"].map((q) => {
-                          const vals = results.map((r) => {
-                            const qt = r.metrics.quarterly.find((qt) => qt.year === yr && qt.quarter === q);
-                            return { tag: r.system_tag, v: qt?.return_pct ?? null };
-                          });
+                          const qt = r.metrics.quarterly.find((qt) => qt.year === yr && qt.quarter === q);
+                          const v = qt?.return_pct ?? null;
+                          const tagSuffix = r.system_tag.split(" ").slice(-1)[0];
                           return (
                             <td key={q} className="px-3 py-2 text-right">
-                              {vals.map(({ tag, v }) => (
-                                <div key={tag} className={v === null ? "text-card-text-secondary/30" : v >= 0 ? "text-green-700" : "text-red-600"}>
-                                  {v === null ? "—" : fmtPct(v)}
-                                </div>
-                              ))}
+                              <div className={`flex items-center justify-end gap-1 ${v === null ? "text-card-text-secondary/30" : v >= 0 ? "text-green-700" : "text-red-600"}`}>
+                                {v !== null && <span className="text-[10px] text-card-text-secondary/60">{tagSuffix}</span>}
+                                {v === null ? "—" : fmtPct(v)}
+                              </div>
                             </td>
                           );
                         })}
 
                         <td className="px-3 py-2 text-right">
-                          {results.map((r) => {
+                          {(() => {
                             const tot = r.metrics.yearly.find((y) => y.year === yr);
+                            const tagSuffix = r.system_tag.split(" ").slice(-1)[0];
                             return (
-                              <div key={r.system_tag} className={`font-semibold ${!tot ? "text-card-text-secondary/30" : tot.return_pct >= 0 ? "text-green-700" : "text-red-600"}`}>
+                              <div className={`flex items-center justify-end gap-1 font-semibold ${!tot ? "text-card-text-secondary/30" : tot.return_pct >= 0 ? "text-green-700" : "text-red-600"}`}>
+                                {tot && <span className="text-[10px] text-card-text-secondary/60">{tagSuffix}</span>}
                                 {tot ? fmtPct(tot.return_pct) : "—"}
                               </div>
                             );
-                          })}
+                          })()}
                         </td>
                       </tr>
                     ))
