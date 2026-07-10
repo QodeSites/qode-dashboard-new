@@ -312,86 +312,29 @@ export function printInvestmentSummaryReport(
     </div>`
     : "";
 
-  // ── Current Account Summary (from parsed xlsx, distinct from live PMS) ──
-  const currentAccountSummaryHTML = threeCol(
-    "Current Account Summary (Report)",
-    ["Particulars", "Amount", "%"],
-    activeSummary.currentAccountSummary.map((r) => ({
-      a: r.particulars,
-      b: money(r.amount),
-      c: `${r.percent.toFixed(2)}%`,
-    })),
+  const holdingsBifurcationHTML = threeCol(
+    "Current Account Summary",
+    ["Type", "Amount", "%"],
+    [
+      ...activeSummary.holdingsBifurcation.map((r) => ({
+        a: typeBadge(r.type),
+        b: money(r.amount),
+        c: `${r.percent.toFixed(2)}%`,
+      })),
+      ...(activeSummary.holdingsBifurcation.length
+        ? [
+            {
+              a: "Total",
+              b: money(activeSummary.holdingsBifurcation.reduce((sum, r) => sum + r.amount, 0)),
+              c: `${activeSummary.holdingsBifurcation.reduce((sum, r) => sum + r.percent, 0).toFixed(2)}%`,
+              isBold: true,
+            },
+          ]
+        : []),
+    ],
   );
 
-  // Skipped when the live PMS "Current Allocation" table is shown below —
-  // that table already includes this exact Zerodha Hybrid/Debt/Equity/Cash
-  // breakdown (as its "Zerodha" row) plus the PMS row and grand total, so
-  // showing both was a duplicate of the same numbers.
-  const showLegacyBifurcation = !(liveAllocation && selectedStrategy === "ALL");
-  const holdingsBifurcationHTML = showLegacyBifurcation
-    ? threeCol(
-        "Holdings Bifurcation",
-        ["Type", "Amount", "%"],
-        activeSummary.holdingsBifurcation.map((r) => ({
-          a: typeBadge(r.type),
-          b: money(r.amount),
-          c: `${r.percent.toFixed(2)}%`,
-        })),
-      )
-    : "";
-
-  // ── Holdings & Transactions ──────────────────────────────────────────────
-  const filterByStrategy = <T extends { strategy: string }>(arr: T[]) =>
-    selectedStrategy === "ALL"
-      ? arr
-      : arr.filter((r) => r.strategy === selectedStrategy);
-
-  const holdingsHTML = [
-    genericTable(
-      "Current Equity Holdings",
-      ["Stock Name", "Type", "Broker", "Exchange", "Strategy", "Amount"],
-      activeHoldings.equity.map((h) => [
-        h.name,
-        typeBadge(h.type),
-        h.broker,
-        h.exchange,
-        strategyBadge(h.strategy),
-        money(h.amount),
-      ]),
-    ),
-    genericTable(
-      "Current Mutual Fund Holdings",
-      ["Fund Name", "Type", "Broker", "Strategy", "Amount"],
-      activeHoldings.mf.map((h) => [
-        h.name,
-        typeBadge(h.type),
-        h.broker,
-        strategyBadge(h.strategy),
-        money(h.amount),
-      ]),
-    ),
-    genericTable(
-      "Historical Equity Holdings",
-      ["Stock Name", "Type", "Strategy", "Amount"],
-      filterByStrategy(data.historicalEquityHoldings).map((h) => [
-        h.name,
-        typeBadge(h.type),
-        strategyBadge(h.strategy),
-        money(h.amount),
-      ]),
-    ),
-    genericTable(
-      "Historical Mutual Fund Holdings",
-      ["Fund Name", "Type", "Strategy", "Amount"],
-      filterByStrategy(data.historicalMfHoldings).map((h) => [
-        h.name,
-        typeBadge(h.type),
-        strategyBadge(h.strategy),
-        money(h.amount),
-      ]),
-    ),
-  ].join("");
-
+  // ── Transactions ──────────────────────────────────────────────────────────
   const transactionsHTML = [
     genericTable(
       "Equity Transactions",
@@ -444,9 +387,7 @@ export function printInvestmentSummaryReport(
     ${statCardsHTML}
     ${holdingsBifurcationHTML}
     ${liveAllocationHTML}
-    ${currentAccountSummaryHTML}
     ${profitRedeploymentHTML}
-    ${holdingsHTML}
     ${transactionsHTML}
     <div class="report-footer">Qode</div>
   `;
