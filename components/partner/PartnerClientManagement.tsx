@@ -158,7 +158,6 @@ export function PartnerClientManagement({ onImpersonate, impersonatingIcode }: P
               accountCount={client.accountCount}
               onImpersonate={onImpersonate}
               isImpersonating={impersonatingIcode === client.icode}
-              showVisibilityToggle={false}
               showCsvExport={false}
               showQcode={false}
             />
