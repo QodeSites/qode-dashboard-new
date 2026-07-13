@@ -30,6 +30,7 @@ interface PnlTableProps {
   monthlyPnl: MonthlyPnlData;
   showOnlyQuarterlyCash?: boolean;
   showPmsQawView?: boolean;
+  cashOnly?: boolean;
   fees?: { [year: string]: { q1?: number; q2?: number; q3?: number; q4?: number } };
 }
 
@@ -38,6 +39,7 @@ export function PnlTable({
   monthlyPnl,
   showOnlyQuarterlyCash = false,
   showPmsQawView = false,
+  cashOnly = false,
   fees,
 }: PnlTableProps) {
   console.log(showOnlyQuarterlyCash)
@@ -105,8 +107,8 @@ export function PnlTable({
 
 const renderQuarterlyTable = () => {
   // For showOnlyQuarterlyCash or showPmsQawView, always show cash; otherwise, use viewType
-  const displayType = showOnlyQuarterlyCash || showPmsQawView ? "cash" : viewType;
-  const isPercentView = displayType === "percent" && !showOnlyQuarterlyCash && !showPmsQawView;
+  const displayType = showOnlyQuarterlyCash || showPmsQawView || cashOnly ? "cash" : viewType;
+  const isPercentView = displayType === "percent" && !showOnlyQuarterlyCash && !showPmsQawView && !cashOnly;
 
   return (
     <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0 p-4">
@@ -114,7 +116,7 @@ const renderQuarterlyTable = () => {
         <CardTitle className="text-sm sm:text-lg text-black">
           Quarterly Profit and Loss ({displayType === "percent" ? "%" : "₹"})
         </CardTitle>
-        {!showOnlyQuarterlyCash && !showPmsQawView && (
+        {!showOnlyQuarterlyCash && !showPmsQawView && !cashOnly && (
           <div className="space-x-2">
             <Button
               onClick={() => setViewType("percent")}
@@ -243,7 +245,7 @@ const renderQuarterlyTable = () => {
 
 const renderMonthlyTable = () => {
   // For showPmsQawView, always show percent; otherwise, use viewType
-  const displayType = showPmsQawView ? "percent" : viewType;
+  const displayType = showPmsQawView ? "percent" : cashOnly ? "cash" : viewType;
   const isPercentView = displayType === "percent";
 
   return (
@@ -252,7 +254,7 @@ const renderMonthlyTable = () => {
         <CardTitle className="text-sm sm:text-lg text-gray-900">
           Monthly Profit and Loss ({displayType === "percent" ? "%" : "₹"})
         </CardTitle>
-        {!showPmsQawView && (
+        {!showPmsQawView && !cashOnly && (
           <div className="space-x-2">
             <Button
               onClick={() => setViewType("percent")}

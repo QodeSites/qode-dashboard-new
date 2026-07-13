@@ -87,9 +87,12 @@ function SidebarContent({ pathname }: { pathname: string }) {
   const { data: session, update: updateSession } = useSession();
   const router = useRouter();
 
-  // Admin impersonation state
+  // Admin/partner impersonation state
   const isAdmin = session?.user?.accessType === "admin";
-  const isImpersonating = isAdmin && !!session?.user?.impersonating;
+  const isPartner = session?.user?.accessType === "partner";
+  const impersonationHome = isPartner ? "/partner" : "/admin";
+  const exitLabel = isPartner ? "Back to Partner" : "Back to Admin";
+  const isImpersonating = (isAdmin || isPartner) && !!session?.user?.impersonating;
   const effectiveIcode = isImpersonating
     ? session.user.impersonating!.icode
     : session?.user?.icode || "";
@@ -112,7 +115,7 @@ function SidebarContent({ pathname }: { pathname: string }) {
 
   const handleExitImpersonation = async () => {
     await updateSession({ impersonating: null });
-    router.push("/admin");
+    router.push(impersonationHome);
   };
 
   // Filter navigation based on user type
@@ -143,7 +146,7 @@ function SidebarContent({ pathname }: { pathname: string }) {
           className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-300 text-amber-800 text-sm font-medium hover:bg-amber-100 transition-colors"
         >
           <ArrowLeftIcon className="h-4 w-4" />
-          Back to Admin
+          {exitLabel}
         </button>
       )}
       <nav className="flex flex-1 flex-col justify-center">

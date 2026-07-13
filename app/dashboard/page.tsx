@@ -409,9 +409,14 @@ export default function Portfolio() {
   const { data: session, status, update: updateSession } = useSession();
   const router = useRouter();
 
-  // Admin impersonation: use impersonated icode if available
+  // Admin/partner impersonation: use impersonated icode if available.
+  // Both roles view client dashboards through the same impersonation session;
+  // they differ only in where "exit" returns to (see impersonationHome).
   const isAdmin = session?.user?.accessType === "admin";
-  const isImpersonating = isAdmin && !!session?.user?.impersonating;
+  const isPartner = session?.user?.accessType === "partner";
+  const canImpersonate = isAdmin || isPartner;
+  const impersonationHome = isPartner ? "/partner" : "/admin";
+  const isImpersonating = canImpersonate && !!session?.user?.impersonating;
   const effectiveIcode = isImpersonating
     ? session.user.impersonating!.icode
     : session?.user?.icode;
@@ -447,7 +452,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   // Exit impersonation handler
   const handleExitImpersonation = async () => {
     await updateSession({ impersonating: null });
-    router.push("/admin");
+    router.push(impersonationHome);
   };
 
   useEffect(() => {
@@ -456,9 +461,9 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
       return;
     }
 
-    // Admins can use this page only while impersonating.
-    if (status === "authenticated" && isAdmin && !isImpersonating) {
-      router.push("/admin");
+    // Admins/partners can use this page only while impersonating.
+    if (status === "authenticated" && canImpersonate && !isImpersonating) {
+      router.push(impersonationHome);
       return;
     }
 
@@ -827,15 +832,6 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                   </TableCell>
                   {viewMode === "individual" && <TableCell />}
                 </TableRow>
-                <TableRow className="font-semibold">
-                  <TableCell className="py-2 text-xs text-card-text">Net Flow</TableCell>
-                  <TableCell
-                    className={`py-2 text-xs text-right font-semibold ${cashFlowTotals.netFlow >= 0 ? "text-[#166534]" : "text-[#dc2626]"}`}
-                  >
-                    {formatter.format(cashFlowTotals.netFlow)}
-                  </TableCell>
-                  {viewMode === "individual" && <TableCell />}
-                </TableRow>
               </TableBody>
             </Table>
           </div>
@@ -865,7 +861,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   };
 
   // Export handler functions
-  const handleDownloadPDF = async (convertedStats: Stats, strategyName: string, isTotalPortfolio: boolean, exportMetadata?: { inceptionDate?: string | null; dataAsOfDate?: string | null }, hasNavBasedTotalPortfolio: boolean = false) => {
+  const handleDownloadPDF = async (convertedStats: Stats, strategyName: string, isTotalPortfolio: boolean, exportMetadata?: { inceptionDate?: string | null; dataAsOfDate?: string | null }, hasNavBasedTotalPortfolio: boolean = false, pmsBlendedTP: boolean = false) => {
     try {
       setExporting(true);
       const cashFlows = convertedStats.cashFlows || [];
@@ -919,6 +915,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         strategyName,
         isTotalPortfolio,
         hasNavBasedTotalPortfolio,
+        pmsBlendedTP,
         isActive: true,
         dateFormatter,
         formatter: (v) =>
@@ -999,7 +996,8 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     isTotalPortfolio: boolean,
     overrideAccountInfo?: { accountName: string; accountType: string; broker: string },
     exportMetadata?: { dataAsOfDate?: string | null; isActive?: boolean },
-    hasNavBasedTotalPortfolio: boolean = false
+    hasNavBasedTotalPortfolio: boolean = false,
+    pmsBlendedTP: boolean = false
   ) => {
     try {
       setExporting(true);
@@ -1038,6 +1036,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         strategyName,
         isTotalPortfolio,
         hasNavBasedTotalPortfolio,
+        pmsBlendedTP,
         isActive: exportMetadata?.isActive ?? metadata?.isActive ?? true,
         sessionUserName: session?.user?.name || "User",
         dataAsOfDate: exportMetadata?.dataAsOfDate ?? metadata?.dataAsOfDate,
@@ -1298,6 +1297,12 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     const isActive = strategyData.metadata.isActive;
     const hasNavBasedTotalPortfolio = bifurcatedClient?.hasNavBasedTotalPortfolio ?? false;
 
+    // PMS-blended clients (Ashok) render their Total Portfolio Sarla/Satidham-style:
+    // absolute ₹ only, no NAV curve, no trailing table — but keep monthly.
+    const pmsBlendedTP =
+      isTotalPortfolio && (bifurcatedClient?.config?.pmsSchemes?.length ?? 0) > 0;
+    const effectiveNavBased = hasNavBasedTotalPortfolio && !pmsBlendedTP;
+
     return (
       <div className="space-y-6">
         <div className="flex flex-wrap items-center gap-3">
@@ -1309,7 +1314,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           </Button>
           <div className="flex gap-2 ml-auto">
             <Button
-              onClick={() => handleDownloadPDF(convertedStats, selectedStrategy, isTotalPortfolio, { inceptionDate: strategyData.metadata?.inceptionDate, dataAsOfDate: strategyData.metadata?.dataAsOfDate }, hasNavBasedTotalPortfolio)}
+              onClick={() => handleDownloadPDF(convertedStats, selectedStrategy, isTotalPortfolio, { inceptionDate: strategyData.metadata?.inceptionDate, dataAsOfDate: strategyData.metadata?.dataAsOfDate }, hasNavBasedTotalPortfolio, pmsBlendedTP)}
               disabled={exporting}
               className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
               variant="default"
@@ -1318,7 +1323,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
               PDF
             </Button>
             <Button
-              onClick={() => handleDownloadExcel(convertedStats, selectedStrategy, isTotalPortfolio, undefined, { dataAsOfDate: strategyData.metadata?.dataAsOfDate, isActive }, hasNavBasedTotalPortfolio)}
+              onClick={() => handleDownloadExcel(convertedStats, selectedStrategy, isTotalPortfolio, undefined, { dataAsOfDate: strategyData.metadata?.dataAsOfDate, isActive }, hasNavBasedTotalPortfolio, pmsBlendedTP)}
               disabled={exporting}
               className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
               variant="default"
@@ -1336,9 +1341,9 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           isActive={isActive}
           returnViewType={returnViewType}
           setReturnViewType={setReturnViewType}
-          hasNavBasedTotalPortfolio={hasNavBasedTotalPortfolio}
+          hasNavBasedTotalPortfolio={effectiveNavBased}
         />
-        {(!isTotalPortfolio || hasNavBasedTotalPortfolio) && (
+        {(!isTotalPortfolio || effectiveNavBased) && (
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
             <div className="flex-1 min-w-0 sm:w-5/6">
               <RevenueChart
@@ -1357,6 +1362,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           monthlyPnl={convertedStats.monthlyPnl}
           showOnlyQuarterlyCash={false}
           showPmsQawView={false}
+          cashOnly={pmsBlendedTP}
         />
         {renderCashFlowsTable()}
         {isBifurcatedClient && !isActive && (
@@ -1413,6 +1419,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           name={session.user.impersonating.name}
           icode={session.user.impersonating.icode}
           onExit={handleExitImpersonation}
+          exitLabel={isPartner ? "Back to Partner" : "Back to Admin"}
         />
       )}
       <div>

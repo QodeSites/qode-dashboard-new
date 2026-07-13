@@ -412,7 +412,6 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     config: DIAMANTAIRE_EXPORTS_PVT_LTD_CONFIG,
     frozenData: EMPTY_FROZEN_DATA,
     hasNavBasedTotalPortfolio: true,
-    renderMode: "single",
     broker: "zerodha",
   },
   {
