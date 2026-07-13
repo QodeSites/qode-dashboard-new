@@ -29,7 +29,7 @@ export function PartnerHeader() {
             </Badge>
           </div>
           <p className="text-sm text-card-text-secondary mt-1">
-            Monitor clients in your book and view dashboards
+            Monitor your clients' portfolios, track performance, and view investment dashboards.
           </p>
         </div>
       </div>

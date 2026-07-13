@@ -160,6 +160,7 @@ export function PartnerClientManagement({ onImpersonate, impersonatingIcode }: P
               isImpersonating={impersonatingIcode === client.icode}
               showVisibilityToggle={false}
               showCsvExport={false}
+              showQcode={false}
             />
           ))}
         </div>

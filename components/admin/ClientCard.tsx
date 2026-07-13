@@ -28,6 +28,7 @@ interface ClientCardProps {
   onToggleVisibility?: (icode: string, visible: boolean) => void;
   showVisibilityToggle?: boolean;
   showCsvExport?: boolean;
+  showQcode?: boolean;
 }
 
 export function ClientCard({
@@ -42,6 +43,7 @@ export function ClientCard({
   onToggleVisibility,
   showVisibilityToggle = true,
   showCsvExport = true,
+  showQcode = true,
 }: ClientCardProps) {
   const [exporting, setExporting] = useState(false);
 
@@ -115,7 +117,7 @@ export function ClientCard({
           </div>
         </div>
 
-        {accounts.length > 0 && (
+        {accounts.length > 0 && showQcode && (
           <div className="flex justify-between">
             <div className="mb-4 space-y-1">
               {accounts.slice(0, 3).map((account) => (

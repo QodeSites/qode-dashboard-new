@@ -175,6 +175,7 @@ export default function PartnerPage() {
           totalAumManaged={stats.totalAumManaged}
           accountAums={stats.aumAccounts}
           isLoading={statsLoading}
+          showAccounts={false}
         />
       </div>
 
