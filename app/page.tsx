@@ -17,6 +17,7 @@ useEffect(() => {
   if (status === "authenticated") {
     if (accessType === "admin") router.replace("/dashboard");
     if (accessType === "distributor") router.replace("/distributor");
+    if (accessType === "partner") router.replace("/partner");
   }
 }, [status, accessType, router]);
 
@@ -54,7 +55,7 @@ useEffect(() => {
       </div>
     );
   }
-  if (accessType === "distributor") {
+  if (accessType === "distributor" || accessType === "partner") {
   return (
     <div className="min-h-screen bg-primary-bg flex items-center justify-center w-full">
       <div className="text-logo-green text-xl font-heading">Redirecting…</div>
