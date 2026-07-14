@@ -105,6 +105,22 @@ function fmt(n: number): string {
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 0];
 
+function parseDateForSort(dateStr: string): number {
+  if (!dateStr) return 0;
+  // Try DD-MM-YYYY or DD/MM/YYYY
+  const dmyMatch = dateStr.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+  if (dmyMatch) {
+    const [, d, m, y] = dmyMatch;
+    return new Date(Number(y), Number(m) - 1, Number(d)).getTime();
+  }
+  // Try YYYY-MM-DD (ISO)
+  const isoMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) return new Date(dateStr).getTime();
+  // Fallback: let JS parse it
+  const ts = Date.parse(dateStr);
+  return isNaN(ts) ? 0 : ts;
+}
+
 function getPageNumbers(currentPage: number, totalPages: number): (number | "...")[] {
   if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
   const pages: (number | "...")[] = [1];
@@ -439,8 +455,13 @@ function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
     if (!sortKey) return rows;
     return [...rows].sort((a, b) => {
       const aVal = a[sortKey]; const bVal = b[sortKey];
-      const cmp = typeof aVal === "string" && typeof bVal === "string"
-        ? aVal.localeCompare(bVal) : (Number(aVal) || 0) - (Number(bVal) || 0);
+      let cmp: number;
+      if (sortKey === "date" && typeof aVal === "string" && typeof bVal === "string") {
+        cmp = parseDateForSort(aVal) - parseDateForSort(bVal);
+      } else {
+        cmp = typeof aVal === "string" && typeof bVal === "string"
+          ? aVal.localeCompare(bVal) : (Number(aVal) || 0) - (Number(bVal) || 0);
+      }
       return sortDirection === "asc" ? cmp : -cmp;
     });
   }, [rows, sortKey, sortDirection]);
@@ -579,8 +600,13 @@ function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
     if (!sortKey) return rows;
     return [...rows].sort((a, b) => {
       const aVal = a[sortKey]; const bVal = b[sortKey];
-      const cmp = typeof aVal === "string" && typeof bVal === "string"
-        ? aVal.localeCompare(bVal) : (Number(aVal) || 0) - (Number(bVal) || 0);
+      let cmp: number;
+      if (sortKey === "transactionType" && typeof aVal === "string" && typeof bVal === "string") {
+        cmp = parseDateForSort(aVal) - parseDateForSort(bVal);
+      } else {
+        cmp = typeof aVal === "string" && typeof bVal === "string"
+          ? aVal.localeCompare(bVal) : (Number(aVal) || 0) - (Number(bVal) || 0);
+      }
       return sortDirection === "asc" ? cmp : -cmp;
     });
   }, [rows, sortKey, sortDirection]);
@@ -596,8 +622,8 @@ function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
   const endEntry = Math.min(safePage * effectiveSize, rows.length);
 
   const cols: { key: keyof CashTxRow; label: string; align: "left" | "center" }[] = [
-    { key: "transactionType", label: "Type", align: "left" },
-    { key: "date", label: "Date", align: "center" },
+    { key: "date", label: "Type", align: "left" },
+    { key: "transactionType", label: "Date", align: "center" },
     { key: "strategy", label: "Strategy", align: "center" },
     { key: "amount", label: "Amount (₹)", align: "center" },
   ];
@@ -714,8 +740,13 @@ function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
     if (!sortKey) return rows;
     return [...rows].sort((a, b) => {
       const aVal = a[sortKey]; const bVal = b[sortKey];
-      const cmp = typeof aVal === "string" && typeof bVal === "string"
-        ? aVal.localeCompare(bVal) : (Number(aVal) || 0) - (Number(bVal) || 0);
+      let cmp: number;
+      if (sortKey === "date" && typeof aVal === "string" && typeof bVal === "string") {
+        cmp = parseDateForSort(aVal) - parseDateForSort(bVal);
+      } else {
+        cmp = typeof aVal === "string" && typeof bVal === "string"
+          ? aVal.localeCompare(bVal) : (Number(aVal) || 0) - (Number(bVal) || 0);
+      }
       return sortDirection === "asc" ? cmp : -cmp;
     });
   }, [rows, sortKey, sortDirection]);
@@ -1158,6 +1189,11 @@ export default function InvestmentSummaryPage() {
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="mt-4 space-y-4">
+            {activeSummary.amountInvested.total === 0 ? (
+              <div className="flex items-center justify-center min-h-[200px] text-card-text-secondary text-sm">
+                No investment summary data available for this account.
+              </div>
+            ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <GroupCard
                 title="Amount Invested"
@@ -1187,9 +1223,10 @@ export default function InvestmentSummaryPage() {
                 ]}
               />
             </div>
+            )}
 
             {/* Holdings Bifurcation */}
-            {activeSummary.holdingsBifurcation.length > 0 && (
+            {activeSummary.holdingsBifurcation.some(r => r.amount > 0) && (
               <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
                 <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg flex items-center justify-between">
                   <span>Current Account Summary</span>

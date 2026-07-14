@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment } from "react"
+import { Fragment, useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Dialog, Transition } from "@headlessui/react"
@@ -113,6 +113,15 @@ function SidebarContent({ pathname }: { pathname: string }) {
   // Check if effective user is Sarla client (QUS0007)
   const isSarla = userIcode === "QUS0007";
 
+  const [hasInvestmentSummary, setHasInvestmentSummary] = useState(true);
+  useEffect(() => {
+    if (!userIcode) return;
+    fetch("/api/investment-summary?exists=true")
+      .then((r) => r.json())
+      .then((d) => setHasInvestmentSummary(d.exists === true))
+      .catch(() => {});
+  }, [userIcode]);
+
   const handleExitImpersonation = async () => {
     await updateSession({ impersonating: null });
     router.push(impersonationHome);
@@ -120,9 +129,8 @@ function SidebarContent({ pathname }: { pathname: string }) {
 
   // Filter navigation based on user type
   const filteredNavigation = navigation.filter(item => {
-    if (item.name === "Costs Summary") {
-      return isSarla;
-    }
+    if (item.name === "Investment Summary") return hasInvestmentSummary;
+    if (item.name === "Costs Summary") return isSarla;
     return true;
   });
 

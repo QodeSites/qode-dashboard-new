@@ -276,7 +276,9 @@ function parseHoldingsBifurcation(
   wb: XLSX.WorkBook,
   sheetName = "Current Account Summary",
 ): InvestmentSummaryData["holdingsBifurcation"] {
-  const rows = dataRows(sheetRows(wb, sheetName))
+  const raw = sheetRows(wb, sheetName);
+  if (!raw.length) return [];
+  const rows = dataRows(raw)
     .filter((row) => {
       const label = String(row[0] || "").trim().toLowerCase();
       return label && label !== "total";
@@ -410,10 +412,8 @@ function parseCashTransactions(
 ): InvestmentSummaryData["cashTransactions"] {
   return dataRows(sheetRows(wb, "Cash Transactions"))
     .filter((row) => {
-      const d = String(row[0] || "")
-        .trim()
-        .toLowerCase();
-      return d && d !== "date" && d !== "net";
+      const d = String(row[0] || "").trim().toLowerCase();
+      return d && d !== "net";
     })
     .map((row) => ({
       date: String(row[0]).trim(),

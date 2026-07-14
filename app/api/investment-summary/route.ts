@@ -82,6 +82,19 @@ export async function GET(req: NextRequest) {
 
     const dirs = reportsDirsForAccess(isAdmin);
     const found = await findReportByIcode(reportIcode, dirs);
+
+    // Data presence check — file must exist AND have a non-zero investment total
+    if (searchParams.get("exists") === "true") {
+      if (!found) return NextResponse.json({ exists: false });
+      try {
+        const buf = await fs.readFile(path.resolve(found.dir, found.fileName));
+        const data = parseInvestmentXlsx(buf);
+        return NextResponse.json({ exists: data.amountInvested.total !== 0 });
+      } catch {
+        return NextResponse.json({ exists: false });
+      }
+    }
+
     if (!found) {
       return NextResponse.json({ error: "Report not found" }, { status: 404 });
     }
