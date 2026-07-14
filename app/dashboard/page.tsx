@@ -832,6 +832,15 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                   </TableCell>
                   {viewMode === "individual" && <TableCell />}
                 </TableRow>
+                <TableRow className="font-semibold">
+                  <TableCell className="py-2 text-xs text-card-text">Net Flow</TableCell>
+                  <TableCell
+                    className={`py-2 text-xs text-right font-semibold ${cashFlowTotals.netFlow >= 0 ? "text-[#166534]" : "text-[#dc2626]"}`}
+                  >
+                    {formatter.format(cashFlowTotals.netFlow)}
+                  </TableCell>
+                  {viewMode === "individual" && <TableCell />}
+                </TableRow>
               </TableBody>
             </Table>
           </div>
