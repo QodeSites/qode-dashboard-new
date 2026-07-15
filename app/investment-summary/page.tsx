@@ -1044,7 +1044,7 @@ export default function InvestmentSummaryPage() {
     const onlyQye = <T extends { strategy: string }>(arr: T[]) =>
       arr.filter((r) => QYE_STRATEGIES.has(r.strategy));
     const excludeInternalTransfer = (arr: CashTxRow[]) =>
-      arr.filter((r) => r.transactionType.toLowerCase() !== "internal transfer");
+      arr.filter((r) => r.date.toLowerCase() !== "internal transfer");
     return {
       equity: onlyQye(filter(data.equityTransactions)),
       mf: onlyQye(filter(data.mfTransactions)),
