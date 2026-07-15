@@ -409,9 +409,14 @@ export default function Portfolio() {
   const { data: session, status, update: updateSession } = useSession();
   const router = useRouter();
 
-  // Admin impersonation: use impersonated icode if available
+  // Admin/partner impersonation: use impersonated icode if available.
+  // Both roles view client dashboards through the same impersonation session;
+  // they differ only in where "exit" returns to (see impersonationHome).
   const isAdmin = session?.user?.accessType === "admin";
-  const isImpersonating = isAdmin && !!session?.user?.impersonating;
+  const isPartner = session?.user?.accessType === "partner";
+  const canImpersonate = isAdmin || isPartner;
+  const impersonationHome = isPartner ? "/partner" : "/admin";
+  const isImpersonating = canImpersonate && !!session?.user?.impersonating;
   const effectiveIcode = isImpersonating
     ? session.user.impersonating!.icode
     : session?.user?.icode;
@@ -447,7 +452,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   // Exit impersonation handler
   const handleExitImpersonation = async () => {
     await updateSession({ impersonating: null });
-    router.push("/admin");
+    router.push(impersonationHome);
   };
 
   useEffect(() => {
@@ -456,9 +461,9 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
       return;
     }
 
-    // Admins can use this page only while impersonating.
-    if (status === "authenticated" && isAdmin && !isImpersonating) {
-      router.push("/admin");
+    // Admins/partners can use this page only while impersonating.
+    if (status === "authenticated" && canImpersonate && !isImpersonating) {
+      router.push(impersonationHome);
       return;
     }
 
@@ -1423,6 +1428,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           name={session.user.impersonating.name}
           icode={session.user.impersonating.icode}
           onExit={handleExitImpersonation}
+          exitLabel={isPartner ? "Back to Partner" : "Back to Admin"}
         />
       )}
       <div>

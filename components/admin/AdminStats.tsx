@@ -20,6 +20,7 @@ interface AdminStatsProps {
   totalAumManaged: number;
   accountAums: AccountAum[];
   isLoading: boolean;
+  showAccounts?: boolean;
 }
 
 function formatInr(value: number): string {
@@ -36,14 +37,19 @@ export function AdminStats({
   totalAumManaged,
   accountAums,
   isLoading,
+  showAccounts = true,
 }: AdminStatsProps) {
   const [open, setOpen] = useState(false);
 
   return (
     <>
       {/* Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        
+      <div
+        className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${
+          showAccounts ? "lg:grid-cols-3" : "lg:grid-cols-2"
+        }`}
+      >
+
         {/* Clients */}
         <Card className="bg-white/50 border border-card-text-secondary/20">
           <CardContent className="p-6 flex items-center gap-4">
@@ -62,21 +68,23 @@ export function AdminStats({
         </Card>
 
         {/* Accounts */}
-        <Card className="bg-white/50 border border-card-text-secondary/20">
-          <CardContent className="p-6 flex items-center gap-4">
-            <BriefcaseIcon className="h-8 w-8 text-logo-green" />
-            <div>
-              {isLoading ? (
-                <div className="h-8 w-16 bg-card-text-secondary/10 rounded animate-pulse" />
-              ) : (
-                <p className="text-3xl font-bold text-card-text">
-                  {totalAccounts.toLocaleString("en-IN")}
-                </p>
-              )}
-              <p className="text-sm text-card-text-secondary">Total Accounts</p>
-            </div>
-          </CardContent>
-        </Card>
+        {showAccounts && (
+          <Card className="bg-white/50 border border-card-text-secondary/20">
+            <CardContent className="p-6 flex items-center gap-4">
+              <BriefcaseIcon className="h-8 w-8 text-logo-green" />
+              <div>
+                {isLoading ? (
+                  <div className="h-8 w-16 bg-card-text-secondary/10 rounded animate-pulse" />
+                ) : (
+                  <p className="text-3xl font-bold text-card-text">
+                    {totalAccounts.toLocaleString("en-IN")}
+                  </p>
+                )}
+                <p className="text-sm text-card-text-secondary">Total Accounts</p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* AUM */}
         <Card

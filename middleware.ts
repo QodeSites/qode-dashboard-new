@@ -25,7 +25,7 @@ export async function middleware(req: NextRequest) {
     req.nextUrl.protocol.replace(":", "");
   const host = req.headers.get("host") ?? req.nextUrl.host;
 
-  const token = await getToken({
+  let token = await getToken({
     req,
     secret: process.env.NEXTAUTH_SECRET,
     // On https the cookie is `__Secure-next-auth.session-token`; without this
@@ -33,12 +33,36 @@ export async function middleware(req: NextRequest) {
     secureCookie: proto === "https",
   });
 
+  // Proxies/tunnels don't always forward x-forwarded-proto reliably (e.g. ngrok,
+  // VS Code port forwarding), which can make the guess above wrong and leave a
+  // logged-in user's token undetected — causing gated routes (e.g. /partner) to
+  // redirect away even though they have a valid session. Retry with the other
+  // cookie-secure assumption before treating the request as unauthenticated.
+  if (!token) {
+    token = await getToken({
+      req,
+      secret: process.env.NEXTAUTH_SECRET,
+      secureCookie: proto !== "https",
+    });
+  }
+
   // Guard internal routes
   if (
     pathname.startsWith("/internal") ||
     pathname.startsWith("/api/internal")
   ) {
     if (token?.accessType !== "internal") {
+      return NextResponse.redirect(new URL("/", req.url));
+    }
+    return NextResponse.next();
+  }
+
+  // Guard partner routes
+  if (
+    pathname.startsWith("/partner") ||
+    pathname.startsWith("/api/partner")
+  ) {
+    if (token?.accessType !== "partner") {
       return NextResponse.redirect(new URL("/", req.url));
     }
     return NextResponse.next();

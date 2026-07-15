@@ -7,9 +7,10 @@ interface ImpersonationBannerProps {
   name: string;
   icode: string;
   onExit: () => void;
+  exitLabel?: string;
 }
 
-export function ImpersonationBanner({ name, icode, onExit }: ImpersonationBannerProps) {
+export function ImpersonationBanner({ name, icode, onExit, exitLabel = "Back to Admin" }: ImpersonationBannerProps) {
   return (
     <div className="bg-amber-50 border-b border-amber-300 px-4 py-2 flex items-center justify-between">
       <p className="text-sm text-amber-800">
@@ -22,7 +23,7 @@ export function ImpersonationBanner({ name, icode, onExit }: ImpersonationBanner
         className="gap-2 text-amber-800 hover:text-amber-900 hover:bg-amber-100"
       >
         <ArrowLeftIcon className="h-4 w-4" />
-        Back to Admin
+        {exitLabel}
       </Button>
     </div>
   );
