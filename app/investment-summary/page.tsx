@@ -44,9 +44,10 @@ interface SarlaSchemeResponse {
 const SARLA_ICODE = "QUS0007";
 const SATIDHAM_ICODE = "QUS0010";
 const SATIDHAM_NEW_ICODE = "QUS00081";
+const ASHOK_ICODE = "QUS00124";
 
-// Equity/MF transaction tables exclude QAW-family strategies (Cash transactions still show them)
-const QAW_STRATEGIES = new Set(["QAW", "QAW+", "QAW++"]);
+// Equity/MF transaction tables only show QYE+ and QYE++ strategies
+const QYE_STRATEGIES = new Set(["QYE+", "QYE++"]);
 
 const DISTRIBUTION_COLORS = [
   "bg-logo-green",
@@ -894,14 +895,31 @@ export default function InvestmentSummaryPage() {
 
   const isSarla = icode === SARLA_ICODE;
   const isSatidham = icode === SATIDHAM_ICODE || icode === SATIDHAM_NEW_ICODE;
+  const isAshok = icode === ASHOK_ICODE;
 
   useEffect(() => {
-    if (status !== "authenticated" || (!isSarla && !isSatidham)) {
+    if (status !== "authenticated" || (!isSarla && !isSatidham && !isAshok)) {
       setPmsAum(null);
       setLiveAllocationLoading(false);
       return;
     }
     setLiveAllocationLoading(true);
+
+    if (isAshok) {
+      fetch("/api/bifurcated-portfolio?qcode=QAC00110", { cache: "no-store" })
+        .then(async (res) => {
+          if (!res.ok) return;
+          const json: Record<string, SarlaSchemeResponse> = await res.json();
+          const total = ["Scheme PMS QAW", "Scheme PMS QGF", "Scheme PMS QTF"].reduce(
+            (sum, s) => sum + (parseFloat(json[s]?.data?.currentExposure || "0") || 0),
+            0,
+          );
+          setPmsAum(total);
+        })
+        .catch(() => setPmsAum(null))
+        .finally(() => setLiveAllocationLoading(false));
+      return;
+    }
 
     const qcode = isSarla ? "QAC00041" : "QAC00046";
     const accountCode = isSarla ? "AC5" : "AC8";
@@ -914,7 +932,7 @@ export default function InvestmentSummaryPage() {
       })
       .catch(() => setPmsAum(null))
       .finally(() => setLiveAllocationLoading(false));
-  }, [status, isSarla, isSatidham]);
+  }, [status, isSarla, isSatidham, isAshok]);
 
   // Zerodha side comes from the parsed xlsx report (holdingsBifurcation —
   // same figures the backend Excel pipeline produced); only the PMS exposure
@@ -1023,12 +1041,14 @@ export default function InvestmentSummaryPage() {
       selectedStrategy === "ALL"
         ? arr
         : arr.filter((r) => r.strategy === selectedStrategy);
-    const excludeQaw = <T extends { strategy: string }>(arr: T[]) =>
-      arr.filter((r) => !QAW_STRATEGIES.has(r.strategy));
+    const onlyQye = <T extends { strategy: string }>(arr: T[]) =>
+      arr.filter((r) => QYE_STRATEGIES.has(r.strategy));
+    const excludeInternalTransfer = (arr: CashTxRow[]) =>
+      arr.filter((r) => r.transactionType.toLowerCase() !== "internal transfer");
     return {
-      equity: excludeQaw(filter(data.equityTransactions)),
-      mf: excludeQaw(filter(data.mfTransactions)),
-      cash: filter(data.cashTransactions),
+      equity: onlyQye(filter(data.equityTransactions)),
+      mf: onlyQye(filter(data.mfTransactions)),
+      cash: excludeInternalTransfer(filter(data.cashTransactions)),
     };
   }, [data, selectedStrategy]);
 
