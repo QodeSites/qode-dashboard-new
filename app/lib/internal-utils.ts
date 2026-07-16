@@ -571,17 +571,15 @@ async function fetchStrategyPairs(
   return [...map.values()];
 }
 
-// carry-forward sum across N series onto the union of their dates — single pass.
+// carry-forward sum across N series onto a shared date axis — single pass.
 // each series stops contributing once `d` passes its own `until` (if set) —
-// prevents lapsed/switched strategies from being counted forever.
+// prevents lapsed/switched strategies from being counted forever. `dates` is
+// shared across all callers so a strategy with no currently active clients
+// still resolves to 0 today instead of freezing at its last real value.
 function mergeFfillSum(
   seriesList: { series: SeriesPoint[]; until: string | null }[],
+  dates: string[],
 ): AumPoint[] {
-  const dateSet = new Set<string>();
-  for (const { series } of seriesList)
-    for (const p of series) dateSet.add(p.date);
-  const dates = [...dateSet].sort();
-
   const idx = new Array(seriesList.length).fill(0);
   const last = new Array(seriesList.length).fill(0);
   const out: AumPoint[] = [];
@@ -599,6 +597,22 @@ function mergeFfillSum(
     out.push({ date: d, aum: sum });
   }
   return out;
+}
+
+// drop the trailing zero run once a strategy has no active clients left —
+// keeps the real history, cuts the redundant "still 0" repeats out to today
+function trimTrailingZeros(series: AumPoint[]): AumPoint[] {
+  let end = series.length;
+  while (end > 0 && series[end - 1].aum === 0) end--;
+  return series.slice(0, end);
+}
+
+// drop the leading zero run before a strategy's first real client — same no-signal
+// padding as the trailing case, just mirrored at the start of the array
+function trimLeadingZeros(series: AumPoint[]): AumPoint[] {
+  let start = 0;
+  while (start < series.length && series[start].aum === 0) start++;
+  return series.slice(start);
 }
 
 function computeMom(
@@ -694,17 +708,29 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
     strategySeries.get(pair.strategy)!.push(entry);
   }
 
-  // per-series cutoff is now baked in, so this is accurate for any date — mom included
-  const aum_daily = mergeFfillSum(allSeries);
-  const strategy_aum_daily: Record<string, AumPoint[]> = {};
-  for (const [strategy, list] of strategySeries) {
-    strategy_aum_daily[strategy] = mergeFfillSum(list);
-  }
+  // shared axis so every strategy resolves to 0 (not a frozen stale value) once its clients lapse
+  const dateSet = new Set<string>();
+  for (const { series } of allSeries)
+    for (const p of series) dateSet.add(p.date);
+  const dates = [...dateSet].sort();
 
   const activeInvestors = investors.filter((inv) => isActive(inv.until, today));
+  const activeClients = new Set(activeInvestors.map((inv) => inv.qcode)); // dedupe multi-strategy clients
+  const activeStrategies = new Set(activeInvestors.map((inv) => inv.strategy));
+
+  // per-series cutoff is now baked in, so this is accurate for any date — mom included
+  const aum_daily = mergeFfillSum(allSeries, dates);
+  const strategy_aum_daily: Record<string, AumPoint[]> = {};
+  for (const [strategy, list] of strategySeries) {
+    const series = trimLeadingZeros(mergeFfillSum(list, dates)); // no padding before its own inception
+    // fully-lapsed strategies don't need the trailing zero repeat out to today
+    strategy_aum_daily[strategy] = activeStrategies.has(strategy)
+      ? series
+      : trimTrailingZeros(series);
+  }
 
   return {
-    total_investors: activeInvestors.length,
+    total_investors: activeClients.size,
     total_aum: activeInvestors.reduce((s, inv) => s + inv.aum, 0),
     mom: computeMom(aum_daily),
     investors,
