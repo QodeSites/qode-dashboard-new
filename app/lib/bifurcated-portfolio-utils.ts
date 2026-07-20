@@ -778,6 +778,15 @@ class BifurcatedPortfolioEngine {
     }
 
     const historicalData = await this.getHistoricalData(qcode, scheme);
+    if (historicalData.length === 0) return 0;
+
+    // Single-row fresh schemes: use prev_nav as baseline (day-1 return).
+    if (historicalData.length === 1 && this.isFreshActiveScheme(scheme)) {
+      const initialNav = historicalData[0].prevNav ?? 100;
+      const finalNav = historicalData[0].nav;
+      return (finalNav / initialNav - 1) * 100;
+    }
+
     if (historicalData.length < 2) return 0;
 
     const originalFirstNav = historicalData[0].nav;

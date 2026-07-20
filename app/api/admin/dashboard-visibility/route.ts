@@ -18,15 +18,21 @@ export async function GET() {
   return NextResponse.json({ visibility: visibilityMap });
 }
 
+const VISIBILITY_PASSWORD = process.env.DASHBOARD_VISIBILITY_PASSWORD;
+
 export async function POST(request: Request) {
   const { error } = await requireAdmin();
   if (error) return error;
 
   const body = await request.json();
-  const { icode, dashboard_visible } = body;
+  const { icode, dashboard_visible, password } = body;
 
   if (!icode || typeof dashboard_visible !== "boolean") {
     return NextResponse.json({ error: "icode and dashboard_visible are required" }, { status: 400 });
+  }
+
+  if (!password || password !== VISIBILITY_PASSWORD) {
+    return NextResponse.json({ error: "Invalid password" }, { status: 403 });
   }
 
   await prisma.dashboard_visibility.upsert({

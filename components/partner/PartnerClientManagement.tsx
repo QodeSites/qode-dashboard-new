@@ -3,17 +3,15 @@
 import { useState, useEffect, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem} from "@/components/ui/dropdown-menu";
 import {
   MagnifyingGlassIcon,
   Squares2X2Icon,
   ListBulletIcon,
   ArrowPathIcon,
 } from "@heroicons/react/24/outline";
-import { ClientCard } from "./ClientCard";
+import { ClientCard } from "@/components/admin/ClientCard";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Download } from "lucide-react";
 
 interface Account {
   qcode: string;
@@ -26,23 +24,21 @@ interface Client {
   icode: string;
   name: string;
   email: string;
-  contactNumber: string | null;
   accounts: Account[];
   accountCount: number;
 }
 
-interface ClientManagementProps {
+interface PartnerClientManagementProps {
   onImpersonate: (icode: string) => void;
   impersonatingIcode: string | null;
 }
 
-export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientManagementProps) {
+export function PartnerClientManagement({ onImpersonate, impersonatingIcode }: PartnerClientManagementProps) {
   const [clients, setClients] = useState<Client[]>([]);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
   const [isLoading, setIsLoading] = useState(true);
-  const [exportingSet, setExportingSet] = useState<Set<string>>(new Set());
 
   // Debounce search input
   useEffect(() => {
@@ -58,11 +54,10 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
       const params = new URLSearchParams();
       if (searchTerm) params.set("search", searchTerm);
 
-      const clientsRes = await fetch(`/api/admin/clients?${params}`, { credentials: "include" });
-
-      if (!clientsRes.ok) throw new Error("Failed to fetch clients");
-      const clientsData = await clientsRes.json();
-      setClients(clientsData.clients);
+      const res = await fetch(`/api/partner/clients?${params}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch clients");
+      const data = await res.json();
+      setClients(data.clients);
     } catch (err) {
       console.error("Error fetching clients:", err);
     } finally {
@@ -76,44 +71,6 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
 
   const handleRefresh = () => {
     fetchClients(debouncedSearch);
-  };
-
-  // Export handler functions
-  const handleDownloadCsv = async (qcode: string[], icode: string) => {
-    try {
-      // add to set
-      setExportingSet((prev) => new Set(prev).add(icode));
-
-      const res = await fetch("/api/export-csv", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ qcodes: qcode }),
-      });
-
-      if (!res.ok) throw new Error("Download failed");
-
-      const blob = await res.blob();
-
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${qcode}-data.csv`;
-      a.click();
-
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error(err);
-      alert("Something went wrong");
-    } finally {
-      // remove from set
-      setExportingSet((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(icode);
-        return newSet;
-      });
-    }
   };
 
   return (
@@ -138,15 +95,10 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
         <div className="relative flex-1">
           <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-card-text-secondary" />
           <Input
-            type="search"
             placeholder="Search clients by name, email, or client code..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9 bg-white/50"
-            autoComplete="off"
-            data-form-type="other"
-            data-lpignore="true"
-            data-1p-ignore
           />
         </div>
         <div className="flex items-center border rounded-lg overflow-hidden">
@@ -206,6 +158,8 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
               accountCount={client.accountCount}
               onImpersonate={onImpersonate}
               isImpersonating={impersonatingIcode === client.icode}
+              showCsvExport={false}
+              showQcode={false}
             />
           ))}
         </div>
@@ -221,7 +175,6 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
                 <TableHead>Email</TableHead>
                 <TableHead>ICode</TableHead>
                 <TableHead className="text-center">Accounts</TableHead>
-                <TableHead className="text-center">Download</TableHead>
                 <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
@@ -242,42 +195,6 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
                   <TableCell className="text-center">
                     {client.accountCount}
                   </TableCell>
-                  <TableCell className="text-center">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          disabled={exportingSet.has(client.icode)}
-                          className="h-6 w-[90px] px-2 text-xs font-medium bg-logo-green text-button-text hover:bg-logo-green/90 flex items-center justify-center"
-                        >
-                          {exportingSet.has(client.icode) ? (
-                            <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
-                          ) : (
-                            <>
-                              <Download className="h-4 w-4 mr-1" />
-                              CSV
-                            </>
-                          )}
-                        </Button>
-                      </DropdownMenuTrigger>
-
-                      <DropdownMenuContent className="w-30 bg-white border border-gray-200 shadow-md rounded-md">
-                        {client.accounts.map((acc) => (
-                          <DropdownMenuItem
-                            className="text-sm font-bold cursor-pointer px-3 py-2 rounded-sm 
-                            hover:bg-logo-green/10 focus:bg-logo-green/10 
-                            hover:text-gray-700 focus:text-gray-700 text-gray-700"
-                            key={acc.qcode}
-                            onClick={() =>
-                              handleDownloadCsv([acc.qcode], client.icode)
-                            }
-                          >
-                            <Download className="h-2 w-2 mr-1" />
-                            {acc.qcode}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
                   <TableCell className="text-right">
                     <Button
                       variant="outline"
@@ -295,6 +212,7 @@ export function ClientManagement({ onImpersonate, impersonatingIcode }: ClientMa
           </Table>
         </div>
       )}
+
     </div>
   );
 }
