@@ -163,13 +163,18 @@ export function calcSinceInception(nav: NavPoint[]): number | null {
   if (nav.length < 2) return null;
   const days =
     (nav[nav.length - 1].date.getTime() - nav[0].date.getTime()) / MS;
+  // true inception has no prior day (null) — 100 is the indexed starting point.
+  // a windowed start_date does have a real prior day; use it as the base
+  // instead, same fallback calcMonthlyReturns already uses for its first bucket
+  const baseNav =
+    nav[0].prev_nav != null && nav[0].prev_nav > 0 ? nav[0].prev_nav : 100;
   const startNav = nav[0].nav;
   const endNav = nav[nav.length - 1].nav;
   if (endNav <= 0 || startNav <= 0 || days <= 0) return null;
-  // < 365 days: simple return from base 100 (NAV is indexed to 100 at inception)
+  // < 365 days: simple return from baseNav
   // >= 365 days: CAGR using actual first recorded NAV
   return round(
-    days < 365 ? endNav / 100 - 1 : (endNav / startNav) ** (365 / days) - 1,
+    days < 365 ? endNav / baseNav - 1 : (endNav / startNav) ** (365 / days) - 1,
     4,
   );
 }
@@ -775,20 +780,40 @@ export interface StrategyBreakupRow {
   end_date: string | null;
 }
 
+// top-level query window — distinct from each row's own end_date (that
+// client-strategy pair's own effective_to, unrelated to the request filter)
+export interface StrategyBreakupResult {
+  start_date: string | null;
+  end_date: string;
+  clients: StrategyBreakupRow[];
+}
+
 // batched nav/prev_nav/drawdown/pnl fetch for any list of (qcode, tag) pairs —
 // same unnest-join pattern as Portfolio Summary, one round trip total
 async function fetchBulkNavSeries(
   pairs: { qcode: string; tag: string }[],
+  end?: Date, // optional upper bound — omit for latest available
+  start?: Date, // optional lower bound — omit for full history
 ): Promise<Map<string, NavPoint[]>> {
+  const params: any[] = [pairs.map((p) => p.qcode), pairs.map((p) => p.tag)];
+  let dateClause = "";
+  if (start) {
+    params.push(start);
+    dateClause += ` AND b.date >= $${params.length}`;
+  }
+  if (end) {
+    params.push(end);
+    dateClause += ` AND b.date <= $${params.length}`;
+  }
+
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `SELECT b.qcode, b.system_tag, b.date, b.nav, b.prev_nav, b.drawdown, b.pnl
      FROM bifurcated_master_sheet_test b
      JOIN unnest($1::text[], $2::text[]) AS v(qcode, tag)
        ON b.qcode = v.qcode AND b.system_tag = v.tag
-     WHERE b.nav IS NOT NULL
+     WHERE b.nav IS NOT NULL${dateClause}
      ORDER BY b.qcode, b.system_tag, b.date ASC`,
-    pairs.map((p) => p.qcode),
-    pairs.map((p) => p.tag),
+    ...params,
   );
 
   const seriesMap = new Map<string, NavPoint[]>();
@@ -805,6 +830,14 @@ async function fetchBulkNavSeries(
     });
   }
   return seriesMap;
+}
+
+// parses an optional "YYYY-MM-DD" date — undefined if omitted, null if invalid.
+// shared by start_date and end_date on every endpoint below
+export function parseOptionalDate(input?: string): Date | null | undefined {
+  if (!input) return undefined;
+  const d = new Date(input);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 // month-end value per calendar bucket, keyed by "YYYY-MM" — lets portfolio and
@@ -933,14 +966,22 @@ export function calcExtraRatios(port: number[], bm: number[]): ExtraRatios {
 
 export async function computeStrategyBreakup(
   rfr: number,
-): Promise<StrategyBreakupRow[]> {
+  end?: Date,
+  start?: Date,
+): Promise<StrategyBreakupResult> {
   const allPairs = await fetchStrategyPairs("profit_tag_suffix");
-  const today = new Date().toISOString().split("T")[0];
-  const pairs = allPairs.filter((p) => isActive(p.effective_to, today));
-  if (pairs.length === 0) return [];
+  const endDate = end
+    ? end.toISOString().split("T")[0]
+    : new Date().toISOString().split("T")[0];
+  const startDate = start ? start.toISOString().split("T")[0] : null;
+  const pairs = allPairs.filter((p) => isActive(p.effective_to, endDate));
+  if (pairs.length === 0)
+    return { start_date: startDate, end_date: endDate, clients: [] };
 
   const seriesMap = await fetchBulkNavSeries(
     pairs.map((p) => ({ qcode: p.qcode, tag: p.tag })),
+    end,
+    start,
   );
 
   // one shared date span covers every client — Nifty gets fetched exactly once
@@ -1023,7 +1064,7 @@ export async function computeStrategyBreakup(
     });
   }
 
-  return rows;
+  return { start_date: startDate, end_date: endDate, clients: rows };
 }
 
 // ── Account Value Breakup ────────────────────────────────────────────────────
@@ -1365,11 +1406,24 @@ export interface SubStrategyRow {
   yearly: YearlyReturn[];
 }
 
-export async function computeSubStrategyPerformance(): Promise<
-  SubStrategyRow[]
-> {
+export interface SubStrategyPerformanceResult {
+  start_date: string | null;
+  end_date: string;
+  rows: SubStrategyRow[];
+}
+
+export async function computeSubStrategyPerformance(
+  end?: Date,
+  start?: Date,
+): Promise<SubStrategyPerformanceResult> {
+  const endDate = end
+    ? end.toISOString().split("T")[0]
+    : new Date().toISOString().split("T")[0];
+  const startDate = start ? start.toISOString().split("T")[0] : null;
+
   const pairs = await fetchStrategyPairs("profit_tag_suffix");
-  if (pairs.length === 0) return [];
+  if (pairs.length === 0)
+    return { start_date: startDate, end_date: endDate, rows: [] };
 
   const splitMap = await resolveSplitConfigs(pairs);
 
@@ -1385,7 +1439,7 @@ export async function computeSubStrategyPerformance(): Promise<
     }
   }
 
-  const seriesMap = await fetchBulkNavSeries(queries);
+  const seriesMap = await fetchBulkNavSeries(queries, end, start);
 
   const rows: SubStrategyRow[] = [];
   for (const pair of pairs) {
@@ -1409,7 +1463,97 @@ export async function computeSubStrategyPerformance(): Promise<
     }
   }
 
-  return rows;
+  return { start_date: startDate, end_date: endDate, rows };
+}
+
+// ── Sub-Strategy Daily PnL (export-only) ─────────────────────────────────────
+
+export interface DailyPnlSelection {
+  qcode: string;
+  strategy: string;
+}
+
+export interface DailyPnlPoint {
+  date: string;
+  return_pct: number | null; // null on a client's first data point — no prev_nav to ratio against
+  pnl_inr: number;
+}
+
+export interface DailyPnlSeries {
+  qcode: string;
+  account_name: string;
+  strategy: string;
+  section: string;
+  points: DailyPnlPoint[];
+}
+
+// per-day nav ratio — same formula calcMonthlyReturns chains across a month,
+// applied to a single day instead
+function calcDailyReturns(nav: NavPoint[]): DailyPnlPoint[] {
+  return nav.map((p) => ({
+    date: p.date.toISOString().split("T")[0],
+    return_pct:
+      p.prev_nav != null && p.prev_nav > 0
+        ? parseFloat(((p.nav / p.prev_nav - 1) * 100).toFixed(2))
+        : null,
+    pnl_inr: parseFloat(p.pnl.toFixed(2)),
+  }));
+}
+
+export async function computeSubStrategyDailyPnl(
+  selections: DailyPnlSelection[],
+  sections: string[],
+  end?: Date,
+  start?: Date,
+): Promise<DailyPnlSeries[]> {
+  const wantedSections = new Set(
+    sections.filter((s) => SUB_STRATEGY_SECTION_ORDER.includes(s)),
+  );
+  if (wantedSections.size === 0) return [];
+
+  const allPairs = await fetchStrategyPairs("profit_tag_suffix");
+  const pairMap = new Map(allPairs.map((p) => [`${p.qcode}|${p.strategy}`, p]));
+
+  // dedupe requested selections before the unnest join — same lesson as
+  // computeCompare's duplication fix, applied here proactively
+  const uniqueKeys = new Set(selections.map((s) => `${s.qcode}|${s.strategy}`));
+  const pairs = [...uniqueKeys]
+    .map((k) => pairMap.get(k))
+    .filter((p): p is StrategyPair => p != null);
+  if (pairs.length === 0) return [];
+
+  const splitMap = await resolveSplitConfigs(pairs);
+
+  const queries: { qcode: string; tag: string }[] = [];
+  const combos: { pair: StrategyPair; sec: SubStrategySectionDef }[] = [];
+  for (const pair of pairs) {
+    const split = splitMap.get(`${pair.qcode}|${pair.strategy}`)!;
+    for (const sec of SUB_STRATEGY_SECTIONS) {
+      if (!wantedSections.has(sec.label)) continue;
+      if (split[sec.existsField] == null) continue;
+      if (sec.tier != null && split.psar_multiplier !== sec.tier) continue;
+      queries.push({ qcode: pair.qcode, tag: `${pair.strategy} ${sec.tag}` });
+      combos.push({ pair, sec });
+    }
+  }
+  if (queries.length === 0) return [];
+
+  const seriesMap = await fetchBulkNavSeries(queries, end, start);
+
+  const result: DailyPnlSeries[] = [];
+  for (const { pair, sec } of combos) {
+    const nav = seriesMap.get(`${pair.qcode}|${pair.strategy} ${sec.tag}`);
+    if (!nav || nav.length === 0) continue; // config says it should exist, data doesn't — nothing to report
+
+    result.push({
+      qcode: pair.qcode,
+      account_name: pair.account_name,
+      strategy: pair.strategy,
+      section: sec.label,
+      points: calcDailyReturns(nav),
+    });
+  }
+  return result;
 }
 
 // ── Strategy-wise Monthly Returns ────────────────────────────────────────────

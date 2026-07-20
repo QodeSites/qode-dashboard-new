@@ -1,32 +1,35 @@
 import { NextResponse } from "next/server";
-import { requireInternal } from "@/app/lib/admin-utils";
 import {
-  computeStrategyBreakup,
+  computeSubStrategyDailyPnl,
   parseOptionalDate,
-  resolveRiskFreeRate,
+  type DailyPnlSelection,
 } from "@/app/lib/internal-utils";
-import { buildStrategyBreakupWorkbook } from "@/app/lib/excel-utils";
+import { buildSubStrategyDailyPnlWorkbook } from "@/app/lib/excel-utils";
+import { requireInternal } from "@/app/lib/admin-utils";
 
 export async function POST(req: Request) {
   const { error } = await requireInternal();
   if (error) return error;
 
   let body: {
-    risk_free_rate?: number;
+    selections?: DailyPnlSelection[];
+    sections?: string[];
     start_date?: string;
     end_date?: string;
   } = {};
   try {
     body = await req.json();
   } catch {
-    // no body sent — fine, every field is optional
+    return NextResponse.json(
+      { error: "selections and sections are required" },
+      { status: 400 },
+    );
   }
 
-  const rfr = await resolveRiskFreeRate(body.risk_free_rate);
-  if (rfr == null) {
+  if (!body.selections?.length || !body.sections?.length) {
     return NextResponse.json(
-      { error: "RISK_FREE_RATE is not configured in global_config" },
-      { status: 503 },
+      { error: "selections and sections are required" },
+      { status: 400 },
     );
   }
 
@@ -42,8 +45,13 @@ export async function POST(req: Request) {
     );
   }
 
-  const result = await computeStrategyBreakup(rfr, end, start);
-  const buffer = await buildStrategyBreakupWorkbook(result.clients, {
+  const rows = await computeSubStrategyDailyPnl(
+    body.selections,
+    body.sections,
+    end,
+    start,
+  );
+  const buffer = await buildSubStrategyDailyPnlWorkbook(rows, {
     start: body.start_date ?? null,
     end: body.end_date ?? null,
   }).xlsx.writeBuffer();
@@ -53,7 +61,7 @@ export async function POST(req: Request) {
       "Content-Type":
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition":
-        'attachment; filename="strategy-wise-client-breakup.xlsx"',
+        'attachment; filename="sub-strategy-daily-pnl.xlsx"',
     },
   });
 }

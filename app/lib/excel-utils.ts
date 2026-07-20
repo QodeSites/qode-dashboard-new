@@ -7,6 +7,8 @@ import type {
   MonthlyReturn,
   YearlyReturn,
   StrategyMonthlyRow,
+  DailyPnlSeries,
+  DailyPnlPoint,
 } from "./internal-utils";
 import { SUB_STRATEGY_SECTION_ORDER } from "./internal-utils";
 
@@ -151,6 +153,23 @@ export function writeTitle(
   ws.getRow(row).height = HEADER_ROW_HEIGHT;
 }
 
+// small italic line showing the effective data window — no-op when neither
+// bound was given, so callers can always invoke this without branching
+export function writeDateRangeLabel(
+  ws: ExcelJS.Worksheet,
+  row: number,
+  lastCol: number,
+  start: string | null,
+  end: string | null,
+): void {
+  if (!start && !end) return;
+  ws.mergeCells(row, 2, row, lastCol);
+  const cell = ws.getCell(row, 2);
+  cell.value = `Data: ${start ? formatDate(start) : "inception"} \u2192 ${end ? formatDate(end) : "latest"}`;
+  cell.font = { italic: true };
+  cell.alignment = { horizontal: "center" };
+}
+
 // tan section-banner row: bucket label in col B, wrapped headers across the rest
 export function writeSectionHeader(
   ws: ExcelJS.Worksheet,
@@ -206,6 +225,7 @@ const COLUMNS: Col[] = [
 
 export function buildStrategyBreakupWorkbook(
   rows: StrategyBreakupRow[],
+  range?: { start: string | null; end: string | null },
 ): ExcelJS.Workbook {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Strategy-wise Client Breakup");
@@ -213,6 +233,7 @@ export function buildStrategyBreakupWorkbook(
   const lastCol = 3 + COLUMNS.length; // client + date + metric columns
 
   writeTitle(ws, "Strategy-wise Client Breakup", 1, lastCol);
+  writeDateRangeLabel(ws, 2, lastCol, range?.start ?? null, range?.end ?? null);
 
   const buckets = new Map<string, StrategyBreakupRow[]>();
   for (const r of rows) {
@@ -601,6 +622,7 @@ function writeSubStrategyGrid(
   totalOf: (y: YearlyReturn) => number,
   writeCell: (cell: ExcelJS.Cell, value: number | null) => void,
   widths: ColumnWidthTracker,
+  range?: { start: string | null; end: string | null },
 ): void {
   const bySection = new Map<string, SubStrategyRow[]>();
   for (const r of rows) {
@@ -608,7 +630,19 @@ function writeSubStrategyGrid(
     bySection.get(r.section)!.push(r);
   }
 
+  const hasRange = !!(range?.start || range?.end);
   let row = 1;
+  if (hasRange) {
+    writeDateRangeLabel(
+      ws,
+      1,
+      1 + GRID_HEADERS.length,
+      range!.start,
+      range!.end,
+    );
+    row = 3;
+  }
+
   for (const section of SUB_STRATEGY_SECTION_ORDER) {
     const secRows = bySection.get(section);
     if (!secRows || secRows.length === 0) continue;
@@ -635,6 +669,7 @@ function writeSubStrategyGrid(
 
 export function buildSubStrategyWorkbook(
   rows: SubStrategyRow[],
+  range?: { start: string | null; end: string | null },
 ): ExcelJS.Workbook {
   const wb = new ExcelJS.Workbook();
 
@@ -647,6 +682,7 @@ export function buildSubStrategyWorkbook(
     (y) => y.return_pct / 100,
     writePctCell,
     pctWidths,
+    range,
   );
   pctWidths.apply(pctWs);
 
@@ -659,6 +695,79 @@ export function buildSubStrategyWorkbook(
     (y) => y.pnl_inr,
     writeColoredMoneyCell,
     rsWidths,
+    range,
+  );
+  rsWidths.apply(rsWs);
+
+  return wb;
+}
+
+// ── Sub-Strategy Daily PnL (export-only) ─────────────────────────────────────
+
+// one flat table: a column per (client-strategy, section) pair, a row per real
+// date across all of them — sparse per column, "—" where that pair has none
+function writeDailyPnlSheet(
+  ws: ExcelJS.Worksheet,
+  rows: DailyPnlSeries[],
+  valueOf: (p: DailyPnlPoint) => number | null,
+  writeCell: (cell: ExcelJS.Cell, value: number | null) => void,
+  widths: ColumnWidthTracker,
+  range?: { start: string | null; end: string | null },
+): void {
+  const lastCol = 2 + rows.length;
+  writeTitle(ws, "Daily Sub-Strategy PnL", 1, lastCol);
+  writeDateRangeLabel(ws, 2, lastCol, range?.start ?? null, range?.end ?? null);
+
+  const headers = rows.map(
+    (r) => `${r.account_name} ${r.strategy} (${r.section})`,
+  );
+  writeSectionHeader(ws, 3, "Date", headers, widths);
+
+  const pointMaps = rows.map((r) => new Map(r.points.map((p) => [p.date, p])));
+  const dateSet = new Set<string>();
+  for (const r of rows) for (const p of r.points) dateSet.add(p.date);
+  const dates = [...dateSet].sort();
+
+  dates.forEach((date, i) => {
+    const dr = ws.getRow(4 + i);
+    const dateLabel = formatDate(date);
+    dr.getCell(2).value = dateLabel;
+    widths.see(2, dateLabel);
+
+    pointMaps.forEach((map, ci) => {
+      const point = map.get(date);
+      writeCell(dr.getCell(3 + ci), point ? valueOf(point) : null);
+    });
+  });
+}
+
+export function buildSubStrategyDailyPnlWorkbook(
+  rows: DailyPnlSeries[],
+  range?: { start: string | null; end: string | null },
+): ExcelJS.Workbook {
+  const wb = new ExcelJS.Workbook();
+
+  const pctWs = wb.addWorksheet("% PnL");
+  const pctWidths = new ColumnWidthTracker();
+  writeDailyPnlSheet(
+    pctWs,
+    rows,
+    (p) => (p.return_pct != null ? p.return_pct / 100 : null),
+    writePctCell,
+    pctWidths,
+    range,
+  );
+  pctWidths.apply(pctWs);
+
+  const rsWs = wb.addWorksheet("₹ PnL");
+  const rsWidths = new ColumnWidthTracker();
+  writeDailyPnlSheet(
+    rsWs,
+    rows,
+    (p) => p.pnl_inr,
+    writeColoredMoneyCell,
+    rsWidths,
+    range,
   );
   rsWidths.apply(rsWs);
 
