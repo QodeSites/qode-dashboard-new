@@ -153,3 +153,11 @@ body {
 .circle span:nth-child(9) { animation-delay: 4s }
 .circle span:nth-child(10) { animation-delay: 4.5s }
 
+@media print {
+  .pdf-section {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
+
+@layer base { img { display: initial; } } 
