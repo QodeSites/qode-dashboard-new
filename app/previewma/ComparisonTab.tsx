@@ -39,7 +39,8 @@ interface CompareResult {
 }
 
 interface CompareResponse {
-  benchmark_series: { date: string; nav: number }[];
+  benchmark_series: { date: string; nav: number; drawdown: number }[];
+  backtest_series: { system_tag: string; series: { date: string; nav: number; drawdown: number }[] }[];
   results: CompareResult[];
 }
 
@@ -59,9 +60,9 @@ const CHART_COLORS = [
   "#4A9D7A", "#7C3AED", "#0891B2", "#065F46", "#6B7280",
 ];
 
-const MONTHS = ["January","February","March","April","May","June",
-  "July","August","September","October","November","December"];
-const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const MONTHS = ["January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"];
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -93,6 +94,7 @@ function TagMultiSelect({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -166,9 +168,9 @@ function SelectionRowComponent({
   const strategyOptions = isSingle
     ? realStrategies.map((s) => ({ value: s.strategy, label: s.strategy }))
     : (selectedClient?.strategies || []).map((s) => ({
-        value: s.strategy,
-        label: s.strategy === "combined" ? "Combined (all strategies)" : s.strategy,
-      }));
+      value: s.strategy,
+      label: s.strategy === "combined" ? "Combined (all strategies)" : s.strategy,
+    }));
 
   async function loadTags(qcode: string, strategy: string) {
     onUpdate(row.id, { tagsLoading: true, availableTags: [], selectedTags: [] });
@@ -247,8 +249,10 @@ export function ComparisonTab() {
   const [error, setError] = useState<string | null>(null);
   const [compareNifty, setCompareNifty] = useState(true);
   const [returnFreq, setReturnFreq] = useState<"monthly" | "quarterly" | "yearly">("monthly");
+  const [showBacktest, setShowBacktest] = useState(false);
 
-  useEffect(() => { fetchClients().then(setClients).catch(() => {}); }, []);
+
+  useEffect(() => { fetchClients().then(setClients).catch(() => { }); }, []);
 
   const updateRow = useCallback((id: string, patch: Partial<SelectionRow>) => {
     setRows((prev) => prev.map((r) => r.id === id ? { ...r, ...patch } : r));
@@ -305,20 +309,32 @@ export function ComparisonTab() {
     });
 
     if (compareNifty && compareData.benchmark_series) {
-      const benchDd = deriveDrawdown(compareData.benchmark_series);
-      compareData.benchmark_series.forEach((p, i) => {
+      compareData.benchmark_series.forEach((p) => {
         if (!dateMap.has(p.date)) dateMap.set(p.date, {});
         const row = dateMap.get(p.date)!;
         row["nav__Nifty50"] = p.nav;
         row["cum__Nifty50"] = ((p.nav - 100) / 100) * 100;
-        row["dd__Nifty50"] = benchDd[i]?.dd ?? null;
+        row["dd__Nifty50"] = p.drawdown * 100;
+      });
+    }
+
+    if (showBacktest && compareData.backtest_series) {
+      compareData.backtest_series.forEach((bt) => {
+        const key = `backtest__${bt.system_tag}`;
+        bt.series.forEach((p) => {
+          if (!dateMap.has(p.date)) dateMap.set(p.date, {});
+          const row = dateMap.get(p.date)!;
+          row[`nav__${key}`] = p.nav;
+          row[`cum__${key}`] = ((p.nav - 100) / 100) * 100;
+          row[`dd__${key}`] = p.drawdown * 100;
+        });
       });
     }
 
     return Array.from(dateMap.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, vals]) => ({ date, ...vals }));
-  }, [compareData, compareNifty]);
+  }, [compareData, compareNifty, showBacktest]);
 
   // All lines for charts
   const allLines = useMemo(() => {
@@ -331,9 +347,26 @@ export function ComparisonTab() {
         label: `${clientName} ${r.system_tag}`,
         color: CHART_COLORS[i % CHART_COLORS.length],
         isNifty: false,
+        isBacktest: false,
       };
     });
-    if (compareNifty) lines.push({ key: "Nifty50", label: "Nifty50", color: "#6B7280", isNifty: true });
+    if (compareNifty) lines.push({ key: "Nifty50", label: "Nifty50", color: "#6B7280", isNifty: true, isBacktest: false });
+
+    if (showBacktest && compareData.backtest_series) {
+      compareData.backtest_series.forEach((bt, i) => {
+        const matchIdx = compareData.results.findIndex((r) => r.system_tag === bt.system_tag);
+        const color = matchIdx >= 0
+          ? CHART_COLORS[matchIdx % CHART_COLORS.length]
+          : CHART_COLORS[(compareData.results.length + i) % CHART_COLORS.length];
+        lines.push({
+          key: `backtest__${bt.system_tag}`,
+          label: `${bt.system_tag} (Backtest)`,
+          color,
+          isNifty: false,
+          isBacktest: true,
+        });
+      });
+    }
     return lines;
   }, [compareData, compareNifty, clients]);
 
@@ -384,6 +417,11 @@ export function ComparisonTab() {
             <input type="checkbox" checked={compareNifty} onChange={(e) => setCompareNifty(e.target.checked)}
               className="h-4 w-4 rounded accent-logo-green" />
             Compare with Nifty50
+          </label>
+          <label className="flex items-center gap-2 text-sm text-card-text cursor-pointer ml-2">
+            <input type="checkbox" checked={showBacktest} onChange={(e) => setShowBacktest(e.target.checked)}
+              className="h-4 w-4 rounded accent-logo-green" />
+            Show Backtest
           </label>
         </div>
         {error && (
@@ -471,8 +509,9 @@ export function ComparisonTab() {
                 <Legend formatter={(name) => allLines.find(l => `nav__${l.key}` === name)?.label || name} wrapperStyle={{ fontSize: 11 }} />
                 {allLines.map((l) => (
                   <Line key={l.key} type="monotone" dataKey={`nav__${l.key}`}
-                    stroke={l.color} strokeWidth={l.isNifty ? 1.5 : 2}
-                    strokeDasharray={l.isNifty ? "4 2" : undefined} dot={false} connectNulls />
+                    stroke={l.color} strokeWidth={l.isNifty || l.isBacktest ? 1.5 : 2}
+                    strokeDasharray={l.isNifty ? "4 2" : l.isBacktest ? "2 3" : undefined}
+                    dot={false} connectNulls />
                 ))}
               </LineChart>
             </ResponsiveContainer>
@@ -512,9 +551,9 @@ export function ComparisonTab() {
                 {allLines.map((l) => (
                   <Area key={l.key} type="monotone" dataKey={`dd__${l.key}`}
                     stroke={l.color} fill={l.color}
-                    fillOpacity={l.isNifty ? 0.08 : 0.12}
-                    strokeWidth={l.isNifty ? 1.5 : 1.5}
-                    strokeDasharray={l.isNifty ? "4 2" : undefined}
+                    fillOpacity={l.isNifty || l.isBacktest ? 0.08 : 0.12}
+                    strokeWidth={1.5}
+                    strokeDasharray={l.isNifty ? "4 2" : l.isBacktest ? "2 3" : undefined}
                     dot={false} connectNulls />
                 ))}
               </AreaChart>
@@ -543,7 +582,7 @@ export function ComparisonTab() {
                     {returnFreq === "monthly" && MONTH_SHORT.map((m) => (
                       <th key={m} className="px-2 py-2 text-right font-medium">{m}</th>
                     ))}
-                    {returnFreq === "quarterly" && ["Q1","Q2","Q3","Q4"].map((q) => (
+                    {returnFreq === "quarterly" && ["Q1", "Q2", "Q3", "Q4"].map((q) => (
                       <th key={q} className="px-3 py-2 text-right font-medium">{q}</th>
                     ))}
                     <th className="px-3 py-2 text-right font-medium">Total</th>
@@ -575,7 +614,7 @@ export function ComparisonTab() {
                           );
                         })}
 
-                        {returnFreq === "quarterly" && ["Q1","Q2","Q3","Q4"].map((q) => {
+                        {returnFreq === "quarterly" && ["Q1", "Q2", "Q3", "Q4"].map((q) => {
                           const qt = r.metrics.quarterly.find((qt) => qt.year === yr && qt.quarter === q);
                           const v = qt?.return_pct ?? null;
                           const tagSuffix = r.system_tag.split(" ").slice(-1)[0];
