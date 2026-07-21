@@ -26,8 +26,8 @@ const apps: AppCardConfig[] = [
     description:
       "Excess cash analysis, allocation management, margin utilisation, and stock transfer calculators.",
     icon: CreditCard,
-    href: null,
-    status: "coming-soon",
+    href: "/cash-margin",
+    status: "live",
   },
 ];
 
