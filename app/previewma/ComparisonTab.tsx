@@ -336,6 +336,15 @@ export function ComparisonTab() {
       .map(([date, vals]) => ({ date, ...vals }));
   }, [compareData, compareNifty, showBacktest]);
 
+  function lightenHex(hex: string, amount: number) {
+   const num = parseInt(hex.replace("#", ""), 16);
+  const r = (num >> 16) & 0xff;
+  const g = (num >> 8) & 0xff;
+  const b = num & 0xff;
+  const mix = (c: number) => Math.round(c * (1 - amount));
+  return `#${[mix(r), mix(g), mix(b)].map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+}
+
   // All lines for charts
   const allLines = useMemo(() => {
     if (!compareData) return [];
@@ -351,22 +360,21 @@ export function ComparisonTab() {
       };
     });
     if (compareNifty) lines.push({ key: "Nifty50", label: "Nifty50", color: "#6B7280", isNifty: true, isBacktest: false });
-
-    if (showBacktest && compareData.backtest_series) {
-      compareData.backtest_series.forEach((bt, i) => {
-        const matchIdx = compareData.results.findIndex((r) => r.system_tag === bt.system_tag);
-        const color = matchIdx >= 0
-          ? CHART_COLORS[matchIdx % CHART_COLORS.length]
-          : CHART_COLORS[(compareData.results.length + i) % CHART_COLORS.length];
-        lines.push({
-          key: `backtest__${bt.system_tag}`,
-          label: `${bt.system_tag} (Backtest)`,
-          color,
-          isNifty: false,
-          isBacktest: true,
-        });
-      });
-    }
+if (showBacktest && compareData.backtest_series) {
+  compareData.backtest_series.forEach((bt, i) => {
+    const matchIdx = compareData.results.findIndex((r) => r.system_tag === bt.system_tag);
+    const baseColor = matchIdx >= 0
+      ? CHART_COLORS[matchIdx % CHART_COLORS.length]
+      : CHART_COLORS[(compareData.results.length + i) % CHART_COLORS.length];
+    lines.push({
+      key: `backtest__${bt.system_tag}`,
+      label: `${bt.system_tag} (Backtest)`,
+      color: lightenHex(baseColor, 0.45), // 45% toward white — distinct but still related to matched line
+      isNifty: false,
+      isBacktest: true,
+    });
+  });
+}
     return lines;
   }, [compareData, compareNifty, clients]);
 
