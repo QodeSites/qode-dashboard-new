@@ -129,6 +129,14 @@ export interface StrategyBreakupRow {
   end_date: string | null;
 }
 
+interface StrategyBreakupResponse {
+  start_date: string | null;
+  end_date: string;
+  clients: StrategyBreakupRow[];
+}
+
+
+
 // ─── Account Value Breakup ────────────────────────────────────────────────────
 
 export interface AccountValueRow {
@@ -193,6 +201,12 @@ export interface SubStrategyEntry {
   strategy: string;
   monthly: { year: number; month: string; return_pct: number; pnl_inr: number }[];
   yearly: { year: number; return_pct: number; pnl_inr: number }[];
+}
+
+interface SubStrategyPerformanceResponse {
+  start_date: string | null;
+  end_date: string;
+  rows: SubStrategyEntry[];
 }
 
 // ─── Strategy-wise Monthly Returns ───────────────────────────────────────────
@@ -265,10 +279,11 @@ export async function fetchPortfolioSummary(): Promise<PortfolioSummaryResponse>
 }
 
 export async function fetchStrategyBreakup(riskFreeRate?: number): Promise<StrategyBreakupRow[]> {
-  return apiFetch<StrategyBreakupRow[]>("/api/internal/portfolio-review/strategy-breakup", {
+  const res = await apiFetch<StrategyBreakupResponse>("/api/internal/portfolio-review/strategy-breakup", {
     method: "POST",
     body: JSON.stringify({ risk_free_rate: riskFreeRate ?? 0.065 }),
   });
+  return res.clients;
 }
 
 // Always POST — empty body for default load, { override } when targets are set
@@ -281,8 +296,20 @@ export async function fetchAccountValueBreakup(override?: AccountValueOverride):
   });
 }
 
-export async function fetchSubStrategyPerformance(): Promise<SubStrategyEntry[]> {
-  return apiFetch<SubStrategyEntry[]>("/api/internal/portfolio-review/sub-strategy-performance");
+
+
+export async function fetchSubStrategyPerformance(
+  startDate: string,
+  endDate: string
+): Promise<SubStrategyEntry[]> {
+  const res = await apiFetch<SubStrategyPerformanceResponse>(
+    "/api/internal/portfolio-review/sub-strategy-performance",
+    {
+      method: "POST",
+      body: JSON.stringify({ start_date: startDate, end_date: endDate }),
+    }
+  );
+  return res.rows;
 }
 
 export async function fetchStrategyMonthlyReturns(): Promise<StrategyMonthlyEntry[]> {

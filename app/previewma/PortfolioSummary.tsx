@@ -546,11 +546,31 @@ function PortfolioSummaryInner({ data }: { data: PortfolioSummaryResponse }) {
     }));
   }, [strategyBreakdown, strategyInvestorCount]);
 
-  const investorAumDonut = useMemo(() => {
-    return [...activeInvestors]
-      .sort((a, b) => b.aum - a.aum)
-      .map((inv) => ({ name: inv.account_name, value: inv.aum, color: stratColor(inv.strategy) }));
-  }, [activeInvestors]);
+  const totalStrategyInstances = useMemo(
+  () => investorsDonut.reduce((sum, d) => sum + d.count, 0),
+  [investorsDonut]
+);
+
+const investorAumDonut = useMemo(() => {
+  const byClient = new Map<string, { name: string; total: number; strategies: Map<string, number> }>();
+
+  activeInvestors.forEach((inv) => {
+    if (!byClient.has(inv.qcode)) {
+      byClient.set(inv.qcode, { name: inv.account_name, total: 0, strategies: new Map() });
+    }
+    const c = byClient.get(inv.qcode)!;
+    c.total += inv.aum;
+    c.strategies.set(inv.strategy, (c.strategies.get(inv.strategy) || 0) + inv.aum);
+  });
+
+  return Array.from(byClient.values())
+    .sort((a, b) => b.total - a.total)
+    .map((c) => {
+      const dominantStrategy = Array.from(c.strategies.entries())
+        .sort((a, b) => b[1] - a[1])[0][0];
+      return { name: c.name, value: c.total, color: stratColor(dominantStrategy) };
+    });
+}, [activeInvestors]);
 
   return (
     <div ref={printRef} className="print-area">
@@ -698,7 +718,7 @@ function PortfolioSummaryInner({ data }: { data: PortfolioSummaryResponse }) {
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <div className="text-2xl font-bold text-card-text">{total_investors}</div>
+                  <div className="text-2xl font-bold text-card-text">{totalStrategyInstances}</div>
                   <div className="text-[0.65rem] text-card-text-secondary uppercase tracking-wide">Investors</div>
                 </div>
               </div>
