@@ -62,7 +62,7 @@ export interface BenchmarkResult {
   since_inception: number | null;
   max_drawdown: number | null;
   current_drawdown: number | null;
-  series: { date: string; nav: number }[];
+  series: { date: string; nav: number; drawdown: number }[];
 }
 
 // ── DB ─────────────────────────────────────────────────────────────────────
@@ -455,20 +455,22 @@ function computeBenchmarkMetrics(
 
   let peak = refPrice,
     maxDD = 0;
-  for (const p of clipped) {
+  const series = clipped.map((p) => {
     if (p.nav > peak) peak = p.nav;
     const dd = peak > 0 ? (p.nav - peak) / peak : 0;
     if (dd < maxDD) maxDD = dd;
-  }
+    return {
+      date: p.date,
+      nav: parseFloat(((p.nav / refPrice) * 100).toFixed(4)),
+      drawdown: round(dd, 4),
+    };
+  });
 
   return {
     since_inception: round(si, 4),
     max_drawdown: round(maxDD, 4),
-    current_drawdown: round(peak > 0 ? (last.nav - peak) / peak : 0, 4),
-    series: clipped.map((p) => ({
-      date: p.date,
-      nav: parseFloat(((p.nav / refPrice) * 100).toFixed(4)),
-    })),
+    current_drawdown: series[series.length - 1].drawdown,
+    series,
   };
 }
 
@@ -1594,6 +1596,193 @@ export async function computeStrategyMonthlyReturns(): Promise<
   return rows;
 }
 
+// ── Backtest (Research Dashboard) ────────────────────────────────────────────
+
+const SCHEDULE_RUNS_URL = "https://research.qodeinvest.com/api/schedule-runs";
+const LIVE_RUN_BASE_URL = "https://research.qodeinvest.com/api/live-runs";
+
+const LIVE_RUN_ID_TTL_MS = 15 * 60 * 1000; // recheck for a newer completed run periodically
+const COMBINED_METRICS_TTL_MS = 24 * 60 * 60 * 1000; // a completed run's own data never changes
+
+interface ScheduleRun {
+  live_run_id: string;
+  run_start: string;
+  run_result: "COMPLETED" | "FAILED" | "RUNNING";
+}
+
+let cachedLiveRunIds: { ids: string[]; fetchedAt: number } | null = null;
+const combinedMetricsCache = new Map<
+  string,
+  { data: any; fetchedAt: number }
+>();
+
+// every COMPLETED run, newest first — cached briefly; a stale cache on a
+// transient fetch failure beats returning nothing
+async function resolveCompletedLiveRunIds(): Promise<string[]> {
+  if (
+    cachedLiveRunIds &&
+    Date.now() - cachedLiveRunIds.fetchedAt < LIVE_RUN_ID_TTL_MS
+  ) {
+    return cachedLiveRunIds.ids;
+  }
+  try {
+    const res = await fetch(SCHEDULE_RUNS_URL);
+    if (!res.ok) return cachedLiveRunIds?.ids ?? [];
+    const runs: ScheduleRun[] = await res.json();
+    const ids = runs
+      .filter((r) => r.run_result === "COMPLETED")
+      .sort(
+        (a, b) =>
+          new Date(b.run_start).getTime() - new Date(a.run_start).getTime(),
+      )
+      .map((r) => r.live_run_id);
+    if (ids.length === 0) return cachedLiveRunIds?.ids ?? [];
+    cachedLiveRunIds = { ids, fetchedAt: Date.now() };
+    return ids;
+  } catch {
+    return cachedLiveRunIds?.ids ?? [];
+  }
+}
+
+// one option's full combined-metrics payload — immutable once COMPLETED, so
+// this sits in cache far longer than the run-id list above
+async function fetchCombinedMetrics(
+  liveRunId: string,
+  option: string,
+): Promise<any | null> {
+  const key = `${liveRunId}:${option}`;
+  const cached = combinedMetricsCache.get(key);
+  if (cached && Date.now() - cached.fetchedAt < COMBINED_METRICS_TTL_MS) {
+    return cached.data;
+  }
+  try {
+    const res = await fetch(
+      `${LIVE_RUN_BASE_URL}/${liveRunId}/combined-metrics?option=${option}`,
+    );
+    if (!res.ok) return null;
+    const json = await res.json();
+    const schemeData = json?.data?.[option];
+    if (!json?.success || !schemeData) return null;
+    combinedMetricsCache.set(key, { data: schemeData, fetchedAt: Date.now() });
+    return schemeData;
+  } catch {
+    return null;
+  }
+}
+
+// tries every COMPLETED run newest-first for this option, stopping at the
+// first one with usable data — a bad/incomplete latest run for one option
+// doesn't have to sink that option for the whole request
+async function fetchCombinedMetricsWithFallback(
+  liveRunIds: string[],
+  option: string,
+): Promise<any | null> {
+  for (const liveRunId of liveRunIds) {
+    const data = await fetchCombinedMetrics(liveRunId, option);
+    if (data) return data;
+  }
+  return null;
+}
+
+// client's own strategy field -> research dashboard's scheme option. QTF has
+// no scheme here at all — absent on purpose, any QTF tag just finds nothing
+const SCHEME_OPTION: Record<string, string> = {
+  "QAW+": "qaw_plus",
+  "QAW++": "qaw_plus_plus",
+  "QYE+": "qye_plus",
+  "QYE++": "qye_plus_plus",
+};
+
+// mastersheet tag -> where its curve lives inside a scheme's combined-metrics
+// payload. Locked in against Cross_check.xlsx + the real response: PSAR/BTST's
+// ALL-tab curves are columns in the scheme-level nav_curve, not a nested
+// psar.nav_curve/btst.nav_curve — that nested path doesn't exist in the data
+type BacktestSource =
+  | {
+      kind: "scheme";
+      array: "nav_curve" | "nifty_nav_curve" | "sensex_nav_curve";
+      field: "normalized_nav" | "psar_nav" | "btst_nav";
+    }
+  | {
+      kind: "qaw_split";
+      split:
+        | "all"
+        | "qaw_gold_matrics"
+        | "qaw_low_vol_matrics"
+        | "qaw_mom_matrics"
+        | "qaw_put_prot_matrics";
+    }
+  | { kind: "standalone"; tab: "all" | "nifty" | "sensex" }; // Section 3 — always the Compounded variant
+
+const TOTAL_PORTFOLIO_SOURCE: BacktestSource = {
+  kind: "scheme",
+  array: "nav_curve",
+  field: "normalized_nav",
+};
+
+// scheme-prefixed tags (e.g. "QYE++ PSAR") — client's own strategy determines the scheme
+const BACKTEST_TAG_SOURCE: Record<string, BacktestSource> = {
+  "Total Portfolio Value": TOTAL_PORTFOLIO_SOURCE,
+  "Total Portfolio Exposure": TOTAL_PORTFOLIO_SOURCE,
+  "Zerodha Total Portfolio": TOTAL_PORTFOLIO_SOURCE,
+  PSAR: { kind: "scheme", array: "nav_curve", field: "psar_nav" },
+  NPSAR: { kind: "scheme", array: "nifty_nav_curve", field: "psar_nav" },
+  SPSAR: { kind: "scheme", array: "sensex_nav_curve", field: "psar_nav" },
+  LONG: { kind: "scheme", array: "nav_curve", field: "btst_nav" },
+  NLONG: { kind: "scheme", array: "nifty_nav_curve", field: "btst_nav" },
+  SLONG: { kind: "scheme", array: "sensex_nav_curve", field: "btst_nav" },
+  "Equity Stock Holdings": { kind: "qaw_split", split: "all" },
+  "Gold Stock Holdings": { kind: "qaw_split", split: "qaw_gold_matrics" },
+  "Low Vol Stock Holdings": {
+    kind: "qaw_split",
+    split: "qaw_low_vol_matrics",
+  },
+  "Momentum Stock Holdings": { kind: "qaw_split", split: "qaw_mom_matrics" },
+  DMA1: { kind: "qaw_split", split: "qaw_put_prot_matrics" },
+};
+
+// bare tags with NO scheme prefix (a client running the strategy directly,
+// not bifurcated under QAW/QYE) — Section 3's standalone options
+const UNPREFIXED_OPTION: Record<string, string> = {
+  PSAR: "pbsar",
+  NPSAR: "pbsar",
+  SPSAR: "pbsar",
+  LONG: "btst",
+  NLONG: "btst",
+  SLONG: "btst",
+  DMA1: "dma",
+};
+
+const UNPREFIXED_SOURCE: Record<string, BacktestSource> = {
+  PSAR: { kind: "standalone", tab: "all" },
+  NPSAR: { kind: "standalone", tab: "nifty" },
+  SPSAR: { kind: "standalone", tab: "sensex" },
+  LONG: { kind: "standalone", tab: "all" },
+  NLONG: { kind: "standalone", tab: "nifty" },
+  SLONG: { kind: "standalone", tab: "sensex" },
+  DMA1: { kind: "standalone", tab: "all" },
+};
+
+// pulls the raw {date, nav} pairs a tag's source points at, out of an
+// already-fetched scheme payload — no network I/O here
+function extractBacktestRaw(
+  schemeData: any,
+  source: BacktestSource,
+): { date: string; nav: number }[] | null {
+  const arr =
+    source.kind === "scheme"
+      ? schemeData?.[source.array]
+      : source.kind === "qaw_split"
+        ? schemeData?.qaw?.[source.split]?.nav_curve
+        : schemeData?.[source.tab]?.compounded?.nav_curve;
+  const field = source.kind === "scheme" ? source.field : "normalized_nav";
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  const out = arr
+    .map((row: any) => ({ date: row.date, nav: Number(row[field]) }))
+    .filter((p: { date: unknown; nav: number }) => p.date && isFinite(p.nav));
+  return out.length > 0 ? out : null;
+}
+
 // ── Compare ───────────────────────────────────────────────────────────────
 
 export interface CompareSelection {
@@ -1612,15 +1801,22 @@ export interface CompareResult {
   } | null;
 }
 
+export interface BacktestSeries {
+  system_tag: string;
+  series: { date: string; nav: number; drawdown: number }[];
+}
+
 export interface CompareOutput {
-  benchmark_series: { date: string; nav: number }[];
+  benchmark_series: { date: string; nav: number; drawdown: number }[];
+  backtest_series: BacktestSeries[];
   results: CompareResult[];
 }
 
 export async function computeCompare(
   selections: CompareSelection[],
 ): Promise<CompareOutput> {
-  if (selections.length === 0) return { benchmark_series: [], results: [] };
+  if (selections.length === 0)
+    return { benchmark_series: [], backtest_series: [], results: [] };
 
   // dedupe before querying — a repeated pair would otherwise double-match
   // rows in fetchBulkNavSeries' unnest join, corrupting that series with
@@ -1709,7 +1905,83 @@ export async function computeCompare(
     };
   });
 
-  return { benchmark_series: chartBenchmark?.series ?? [], results };
+  // ── Backtest curves — one per distinct system_tag, not one shared line
+  // like Nifty. Selections sharing a tag merge into a single curve rebased
+  // at the earliest of their starts; different tags never merge, even if
+  // one client's start is earlier than another's for a different tag
+  const tagGroups = new Map<string, NavPoint[][]>();
+  for (const s of unique) {
+    const b = built.get(`${s.qcode}|${s.system_tag}`);
+    if (!b?.nav) continue;
+    if (!tagGroups.has(s.system_tag)) tagGroups.set(s.system_tag, []);
+    tagGroups.get(s.system_tag)!.push(b.nav);
+  }
+
+  const backtest_series: BacktestSeries[] = [];
+  if (tagGroups.size > 0) {
+    const liveRunIds = await resolveCompletedLiveRunIds();
+    if (liveRunIds.length > 0) {
+      // one combined-metrics fetch (with fallback) per distinct scheme,
+      // reused across every tag group that scheme covers
+      const schemeCache = new Map<string, any | null>();
+      for (const [systemTag, members] of tagGroups) {
+        const trimmed = systemTag.trim();
+        const spaceIdx = trimmed.indexOf(" ");
+
+        let option: string | undefined;
+        let source: BacktestSource | undefined;
+        if (spaceIdx === -1) {
+          // no scheme prefix — a client running the strategy directly, not
+          // bifurcated under QAW/QYE. Section 3's standalone option, Compounded tab
+          option = UNPREFIXED_OPTION[trimmed];
+          source = UNPREFIXED_SOURCE[trimmed];
+        } else {
+          const strategy = trimmed.slice(0, spaceIdx).trim();
+          const tag = trimmed.slice(spaceIdx + 1).trim();
+          option = SCHEME_OPTION[strategy];
+          source = BACKTEST_TAG_SOURCE[tag];
+        }
+        if (!option || !source) continue; // no backtest for this tag (QTF, or a UID-level tag)
+
+        if (!schemeCache.has(option)) {
+          schemeCache.set(
+            option,
+            await fetchCombinedMetricsWithFallback(liveRunIds, option),
+          );
+        }
+        const schemeData = schemeCache.get(option);
+        if (!schemeData) continue;
+
+        const raw = extractBacktestRaw(schemeData, source);
+        if (!raw) continue;
+
+        const groupStart = members.reduce(
+          (min, nav) => (nav[0].date < min ? nav[0].date : min),
+          members[0][0].date,
+        );
+        const groupEnd = members.reduce(
+          (max, nav) => {
+            const end = nav[nav.length - 1].date;
+            return end > max ? end : max;
+          },
+          members[0][members[0].length - 1].date,
+        );
+
+        const rebased = computeBenchmarkMetrics(raw, groupStart, groupEnd);
+        if (rebased)
+          backtest_series.push({
+            system_tag: systemTag,
+            series: rebased.series,
+          });
+      }
+    }
+  }
+
+  return {
+    benchmark_series: chartBenchmark?.series ?? [],
+    backtest_series,
+    results,
+  };
 }
 
 // ── System Tags ───────────────────────────────────────────────────────────
