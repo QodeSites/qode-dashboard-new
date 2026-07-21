@@ -23,14 +23,14 @@ function fmtDate(d: string) {
 // ─── Optional ratio columns config ───────────────────────────────────────────
 
 const RATIO_COLUMNS = [
-  { key: "sharpe",            label: "Sharpe",              fmt: (v: number | null) => fmtNum(v) },
-  { key: "sortino",           label: "Sortino",             fmt: (v: number | null) => fmtNum(v) },
-  { key: "calmar",            label: "Calmar",              fmt: (v: number | null) => fmtNum(v) },
-  { key: "ann_volatility",    label: "Volatility (Ann.)",   fmt: (v: number | null) => fmtPct(v) },
-  { key: "tracking_error",    label: "Tracking Error",      fmt: (v: number | null) => fmtPct(v) },
-  { key: "information_ratio", label: "Information Ratio",   fmt: (v: number | null) => fmtNum(v) },
-  { key: "alpha",             label: "Alpha",               fmt: (v: number | null) => fmtPct(v) },
-  { key: "beta",              label: "Beta",                fmt: (v: number | null) => fmtNum(v) },
+  { key: "sharpe", label: "Sharpe", fmt: (v: number | null) => fmtNum(v) },
+  { key: "sortino", label: "Sortino", fmt: (v: number | null) => fmtNum(v) },
+  { key: "calmar", label: "Calmar", fmt: (v: number | null) => fmtNum(v) },
+  { key: "ann_volatility", label: "Volatility (Ann.)", fmt: (v: number | null) => fmtPct(v) },
+  { key: "tracking_error", label: "Tracking Error", fmt: (v: number | null) => fmtPct(v) },
+  { key: "information_ratio", label: "Information Ratio", fmt: (v: number | null) => fmtNum(v) },
+  { key: "alpha", label: "Alpha", fmt: (v: number | null) => fmtPct(v) },
+  { key: "beta", label: "Beta", fmt: (v: number | null) => fmtNum(v) },
 ] as const;
 
 type RatioKey = typeof RATIO_COLUMNS[number]["key"];
@@ -110,9 +110,8 @@ function ColumnSelector({
                 key={col.key}
                 type="button"
                 onClick={() => toggle(col.key)}
-                className={`w-full flex items-center gap-2.5 px-4 py-2 text-sm text-left transition-colors ${
-                  isSelected ? "text-logo-green font-medium bg-primary-bg/50" : "text-card-text hover:bg-primary-bg/30"
-                }`}
+                className={`w-full flex items-center gap-2.5 px-4 py-2 text-sm text-left transition-colors ${isSelected ? "text-logo-green font-medium bg-primary-bg/50" : "text-card-text hover:bg-primary-bg/30"
+                  }`}
               >
                 <span className={`h-4 w-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${isSelected ? "border-logo-green bg-logo-green" : "border-card-text-secondary/40"}`}>
                   {isSelected && <span className="block h-2 w-2 rounded-sm bg-white" />}
@@ -229,6 +228,13 @@ export function StrategyBreakup({ riskFreeRate = 0.065, fetchTrigger = 0 }: Stra
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
+  const [startDate, setStartDate] = useState<string>(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 6);
+    return d.toISOString().slice(0, 10);
+  });
+  const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+
   async function handleExport() {
     setExporting(true);
     try {
@@ -236,7 +242,11 @@ export function StrategyBreakup({ riskFreeRate = 0.065, fetchTrigger = 0 }: Stra
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ risk_free_rate: riskFreeRate }),
+        body: JSON.stringify({
+          risk_free_rate: riskFreeRate,
+          start_date: startDate,
+          end_date: endDate,
+        }),
       });
       if (!res.ok) throw new Error(`Export failed (${res.status})`);
       const blob = await res.blob();
@@ -305,25 +315,41 @@ export function StrategyBreakup({ riskFreeRate = 0.065, fetchTrigger = 0 }: Stra
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
+     <div>
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div className="flex items-center gap-2.5 border-l-[3px] border-logo-green pl-3.5 py-1">
           <span className="text-xs font-bold uppercase tracking-wide text-logo-green">
             Strategy-wise Client Breakup
           </span>
         </div>
-        <button
-          type="button"
-          onClick={handleExport}
-          disabled={exporting}
-          className="inline-flex items-center gap-2 rounded-lg bg-logo-green px-4 py-2 text-sm font-medium text-button-text hover:bg-logo-green/90 transition-colors disabled:opacity-60"
-        >
-          {exporting
-            ? <Loader2 className="h-4 w-4 animate-spin" />
-            : <Download className="h-4 w-4" />
-          }
-          {exporting ? "Exporting…" : "Export Excel"}
-        </button>
+
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="rounded-lg border border-logo-green/20 bg-white px-3 py-2 text-sm text-card-text focus:outline-none focus:border-logo-green/40"
+          />
+          <span className="text-card-text-secondary text-sm">to</span>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="rounded-lg border border-logo-green/20 bg-white px-3 py-2 text-sm text-card-text focus:outline-none focus:border-logo-green/40"
+          />
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={exporting}
+            className="inline-flex items-center gap-2 rounded-lg bg-logo-green px-4 py-2 text-sm font-medium text-button-text hover:bg-logo-green/90 transition-colors disabled:opacity-60"
+          >
+            {exporting
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <Download className="h-4 w-4" />
+            }
+            {exporting ? "Exporting…" : "Export Excel"}
+          </button>
+        </div>
       </div>
 
       <ColumnSelector selected={selectedRatios} onChange={setSelectedRatios} />
