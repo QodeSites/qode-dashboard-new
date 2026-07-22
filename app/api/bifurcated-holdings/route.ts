@@ -100,14 +100,33 @@ export async function GET(req: Request) {
       select: { as_of_date: true },
     });
 
-    const equityRows = latestEquity
+    // ONE portfolio-level snapshot date = the latest date this client has ANY
+    // holdings row (equity or MF). Both categories are then read AT that date.
+    //
+    // Resolving each category's date independently resurrected the last-held
+    // snapshot of a category the client had fully exited: e.g. Kanu Doshi
+    // (QAC00111) liquidated his mutual funds on 2026-06-24, so the MF table
+    // correctly has no rows for him after that — but the per-category lookup
+    // returned 2026-06-24 and kept rendering funds he no longer owns, while
+    // dataAsOfDate reported the newer equity date, labelling it as current.
+    // Reading both at the shared date makes an exited category return zero rows
+    // (an empty section), which is the truth.
+    //
+    // Safe against feed lag: the pipeline writes equity and MF on the SAME date
+    // for every client holding both, so this never blanks a merely-lagging feed.
+    const equityTime = latestEquity?.date.getTime() ?? 0;
+    const mfTime = latestMf?.as_of_date.getTime() ?? 0;
+    const asOf =
+      equityTime || mfTime ? new Date(Math.max(equityTime, mfTime)) : null;
+
+    const equityRows = asOf
       ? await prisma.bifurcated_equity_holding_test.findMany({
-          where: { qcode, date: latestEquity.date },
+          where: { qcode, date: asOf },
         })
       : [];
-    const mfRows = latestMf
+    const mfRows = asOf
       ? await prisma.bifurcated_mutual_fund_holding_sheet_test.findMany({
-          where: { qcode, as_of_date: latestMf.as_of_date },
+          where: { qcode, as_of_date: asOf },
         })
       : [];
 
@@ -155,10 +174,8 @@ export async function GET(req: Request) {
       new Set(allHoldings.map((h) => h.strategy).filter((s): s is string => !!s))
     ).sort();
 
-    const equityDate = latestEquity?.date.getTime() ?? 0;
-    const mfDate = latestMf?.as_of_date.getTime() ?? 0;
-    const asOf = equityDate || mfDate ? new Date(Math.max(equityDate, mfDate)) : null;
-
+    // `asOf` is the shared snapshot date resolved above — it is now genuinely the
+    // date BOTH categories were read at, so it no longer over-reports freshness.
     return NextResponse.json(
       {
         holdingsSummary,
