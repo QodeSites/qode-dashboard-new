@@ -4,6 +4,7 @@ import { getEngineForQcode } from "@/app/lib/bifurcated-portfolio-utils";
 import { findByIcode } from "@/app/lib/bifurcated-clients-registry";
 import { getUserQcodes, calculatePortfolioMetrics, formatPortfolioStats } from "@/app/lib/portfolio-utils";
 import { generateExcelBufferServer, fetchBenchmarkForDateRange, ServerExcelInput } from "@/components/generateExcelReportServer";
+import { fetchHoldingsForClient, generateHoldingsExcelBuffer } from "@/app/lib/holdings-export-utils";
 
 // ============================================================================
 // Types
@@ -151,27 +152,27 @@ export async function fetchStrategies(
 export async function buildExcelZipForClients(
   clients: ExcelExportClient[]
 ): Promise<{ zipBuffer: Buffer; totalFiles: number; errors: string[] }> {
-  const masterZip  = new JSZip();
+  const masterZip      = new JSZip();
+  const dashboardFolder = masterZip.folder("dashboard")!;
+  const holdingsFolder  = masterZip.folder("holdings")!;
   let   totalFiles = 0;
   const errors: string[] = [];
 
   for (const client of clients) {
+    const clientName = (client.user_name ?? client.icode).replace(/[/\\?%*:|"<>]/g, "_");
+
+    // ── Dashboard (portfolio) Excels ──────────────────────────────────────
     let strategies: PortfolioEntry[] = [];
     try {
       strategies = await fetchStrategies(client.icode, client.accounts);
     } catch (e) {
       errors.push(`${client.icode} — failed to fetch strategies: ${String(e)}`);
-      continue;
     }
-
-    const clientName = (client.user_name ?? client.icode).replace(/[/\\?%*:|"<>]/g, "_");
 
     for (const strategy of strategies) {
       try {
         const input = toExcelInput(strategy, client.user_name ?? client.icode);
 
-        // Fetch NIFTY 50 benchmark returns for this strategy's date range.
-        // Fails silently — benchmark columns will be blank if the API is down.
         const inceptionDate = strategy.metadata.inceptionDate ?? strategy.metadata.startDate;
         if (inceptionDate && strategy.metadata.dataAsOfDate) {
           try {
@@ -180,21 +181,43 @@ export async function buildExcelZipForClients(
               strategy.metadata.dataAsOfDate
             );
           } catch {
-            // leave benchmarkReturns undefined — Excel shows "-" in benchmark column
+            // benchmark columns will be blank
           }
         }
 
         const buffer = await generateExcelBufferServer(input);
-        // Single strategy → ClientName.xlsx
-        // Multiple strategies → ClientName - StrategyName.xlsx
         const fileName = strategies.length === 1
           ? `${clientName}.xlsx`
           : `${clientName} - ${strategy.strategyName.replace(/[/\\?%*:|"<>]/g, "_")}.xlsx`;
-        masterZip.file(fileName, buffer);
+        dashboardFolder.file(fileName, buffer);
         totalFiles++;
       } catch (e) {
         errors.push(`${client.icode}/${strategy.strategyName} — ${String(e)}`);
       }
+    }
+
+    // ── Holdings Excels ───────────────────────────────────────────────────
+    try {
+      const holdingsEntries = await fetchHoldingsForClient(client.icode, client.accounts);
+      for (const entry of holdingsEntries) {
+        try {
+          const buffer = generateHoldingsExcelBuffer(
+            entry.holdingsSummary,
+            client.user_name ?? client.icode,
+            entry.dataAsOfDate
+          );
+          const label = entry.label.replace(/[/\\?%*:|"<>]/g, "_");
+          const fileName = holdingsEntries.length === 1
+            ? `${clientName}.xlsx`
+            : `${clientName} - ${label}.xlsx`;
+          holdingsFolder.file(fileName, buffer);
+          totalFiles++;
+        } catch (e) {
+          errors.push(`${client.icode}/holdings/${entry.label} — ${String(e)}`);
+        }
+      }
+    } catch (e) {
+      errors.push(`${client.icode} — failed to fetch holdings: ${String(e)}`);
     }
   }
 
