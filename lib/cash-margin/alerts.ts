@@ -17,7 +17,7 @@ import { prisma } from "@/lib/prisma";
 import { detectTier, isXtsMandate, type Tier } from "./tags";
 import { loadMastersheet, computeAccountSummary } from "./mastersheet";
 import { computeExposureShare } from "./exposure";
-import { fetchMargins, type MarginAvailable } from "./margin-api";
+import { loadMarginCollaterals, type MarginAvailable } from "./margin-api";
 import {
   METRIC_ORDER,
   METRIC_LABEL,
@@ -79,8 +79,8 @@ export async function buildAlertRows(): Promise<AlertRow[]> {
     strategyCount.set(m.qcode, (strategyCount.get(m.qcode) ?? 0) + 1);
   }
 
-  // One live margin fetch per distinct client name.
-  const marginMap = await fetchMargins(mandates.map((m) => m.account_name));
+  // Latest cm_margin_collateral snapshot per distinct qcode.
+  const marginMap = await loadMarginCollaterals(mandates.map((m) => m.qcode));
 
   const rows: AlertRow[] = [];
 
@@ -98,7 +98,7 @@ export async function buildAlertRows(): Promise<AlertRow[]> {
     const summary = computeAccountSummary(ms, m.strategy, m.exposure_tag_suffix);
     const accountValue = summary.accountValue;
 
-    const margin: MarginAvailable | null = marginMap.get(m.account_name) ?? null;
+    const margin: MarginAvailable | null = marginMap.get(m.qcode) ?? null;
     const marginFetchOk = margin !== null;
 
     const share = computeExposureShare(

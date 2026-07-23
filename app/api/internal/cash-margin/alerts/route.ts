@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/app/lib/admin-utils";
+import { requireInternal } from "@/app/lib/admin-utils";
 import { buildAlertRows } from "@/lib/cash-margin/alerts";
 
 // Live Cash & Margin alert table. One row per active non-XTS mandate x metric
-// (Cash %, Cash Collateral %, Non-Cash Collateral %). Fetches Zerodha margin
-// live and reads the bifurcated_master_sheet_test snapshot per client.
+// (Cash %, Cash Collateral %, Non-Cash Collateral %). Reads margin collateral
+// from cm_margin_collateral and the bifurcated_master_sheet_test snapshot per client.
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const { error } = await requireAdmin();
+  const { error } = await requireInternal();
   if (error) return error;
 
   try {
