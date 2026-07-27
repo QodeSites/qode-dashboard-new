@@ -393,7 +393,7 @@ const calculateBenchmarkReturns = useCallback(() => {
               </tr>
               <tr className=" border-black text-xs">
                 <td className="px-4 py-3 text-start whitespace-nowrap min-w-[100px] font-medium text-gray-900">
-                  Benchmark (%)
+                  Nifty 50 (%)
                 </td>
                 {allPeriods.map((period) => {
                   const rawValue = getDisplayValue(period.key, false);

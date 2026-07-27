@@ -4,7 +4,7 @@ import { signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRightOnRectangleIcon, UserCircleIcon } from "@heroicons/react/24/outline";
+import { ArrowRightOnRectangleIcon, EyeSlashIcon, UserCircleIcon } from "@heroicons/react/24/outline";
 
 export function AdminHeader() {
   const { data: session } = useSession();
@@ -43,6 +43,15 @@ export function AdminHeader() {
             <p className="text-xs text-card-text-secondary">{adminEmail}</p>
           </div>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => router.push("/dashboard-visibility")}
+          className="gap-2 text-card-text-secondary hover:text-logo-green"
+        >
+          <EyeSlashIcon className="h-4 w-4" />
+          Dashboard Visibility
+        </Button>
         <Button
           variant="outline"
           size="sm"

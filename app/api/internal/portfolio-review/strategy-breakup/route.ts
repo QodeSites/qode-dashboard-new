@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireInternal } from "@/app/lib/admin-utils";
 import {
   computeStrategyBreakup,
+  parseOptionalDate,
   resolveRiskFreeRate,
 } from "@/app/lib/internal-utils";
 
@@ -10,11 +11,15 @@ export async function POST(req: Request) {
   if (error) return error;
 
   // body is fully optional — an empty/absent body just means "use global_config"
-  let body: { risk_free_rate?: number } = {};
+  let body: {
+    risk_free_rate?: number;
+    start_date?: string;
+    end_date?: string;
+  } = {};
   try {
     body = await req.json();
   } catch {
-    // no body sent — fine, risk_free_rate is optional
+    // no body sent — fine, every field is optional
   }
 
   const rfr = await resolveRiskFreeRate(body.risk_free_rate);
@@ -25,6 +30,18 @@ export async function POST(req: Request) {
     );
   }
 
-  const data = await computeStrategyBreakup(rfr);
+  const end = parseOptionalDate(body.end_date);
+  if (end === null) {
+    return NextResponse.json({ error: "end_date is invalid" }, { status: 400 });
+  }
+  const start = parseOptionalDate(body.start_date);
+  if (start === null) {
+    return NextResponse.json(
+      { error: "start_date is invalid" },
+      { status: 400 },
+    );
+  }
+
+  const data = await computeStrategyBreakup(rfr, end, start);
   return NextResponse.json(data);
 }

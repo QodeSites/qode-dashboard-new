@@ -62,7 +62,7 @@ export interface BenchmarkResult {
   since_inception: number | null;
   max_drawdown: number | null;
   current_drawdown: number | null;
-  series: { date: string; nav: number }[];
+  series: { date: string; nav: number; drawdown: number }[];
 }
 
 // ── DB ─────────────────────────────────────────────────────────────────────
@@ -163,13 +163,18 @@ export function calcSinceInception(nav: NavPoint[]): number | null {
   if (nav.length < 2) return null;
   const days =
     (nav[nav.length - 1].date.getTime() - nav[0].date.getTime()) / MS;
+  // true inception has no prior day (null) — 100 is the indexed starting point.
+  // a windowed start_date does have a real prior day; use it as the base
+  // instead, same fallback calcMonthlyReturns already uses for its first bucket
+  const baseNav =
+    nav[0].prev_nav != null && nav[0].prev_nav > 0 ? nav[0].prev_nav : 100;
   const startNav = nav[0].nav;
   const endNav = nav[nav.length - 1].nav;
   if (endNav <= 0 || startNav <= 0 || days <= 0) return null;
-  // < 365 days: simple return from base 100 (NAV is indexed to 100 at inception)
+  // < 365 days: simple return from baseNav
   // >= 365 days: CAGR using actual first recorded NAV
   return round(
-    days < 365 ? endNav / 100 - 1 : (endNav / startNav) ** (365 / days) - 1,
+    days < 365 ? endNav / baseNav - 1 : (endNav / startNav) ** (365 / days) - 1,
     4,
   );
 }
@@ -450,20 +455,22 @@ function computeBenchmarkMetrics(
 
   let peak = refPrice,
     maxDD = 0;
-  for (const p of clipped) {
+  const series = clipped.map((p) => {
     if (p.nav > peak) peak = p.nav;
     const dd = peak > 0 ? (p.nav - peak) / peak : 0;
     if (dd < maxDD) maxDD = dd;
-  }
+    return {
+      date: p.date,
+      nav: parseFloat(((p.nav / refPrice) * 100).toFixed(4)),
+      drawdown: round(dd, 4),
+    };
+  });
 
   return {
     since_inception: round(si, 4),
     max_drawdown: round(maxDD, 4),
-    current_drawdown: round(peak > 0 ? (last.nav - peak) / peak : 0, 4),
-    series: clipped.map((p) => ({
-      date: p.date,
-      nav: parseFloat(((p.nav / refPrice) * 100).toFixed(4)),
-    })),
+    current_drawdown: series[series.length - 1].drawdown,
+    series,
   };
 }
 
@@ -571,12 +578,15 @@ async function fetchStrategyPairs(
   return [...map.values()];
 }
 
-// carry-forward sum across N series onto the union of their dates — single pass
-function mergeFfillSum(seriesList: SeriesPoint[][]): AumPoint[] {
-  const dateSet = new Set<string>();
-  for (const s of seriesList) for (const p of s) dateSet.add(p.date);
-  const dates = [...dateSet].sort();
-
+// carry-forward sum across N series onto a shared date axis — single pass.
+// each series stops contributing once `d` passes its own `until` (if set) —
+// prevents lapsed/switched strategies from being counted forever. `dates` is
+// shared across all callers so a strategy with no currently active clients
+// still resolves to 0 today instead of freezing at its last real value.
+function mergeFfillSum(
+  seriesList: { series: SeriesPoint[]; until: string | null }[],
+  dates: string[],
+): AumPoint[] {
   const idx = new Array(seriesList.length).fill(0);
   const last = new Array(seriesList.length).fill(0);
   const out: AumPoint[] = [];
@@ -584,16 +594,32 @@ function mergeFfillSum(seriesList: SeriesPoint[][]): AumPoint[] {
   for (const d of dates) {
     let sum = 0;
     for (let i = 0; i < seriesList.length; i++) {
-      const s = seriesList[i];
-      while (idx[i] < s.length && s[idx[i]].date <= d) {
-        last[i] = s[idx[i]].value;
+      const { series, until } = seriesList[i];
+      while (idx[i] < series.length && series[idx[i]].date <= d) {
+        last[i] = series[idx[i]].value;
         idx[i]++;
       }
-      sum += last[i];
+      if (!until || d <= until) sum += last[i];
     }
     out.push({ date: d, aum: sum });
   }
   return out;
+}
+
+// drop the trailing zero run once a strategy has no active clients left —
+// keeps the real history, cuts the redundant "still 0" repeats out to today
+function trimTrailingZeros(series: AumPoint[]): AumPoint[] {
+  let end = series.length;
+  while (end > 0 && series[end - 1].aum === 0) end--;
+  return series.slice(0, end);
+}
+
+// drop the leading zero run before a strategy's first real client — same no-signal
+// padding as the trailing case, just mirrored at the start of the array
+function trimLeadingZeros(series: AumPoint[]): AumPoint[] {
+  let start = 0;
+  while (start < series.length && series[start].aum === 0) start++;
+  return series.slice(start);
 }
 
 function computeMom(
@@ -662,9 +688,11 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
   }
 
   const investors: InvestorAum[] = [];
-  const allSeries: SeriesPoint[][] = [];
-  const activeSeries: SeriesPoint[][] = [];
-  const strategySeries = new Map<string, SeriesPoint[][]>();
+  const allSeries: { series: SeriesPoint[]; until: string | null }[] = [];
+  const strategySeries = new Map<
+    string,
+    { series: SeriesPoint[]; until: string | null }[]
+  >();
   const today = new Date().toISOString().split("T")[0];
 
   for (const pair of pairs) {
@@ -680,26 +708,38 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
       until: pair.effective_to,
     });
 
-    allSeries.push(series);
-    if (isActive(pair.effective_to, today)) activeSeries.push(series);
+    const entry = { series, until: pair.effective_to };
+    allSeries.push(entry);
     if (!strategySeries.has(pair.strategy))
       strategySeries.set(pair.strategy, []);
-    strategySeries.get(pair.strategy)!.push(series);
+    strategySeries.get(pair.strategy)!.push(entry);
   }
 
-  const aum_daily = mergeFfillSum(allSeries);
-  const activeAumDaily = mergeFfillSum(activeSeries); // active-only, feeds mom only
-  const strategy_aum_daily: Record<string, AumPoint[]> = {};
-  for (const [strategy, list] of strategySeries) {
-    strategy_aum_daily[strategy] = mergeFfillSum(list);
-  }
+  // shared axis so every strategy resolves to 0 (not a frozen stale value) once its clients lapse
+  const dateSet = new Set<string>();
+  for (const { series } of allSeries)
+    for (const p of series) dateSet.add(p.date);
+  const dates = [...dateSet].sort();
 
   const activeInvestors = investors.filter((inv) => isActive(inv.until, today));
+  const activeClients = new Set(activeInvestors.map((inv) => inv.qcode)); // dedupe multi-strategy clients
+  const activeStrategies = new Set(activeInvestors.map((inv) => inv.strategy));
+
+  // per-series cutoff is now baked in, so this is accurate for any date — mom included
+  const aum_daily = mergeFfillSum(allSeries, dates);
+  const strategy_aum_daily: Record<string, AumPoint[]> = {};
+  for (const [strategy, list] of strategySeries) {
+    const series = trimLeadingZeros(mergeFfillSum(list, dates)); // no padding before its own inception
+    // fully-lapsed strategies don't need the trailing zero repeat out to today
+    strategy_aum_daily[strategy] = activeStrategies.has(strategy)
+      ? series
+      : trimTrailingZeros(series);
+  }
 
   return {
-    total_investors: activeInvestors.length,
+    total_investors: activeClients.size,
     total_aum: activeInvestors.reduce((s, inv) => s + inv.aum, 0),
-    mom: computeMom(activeAumDaily),
+    mom: computeMom(aum_daily),
     investors,
     aum_daily,
     strategy_aum_daily,
@@ -742,20 +782,40 @@ export interface StrategyBreakupRow {
   end_date: string | null;
 }
 
+// top-level query window — distinct from each row's own end_date (that
+// client-strategy pair's own effective_to, unrelated to the request filter)
+export interface StrategyBreakupResult {
+  start_date: string | null;
+  end_date: string;
+  clients: StrategyBreakupRow[];
+}
+
 // batched nav/prev_nav/drawdown/pnl fetch for any list of (qcode, tag) pairs —
 // same unnest-join pattern as Portfolio Summary, one round trip total
 async function fetchBulkNavSeries(
   pairs: { qcode: string; tag: string }[],
+  end?: Date, // optional upper bound — omit for latest available
+  start?: Date, // optional lower bound — omit for full history
 ): Promise<Map<string, NavPoint[]>> {
+  const params: any[] = [pairs.map((p) => p.qcode), pairs.map((p) => p.tag)];
+  let dateClause = "";
+  if (start) {
+    params.push(start);
+    dateClause += ` AND b.date >= $${params.length}`;
+  }
+  if (end) {
+    params.push(end);
+    dateClause += ` AND b.date <= $${params.length}`;
+  }
+
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `SELECT b.qcode, b.system_tag, b.date, b.nav, b.prev_nav, b.drawdown, b.pnl
      FROM bifurcated_master_sheet_test b
      JOIN unnest($1::text[], $2::text[]) AS v(qcode, tag)
        ON b.qcode = v.qcode AND b.system_tag = v.tag
-     WHERE b.nav IS NOT NULL
+     WHERE b.nav IS NOT NULL${dateClause}
      ORDER BY b.qcode, b.system_tag, b.date ASC`,
-    pairs.map((p) => p.qcode),
-    pairs.map((p) => p.tag),
+    ...params,
   );
 
   const seriesMap = new Map<string, NavPoint[]>();
@@ -772,6 +832,14 @@ async function fetchBulkNavSeries(
     });
   }
   return seriesMap;
+}
+
+// parses an optional "YYYY-MM-DD" date — undefined if omitted, null if invalid.
+// shared by start_date and end_date on every endpoint below
+export function parseOptionalDate(input?: string): Date | null | undefined {
+  if (!input) return undefined;
+  const d = new Date(input);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 // month-end value per calendar bucket, keyed by "YYYY-MM" — lets portfolio and
@@ -900,14 +968,22 @@ export function calcExtraRatios(port: number[], bm: number[]): ExtraRatios {
 
 export async function computeStrategyBreakup(
   rfr: number,
-): Promise<StrategyBreakupRow[]> {
+  end?: Date,
+  start?: Date,
+): Promise<StrategyBreakupResult> {
   const allPairs = await fetchStrategyPairs("profit_tag_suffix");
-  const today = new Date().toISOString().split("T")[0];
-  const pairs = allPairs.filter((p) => isActive(p.effective_to, today));
-  if (pairs.length === 0) return [];
+  const endDate = end
+    ? end.toISOString().split("T")[0]
+    : new Date().toISOString().split("T")[0];
+  const startDate = start ? start.toISOString().split("T")[0] : null;
+  const pairs = allPairs.filter((p) => isActive(p.effective_to, endDate));
+  if (pairs.length === 0)
+    return { start_date: startDate, end_date: endDate, clients: [] };
 
   const seriesMap = await fetchBulkNavSeries(
     pairs.map((p) => ({ qcode: p.qcode, tag: p.tag })),
+    end,
+    start,
   );
 
   // one shared date span covers every client — Nifty gets fetched exactly once
@@ -990,7 +1066,7 @@ export async function computeStrategyBreakup(
     });
   }
 
-  return rows;
+  return { start_date: startDate, end_date: endDate, clients: rows };
 }
 
 // ── Account Value Breakup ────────────────────────────────────────────────────
@@ -1332,11 +1408,24 @@ export interface SubStrategyRow {
   yearly: YearlyReturn[];
 }
 
-export async function computeSubStrategyPerformance(): Promise<
-  SubStrategyRow[]
-> {
+export interface SubStrategyPerformanceResult {
+  start_date: string | null;
+  end_date: string;
+  rows: SubStrategyRow[];
+}
+
+export async function computeSubStrategyPerformance(
+  end?: Date,
+  start?: Date,
+): Promise<SubStrategyPerformanceResult> {
+  const endDate = end
+    ? end.toISOString().split("T")[0]
+    : new Date().toISOString().split("T")[0];
+  const startDate = start ? start.toISOString().split("T")[0] : null;
+
   const pairs = await fetchStrategyPairs("profit_tag_suffix");
-  if (pairs.length === 0) return [];
+  if (pairs.length === 0)
+    return { start_date: startDate, end_date: endDate, rows: [] };
 
   const splitMap = await resolveSplitConfigs(pairs);
 
@@ -1352,7 +1441,7 @@ export async function computeSubStrategyPerformance(): Promise<
     }
   }
 
-  const seriesMap = await fetchBulkNavSeries(queries);
+  const seriesMap = await fetchBulkNavSeries(queries, end, start);
 
   const rows: SubStrategyRow[] = [];
   for (const pair of pairs) {
@@ -1376,7 +1465,97 @@ export async function computeSubStrategyPerformance(): Promise<
     }
   }
 
-  return rows;
+  return { start_date: startDate, end_date: endDate, rows };
+}
+
+// ── Sub-Strategy Daily PnL (export-only) ─────────────────────────────────────
+
+export interface DailyPnlSelection {
+  qcode: string;
+  strategy: string;
+}
+
+export interface DailyPnlPoint {
+  date: string;
+  return_pct: number | null; // null on a client's first data point — no prev_nav to ratio against
+  pnl_inr: number;
+}
+
+export interface DailyPnlSeries {
+  qcode: string;
+  account_name: string;
+  strategy: string;
+  section: string;
+  points: DailyPnlPoint[];
+}
+
+// per-day nav ratio — same formula calcMonthlyReturns chains across a month,
+// applied to a single day instead
+function calcDailyReturns(nav: NavPoint[]): DailyPnlPoint[] {
+  return nav.map((p) => ({
+    date: p.date.toISOString().split("T")[0],
+    return_pct:
+      p.prev_nav != null && p.prev_nav > 0
+        ? parseFloat(((p.nav / p.prev_nav - 1) * 100).toFixed(2))
+        : null,
+    pnl_inr: parseFloat(p.pnl.toFixed(2)),
+  }));
+}
+
+export async function computeSubStrategyDailyPnl(
+  selections: DailyPnlSelection[],
+  sections: string[],
+  end?: Date,
+  start?: Date,
+): Promise<DailyPnlSeries[]> {
+  const wantedSections = new Set(
+    sections.filter((s) => SUB_STRATEGY_SECTION_ORDER.includes(s)),
+  );
+  if (wantedSections.size === 0) return [];
+
+  const allPairs = await fetchStrategyPairs("profit_tag_suffix");
+  const pairMap = new Map(allPairs.map((p) => [`${p.qcode}|${p.strategy}`, p]));
+
+  // dedupe requested selections before the unnest join — same lesson as
+  // computeCompare's duplication fix, applied here proactively
+  const uniqueKeys = new Set(selections.map((s) => `${s.qcode}|${s.strategy}`));
+  const pairs = [...uniqueKeys]
+    .map((k) => pairMap.get(k))
+    .filter((p): p is StrategyPair => p != null);
+  if (pairs.length === 0) return [];
+
+  const splitMap = await resolveSplitConfigs(pairs);
+
+  const queries: { qcode: string; tag: string }[] = [];
+  const combos: { pair: StrategyPair; sec: SubStrategySectionDef }[] = [];
+  for (const pair of pairs) {
+    const split = splitMap.get(`${pair.qcode}|${pair.strategy}`)!;
+    for (const sec of SUB_STRATEGY_SECTIONS) {
+      if (!wantedSections.has(sec.label)) continue;
+      if (split[sec.existsField] == null) continue;
+      if (sec.tier != null && split.psar_multiplier !== sec.tier) continue;
+      queries.push({ qcode: pair.qcode, tag: `${pair.strategy} ${sec.tag}` });
+      combos.push({ pair, sec });
+    }
+  }
+  if (queries.length === 0) return [];
+
+  const seriesMap = await fetchBulkNavSeries(queries, end, start);
+
+  const result: DailyPnlSeries[] = [];
+  for (const { pair, sec } of combos) {
+    const nav = seriesMap.get(`${pair.qcode}|${pair.strategy} ${sec.tag}`);
+    if (!nav || nav.length === 0) continue; // config says it should exist, data doesn't — nothing to report
+
+    result.push({
+      qcode: pair.qcode,
+      account_name: pair.account_name,
+      strategy: pair.strategy,
+      section: sec.label,
+      points: calcDailyReturns(nav),
+    });
+  }
+  return result;
 }
 
 // ── Strategy-wise Monthly Returns ────────────────────────────────────────────
@@ -1417,6 +1596,193 @@ export async function computeStrategyMonthlyReturns(): Promise<
   return rows;
 }
 
+// ── Backtest (Research Dashboard) ────────────────────────────────────────────
+
+const SCHEDULE_RUNS_URL = "https://research.qodeinvest.com/api/schedule-runs";
+const LIVE_RUN_BASE_URL = "https://research.qodeinvest.com/api/live-runs";
+
+const LIVE_RUN_ID_TTL_MS = 15 * 60 * 1000; // recheck for a newer completed run periodically
+const COMBINED_METRICS_TTL_MS = 24 * 60 * 60 * 1000; // a completed run's own data never changes
+
+interface ScheduleRun {
+  live_run_id: string;
+  run_start: string;
+  run_result: "COMPLETED" | "FAILED" | "RUNNING";
+}
+
+let cachedLiveRunIds: { ids: string[]; fetchedAt: number } | null = null;
+const combinedMetricsCache = new Map<
+  string,
+  { data: any; fetchedAt: number }
+>();
+
+// every COMPLETED run, newest first — cached briefly; a stale cache on a
+// transient fetch failure beats returning nothing
+async function resolveCompletedLiveRunIds(): Promise<string[]> {
+  if (
+    cachedLiveRunIds &&
+    Date.now() - cachedLiveRunIds.fetchedAt < LIVE_RUN_ID_TTL_MS
+  ) {
+    return cachedLiveRunIds.ids;
+  }
+  try {
+    const res = await fetch(SCHEDULE_RUNS_URL);
+    if (!res.ok) return cachedLiveRunIds?.ids ?? [];
+    const runs: ScheduleRun[] = await res.json();
+    const ids = runs
+      .filter((r) => r.run_result === "COMPLETED")
+      .sort(
+        (a, b) =>
+          new Date(b.run_start).getTime() - new Date(a.run_start).getTime(),
+      )
+      .map((r) => r.live_run_id);
+    if (ids.length === 0) return cachedLiveRunIds?.ids ?? [];
+    cachedLiveRunIds = { ids, fetchedAt: Date.now() };
+    return ids;
+  } catch {
+    return cachedLiveRunIds?.ids ?? [];
+  }
+}
+
+// one option's full combined-metrics payload — immutable once COMPLETED, so
+// this sits in cache far longer than the run-id list above
+async function fetchCombinedMetrics(
+  liveRunId: string,
+  option: string,
+): Promise<any | null> {
+  const key = `${liveRunId}:${option}`;
+  const cached = combinedMetricsCache.get(key);
+  if (cached && Date.now() - cached.fetchedAt < COMBINED_METRICS_TTL_MS) {
+    return cached.data;
+  }
+  try {
+    const res = await fetch(
+      `${LIVE_RUN_BASE_URL}/${liveRunId}/combined-metrics?option=${option}`,
+    );
+    if (!res.ok) return null;
+    const json = await res.json();
+    const schemeData = json?.data?.[option];
+    if (!json?.success || !schemeData) return null;
+    combinedMetricsCache.set(key, { data: schemeData, fetchedAt: Date.now() });
+    return schemeData;
+  } catch {
+    return null;
+  }
+}
+
+// tries every COMPLETED run newest-first for this option, stopping at the
+// first one with usable data — a bad/incomplete latest run for one option
+// doesn't have to sink that option for the whole request
+async function fetchCombinedMetricsWithFallback(
+  liveRunIds: string[],
+  option: string,
+): Promise<any | null> {
+  for (const liveRunId of liveRunIds) {
+    const data = await fetchCombinedMetrics(liveRunId, option);
+    if (data) return data;
+  }
+  return null;
+}
+
+// client's own strategy field -> research dashboard's scheme option. QTF has
+// no scheme here at all — absent on purpose, any QTF tag just finds nothing
+const SCHEME_OPTION: Record<string, string> = {
+  "QAW+": "qaw_plus",
+  "QAW++": "qaw_plus_plus",
+  "QYE+": "qye_plus",
+  "QYE++": "qye_plus_plus",
+};
+
+// mastersheet tag -> where its curve lives inside a scheme's combined-metrics
+// payload. Locked in against Cross_check.xlsx + the real response: PSAR/BTST's
+// ALL-tab curves are columns in the scheme-level nav_curve, not a nested
+// psar.nav_curve/btst.nav_curve — that nested path doesn't exist in the data
+type BacktestSource =
+  | {
+      kind: "scheme";
+      array: "nav_curve" | "nifty_nav_curve" | "sensex_nav_curve";
+      field: "normalized_nav" | "psar_nav" | "btst_nav";
+    }
+  | {
+      kind: "qaw_split";
+      split:
+        | "all"
+        | "qaw_gold_matrics"
+        | "qaw_low_vol_matrics"
+        | "qaw_mom_matrics"
+        | "qaw_put_prot_matrics";
+    }
+  | { kind: "standalone"; tab: "all" | "nifty" | "sensex" }; // Section 3 — always the Compounded variant
+
+const TOTAL_PORTFOLIO_SOURCE: BacktestSource = {
+  kind: "scheme",
+  array: "nav_curve",
+  field: "normalized_nav",
+};
+
+// scheme-prefixed tags (e.g. "QYE++ PSAR") — client's own strategy determines the scheme
+const BACKTEST_TAG_SOURCE: Record<string, BacktestSource> = {
+  "Total Portfolio Value": TOTAL_PORTFOLIO_SOURCE,
+  "Total Portfolio Exposure": TOTAL_PORTFOLIO_SOURCE,
+  "Zerodha Total Portfolio": TOTAL_PORTFOLIO_SOURCE,
+  PSAR: { kind: "scheme", array: "nav_curve", field: "psar_nav" },
+  NPSAR: { kind: "scheme", array: "nifty_nav_curve", field: "psar_nav" },
+  SPSAR: { kind: "scheme", array: "sensex_nav_curve", field: "psar_nav" },
+  LONG: { kind: "scheme", array: "nav_curve", field: "btst_nav" },
+  NLONG: { kind: "scheme", array: "nifty_nav_curve", field: "btst_nav" },
+  SLONG: { kind: "scheme", array: "sensex_nav_curve", field: "btst_nav" },
+  "Equity Stock Holdings": { kind: "qaw_split", split: "all" },
+  "Gold Stock Holdings": { kind: "qaw_split", split: "qaw_gold_matrics" },
+  "Low Vol Stock Holdings": {
+    kind: "qaw_split",
+    split: "qaw_low_vol_matrics",
+  },
+  "Momentum Stock Holdings": { kind: "qaw_split", split: "qaw_mom_matrics" },
+  DMA1: { kind: "qaw_split", split: "qaw_put_prot_matrics" },
+};
+
+// bare tags with NO scheme prefix (a client running the strategy directly,
+// not bifurcated under QAW/QYE) — Section 3's standalone options
+const UNPREFIXED_OPTION: Record<string, string> = {
+  PSAR: "pbsar",
+  NPSAR: "pbsar",
+  SPSAR: "pbsar",
+  LONG: "btst",
+  NLONG: "btst",
+  SLONG: "btst",
+  DMA1: "dma",
+};
+
+const UNPREFIXED_SOURCE: Record<string, BacktestSource> = {
+  PSAR: { kind: "standalone", tab: "all" },
+  NPSAR: { kind: "standalone", tab: "nifty" },
+  SPSAR: { kind: "standalone", tab: "sensex" },
+  LONG: { kind: "standalone", tab: "all" },
+  NLONG: { kind: "standalone", tab: "nifty" },
+  SLONG: { kind: "standalone", tab: "sensex" },
+  DMA1: { kind: "standalone", tab: "all" },
+};
+
+// pulls the raw {date, nav} pairs a tag's source points at, out of an
+// already-fetched scheme payload — no network I/O here
+function extractBacktestRaw(
+  schemeData: any,
+  source: BacktestSource,
+): { date: string; nav: number }[] | null {
+  const arr =
+    source.kind === "scheme"
+      ? schemeData?.[source.array]
+      : source.kind === "qaw_split"
+        ? schemeData?.qaw?.[source.split]?.nav_curve
+        : schemeData?.[source.tab]?.compounded?.nav_curve;
+  const field = source.kind === "scheme" ? source.field : "normalized_nav";
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  const out = arr
+    .map((row: any) => ({ date: row.date, nav: Number(row[field]) }))
+    .filter((p: { date: unknown; nav: number }) => p.date && isFinite(p.nav));
+  return out.length > 0 ? out : null;
+}
+
 // ── Compare ───────────────────────────────────────────────────────────────
 
 export interface CompareSelection {
@@ -1435,15 +1801,22 @@ export interface CompareResult {
   } | null;
 }
 
+export interface BacktestSeries {
+  system_tag: string;
+  series: { date: string; nav: number; drawdown: number }[];
+}
+
 export interface CompareOutput {
-  benchmark_series: { date: string; nav: number }[];
+  benchmark_series: { date: string; nav: number; drawdown: number }[];
+  backtest_series: BacktestSeries[];
   results: CompareResult[];
 }
 
 export async function computeCompare(
   selections: CompareSelection[],
 ): Promise<CompareOutput> {
-  if (selections.length === 0) return { benchmark_series: [], results: [] };
+  if (selections.length === 0)
+    return { benchmark_series: [], backtest_series: [], results: [] };
 
   // dedupe before querying — a repeated pair would otherwise double-match
   // rows in fetchBulkNavSeries' unnest join, corrupting that series with
@@ -1532,7 +1905,83 @@ export async function computeCompare(
     };
   });
 
-  return { benchmark_series: chartBenchmark?.series ?? [], results };
+  // ── Backtest curves — one per distinct system_tag, not one shared line
+  // like Nifty. Selections sharing a tag merge into a single curve rebased
+  // at the earliest of their starts; different tags never merge, even if
+  // one client's start is earlier than another's for a different tag
+  const tagGroups = new Map<string, NavPoint[][]>();
+  for (const s of unique) {
+    const b = built.get(`${s.qcode}|${s.system_tag}`);
+    if (!b?.nav) continue;
+    if (!tagGroups.has(s.system_tag)) tagGroups.set(s.system_tag, []);
+    tagGroups.get(s.system_tag)!.push(b.nav);
+  }
+
+  const backtest_series: BacktestSeries[] = [];
+  if (tagGroups.size > 0) {
+    const liveRunIds = await resolveCompletedLiveRunIds();
+    if (liveRunIds.length > 0) {
+      // one combined-metrics fetch (with fallback) per distinct scheme,
+      // reused across every tag group that scheme covers
+      const schemeCache = new Map<string, any | null>();
+      for (const [systemTag, members] of tagGroups) {
+        const trimmed = systemTag.trim();
+        const spaceIdx = trimmed.indexOf(" ");
+
+        let option: string | undefined;
+        let source: BacktestSource | undefined;
+        if (spaceIdx === -1) {
+          // no scheme prefix — a client running the strategy directly, not
+          // bifurcated under QAW/QYE. Section 3's standalone option, Compounded tab
+          option = UNPREFIXED_OPTION[trimmed];
+          source = UNPREFIXED_SOURCE[trimmed];
+        } else {
+          const strategy = trimmed.slice(0, spaceIdx).trim();
+          const tag = trimmed.slice(spaceIdx + 1).trim();
+          option = SCHEME_OPTION[strategy];
+          source = BACKTEST_TAG_SOURCE[tag];
+        }
+        if (!option || !source) continue; // no backtest for this tag (QTF, or a UID-level tag)
+
+        if (!schemeCache.has(option)) {
+          schemeCache.set(
+            option,
+            await fetchCombinedMetricsWithFallback(liveRunIds, option),
+          );
+        }
+        const schemeData = schemeCache.get(option);
+        if (!schemeData) continue;
+
+        const raw = extractBacktestRaw(schemeData, source);
+        if (!raw) continue;
+
+        const groupStart = members.reduce(
+          (min, nav) => (nav[0].date < min ? nav[0].date : min),
+          members[0][0].date,
+        );
+        const groupEnd = members.reduce(
+          (max, nav) => {
+            const end = nav[nav.length - 1].date;
+            return end > max ? end : max;
+          },
+          members[0][members[0].length - 1].date,
+        );
+
+        const rebased = computeBenchmarkMetrics(raw, groupStart, groupEnd);
+        if (rebased)
+          backtest_series.push({
+            system_tag: systemTag,
+            series: rebased.series,
+          });
+      }
+    }
+  }
+
+  return {
+    benchmark_series: chartBenchmark?.series ?? [],
+    backtest_series,
+    results,
+  };
 }
 
 // ── System Tags ───────────────────────────────────────────────────────────

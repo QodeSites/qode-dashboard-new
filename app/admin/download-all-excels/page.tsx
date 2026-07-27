@@ -71,7 +71,7 @@ export default function DownloadAllExcelsPage() {
       const a    = document.createElement("a");
       a.href     = url;
       const date = new Date().toISOString().slice(0, 10);
-      a.download = `portfolio_excels_all_clients_${date}.zip`;
+      a.download = `qode_excels_all_clients_${date}.zip`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -106,7 +106,8 @@ export default function DownloadAllExcelsPage() {
             Download All Client Excels
           </h1>
           <p className="text-sm text-card-text-secondary">
-            Generates one Excel per strategy for every client and returns a single ZIP file.
+            Generates portfolio and holdings Excels for every client and returns a single ZIP.
+            The ZIP contains a <strong>dashboard/</strong> folder (portfolio Excels) and a <strong>holdings/</strong> folder (holdings Excels).
             This may take a few minutes depending on the number of clients.
           </p>
         </div>

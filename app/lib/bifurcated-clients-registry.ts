@@ -41,6 +41,8 @@ import { HARSH_MEHTA_CONFIG } from "./clients/harsh_mehta_single";
 import { MONICA_MEHTA_CONFIG } from "./clients/monica_mehta_single";
 import { SANJAY_MEHTA_CONFIG } from "./clients/sanjay_mehta_single";
 import { DIAMANTAIRE_EXPORTS_PVT_LTD_CONFIG } from "./clients/dxp_single";
+import { NAGARJUN_TEXTILES_INDIA_CONFIG } from "./clients/nagarjun";
+import { CHANDANMAL_JAIN_CONFIG } from "./clients/chandanmal_single";
 
 // Single source of truth for clients whose data lives in
 // bifurcated_master_sheet_test. Add a new entry here when onboarding a new
@@ -429,6 +431,25 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     qcode: "QAC00120",
     displayName: "Sanjay Mehta",
     config: SANJAY_MEHTA_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00137",
+    qcode: "QAC00123",
+    displayName: "Nagarjun Textiles India",
+    config: NAGARJUN_TEXTILES_INDIA_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    broker: "radiance",
+  },
+  {
+    icode: "QUS00138",
+    qcode: "QAC00124",
+    displayName: "Chandanmal Jain",
+    config: CHANDANMAL_JAIN_CONFIG,
     frozenData: EMPTY_FROZEN_DATA,
     hasNavBasedTotalPortfolio: true,
     renderMode: "single",

@@ -113,9 +113,36 @@ model clients {
   remarks                    String?                      @default("NA")
   created_at                 DateTime                     @default(now())
   password                   String?
+  partner_clients            partner_clients[]
   pooled_account_allocations pooled_account_allocations[]
   pooled_account_users       pooled_account_users[]
 
+  @@schema("public")
+}
+
+model partners {
+  id              Int               @id @default(autoincrement())
+  email           String            @unique
+  password        String
+  name            String
+  active          Boolean           @default(true)
+  created_at      DateTime          @default(now())
+  updated_at      DateTime          @default(now()) @updatedAt
+  partner_clients partner_clients[]
+
+  @@schema("public")
+}
+
+model partner_clients {
+  id         Int      @id @default(autoincrement())
+  partner_id Int
+  icode      String
+  created_at DateTime @default(now())
+  clients    clients  @relation(fields: [icode], references: [icode])
+  partners   partners @relation(fields: [partner_id], references: [id], onDelete: Cascade)
+
+  @@unique([partner_id, icode])
+  @@index([partner_id])
   @@schema("public")
 }
 
@@ -1155,5 +1182,48 @@ model global_config {
   updated_by String?  @db.VarChar(100)
   updated_at DateTime @updatedAt @db.Timestamptz(6)
 
+  @@schema("public")
+}
+
+model sync_jobs {
+  id            Int       @id @default(autoincrement())
+  job_type      String    @db.VarChar(20)
+  status        String    @db.VarChar(20)
+  started_at    DateTime  @default(now()) @db.Timestamptz(6)
+  finished_at   DateTime? @db.Timestamptz(6)
+  triggered_by  String    @db.VarChar(50)
+  report_date   String?   @db.VarChar(10)
+  client_filter String?   @db.VarChar(200)
+  error_message String?
+  result_json   Json?
+  log_output    String?
+
+  @@index([started_at(sort: Desc)])
+  @@index([status])
+  @@schema("public")
+}
+
+model cm_contract_value {
+  id             BigInt   @id @default(autoincrement())
+  qcode          String   @db.VarChar(20)
+  date           DateTime @db.Date
+  contract_value Decimal? @db.Decimal(20, 4)
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([qcode, date], map: "idx_cm_contract_value_qcode_date")
+  @@schema("public")
+}
+
+model cm_margin_collateral {
+  id                  BigInt   @id @default(autoincrement())
+  qcode               String   @db.VarChar(20)
+  date                DateTime @db.Date
+  broker              String?  @db.VarChar(20)
+  cash_collateral     Decimal? @db.Decimal(20, 4)
+  non_cash_collateral Decimal? @db.Decimal(20, 4)
+  live_balance        Decimal? @db.Decimal(20, 4)
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([qcode, date], map: "idx_cm_margin_collateral_qcode_date")
   @@schema("public")
 }
