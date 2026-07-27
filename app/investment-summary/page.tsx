@@ -25,7 +25,16 @@ import {
 import { Download, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import type { MultiStrategyInvestmentData } from "@/app/lib/parse-investment-pdf";
 import { printInvestmentSummaryReport, type LiveAllocation, type LiveAllocationRow } from "./print-report";
-import { withProfitRedeploymentOverrides } from "./profit-redeployment-overrides";
+import { withProfitRedeploymentOverrides, withSectionTotals } from "./profit-redeployment-overrides";
+import { Badge } from "@/components/ui/badge";
+
+function isInactiveStrategy(s: string): boolean {
+  return /\(inactive\)/i.test(s);
+}
+
+function displayStrategyName(s: string): string {
+  return s.replace(/\s*\(inactive\)/i, "").trim();
+}
 
 type ApiResponse = MultiStrategyInvestmentData & {
   strategyPdfAvailability?: Record<string, boolean>;
@@ -38,6 +47,7 @@ type ApiResponse = MultiStrategyInvestmentData & {
 interface SarlaSchemeResponse {
   data?: {
     currentExposure?: string;
+    totalProfit?: string;
   };
 }
 
@@ -431,7 +441,7 @@ function HoldingsTable({
 
 type EquityTxRow = { name: string; capitalFlow: string; date: string; strategy: string; amount: number };
 
-function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
+function EquityTransactionTable({ rows, hideStrategy = false }: { rows: EquityTxRow[]; hideStrategy?: boolean }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(10);
   const [sortKey, setSortKey] = useState<keyof EquityTxRow | null>(null);
@@ -481,7 +491,7 @@ function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
     { key: "name", label: "Name", align: "left" },
     { key: "capitalFlow", label: "Capital Inflow", align: "center" },
     { key: "date", label: "Date", align: "center" },
-    { key: "strategy", label: "Strategy", align: "center" },
+    ...(hideStrategy ? [] : [{ key: "strategy" as keyof EquityTxRow, label: "Strategy", align: "center" as const }]),
     { key: "amount", label: "Amount (₹)", align: "center" },
   ];
 
@@ -533,9 +543,11 @@ function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
                   <TableCell className="py-3 text-sm font-medium text-card-text text-left">{tx.name}</TableCell>
                   <TableCell className="py-3 text-sm text-gray-600 text-center">{tx.capitalFlow}</TableCell>
                   <TableCell className="py-3 text-sm text-gray-600 text-center whitespace-nowrap">{tx.date}</TableCell>
-                  <TableCell className="py-3 text-sm text-gray-600 text-center">
-                    <StrategyBadge value={tx.strategy} />
-                  </TableCell>
+                  {!hideStrategy && (
+                    <TableCell className="py-3 text-sm text-gray-600 text-center">
+                      <StrategyBadge value={tx.strategy} />
+                    </TableCell>
+                  )}
                   <TableCell className="py-3 text-sm font-medium tabular-nums text-gray-600 text-center">{fmt(tx.amount)}</TableCell>
                 </TableRow>
               ))}
@@ -545,7 +557,7 @@ function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
                 <TableCell className="py-3 text-sm font-bold text-card-text text-left">Total</TableCell>
                 <TableCell />
                 <TableCell />
-                <TableCell />
+                {!hideStrategy && <TableCell />}
                 <TableCell className="py-3 text-sm font-bold tabular-nums text-card-text text-center">
                   {fmt(rows.reduce((sum, r) => sum + r.amount, 0))}
                 </TableCell>
@@ -576,7 +588,7 @@ function EquityTransactionTable({ rows }: { rows: EquityTxRow[] }) {
 
 type CashTxRow = { date: string; transactionType: string; strategy: string; amount: number };
 
-function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
+function CashTransactionTable({ rows, hideStrategy = false }: { rows: CashTxRow[]; hideStrategy?: boolean }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(10);
   const [sortKey, setSortKey] = useState<keyof CashTxRow | null>(null);
@@ -625,7 +637,7 @@ function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
   const cols: { key: keyof CashTxRow; label: string; align: "left" | "center" }[] = [
     { key: "date", label: "Type", align: "left" },
     { key: "transactionType", label: "Date", align: "center" },
-    { key: "strategy", label: "Strategy", align: "center" },
+    ...(hideStrategy ? [] : [{ key: "strategy" as keyof CashTxRow, label: "Strategy", align: "center" as const }]),
     { key: "amount", label: "Amount (₹)", align: "center" },
   ];
 
@@ -674,9 +686,11 @@ function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
                 <TableRow key={i} className="border-b border-gray-200">
                   <TableCell className="py-3 text-sm font-medium text-card-text">{tx.date}</TableCell>
                   <TableCell className="py-3 text-sm text-gray-600 whitespace-nowrap text-center">{tx.transactionType}</TableCell>
-                  <TableCell className="py-3 text-sm text-gray-600 text-center">
-                    <StrategyBadge value={tx.strategy} />
-                  </TableCell>
+                  {!hideStrategy && (
+                    <TableCell className="py-3 text-sm text-gray-600 text-center">
+                      <StrategyBadge value={tx.strategy} />
+                    </TableCell>
+                  )}
                   <AmountCell value={tx.amount} />
                 </TableRow>
               ))}
@@ -685,7 +699,7 @@ function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
               <TableRow className="bg-[#E9E8DE] border-t-2 border-gray-300">
                 <TableCell className="py-3 text-sm font-bold text-card-text text-left">Total</TableCell>
                 <TableCell />
-                <TableCell />
+                {!hideStrategy && <TableCell />}
                 <TableCell className="py-3 text-sm font-bold tabular-nums text-card-text text-center">
                   {fmt(rows.reduce((sum, r) => sum + r.amount, 0))}
                 </TableCell>
@@ -716,7 +730,7 @@ function CashTransactionTable({ rows }: { rows: CashTxRow[] }) {
 
 type MfTxRow = { name: string; capitalFlow: string; date: string; strategy: string; amount: number };
 
-function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
+function MfTransactionTable({ rows, hideStrategy = false }: { rows: MfTxRow[]; hideStrategy?: boolean }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(10);
   const [sortKey, setSortKey] = useState<keyof MfTxRow | null>(null);
@@ -766,7 +780,7 @@ function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
     { key: "name", label: "Name", align: "left" },
     { key: "capitalFlow", label: "Capital Inflow", align: "center" },
     { key: "date", label: "Date", align: "center" },
-    { key: "strategy", label: "Strategy", align: "center" },
+    ...(hideStrategy ? [] : [{ key: "strategy" as keyof MfTxRow, label: "Strategy", align: "center" as const }]),
     { key: "amount", label: "Amount (₹)", align: "center" },
   ];
 
@@ -816,9 +830,11 @@ function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
                   <TableCell className="py-3 text-sm font-medium text-card-text">{tx.name}</TableCell>
                   <TableCell className="py-3 text-sm text-gray-600 text-center">{tx.capitalFlow}</TableCell>
                   <TableCell className="py-3 text-sm text-gray-600 whitespace-nowrap text-center">{tx.date}</TableCell>
-                  <TableCell className="py-3 text-sm text-gray-600 text-center">
-                    <StrategyBadge value={tx.strategy} />
-                  </TableCell>
+                  {!hideStrategy && (
+                    <TableCell className="py-3 text-sm text-gray-600 text-center">
+                      <StrategyBadge value={tx.strategy} />
+                    </TableCell>
+                  )}
                   <AmountCell value={tx.amount} />
                 </TableRow>
               ))}
@@ -828,7 +844,7 @@ function MfTransactionTable({ rows }: { rows: MfTxRow[] }) {
                 <TableCell className="py-3 text-sm font-bold text-card-text text-left">Total</TableCell>
                 <TableCell />
                 <TableCell />
-                <TableCell />
+                {!hideStrategy && <TableCell />}
                 <TableCell className="py-3 text-sm font-bold tabular-nums text-card-text text-center">
                   {fmt(rows.reduce((sum, r) => sum + r.amount, 0))}
                 </TableCell>
@@ -865,8 +881,11 @@ export default function InvestmentSummaryPage() {
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [selectedStrategy, setSelectedStrategy] = useState<string>("ALL");
+  const [activeTab, setActiveTab] = useState<string>("overview");
   // PMS account's live current exposure (₹). null = not applicable / failed.
   const [pmsAum, setPmsAum] = useState<number | null>(null);
+  // PMS account's live total profit (₹) — used in Profit Redeployment table.
+  const [pmsProfits, setPmsProfits] = useState<number | null>(null);
   // Gates the whole page render so the two PMS tables don't pop in after the
   // rest of the page has already rendered — starts true so we don't flash a
   // "loaded" page before we even know if this account needs the live fetch.
@@ -900,6 +919,7 @@ export default function InvestmentSummaryPage() {
   useEffect(() => {
     if (status !== "authenticated" || (!isSarla && !isSatidham && !isAshok)) {
       setPmsAum(null);
+      setPmsProfits(null);
       setLiveAllocationLoading(false);
       return;
     }
@@ -928,9 +948,11 @@ export default function InvestmentSummaryPage() {
       .then(async (res) => {
         if (!res.ok) return;
         const json: Record<string, SarlaSchemeResponse> = await res.json();
-        setPmsAum(parseFloat(json["Scheme PMS QAW"]?.data?.currentExposure || "0") || 0);
+        const scheme = json["Scheme PMS QAW"];
+        setPmsAum(parseFloat(scheme?.data?.currentExposure || "0") || 0);
+        setPmsProfits(parseFloat(scheme?.data?.totalProfit || "0") || 0);
       })
-      .catch(() => setPmsAum(null))
+      .catch(() => { setPmsAum(null); setPmsProfits(null); })
       .finally(() => setLiveAllocationLoading(false));
   }, [status, isSarla, isSatidham, isAshok]);
 
@@ -1037,30 +1059,54 @@ export default function InvestmentSummaryPage() {
 
   const activeTransactions = useMemo(() => {
     if (!data) return { equity: [], mf: [], cash: [] };
+    // For inactive strategies, transactions are stored under the base name (e.g. "QTF+")
+    const strategyMatch = isInactiveStrategy(selectedStrategy)
+      ? displayStrategyName(selectedStrategy)
+      : selectedStrategy;
     const filter = <T extends { strategy: string }>(arr: T[]) =>
       selectedStrategy === "ALL"
         ? arr
-        : arr.filter((r) => r.strategy === selectedStrategy);
+        : arr.filter((r) => r.strategy === strategyMatch);
     const onlyQye = <T extends { strategy: string }>(arr: T[]) =>
       arr.filter((r) => QYE_STRATEGIES.has(r.strategy));
-    const excludeInternalTransfer = (arr: CashTxRow[]) =>
-      arr.filter((r) => r.date.toLowerCase() !== "internal transfer");
+    // const excludeInternalTransfer = (arr: CashTxRow[]) =>
+    //   arr.filter((r) => !r.date.toLowerCase().includes("internal transfer"));
     return {
       equity: onlyQye(filter(data.equityTransactions)),
       mf: onlyQye(filter(data.mfTransactions)),
-      cash: excludeInternalTransfer(filter(data.cashTransactions)),
+      cash: filter(data.cashTransactions),
     };
   }, [data, selectedStrategy]);
 
   const activeProfitRedeployment = useMemo(() => {
     if (!data) return [];
-    if (selectedStrategy === "ALL") return withProfitRedeploymentOverrides(icode, data.profitRedeployment);
+    if (selectedStrategy === "ALL") {
+      const base = [...data.profitRedeployment];
+      if ((isSarla || isSatidham) && pmsProfits !== null && pmsProfits > 0) {
+        const pmsRow = { strategy: "Scheme PMS QAW", profits: pmsProfits, note: "PMS" };
+        const inactiveIdx = base.findIndex(
+          (r) => r.isHeader && r.strategy.toLowerCase().includes("inactive"),
+        );
+        if (inactiveIdx === -1) base.push(pmsRow);
+        else base.splice(inactiveIdx, 0, pmsRow);
+      }
+      return withSectionTotals(withProfitRedeploymentOverrides(icode, base));
+    }
     return data.profitRedeployment.filter((row) => {
       if (row.isHeader) return false;
       const norm = row.strategy.replace(/^Scheme\s+/i, "");
       return norm === selectedStrategy;
     });
-  }, [data, selectedStrategy, icode]);
+  }, [data, selectedStrategy, icode, isSarla, isSatidham, pmsProfits]);
+
+  const hasAnyTx =
+    activeTransactions.equity.length > 0 ||
+    activeTransactions.cash.length > 0 ||
+    activeTransactions.mf.length > 0;
+
+  useEffect(() => {
+    if (activeTab === "transactions" && !hasAnyTx) setActiveTab("overview");
+  }, [activeTab, hasAnyTx]);
 
   // Generated client-side (same "hidden iframe + window.print()" pattern used
   // in app/holding-summary/page.tsx) instead of fetching the backend-rendered
@@ -1134,18 +1180,24 @@ export default function InvestmentSummaryPage() {
   const hasEquityTx = activeTransactions.equity.length > 0;
   const hasCashTx = activeTransactions.cash.length > 0;
   const hasMfTx = activeTransactions.mf.length > 0;
-  const hasAnyTx = hasEquityTx || hasCashTx || hasMfTx;
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <Tabs defaultValue="overview">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           {/* Header — matches holding-summary layout */}
           <div className="flex justify-between items-start">
             <div className="space-y-2">
               <h1 className="text-2xl font-semibold text-card-text-secondary font-heading">
                 Investment Summary
-                {selectedStrategy !== "ALL" && ` — Scheme ${selectedStrategy}`}
+                {selectedStrategy !== "ALL" && (
+                  <>
+                    {` — Scheme ${displayStrategyName(selectedStrategy)}`}
+                    {isInactiveStrategy(selectedStrategy) && (
+                      <Badge variant="secondary" className="ml-2 text-xs align-middle">Inactive</Badge>
+                    )}
+                  </>
+                )}
               </h1>
               <p className="text-gray-600 dark:text-gray-400">
                 {data.clientName}
@@ -1199,8 +1251,13 @@ export default function InvestmentSummaryPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">Total Portfolio</SelectItem>
-                  {data.strategies.map((s) => (
-                    <SelectItem key={s} value={s}>Scheme {s}</SelectItem>
+                  {[...data.strategies].sort((a, b) => {
+                    if (isInactiveStrategy(a) !== isInactiveStrategy(b)) return isInactiveStrategy(a) ? 1 : -1;
+                    return a.localeCompare(b);
+                  }).map((s) => (
+                    <SelectItem key={s} value={s}>
+                      Scheme {displayStrategyName(s)}{isInactiveStrategy(s) ? " (Inactive)" : ""}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1209,7 +1266,11 @@ export default function InvestmentSummaryPage() {
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="mt-4 space-y-4">
-            {activeSummary.amountInvested.total === 0 ? (
+            {activeSummary.amountInvested.total === 0 &&
+             activeSummary.cashInvestmentSummary.totalCashAdded === 0 &&
+             activeSummary.cashInvestmentSummary.profitsAndCapitalWithdrawn === 0 &&
+             activeSummary.holdingsInvestmentSummary.totalHoldingsAdded === 0 &&
+             activeSummary.holdingsInvestmentSummary.totalHoldingsWithdrawn === 0 ? (
               <div className="flex items-center justify-center min-h-[200px] text-card-text-secondary text-sm">
                 No investment summary data available for this account.
               </div>
@@ -1464,15 +1525,19 @@ export default function InvestmentSummaryPage() {
                 </CardContent>
               </Card>
             )}
+            {isInactiveStrategy(selectedStrategy) && (
+              <p className="text-card-text-secondary text-sm">As the scheme is currently inactive, no data is available for the current account summary.</p>
+            )}
           </TabsContent>
           {/* Transactions Tab */}
-          {hasAnyTx && (
-            <TabsContent value="transactions" className="mt-4 space-y-4">
-              {hasEquityTx && <EquityTransactionTable rows={activeTransactions.equity} />}
-              {hasCashTx && <CashTransactionTable rows={activeTransactions.cash} />}
-              {hasMfTx && <MfTransactionTable rows={activeTransactions.mf} />}
-            </TabsContent>
-          )}
+          <TabsContent value="transactions" className="mt-4 space-y-4">
+            {hasCashTx && <CashTransactionTable rows={activeTransactions.cash} hideStrategy={isSarla || isSatidham || isAshok} />}
+            {hasEquityTx && <EquityTransactionTable rows={activeTransactions.equity} hideStrategy={isSarla || isSatidham || isAshok} />}
+            {hasMfTx && <MfTransactionTable rows={activeTransactions.mf} hideStrategy={isSarla || isSatidham || isAshok} />}
+            {isInactiveStrategy(selectedStrategy) && (
+              <p className="text-card-text-secondary text-sm">As the scheme is currently inactive, no data is available for the current account summary.</p>
+            )}
+          </TabsContent>
         </Tabs>
       </div>
     </DashboardLayout>

@@ -481,6 +481,10 @@ const STRATEGY_SHEET_PREFIXES = [
   "Acct Summary ",
 ];
 
+function isInactiveStrategy(s: string): boolean {
+  return /\(inactive\)/i.test(s);
+}
+
 function detectStrategies(wb: XLSX.WorkBook): string[] {
   const counts = new Map<string, number>();
   for (const name of wb.SheetNames) {
@@ -492,7 +496,7 @@ function detectStrategies(wb: XLSX.WorkBook): string[] {
     }
   }
   return [...counts.entries()]
-    .filter(([, count]) => count >= 2)
+    .filter(([s, count]) => count >= (isInactiveStrategy(s) ? 1 : 2))
     .map(([s]) => s)
     .sort();
 }
