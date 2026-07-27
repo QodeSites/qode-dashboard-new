@@ -18,6 +18,7 @@ export async function POST(req: Request) {
       amount: body.amount,
       equity_pct: body.equity_pct,
       cash_pct: body.cash_pct,
+      liquidcase_pct: body.liquidcase_pct,
     });
     return NextResponse.json(result);
   } catch (e: any) {
