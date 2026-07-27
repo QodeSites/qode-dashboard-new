@@ -2039,3 +2039,541 @@ export async function fetchSystemTags(
 
   return rows.map((r) => r.system_tag);
 }
+
+// ── Cash & Margin: Snapshot ──────────────────────────────────────────────────
+
+// account_value uses the profit tag, not exposure — §2.2/§13 of the formula
+// notes: for QYE++ these are two different tags (Total Portfolio Value vs
+// Zerodha Total Portfolio) that diverge whenever F&O positions are open.
+// P1/P2/P3 all key off the profit tag; Account Value Breakup's exposure-tag
+// choice serves a different purpose and doesn't apply here.
+export interface CashMarginSnapshotRow {
+  qcode: string;
+  account_name: string;
+  strategy: string;
+  account_value: number;
+  gold: number;
+  momentum: number;
+  lowvol: number;
+  mutual_funds: number;
+  holdings: number; // gold+momentum+lowvol, or mutual_funds — whichever the strategy uses
+  has_equity_split: boolean; // true = gold/momentum/lowvol split applies
+  liquidcase: number;
+  cash: number;
+  cash_plus_liquidcase: number;
+  excess_cash: number;
+  excess_cash_pct: number;
+  cash_drift: number | null; // actual cash% - target cash%
+  holdings_drift: number | null; // actual holdings% - target equity%
+  cash_component_drift: number | null; // actual (cash+lc)% - target (1-equity%)
+}
+
+export interface CashMarginSnapshotResult {
+  strategies: CashMarginSnapshotRow[];
+  combined: CashMarginSnapshotRow | null; // drift fields null — no single target spans strategies with different ratios
+}
+
+// excess cash = (cash+liquidcase) - (holdings/idealHoldings% - holdings), §8.2/§10.2
+function calcExcessCash(
+  holdings: number,
+  cashPlusLc: number,
+  equityPct: number | null,
+): number {
+  if (!equityPct) return cashPlusLc; // no target set — nothing required to hold back
+  const requiredBuffer = holdings / equityPct - holdings;
+  return cashPlusLc - requiredBuffer;
+}
+
+// single DB round-trip for both the snapshot and the withdrawal targets —
+// computeCashMarginWithdrawal reuses this instead of each fetching separately
+async function fetchCashMarginContext(qcode: string): Promise<{
+  pairs: StrategyPair[];
+  valueMap: Map<string, number>;
+  splitMap: Map<string, SplitConfig>;
+}> {
+  const today = new Date().toISOString().split("T")[0];
+  const allPairs = await fetchStrategyPairs("profit_tag_suffix");
+  const pairs = allPairs.filter(
+    (p) => p.qcode === qcode && isActive(p.effective_to, today),
+  );
+  if (pairs.length === 0) {
+    return { pairs, valueMap: new Map(), splitMap: new Map() };
+  }
+  const [valueMap, splitMap] = await Promise.all([
+    fetchLatestTagValues(pairs),
+    resolveSplitConfigs(pairs),
+  ]);
+  return { pairs, valueMap, splitMap };
+}
+
+// pure — no DB access, safe to call again on an already-fetched context
+function buildCashMarginSnapshot(
+  qcode: string,
+  pairs: StrategyPair[],
+  valueMap: Map<string, number>,
+  splitMap: Map<string, SplitConfig>,
+): CashMarginSnapshotResult {
+  const strategies: CashMarginSnapshotRow[] = [];
+  for (const pair of pairs) {
+    const account_value = valueMap.get(`${pair.qcode}|${pair.tag}`) ?? 0;
+    if (account_value === 0) continue; // no data — nothing to report
+
+    const split = splitMap.get(`${pair.qcode}|${pair.strategy}`)!;
+    const mutual_funds =
+      valueMap.get(`${pair.qcode}|${pair.strategy} Mutual Funds`) ?? 0;
+    const gold =
+      valueMap.get(`${pair.qcode}|${pair.strategy} Gold Stock Holdings`) ?? 0;
+    const momentum =
+      valueMap.get(`${pair.qcode}|${pair.strategy} Momentum Stock Holdings`) ??
+      0;
+    const lowvol =
+      valueMap.get(`${pair.qcode}|${pair.strategy} Low Vol Stock Holdings`) ??
+      0;
+    // same eligibility rule as computeAccountValueBreakup — gated on resolved
+    // config, never a strategy-name check
+    const has_equity_split = split.gold_pct != null;
+    const holdings = has_equity_split ? gold + momentum + lowvol : mutual_funds;
+
+    const liquidcase =
+      valueMap.get(
+        `${pair.qcode}|${pair.strategy} Liquidcase Stock Holdings`,
+      ) ?? 0;
+    const cash = account_value - holdings - liquidcase;
+    const cash_plus_liquidcase = cash + liquidcase;
+
+    const excess_cash = calcExcessCash(
+      holdings,
+      cash_plus_liquidcase,
+      split.equity_pct,
+    );
+
+    const cashPctActual = cash / account_value;
+    const holdingsPctActual = holdings / account_value;
+    const cashLcPctActual = cash_plus_liquidcase / account_value;
+
+    strategies.push({
+      qcode: pair.qcode,
+      account_name: pair.account_name,
+      strategy: pair.strategy,
+      account_value,
+      gold,
+      momentum,
+      lowvol,
+      mutual_funds,
+      holdings,
+      has_equity_split,
+      liquidcase,
+      cash,
+      cash_plus_liquidcase,
+      excess_cash: round(excess_cash, 2)!,
+      excess_cash_pct: round(excess_cash / account_value, 4)!,
+      cash_drift:
+        split.cash_pct != null
+          ? round(cashPctActual - split.cash_pct, 4)
+          : null,
+      holdings_drift:
+        split.equity_pct != null
+          ? round(holdingsPctActual - split.equity_pct, 4)
+          : null,
+      cash_component_drift:
+        split.equity_pct != null
+          ? round(cashLcPctActual - (1 - split.equity_pct), 4)
+          : null,
+    });
+  }
+
+  if (strategies.length === 0) return { strategies: [], combined: null };
+
+  const sum = (f: (r: CashMarginSnapshotRow) => number) =>
+    strategies.reduce((s, r) => s + f(r), 0);
+  const combinedAv = sum((r) => r.account_value);
+  const combinedExcess = sum((r) => r.excess_cash);
+
+  // Combined has no single target ratio to drift against when strategies carry
+  // different equity_pct targets, so drift fields stay null on this row —
+  // blending them would be inventing a business rule nobody's specified.
+  const combined: CashMarginSnapshotRow = {
+    qcode,
+    account_name: strategies[0].account_name,
+    strategy: "combined",
+    account_value: combinedAv,
+    gold: sum((r) => r.gold),
+    momentum: sum((r) => r.momentum),
+    lowvol: sum((r) => r.lowvol),
+    mutual_funds: sum((r) => r.mutual_funds),
+    holdings: sum((r) => r.holdings),
+    has_equity_split: strategies.some((r) => r.has_equity_split),
+    liquidcase: sum((r) => r.liquidcase),
+    cash: sum((r) => r.cash),
+    cash_plus_liquidcase: sum((r) => r.cash_plus_liquidcase),
+    excess_cash: round(combinedExcess, 2)!,
+    excess_cash_pct:
+      combinedAv > 0 ? round(combinedExcess / combinedAv, 4)! : 0,
+    cash_drift: null,
+    holdings_drift: null,
+    cash_component_drift: null,
+  };
+
+  return { strategies, combined };
+}
+
+// standalone entry point — fetches its own context, for callers that only
+// need the snapshot (e.g. a future read-only P1-style listing)
+export async function fetchCashMarginSnapshot(
+  qcode: string,
+): Promise<CashMarginSnapshotResult> {
+  const { pairs, valueMap, splitMap } = await fetchCashMarginContext(qcode);
+  if (pairs.length === 0) return { strategies: [], combined: null };
+  return buildCashMarginSnapshot(qcode, pairs, valueMap, splitMap);
+}
+
+// ── Cash & Margin: Withdrawal ────────────────────────────────────────────────
+
+export interface WithdrawalTargets {
+  equity_pct: number;
+  cash_pct: number;
+}
+
+// payload override → already-resolved SplitConfig. Pure — no DB access, since
+// the caller already has SplitConfig from fetchCashMarginContext; lc_pct isn't
+// separately resolved, §10.1 defines it as 1 - equity_pct - cash_pct.
+function mergeWithdrawalTargets(
+  split: SplitConfig,
+  equityPctOverride?: number,
+  cashPctOverride?: number,
+): WithdrawalTargets {
+  const equity_pct = equityPctOverride ?? split.equity_pct;
+  const cash_pct = cashPctOverride ?? split.cash_pct;
+  if (equity_pct == null || cash_pct == null) {
+    throw new Error("equity_pct/cash_pct not configured for this strategy");
+  }
+  return { equity_pct, cash_pct };
+}
+
+interface WaterfallResult {
+  cashWithdrawn: number;
+  liquidcaseSold: number;
+  newCash: number;
+  newLiquidcase: number;
+  newAccountValue: number;
+  totalWithdrawn: number; // may be less than requested — see waterfallCapped
+  waterfallCapped: boolean; // true if the request exceeded the physical Cash+Liquidcase ceiling
+}
+
+// cash-first-then-liquidcase waterfall, §10.3 L35-L49. Also self-corrects a
+// pre-existing floor breach: if Cash is already below the floor even with
+// totalToWithdraw = 0, the algebra below still sells enough Liquidcase to
+// bring Cash back up to the floor first — matches "bring cash back to the
+// minimum threshold" before anything else.
+//
+// Hard ceiling, enforced here rather than trusted from the caller: no matter
+// what's requested, this can never sell more Liquidcase than exists or push
+// Cash below the floor. Ceiling = max amount extractable from Cash+Liquidcase
+// while keeping Cash at exactly the floor and never touching Holdings —
+// centralizing it here means every caller gets the guarantee automatically.
+function withdrawFromLiquidBuffer(
+  row: CashMarginSnapshotRow,
+  minCashPct: number,
+  requestedTotal: number,
+): WaterfallResult {
+  const hardCeiling = Math.max(
+    0,
+    (row.cash + row.liquidcase - minCashPct * row.account_value) /
+      (1 - minCashPct),
+  );
+  const totalToWithdraw = Math.min(requestedTotal, hardCeiling);
+  const waterfallCapped = requestedTotal > hardCeiling;
+
+  const newAccountValue = row.account_value - totalToWithdraw;
+  const requiredCashAfter = newAccountValue * minCashPct;
+  const cashOnlyCapacity = Math.max(
+    0,
+    (row.cash - requiredCashAfter) / (1 - minCashPct),
+  );
+
+  const cashWithdrawn = Math.min(totalToWithdraw, cashOnlyCapacity);
+  const liquidcaseSold = Math.max(
+    0,
+    Math.min(row.liquidcase, totalToWithdraw - row.cash + requiredCashAfter),
+  );
+
+  return {
+    cashWithdrawn,
+    liquidcaseSold,
+    newCash: row.cash + liquidcaseSold - totalToWithdraw,
+    newLiquidcase: row.liquidcase - liquidcaseSold,
+    newAccountValue,
+    totalWithdrawn: totalToWithdraw,
+    waterfallCapped,
+  };
+}
+
+export interface WithdrawalSleeve {
+  particular: string;
+  current: number;
+  withdrawal: number; // negative = amount removed
+  new_value: number;
+  new_pct: number;
+}
+
+export interface WithdrawalResult {
+  method: "excess_cash" | "cash_only" | "proportional_exposure";
+  strategy: string;
+  requested_amount: number | null;
+  withdrawn_amount: number;
+  capped: boolean; // true if the request exceeded what this method can support
+  sleeves: WithdrawalSleeve[];
+  new_account_value: number;
+  new_cash_pct: number;
+  status: string;
+}
+
+function buildLiquidOnlySleeves(
+  row: CashMarginSnapshotRow,
+  wf: WaterfallResult,
+): WithdrawalSleeve[] {
+  const holdingsPct =
+    wf.newAccountValue > 0 ? row.holdings / wf.newAccountValue : 0;
+  return [
+    {
+      particular: "Holdings",
+      current: row.holdings,
+      withdrawal: 0, // never touched — excess_cash and cash_only both stop at Liquidcase
+      new_value: row.holdings,
+      new_pct: round(holdingsPct, 4)!,
+    },
+    {
+      particular: "Liquidcase",
+      current: row.liquidcase,
+      withdrawal: round(-wf.liquidcaseSold, 2)!,
+      new_value: wf.newLiquidcase,
+      new_pct:
+        wf.newAccountValue > 0
+          ? round(wf.newLiquidcase / wf.newAccountValue, 4)!
+          : 0,
+    },
+    {
+      particular: "Cash",
+      current: row.cash,
+      withdrawal: round(-wf.cashWithdrawn, 2)!,
+      new_value: wf.newCash,
+      new_pct:
+        wf.newAccountValue > 0 ? round(wf.newCash / wf.newAccountValue, 4)! : 0,
+    },
+  ];
+}
+
+// SCENARIO W-1 — always computable, amount optional (omit = withdraw full excess)
+export function computeExcessCashWithdrawal(
+  row: CashMarginSnapshotRow,
+  targets: WithdrawalTargets,
+  requestedAmount?: number,
+): WithdrawalResult {
+  const available = Math.max(0, row.excess_cash);
+  const requestedTotal =
+    requestedAmount != null ? Math.min(requestedAmount, available) : available;
+
+  const wf = withdrawFromLiquidBuffer(row, targets.cash_pct, requestedTotal);
+  const capped =
+    (requestedAmount != null && requestedAmount > available) ||
+    wf.waterfallCapped;
+  const newCashPct =
+    wf.newAccountValue > 0 ? round(wf.newCash / wf.newAccountValue, 4)! : 0;
+
+  return {
+    method: "excess_cash",
+    strategy: row.strategy,
+    requested_amount: requestedAmount ?? null,
+    withdrawn_amount: round(wf.totalWithdrawn, 2)!,
+    capped,
+    sleeves: buildLiquidOnlySleeves(row, wf),
+    new_account_value: wf.newAccountValue,
+    new_cash_pct: newCashPct,
+    status:
+      wf.totalWithdrawn === 0
+        ? wf.liquidcaseSold > 0
+          ? "No excess cash — liquidcase sold to restore cash floor"
+          : "No excess cash"
+        : wf.liquidcaseSold > 0
+          ? "Liquidcase sold to hold cash at floor"
+          : "Withdrawn from cash",
+  };
+}
+
+// SCENARIO W-2a — "Withdraw from Cash": same waterfall, capped at the max the
+// Cash+Liquidcase pool can support while keeping Cash at the floor — Holdings
+// is never touched. The ceiling itself now lives inside withdrawFromLiquidBuffer,
+// so this just passes the raw request through and reads back what happened.
+export function computeCashOnlyWithdrawal(
+  row: CashMarginSnapshotRow,
+  targets: WithdrawalTargets,
+  requestedAmount: number,
+): WithdrawalResult {
+  const wf = withdrawFromLiquidBuffer(row, targets.cash_pct, requestedAmount);
+  const newCashPct =
+    wf.newAccountValue > 0 ? round(wf.newCash / wf.newAccountValue, 4)! : 0;
+
+  return {
+    method: "cash_only",
+    strategy: row.strategy,
+    requested_amount: requestedAmount,
+    withdrawn_amount: round(wf.totalWithdrawn, 2)!,
+    capped: wf.waterfallCapped,
+    sleeves: buildLiquidOnlySleeves(row, wf),
+    new_account_value: wf.newAccountValue,
+    new_cash_pct: newCashPct,
+    status:
+      wf.totalWithdrawn === 0 && requestedAmount > 0
+        ? "Not possible — no liquid buffer available without touching Holdings"
+        : wf.waterfallCapped
+          ? "Not fully possible — capped at Cash + Liquidcase capacity"
+          : wf.liquidcaseSold > 0
+            ? "Liquidcase sold to cover the remainder"
+            : "Fully covered by cash",
+  };
+}
+
+// SCENARIO W-2b — "Reduce Exposure": Step 1 = full excess cash via the same
+// waterfall, Step 2 = remainder split proportionally across every sleeve
+// (Holdings included) at post-Step-1 ratios, §10.4.
+export function computeProportionalWithdrawal(
+  row: CashMarginSnapshotRow,
+  targets: WithdrawalTargets,
+  requestedAmount: number,
+): WithdrawalResult {
+  const step1Requested = Math.min(
+    requestedAmount,
+    Math.max(0, row.excess_cash),
+  );
+  const step1 = withdrawFromLiquidBuffer(row, targets.cash_pct, step1Requested);
+  const step1Amount = step1.totalWithdrawn; // actual, post-ceiling — may be < step1Requested
+  const step2Requested = requestedAmount - step1Amount;
+  const capped =
+    step2Requested > step1.newAccountValue || step1.waterfallCapped;
+  const step2Amount = Math.max(
+    0,
+    Math.min(step2Requested, step1.newAccountValue),
+  );
+  const postStep1Av = step1.newAccountValue;
+
+  const holdingSleeves = row.has_equity_split
+    ? [
+        { particular: "Gold", current: row.gold },
+        { particular: "Momentum", current: row.momentum },
+        { particular: "Low Vol", current: row.lowvol },
+      ]
+    : [{ particular: "Mutual Funds", current: row.mutual_funds }];
+  const liquidSleeves = [
+    { particular: "Liquidcase", current: step1.newLiquidcase },
+    { particular: "Cash", current: step1.newCash },
+  ];
+
+  const newAccountValue = postStep1Av - step2Amount;
+  const sleeves: WithdrawalSleeve[] = [...holdingSleeves, ...liquidSleeves].map(
+    (s) => {
+      const share = postStep1Av > 0 ? s.current / postStep1Av : 0;
+      const withdrawal = step2Amount * share;
+      const new_value = s.current - withdrawal;
+      return {
+        particular: s.particular,
+        current: s.current,
+        withdrawal: round(-withdrawal, 2)!,
+        new_value: round(new_value, 2)!,
+        new_pct:
+          newAccountValue > 0 ? round(new_value / newAccountValue, 4)! : 0,
+      };
+    },
+  );
+
+  const newCashSleeve = sleeves.find((s) => s.particular === "Cash")!;
+  return {
+    method: "proportional_exposure",
+    strategy: row.strategy,
+    requested_amount: requestedAmount,
+    withdrawn_amount: round(step1Amount + step2Amount, 2)!,
+    capped,
+    sleeves,
+    new_account_value: newAccountValue,
+    new_cash_pct:
+      newAccountValue > 0
+        ? round(newCashSleeve.new_value / newAccountValue, 4)!
+        : 0,
+    status:
+      step1Amount === 0 && step2Amount === 0
+        ? "Not possible — nothing available to withdraw"
+        : capped
+          ? `Not fully possible — capped at ₹${round(step1Amount + step2Amount, 0)} of ₹${round(requestedAmount, 0)} requested`
+          : `Step1 (excess): ₹${round(step1Amount, 0)} | Step2 (proportional): ₹${round(step2Amount, 0)}`,
+  };
+}
+
+// ── Cash & Margin: Withdrawal endpoint orchestration ─────────────────────────
+// Deploy (D-1/D-2) is a separate, independent endpoint — not built yet, per
+// "implement Withdrawal first, Deploy once the numbers are verified."
+
+export interface CashMarginWithdrawalInput {
+  qcode: string;
+  strategy?: string;
+  amount?: number;
+  equity_pct?: number;
+  cash_pct?: number;
+}
+
+export interface CashMarginWithdrawalResult {
+  snapshot: CashMarginSnapshotResult;
+  withdrawal: {
+    excess_cash: WithdrawalResult | null;
+    cash_only: WithdrawalResult | null;
+    proportional_exposure: WithdrawalResult | null;
+  } | null;
+}
+
+export async function computeCashMarginWithdrawal(
+  input: CashMarginWithdrawalInput,
+): Promise<CashMarginWithdrawalResult> {
+  const { pairs, valueMap, splitMap } = await fetchCashMarginContext(
+    input.qcode,
+  );
+  const snapshot =
+    pairs.length === 0
+      ? { strategies: [], combined: null }
+      : buildCashMarginSnapshot(input.qcode, pairs, valueMap, splitMap);
+
+  if (!input.strategy) {
+    return { snapshot, withdrawal: null };
+  }
+
+  const row = snapshot.strategies.find((r) => r.strategy === input.strategy);
+  if (!row) {
+    throw new Error(
+      `No active strategy '${input.strategy}' found for ${input.qcode}`,
+    );
+  }
+
+  const split = splitMap.get(`${input.qcode}|${input.strategy}`);
+  if (!split) {
+    throw new Error(
+      `No client-strategy config found for ${input.qcode} / ${input.strategy}`,
+    );
+  }
+  const targets = mergeWithdrawalTargets(
+    split,
+    input.equity_pct,
+    input.cash_pct,
+  );
+
+  return {
+    snapshot,
+    withdrawal: {
+      excess_cash: computeExcessCashWithdrawal(row, targets, input.amount),
+      cash_only:
+        input.amount != null
+          ? computeCashOnlyWithdrawal(row, targets, input.amount)
+          : null,
+      proportional_exposure:
+        input.amount != null
+          ? computeProportionalWithdrawal(row, targets, input.amount)
+          : null,
+    },
+  };
+}
