@@ -22,6 +22,42 @@ export const PROFIT_REDEPLOYMENT_OVERRIDES: Record<string, ProfitRedeploymentRow
   ],
 };
 
+// Inserts a computed subtotal row after each section's data rows and a grand
+// total at the end. Strips any pre-existing isTotal rows (they're stale once
+// live PMS figures are injected). Sections are delimited by isHeader rows;
+// rows before the first header form an implicit "active" section.
+export function withSectionTotals(rows: ProfitRedeploymentRow[]): ProfitRedeploymentRow[] {
+  const result: ProfitRedeploymentRow[] = [];
+  let sectionRows: ProfitRedeploymentRow[] = [];
+  let lastHeader: string | null = null;
+  let grandTotal = 0;
+
+  const flushSection = () => {
+    if (sectionRows.length === 0) return;
+    const total = sectionRows.reduce((s, r) => s + (r.profits || 0), 0);
+    grandTotal += total;
+    const isInactive = lastHeader !== null && lastHeader.toLowerCase().includes("inactive");
+    result.push({ strategy: isInactive ? "Inactive Total" : "Active Total", profits: total, note: "", isTotal: true });
+    sectionRows = [];
+  };
+
+  for (const row of rows) {
+    if (row.isTotal) continue;
+    if (row.isHeader) {
+      flushSection();
+      lastHeader = row.strategy;
+      result.push(row);
+    } else {
+      result.push(row);
+      sectionRows.push(row);
+    }
+  }
+  flushSection();
+
+  result.push({ strategy: "Grand Total", profits: grandTotal, note: "", isTotal: true });
+  return result;
+}
+
 // Appends this icode's hardcoded rows after the xlsx-parsed rows (with a
 // divider row between them) — shows both sources rather than replacing one
 // with the other. Returns excelRows unchanged if the icode has no override.
