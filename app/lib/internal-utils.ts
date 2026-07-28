@@ -2070,7 +2070,6 @@ export async function fetchSystemTags(
 // Total Portfolio Value) that diverge whenever F&O positions are open, so
 // Withdrawal's Account Value will differ from Portfolio Review's in that case.
 export interface CashMarginSnapshotRow {
-  qcode: string;
   account_name: string;
   strategy: string;
   account_value: number;
@@ -2078,47 +2077,43 @@ export interface CashMarginSnapshotRow {
   momentum: number;
   lowvol: number;
   mutual_funds: number;
-  holdings: number; // gold+momentum+lowvol, or mutual_funds — whichever the strategy uses
-  has_equity_split: boolean; // true = gold/momentum/lowvol split applies
+  holdings: number; // gold+momentum+lowvol, or mutual_funds
+  has_equity_split: boolean;
   liquidcase: number;
   cash: number;
   cash_plus_liquidcase: number;
   excess_cash: number;
   excess_cash_pct: number;
-  cash_drift: number | null; // actual cash% - target cash%
-  holdings_drift: number | null; // actual holdings% - target equity%
-  cash_component_drift: number | null; // actual (cash+lc)% - target (1-equity%)
-  snapshot_below_floor: boolean | null; // §2 — (cash+lc) < target cash_pct × account_value. null on Combined (no single target)
+  cash_drift: number | null;
+  holdings_drift: number | null;
+  cash_component_drift: number | null;
+  snapshot_below_floor: boolean | null; // §2 — null on Combined, no single target
 }
 
 export interface CashMarginSnapshotResult {
   strategies: CashMarginSnapshotRow[];
-  combined: CashMarginSnapshotRow | null; // drift fields null — no single target spans strategies with different ratios
+  combined: CashMarginSnapshotRow | null; // drift fields null — no single target across strategies
 }
 
-// excess cash = (cash+liquidcase) - (holdings/idealHoldings% - holdings), §8.2/§10.2
+// §8.2/§10.2
 function calcExcessCash(
   holdings: number,
   cashPlusLc: number,
   equityPct: number | null,
 ): number {
-  if (!equityPct) return cashPlusLc; // no target set — nothing required to hold back
+  if (!equityPct) return cashPlusLc;
   const requiredBuffer = holdings / equityPct - holdings;
   return cashPlusLc - requiredBuffer;
 }
 
-// single DB round-trip for both the snapshot and the withdrawal targets —
-// computeCashMarginWithdrawal reuses this instead of each fetching separately
+// one DB round-trip shared by the snapshot and withdrawal targets
 async function fetchCashMarginContext(qcode: string): Promise<{
   pairs: StrategyPair[];
   valueMap: Map<string, number>;
   splitMap: Map<string, SplitConfig>;
 }> {
   const today = new Date().toISOString().split("T")[0];
-  // Exposure Tag, not Profit Tag — deliberate departure from the formula
-  // notes' §5.3/§8.2/§9.2/§10.2 convention, which use Profit Tag for
-  // Account Value everywhere else (P1/P2/P3). Diverges from Portfolio
-  // Review's numbers specifically for QYE++ whenever F&O positions are open.
+  // Exposure Tag, not Profit Tag — deliberate; diverges from Portfolio Review for QYE++ with open F&O
   const allPairs = await fetchStrategyPairs("exposure_tag_suffix");
   const pairs = allPairs.filter(
     (p) => p.qcode === qcode && isActive(p.effective_to, today),
@@ -2133,9 +2128,7 @@ async function fetchCashMarginContext(qcode: string): Promise<{
   return { pairs, valueMap, splitMap };
 }
 
-// pure — no DB access, safe to call again on an already-fetched context
 function buildCashMarginSnapshot(
-  qcode: string,
   pairs: StrategyPair[],
   valueMap: Map<string, number>,
   splitMap: Map<string, SplitConfig>,
@@ -2143,7 +2136,7 @@ function buildCashMarginSnapshot(
   const strategies: CashMarginSnapshotRow[] = [];
   for (const pair of pairs) {
     const account_value = valueMap.get(`${pair.qcode}|${pair.tag}`) ?? 0;
-    if (account_value === 0) continue; // no data — nothing to report
+    if (account_value === 0) continue;
 
     const split = splitMap.get(`${pair.qcode}|${pair.strategy}`)!;
     const mutual_funds =
@@ -2156,8 +2149,7 @@ function buildCashMarginSnapshot(
     const lowvol =
       valueMap.get(`${pair.qcode}|${pair.strategy} Low Vol Stock Holdings`) ??
       0;
-    // same eligibility rule as computeAccountValueBreakup — gated on resolved
-    // config, never a strategy-name check
+    // gated on resolved config, never a strategy-name check
     const has_equity_split = split.gold_pct != null;
     const holdings = has_equity_split ? gold + momentum + lowvol : mutual_funds;
 
@@ -2179,7 +2171,6 @@ function buildCashMarginSnapshot(
     const cashLcPctActual = cash_plus_liquidcase / account_value;
 
     strategies.push({
-      qcode: pair.qcode,
       account_name: pair.account_name,
       strategy: pair.strategy,
       account_value,
@@ -2220,12 +2211,7 @@ function buildCashMarginSnapshot(
   const combinedAv = sum((r) => r.account_value);
   const combinedExcess = sum((r) => r.excess_cash);
 
-  // Combined has no single target ratio to drift against (or block against)
-  // when strategies carry different equity_pct/cash_pct targets, so drift
-  // and snapshot_below_floor stay null on this row — blending them would be
-  // inventing a business rule nobody's specified.
   const combined: CashMarginSnapshotRow = {
-    qcode,
     account_name: strategies[0].account_name,
     strategy: "combined",
     account_value: combinedAv,
@@ -2250,14 +2236,12 @@ function buildCashMarginSnapshot(
   return { strategies, combined };
 }
 
-// standalone entry point — fetches its own context, for callers that only
-// need the snapshot (e.g. a future read-only P1-style listing)
 export async function fetchCashMarginSnapshot(
   qcode: string,
 ): Promise<CashMarginSnapshotResult> {
   const { pairs, valueMap, splitMap } = await fetchCashMarginContext(qcode);
   if (pairs.length === 0) return { strategies: [], combined: null };
-  return buildCashMarginSnapshot(qcode, pairs, valueMap, splitMap);
+  return buildCashMarginSnapshot(pairs, valueMap, splitMap);
 }
 
 // ── Cash & Margin: Withdrawal ────────────────────────────────────────────────
@@ -2459,27 +2443,16 @@ export interface WithdrawalSleeve {
 }
 
 export interface WithdrawalResult {
-  method:
-    | "excess_cash"
-    | "reduce_holdings_model"
-    | "reduce_holdings_current"
-    | "withdraw_cash_proportional_model"
-    | "withdraw_cash_proportional_current"
-    | "withdraw_cash_snapped_model"
-    | "withdraw_cash_snapped_current";
-  strategy: string;
-  requested_amount: number | null;
   withdrawn_amount: number;
-  capped: boolean; // true if the request exceeded what this method can support
+  capped: boolean; // exceeded what this method can support
   sleeves: WithdrawalSleeve[];
   new_account_value: number;
   new_cash_pct: number;
   floor_restored: boolean;
-  breaches_threshold: boolean;
   threshold_breached: "cash" | "liquidcase" | "holdings_capacity" | null;
   projected_value_pct: number | null;
   threshold_pct: number | null;
-  message: string | null; // descriptive text — set whenever breaches_threshold is true
+  message: string | null;
   status: string;
 }
 
@@ -2495,7 +2468,7 @@ function buildLiquidOnlySleeves(
     {
       particular: "Holdings",
       current: holdings,
-      withdrawal: 0, // never touched — excess_cash and the "within excess cash" collapse case both stop at Liquidcase
+      withdrawal: 0, // never touched — stops at Liquidcase
       new_value: holdings,
       new_pct: round(holdingsPct, 4)!,
     },
@@ -2520,10 +2493,8 @@ function buildLiquidOnlySleeves(
   ];
 }
 
-// SCENARIO 1 / 2a — Excess Cash Withdrawal. Always computable, amount optional
-// (omit = withdraw full excess; ≤ excess = Case 2a, fully funded, Holdings
-// untouched either way). §6 status logic keyed off withdrawn=0 vs >0 and
-// floor_restored.
+// §1/§6 — full excess cash if no amount given, else capped at it. Status keyed
+// off withdrawn=0 vs >0 and floor_restored.
 export function computeExcessCashWithdrawal(
   row: CashMarginSnapshotRow,
   targets: WithdrawalTargets,
@@ -2562,9 +2533,6 @@ export function computeExcessCashWithdrawal(
   return {
     wf,
     result: {
-      method: "excess_cash",
-      strategy: row.strategy,
-      requested_amount: requestedAmount ?? null,
       withdrawn_amount: round(wf.totalWithdrawn, 2)!,
       capped,
       sleeves: buildLiquidOnlySleeves(
@@ -2576,7 +2544,6 @@ export function computeExcessCashWithdrawal(
       new_account_value: wf.newAccountValue,
       new_cash_pct: newCashPct,
       floor_restored: wf.floor_restored,
-      breaches_threshold: breach != null,
       threshold_breached: breach?.threshold_breached ?? null,
       projected_value_pct: breach?.projected_value_pct ?? null,
       threshold_pct: breach?.threshold_pct ?? null,
@@ -2586,27 +2553,13 @@ export function computeExcessCashWithdrawal(
   };
 }
 
-// unified formula for both "reduce Holdings" (B1) and "withdraw Cash+Liquidcase"
-// (B2) scale operations. Two axes, confirmed against worked examples:
-//
-//   scaleTarget: what `amount` represents —
-//     "holdings"        → amount IS the Holdings reduction directly
-//     "cash_liquidcase"  → amount is the COMBINED Cash+Liquidcase reduction
-//
-//   formula: how Cash/Liquidcase split —
-//     "snap"         → Cash forced to exact new_account_value × cash_pct;
-//                       Liquidcase absorbs whatever's left (the plug)
-//     "proportional" → every bucket takes total_reduction × its own ideal %,
-//                       no forcing (only valid for scaleTarget="cash_liquidcase")
-//
-// B1 = scaleTarget "holdings", formula "snap" (Cash always snaps for B1).
-// B2a = scaleTarget "cash_liquidcase", formula "proportional".
-// B2b = scaleTarget "cash_liquidcase", formula "snap".
-//
-// Note: this always operates on the raw Snapshot row — no chaining from
-// excess cash. Only the holdings_capacity gate applies; there is no cash/
-// liquidcase ratio gate here, since "snap" lands Cash on ideal by
-// construction and "proportional" preserves whatever ratios existed already.
+// B1/B2a/B2b share this. scaleTarget: "holdings" = amount IS the Holdings
+// reduction; "cash_liquidcase" = amount is the combined Cash+Liquidcase
+// reduction. formula: "snap" forces Cash to exact new_account_value ×
+// cash_pct, Liquidcase plugs the rest; "proportional" splits total_reduction
+// by each bucket's ideal % (cash_liquidcase only). Always runs against the
+// raw Snapshot row, no chaining. Only holdings_capacity gates this — no cash/
+// liquidcase ratio gate, since "snap" lands Cash on ideal by construction.
 function computeScaledWithdrawal(
   row: CashMarginSnapshotRow,
   targets: WithdrawalTargets,
@@ -2614,9 +2567,8 @@ function computeScaledWithdrawal(
   scaleTarget: "holdings" | "cash_liquidcase",
   formula: "snap" | "proportional",
   ratioMode: "model" | "current",
-  method: WithdrawalResult["method"],
 ): WithdrawalResult {
-  const combinedPct = targets.cash_pct + targets.lc_pct; // = 1 - equity_pct, validated at resolution time
+  const combinedPct = targets.cash_pct + targets.lc_pct;
   const lcPct = targets.lc_pct;
 
   const divisor = scaleTarget === "holdings" ? targets.equity_pct : combinedPct;
@@ -2631,8 +2583,7 @@ function computeScaledWithdrawal(
     cashReduction = totalReduction * targets.cash_pct;
     liquidcaseReduction = totalReduction * lcPct;
   } else {
-    // snap: Cash forced to exact ideal for the new (smaller) account size;
-    // Liquidcase plugs whatever's left of the total reduction
+    // snap: Cash forced to ideal for the new account size; Liquidcase plugs the rest
     holdingsReduction =
       scaleTarget === "holdings" ? amount : totalReduction * targets.equity_pct;
     const newAccountValueUnclamped = row.account_value - totalReduction;
@@ -2641,13 +2592,9 @@ function computeScaledWithdrawal(
     liquidcaseReduction = totalReduction - holdingsReduction - cashReduction;
   }
 
-  // gate + clamp — never let Holdings/Liquidcase go negative or oversell.
-  // Cash is deliberately NOT floored at 0 here: under "snap," a negative
-  // cashReduction means Cash needs to genuinely INCREASE — legitimate output
-  // whenever the account started under-allocated to Cash relative to its own
-  // ideal ratio, not an error condition. The upper bound (can't reduce by
-  // more than exists) still applies, though it's mathematically unreachable
-  // for this formula — kept as harmless defensive insurance.
+  // Holdings/Liquidcase never go negative or oversell. Cash isn't floored at
+  // 0 — a negative cashReduction means Cash needs to genuinely increase,
+  // legitimate when the account started under-allocated to Cash.
   const breach = checkHoldingsCapacityBreach(holdingsReduction, row.holdings);
   const cappedHoldingsReduction = Math.max(
     0,
@@ -2670,8 +2617,7 @@ function computeScaledWithdrawal(
   const newCash = row.cash - cappedCashReduction;
   const newAccountValue = newHoldings + newLiquidcase + newCash;
 
-  // Holdings-internal split (model vs current) — orthogonal to scaleTarget/
-  // formula above, applies to whatever cappedHoldingsReduction came out to
+  // holdings-internal split (model vs current), orthogonal to scaleTarget/formula
   let holdingSleeves: { particular: string; current: number; weight: number }[];
   if (row.has_equity_split) {
     if (ratioMode === "model") {
@@ -2753,9 +2699,6 @@ function computeScaledWithdrawal(
   ];
 
   return {
-    method,
-    strategy: row.strategy,
-    requested_amount: round(amount, 2)!,
     withdrawn_amount: round(
       cappedHoldingsReduction + cappedLiquidcaseReduction + cappedCashReduction,
       2,
@@ -2765,8 +2708,7 @@ function computeScaledWithdrawal(
     new_account_value: newAccountValue,
     new_cash_pct:
       newAccountValue > 0 ? round(newCash / newAccountValue, 4)! : 0,
-    floor_restored: true, // no cash/liquidcase ratio gate applies to this formula family — always true
-    breaches_threshold: breach != null,
+    floor_restored: true, // this formula family can't breach the ratio floor
     threshold_breached: breach?.threshold_breached ?? null,
     projected_value_pct: breach?.projected_value_pct ?? null,
     threshold_pct: breach?.threshold_pct ?? null,
@@ -2783,22 +2725,14 @@ function computeScaledWithdrawal(
 }
 
 // ── Cash & Margin: Withdrawal endpoint orchestration ─────────────────────────
-// Deploy (D-1/D-2) is a separate, independent endpoint — not built yet, per
-// "implement Withdrawal first, Deploy once the numbers are verified."
+// Deploy (D-1/D-2) is a separate endpoint, not built yet.
 //
 // MODE A (amount absent) — Excess Cash only, full amount, always.
-// MODE B (amount present) — bypasses excess cash entirely, runs against the
-// raw Snapshot. Three siblings, all computed together:
-//   reduce_holdings_*            — B1, always uses the full formula regardless
-//                                   of amount size (explicit intent to reduce
-//                                   Holdings, not gated by excess cash)
-//   withdraw_cash_proportional_* — B2a
-//   withdraw_cash_snapped_*      — B2b
-// The withdraw_cash_* pair collapses to the plain Excess-Cash-style waterfall
-// result (Holdings untouched) whenever amount ≤ excess cash — no reason to
-// touch Holdings/scale the account if the liquid buffer alone covers it.
-// Only once amount exceeds excess cash do B2a/B2b diverge into their own
-// distinct formulas.
+// MODE B (amount present) — bypasses excess cash, runs against raw Snapshot.
+// reduce_holdings_* (B1) always uses the full formula regardless of amount
+// size. withdraw_cash_proportional_*/snapped_* (B2a/B2b) collapse to the
+// plain Excess-Cash result when amount ≤ excess cash — no reason to touch
+// Holdings if the liquid buffer covers it alone.
 
 export interface CashMarginWithdrawalInput {
   qcode: string;
@@ -2821,7 +2755,6 @@ export interface ModeBResult {
 export interface CashMarginWithdrawalResult {
   snapshot: CashMarginSnapshotResult;
   blocked: boolean; // §2 — true if this strategy's own snapshot is below its cash floor
-  block_reason: string | null;
   excess_cash: WithdrawalResult | null; // Mode A only
   withdrawal: ModeBResult | null; // Mode B only
 }
@@ -2835,16 +2768,10 @@ export async function computeCashMarginWithdrawal(
   const snapshot =
     pairs.length === 0
       ? { strategies: [], combined: null }
-      : buildCashMarginSnapshot(input.qcode, pairs, valueMap, splitMap);
+      : buildCashMarginSnapshot(pairs, valueMap, splitMap);
 
   if (!input.strategy) {
-    return {
-      snapshot,
-      blocked: false,
-      block_reason: null,
-      excess_cash: null,
-      withdrawal: null,
-    };
+    return { snapshot, blocked: false, excess_cash: null, withdrawal: null };
   }
 
   const row = snapshot.strategies.find((r) => r.strategy === input.strategy);
@@ -2854,19 +2781,10 @@ export async function computeCashMarginWithdrawal(
     );
   }
 
-  // §2 — per-strategy data-integrity block, checked before anything else runs.
-  // Deliberately blocks outright rather than warning-and-continuing: every
-  // withdrawal method downstream would otherwise have to re-derive "is this
-  // snapshot even safe to compute against" on its own.
+  // §2 — blocks outright rather than warning-and-continuing, so every
+  // withdrawal method downstream doesn't have to re-derive whether it's safe
   if (row.snapshot_below_floor) {
-    return {
-      snapshot,
-      blocked: true,
-      block_reason:
-        "Account state below cash floor independent of any withdrawal — resolve upstream data before requesting a withdrawal",
-      excess_cash: null,
-      withdrawal: null,
-    };
+    return { snapshot, blocked: true, excess_cash: null, withdrawal: null };
   }
 
   const split = splitMap.get(`${input.qcode}|${input.strategy}`);
@@ -2885,20 +2803,13 @@ export async function computeCashMarginWithdrawal(
   // MODE A — no amount, full Excess Cash only
   if (input.amount == null) {
     const { result } = computeExcessCashWithdrawal(row, targets, undefined);
-    return {
-      snapshot,
-      blocked: false,
-      block_reason: null,
-      excess_cash: result,
-      withdrawal: null,
-    };
+    return { snapshot, blocked: false, excess_cash: result, withdrawal: null };
   }
 
   // MODE B — amount present, raw Snapshot, excess cash bypassed
   const amount = input.amount;
 
-  // used both as the "within excess cash" collapse case and to decide
-  // whether withdraw_cash_* needs its own distinct formula at all
+  // also the "within excess cash" collapse case for withdraw_cash_*
   const { result: withinExcessCashResult } = computeExcessCashWithdrawal(
     row,
     targets,
@@ -2913,18 +2824,9 @@ export async function computeCashMarginWithdrawal(
     "holdings",
     "snap",
     "current",
-    "reduce_holdings_current",
   );
   const reduce_holdings_model = row.has_equity_split
-    ? computeScaledWithdrawal(
-        row,
-        targets,
-        amount,
-        "holdings",
-        "snap",
-        "model",
-        "reduce_holdings_model",
-      )
+    ? computeScaledWithdrawal(row, targets, amount, "holdings", "snap", "model")
     : null;
 
   const withdraw_cash_proportional_current = exceedsExcessCash
@@ -2935,12 +2837,8 @@ export async function computeCashMarginWithdrawal(
         "cash_liquidcase",
         "proportional",
         "current",
-        "withdraw_cash_proportional_current",
       )
-    : {
-        ...withinExcessCashResult,
-        method: "withdraw_cash_proportional_current" as const,
-      };
+    : withinExcessCashResult;
   const withdraw_cash_proportional_model = !row.has_equity_split
     ? null
     : exceedsExcessCash
@@ -2951,12 +2849,8 @@ export async function computeCashMarginWithdrawal(
           "cash_liquidcase",
           "proportional",
           "model",
-          "withdraw_cash_proportional_model",
         )
-      : {
-          ...withinExcessCashResult,
-          method: "withdraw_cash_proportional_model" as const,
-        };
+      : withinExcessCashResult;
 
   const withdraw_cash_snapped_current = exceedsExcessCash
     ? computeScaledWithdrawal(
@@ -2966,12 +2860,8 @@ export async function computeCashMarginWithdrawal(
         "cash_liquidcase",
         "snap",
         "current",
-        "withdraw_cash_snapped_current",
       )
-    : {
-        ...withinExcessCashResult,
-        method: "withdraw_cash_snapped_current" as const,
-      };
+    : withinExcessCashResult;
   const withdraw_cash_snapped_model = !row.has_equity_split
     ? null
     : exceedsExcessCash
@@ -2982,17 +2872,12 @@ export async function computeCashMarginWithdrawal(
           "cash_liquidcase",
           "snap",
           "model",
-          "withdraw_cash_snapped_model",
         )
-      : {
-          ...withinExcessCashResult,
-          method: "withdraw_cash_snapped_model" as const,
-        };
+      : withinExcessCashResult;
 
   return {
     snapshot,
     blocked: false,
-    block_reason: null,
     excess_cash: null,
     withdrawal: {
       reduce_holdings_model,
