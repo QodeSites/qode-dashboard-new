@@ -22,9 +22,10 @@ export interface ParsedCashMarginBody {
   /**
    * A caller-supplied NIFTY LTP, standing in for Python's live/manual Nifty
    * ATM figure. Drives Put Protection's contractValue in
-   * margin-requirements.ts (= niftyLtpOverride * NIFTY_LOT_SIZE); without
-   * it, Put Protection falls back to 0. NIFTY_LOT_SIZE itself always stays
-   * the hardcoded 65, matching Python.
+   * margin-requirements.ts (= niftyLtpOverride * niftyLotSize); without
+   * it, Put Protection falls back to 0. niftyLotSize itself comes from
+   * global_config.NIFTY_LOT_SIZE (lib/cash-margin/global-config.ts), not
+   * this override.
    */
   niftyLtpOverride?: number;
 }

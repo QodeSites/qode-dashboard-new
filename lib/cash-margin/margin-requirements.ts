@@ -26,11 +26,13 @@
  *    out to be a signed delta-like figure, not ATM * lot size -- it flips
  *    sign day to day for every qcode. Dropped in favor of niftyLtp, which is
  *    the real Python input this table was standing in for.)
- *  - NIFTY_LOT_SIZE / PUT_PROTECTION_AVG_PRICE_PER_QTY stay hardcoded,
- *    matching Python exactly, always. Algebraically NIFTY_LOT_SIZE cancels
- *    out of putProtectionCash (contractValue already has a NIFTY_LOT_SIZE
- *    factor), but it stays in the code as a literal for Python parity.
- *    See docs/assumptions-and-changes-from-krish-logic.md §14b.
+ *  - NIFTY_LOT_SIZE now comes from global_config (Akash added the row
+ *    2026-07-29 -- lib/cash-margin/global-config.ts's getNiftyLotSize()),
+ *    no longer a hardcoded TS literal. PUT_PROTECTION_AVG_PRICE_PER_QTY
+ *    (450) stays hardcoded -- no global_config row for it yet. Algebraically
+ *    NIFTY_LOT_SIZE still cancels out of putProtectionCash (contractValue
+ *    already has a NIFTY_LOT_SIZE factor), but it's read fresh per request
+ *    for Python/DB parity. See docs/assumptions-and-changes-from-krish-logic.md §14b.
  *  - Available Cash comes from cm_margin_collateral.live_balance * exposure
  *    share, NOT the mastersheet "cash" residual Python uses -- confirmed
  *    against the pasted target table (D2 in the plan doc).
@@ -48,9 +50,9 @@ import { prisma } from "@/lib/prisma";
 import { loadMastersheet, getVal, type MastersheetSnapshot } from "./mastersheet";
 import { computeExposureShare } from "./exposure";
 import { loadMarginCollaterals, type MarginAvailable } from "./margin-api";
+import { getNiftyLotSize } from "./global-config";
 import type { StrategyOverrides } from "./config";
 
-const NIFTY_LOT_SIZE = 65;
 const PUT_PROTECTION_AVG_PRICE_PER_QTY = 450;
 
 export interface MarginLine {
@@ -93,9 +95,9 @@ export interface MarginRequirementsScope {
     momentumVal: number;
     lowVolVal: number;
     protectedVal: number;
-    /** niftyLtp * NIFTY_LOT_SIZE (Python's exposure_per_lot); null when niftyLtp isn't supplied. */
+    /** niftyLtp * niftyLotSize (Python's exposure_per_lot); null when niftyLtp isn't supplied. */
     contractValue: number | null;
-    /** Always the hardcoded 65, matching Python. */
+    /** From global_config.NIFTY_LOT_SIZE (see lib/cash-margin/global-config.ts), not hardcoded. */
     niftyLotSize: number;
     /** Caller-supplied NIFTY LTP (Python's Nifty ATM stand-in); drives contractValue, null if not supplied. */
     niftyLtp: number | null;
@@ -115,7 +117,7 @@ export interface ResolvedMarginConfig {
   lowvolPct: number | null;
 }
 
-interface MandateRow {
+export interface MandateRow {
   qcode: string;
   account_name: string;
   strategy: string;
@@ -129,7 +131,7 @@ interface MandateRow {
   lowvol_pct: number | null;
 }
 
-interface StrategyDefaultRow {
+export interface StrategyDefaultRow {
   strategy_name: string;
   long_opt_pct: number;
   psar_multiplier: number;
@@ -148,8 +150,10 @@ function toNum(v: unknown): number | null {
  * overrides[strategy]?.<field> ?? client_strategy_configs.<field> ??
  * strategy_defaults[strategy].<field>. `overrides` is request-scoped only
  * (POST body), never persisted -- see docs/thresholds-to-table-and-post-override-plan.md.
+ * Exported for reuse by inputs.ts (§2f Inputs panel), which needs the same
+ * resolved config per active strategy for display, not just for margin math.
  */
-function resolveMarginConfig(
+export function resolveMarginConfig(
   mandate: MandateRow,
   fallback: StrategyDefaultRow | undefined,
   overrides: StrategyOverrides | undefined,
@@ -178,6 +182,7 @@ function computeRequiredLines(
   strategy: string,
   exposureTagSuffix: string,
   config: ResolvedMarginConfig,
+  niftyLotSize: number,
   niftyLtp?: number,
 ): {
   lines: MarginLine[];
@@ -207,19 +212,19 @@ function computeRequiredLines(
     // niftyLtp stands in for Python's live/manual Nifty ATM figure. Null
     // when no niftyLtp is supplied (Put Protection falls back to 0, same as
     // any other missing-input case).
-    const contractValue = niftyLtp ? niftyLtp * NIFTY_LOT_SIZE : null;
+    const contractValue = niftyLtp ? niftyLtp * niftyLotSize : null;
     const lotsRequired = contractValue ? Math.round(protectedVal / contractValue) : 0;
-    // NIFTY_LOT_SIZE always stays the hardcoded 65, matching Python. It
-    // algebraically cancels out here (contractValue already carries a
-    // NIFTY_LOT_SIZE factor) but stays a literal in the code for parity.
-    const putProtectionCash = NIFTY_LOT_SIZE * PUT_PROTECTION_AVG_PRICE_PER_QTY * lotsRequired;
+    // niftyLotSize algebraically cancels out here (contractValue already
+    // carries a niftyLotSize factor), but it's still read from global_config
+    // and applied explicitly, for parity with Python/the DB value.
+    const putProtectionCash = niftyLotSize * PUT_PROTECTION_AVG_PRICE_PER_QTY * lotsRequired;
     lines.push({ system: "Put Protection", cashComponent: null, nonCashComponent: null, cash: putProtectionCash });
     putProtectionDebug = {
       momentumVal,
       lowVolVal,
       protectedVal,
       contractValue,
-      niftyLotSize: NIFTY_LOT_SIZE,
+      niftyLotSize,
       niftyLtp: niftyLtp ?? null,
       avgPricePerQty: PUT_PROTECTION_AVG_PRICE_PER_QTY,
       lotsRequired,
@@ -297,9 +302,10 @@ export interface MarginRequirementsResult {
  *   managed_accounts_analysis Excels -- see loadMastersheet(). Remove once done.
  * @param niftyLtpOverride - a caller-supplied NIFTY LTP, standing in for
  *   Python's live/manual Nifty ATM figure. Drives Put Protection's
- *   contractValue (= niftyLtpOverride * NIFTY_LOT_SIZE); without it,
- *   contractValue is null and Put Protection falls back to 0.
- *   NIFTY_LOT_SIZE itself always stays the hardcoded 65, matching Python.
+ *   contractValue (= niftyLtpOverride * niftyLotSize); without it,
+ *   contractValue is null and Put Protection falls back to 0. niftyLotSize
+ *   itself comes from global_config.NIFTY_LOT_SIZE (see global-config.ts),
+ *   read fresh on every call -- no longer a hardcoded TS literal.
  */
 export async function buildMarginRequirements(
   qcode: string,
@@ -336,6 +342,7 @@ export async function buildMarginRequirements(
   const marginMap = await loadMarginCollaterals([qcode]);
   const margin: MarginAvailable | null = marginMap.get(qcode) ?? null;
   const marginFetchOk = margin !== null;
+  const niftyLotSize = await getNiftyLotSize();
 
   const byStrategy: Record<string, MarginRequirementsScope> = {};
   const combinedLines = new Map<string, MarginLine>();
@@ -350,6 +357,7 @@ export async function buildMarginRequirements(
       m.strategy,
       m.exposure_tag_suffix,
       config,
+      niftyLotSize,
       niftyLtpOverride,
     );
 
