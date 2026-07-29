@@ -5,6 +5,11 @@
  * time, instead of the previously-hardcoded 65 (see
  * docs/assumptions-and-changes-from-krish-logic.md §14b).
  *
+ * This is the raw spot level -- not rounded to the nearest 50-point option
+ * strike. Do not confuse with "Nifty ATM", the separate, strike-rounded
+ * figure `cm_contract_value.contract_value` already bakes in (see
+ * ./contract-value.ts); the two are different inputs to different formulas.
+ *
  * Source: Yahoo Finance's unauthenticated chart API for symbol ^NSEI. This
  * is an unofficial endpoint (no key/auth, no SLA) -- failures are expected
  * occasionally, so callers must treat a null return as "fall back to the
