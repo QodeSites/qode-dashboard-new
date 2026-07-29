@@ -15,7 +15,7 @@
  * per-strategy) rollup of it yet.
  */
 import type { MastersheetSnapshot } from "./mastersheet";
-import { getVal } from "./mastersheet";
+import { getVal, computeAccountSummary } from "./mastersheet";
 import type { Tier } from "./tags";
 
 const CONSOLIDATED_TAGS = {
@@ -26,6 +26,17 @@ const CONSOLIDATED_TAGS = {
   liquidcase: "Liquidcase Stock Holdings",
 } as const;
 const LIQUIDBEES_TAG = "Liquidbees";
+
+// QAW's Gold/Momentum/Low Vol ETF legs live only under strategy-prefixed tags
+// (e.g. "QAW++ Gold Stock Holdings") -- ported from qaw_report.py's QAW_SUBS.
+// They are NOT part of the no-prefix "Equity Stock Holdings" rollup CONSOLIDATED_TAGS
+// reads, so summing them across a client's active strategies is additive
+// information only -- never subtracted back out of equityStock/holdings.
+const QAW_SUB_TAG_SUFFIXES = {
+  gold: "Gold Stock Holdings",
+  momentum: "Momentum Stock Holdings",
+  lowVol: "Low Vol Stock Holdings",
+} as const;
 
 export interface ConsolidatedSummary {
   accountValue: number;
@@ -94,4 +105,129 @@ export function computeConsolidatedExcessCash(
     currentCash,
     excessCash,
   };
+}
+
+export interface AccountSummaryLine {
+  label: string;
+  value: number;
+  /** Percent units (0-100), always of Account Value. */
+  pct: number;
+}
+
+export interface AccountSummaryCombined {
+  accountValue: number;
+  mutualFunds: number;
+  equityStock: number;
+  gold: number;
+  lowVol: number;
+  momentum: number;
+  bondStock: number;
+  liquidcase: number;
+  cash: number;
+  /** MF + Equity Stock Holdings + Bond Stock Holdings. Gold/Low Vol/Momentum
+   * are an informational sub-breakdown only (of QAW's equity leg) and are
+   * never added into this total -- ported from ma-portfolio-review's
+   * dual_account_sheet.py Table 6 ("Overall Combined Summary"), which
+   * explicitly subtracts them back out. */
+  holdings: number;
+  cashPlusLiquidcase: number;
+  rows: AccountSummaryLine[];
+}
+
+/**
+ * Shared row-builder for the "ACCOUNT SUMMARY" table -- same 11 rows whether
+ * the scope is Combined (no-prefix rollup) or a single strategy (prefixed
+ * tags). Pure -- no DB access. `%` is always of THIS scope's own Account
+ * Value, including for gold/lowVol/momentum (confirmed against the pasted
+ * target table, not the QAW-equity-book denominator the plan doc's reference
+ * sheet uses for those three rows).
+ */
+function buildAccountSummaryRows(
+  summary: ConsolidatedSummary,
+  gold: number,
+  lowVol: number,
+  momentum: number,
+): AccountSummaryCombined {
+  const holdings = summary.mutualFunds + summary.equityStock + summary.bondStock;
+  const cashPlusLiquidcase = summary.cash + summary.liquidcase;
+  const av = summary.accountValue;
+  const pct = (part: number) => (av ? (part / av) * 100 : 0);
+
+  const rows: AccountSummaryLine[] = [
+    { label: "Account Value", value: av, pct: 100 },
+    { label: "Mutual Funds", value: summary.mutualFunds, pct: pct(summary.mutualFunds) },
+    { label: "Equity Stock Holdings", value: summary.equityStock, pct: pct(summary.equityStock) },
+    { label: "Gold", value: gold, pct: pct(gold) },
+    { label: "Low Vol", value: lowVol, pct: pct(lowVol) },
+    { label: "Momentum", value: momentum, pct: pct(momentum) },
+    { label: "Bond Stock Holdings", value: summary.bondStock, pct: pct(summary.bondStock) },
+    { label: "Liquidcase", value: summary.liquidcase, pct: pct(summary.liquidcase) },
+    { label: "Cash", value: summary.cash, pct: pct(summary.cash) },
+    { label: "Holdings (MF+EQ+Bond)", value: holdings, pct: pct(holdings) },
+    { label: "Cash + Liquidcase", value: cashPlusLiquidcase, pct: pct(cashPlusLiquidcase) },
+  ];
+
+  return {
+    accountValue: av,
+    mutualFunds: summary.mutualFunds,
+    equityStock: summary.equityStock,
+    gold,
+    lowVol,
+    momentum,
+    bondStock: summary.bondStock,
+    liquidcase: summary.liquidcase,
+    cash: summary.cash,
+    holdings,
+    cashPlusLiquidcase,
+    rows,
+  };
+}
+
+function sumQawSubTags(
+  ms: MastersheetSnapshot,
+  strategies: string[],
+): { gold: number; momentum: number; lowVol: number } {
+  let gold = 0;
+  let momentum = 0;
+  let lowVol = 0;
+  for (const strategy of strategies) {
+    gold += getVal(ms, `${strategy} ${QAW_SUB_TAG_SUFFIXES.gold}`);
+    momentum += getVal(ms, `${strategy} ${QAW_SUB_TAG_SUFFIXES.momentum}`);
+    lowVol += getVal(ms, `${strategy} ${QAW_SUB_TAG_SUFFIXES.lowVol}`);
+  }
+  return { gold, momentum, lowVol };
+}
+
+/**
+ * "ACCOUNT SUMMARY - Combined" -- one client's whole-account breakdown across
+ * all of its active strategies. accountValue/mutualFunds/equityStock/
+ * bondStock/liquidcase/cash come from the no-prefix rollup (computeConsolidated),
+ * matching what excess_cash_report.py's compute_consolidated() actually reads
+ * (not a sum of the per-strategy legs). Gold/Low Vol/Momentum are summed
+ * separately across each active strategy's prefixed tags
+ * (QAW_SUB_TAG_SUFFIXES), since they don't exist in the no-prefix rollup.
+ */
+export function computeAccountSummaryCombined(
+  ms: MastersheetSnapshot,
+  activeStrategies: string[],
+): AccountSummaryCombined {
+  const summary = computeConsolidated(ms);
+  const { gold, momentum, lowVol } = sumQawSubTags(ms, activeStrategies);
+  return buildAccountSummaryRows(summary, gold, lowVol, momentum);
+}
+
+/**
+ * "ACCOUNT SUMMARY" for a single active strategy (e.g. QYE++ or QAW++) --
+ * prefixed tags throughout (mastersheet.ts's computeAccountSummary), plus
+ * that same strategy's own Gold/Low Vol/Momentum legs (₹0 for non-QAW
+ * strategies, since those tags simply won't exist for them).
+ */
+export function computeAccountSummaryForStrategy(
+  ms: MastersheetSnapshot,
+  strategy: string,
+  exposureTagSuffix: string,
+): AccountSummaryCombined {
+  const summary = computeAccountSummary(ms, strategy, exposureTagSuffix);
+  const { gold, momentum, lowVol } = sumQawSubTags(ms, [strategy]);
+  return buildAccountSummaryRows(summary, gold, lowVol, momentum);
 }
