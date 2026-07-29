@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import YahooFinance from "yahoo-finance2";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -2263,16 +2264,40 @@ export interface WithdrawalTargets {
 
 const RATIO_EPSILON = 0.0001; // tolerance for the equity+cash+liquidcase = 1 identity check
 
+// shared by Withdrawal and Deploy — equity_pct/cash_pct/lc_pct must sum to 1,
+// only two of the three are ever independent:
+//   - liquidcase given, cash not  -> cash derived from the other two
+//   - cash given, liquidcase not  -> lc derived, §10.1 default
+//   - both given                  -> validated against equity_pct, error if inconsistent
+//   - neither given                -> cash from defaultCashPct, lc derived
+function resolveCashLiquidcaseSplit(
+  equity_pct: number,
+  defaultCashPct: number | null,
+  cashOverride?: number,
+  lcOverride?: number,
+): { cash_pct: number; lc_pct: number } {
+  if (lcOverride != null && cashOverride != null) {
+    const expected = 1 - equity_pct;
+    const actual = cashOverride + lcOverride;
+    if (Math.abs(actual - expected) > RATIO_EPSILON) {
+      throw new Error(
+        `cash_pct + liquidcase_pct must sum to ${round(expected, 4)} (1 - equity_pct); got ${round(actual, 4)}`,
+      );
+    }
+    return { cash_pct: cashOverride, lc_pct: lcOverride };
+  }
+  if (lcOverride != null) {
+    return { cash_pct: 1 - equity_pct - lcOverride, lc_pct: lcOverride };
+  }
+  const cash_pct = cashOverride ?? defaultCashPct;
+  if (cash_pct == null) {
+    throw new Error("cash_pct not configured for this strategy");
+  }
+  return { cash_pct, lc_pct: 1 - equity_pct - cash_pct }; // §10.1, default derivation
+}
+
 // payload override → already-resolved SplitConfig. Pure — no DB access, since
 // the caller already has SplitConfig from fetchCashMarginContext.
-//
-// equity_pct/cash_pct/lc_pct must sum to exactly 1 — every scale formula in
-// computeScaledWithdrawal depends on that identity. Only two of the three are
-// ever truly independent, so:
-//   - liquidcase_pct given, cash_pct not  -> cash_pct derived from the other two
-//   - cash_pct given, liquidcase_pct not  -> lc_pct derived, §10.1 default
-//   - both given                          -> validated against equity_pct, error if inconsistent
-//   - neither given                       -> both derived from config, unchanged from before
 function mergeWithdrawalTargets(
   split: SplitConfig,
   equityPctOverride?: number,
@@ -2283,31 +2308,12 @@ function mergeWithdrawalTargets(
   if (equity_pct == null) {
     throw new Error("equity_pct not configured for this strategy");
   }
-
-  let cash_pct: number;
-  let lc_pct: number;
-
-  if (liquidcasePctOverride != null && cashPctOverride != null) {
-    const expected = 1 - equity_pct;
-    const actual = cashPctOverride + liquidcasePctOverride;
-    if (Math.abs(actual - expected) > RATIO_EPSILON) {
-      throw new Error(
-        `cash_pct + liquidcase_pct must sum to ${round(expected, 4)} (1 - equity_pct); got ${round(actual, 4)}`,
-      );
-    }
-    cash_pct = cashPctOverride;
-    lc_pct = liquidcasePctOverride;
-  } else if (liquidcasePctOverride != null) {
-    lc_pct = liquidcasePctOverride;
-    cash_pct = 1 - equity_pct - lc_pct;
-  } else {
-    const resolvedCash = cashPctOverride ?? split.cash_pct;
-    if (resolvedCash == null) {
-      throw new Error("cash_pct not configured for this strategy");
-    }
-    cash_pct = resolvedCash;
-    lc_pct = 1 - equity_pct - cash_pct; // §10.1, default derivation
-  }
+  const { cash_pct, lc_pct } = resolveCashLiquidcaseSplit(
+    equity_pct,
+    split.cash_pct,
+    cashPctOverride,
+    liquidcasePctOverride,
+  );
 
   return {
     equity_pct,
@@ -2888,4 +2894,375 @@ export async function computeCashMarginWithdrawal(
       withdraw_cash_snapped_current,
     },
   };
+}
+
+// ── Cash & Margin: Deploy (D0 — hypothetical new-client deployment) ─────────
+// LTP via yahoo-finance2 — no auth needed (unlike Kite), so no Python bridge.
+// Batched into one call per computation, not one per symbol.
+
+const yahooFinance = new YahooFinance();
+
+const ETF_SYMBOLS = {
+  gold: "GOLDBEES.NS",
+  momentum: "MOMENTUM50.NS",
+  lowvol: "LOWVOLIETF.NS",
+  liquidcase: "LIQUIDCASE.NS",
+} as const;
+
+const QAW_IDEAL_RATIOS = { gold: 0.4, momentum: 0.4, lowvol: 0.2 }; // hardcoded by explicit instruction — never DB-driven, unlike Model
+
+async function fetchLtps(symbols: string[]): Promise<Map<string, number>> {
+  let quotes;
+  try {
+    quotes = await yahooFinance.quote(symbols);
+  } catch (e) {
+    throw new Error(
+      `LTP fetch failed (Yahoo Finance): ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+  const list = Array.isArray(quotes) ? quotes : [quotes];
+  const map = new Map<string, number>();
+  for (const q of list) {
+    if (q?.symbol && q.regularMarketPrice != null) {
+      map.set(q.symbol, q.regularMarketPrice);
+    }
+  }
+  return map;
+}
+
+// strategy_defaults only — a hypothetical client has no client_strategy_configs row to cascade through
+async function fetchStrategyDefaults(strategy: string): Promise<{
+  equity_pct: number | null;
+  cash_pct: number | null;
+  gold_pct: number | null; // presence of this, not the strategy name, decides QAW-shaped vs QYE-shaped
+  gold_model_pct: number | null;
+  momentum_model_pct: number | null;
+  lowvol_model_pct: number | null;
+}> {
+  const def = await prisma.strategy_defaults.findUnique({
+    where: { strategy_name: strategy },
+  });
+  if (!def) {
+    throw new Error(`No strategy_defaults row found for '${strategy}'`);
+  }
+  return {
+    equity_pct: toNum(def.equity_pct),
+    cash_pct: toNum(def.cash_pct),
+    gold_pct: toNum(def.gold_pct),
+    gold_model_pct: toNum(def.gold_model_pct),
+    momentum_model_pct: toNum(def.momentum_model_pct),
+    lowvol_model_pct: toNum(def.lowvol_model_pct),
+  };
+}
+
+export interface DeploySleeve {
+  particular: string;
+  target_pct: number;
+  target_value: number; // pure ideal target, never adjusted for rounding — same meaning on every row
+  actual_value: number; // what this sleeve will genuinely hold after whole-unit rounding; equals target_value except where rounding forces a difference
+  ltp: number | null; // null for non-tradeable rows (Cash, Holdings rollup)
+  quantity: number | null;
+}
+
+// floors to whole units (fractional units aren't tradeable); the rupee
+// remainder from flooring is returned separately so the caller can absorb it
+// into Cash's actual_value rather than silently losing it
+function buildPricedSleeve(
+  particular: string,
+  target_pct: number,
+  target_value: number,
+  ltp: number | undefined,
+): { sleeve: DeploySleeve; dust: number } {
+  const roundedTarget = round(target_value, 2)!;
+  if (ltp == null || ltp <= 0) {
+    return {
+      sleeve: {
+        particular,
+        target_pct,
+        target_value: roundedTarget,
+        actual_value: roundedTarget,
+        ltp: null,
+        quantity: null,
+      },
+      dust: 0,
+    };
+  }
+  const quantity = Math.floor(target_value / ltp);
+  const actualValue = quantity * ltp;
+  return {
+    sleeve: {
+      particular,
+      target_pct,
+      target_value: roundedTarget,
+      actual_value: round(actualValue, 2)!,
+      ltp,
+      quantity,
+    },
+    dust: target_value - actualValue,
+  };
+}
+
+// ── unified input — one route, no strategy-name check anywhere. Which fields
+// are required depends on has_equity_split (config-driven), resolved once by
+// computeDeploy before either path below ever runs.
+export interface DeployInput {
+  strategy: string;
+  // QAW-shaped (has_equity_split) fields
+  ratio_type?: "current" | "ideal" | "model";
+  account_value?: number;
+  reference_qcode?: string; // required only for ratio_type "current" — supplies proportions only, not its own account size
+  // QYE-shaped fields
+  input_mode?: "holdings" | "account_value" | "cash";
+  value?: number;
+  // shared by both
+  equity_pct?: number;
+  cash_pct?: number;
+  lc_pct?: number;
+}
+
+export interface QawDeployResult {
+  ratio_type: "current" | "ideal" | "model";
+  strategy: string;
+  account_value: number;
+  sleeves: DeploySleeve[]; // Equity - Stock (rollup), Gold, Momentum, Low Vol, Liquidcase, Cash
+}
+
+async function resolveQawSubRatios(
+  ratio_type: NonNullable<DeployInput["ratio_type"]>,
+  strategy: string,
+  reference_qcode: string | undefined,
+  defaults: Awaited<ReturnType<typeof fetchStrategyDefaults>>,
+): Promise<{ gold: number; momentum: number; lowvol: number }> {
+  if (ratio_type === "ideal") return QAW_IDEAL_RATIOS;
+
+  if (ratio_type === "model") {
+    const gold = defaults.gold_model_pct;
+    const momentum = defaults.momentum_model_pct;
+    const lowvol = defaults.lowvol_model_pct;
+    if (gold == null || momentum == null || lowvol == null) {
+      throw new Error(`Model ratios not configured for '${strategy}'`);
+    }
+    return { gold, momentum, lowvol };
+  }
+
+  // "current" — proportions only, from the reference client's own holdings; its account size never enters the calc
+  if (!reference_qcode) {
+    throw new Error("reference_qcode is required for ratio_type 'current'");
+  }
+  const snapshot = await fetchCashMarginSnapshot(reference_qcode);
+  const row = snapshot.strategies.find((r) => r.strategy === strategy);
+  if (!row) {
+    throw new Error(
+      `No active '${strategy}' row found for reference_qcode ${reference_qcode}`,
+    );
+  }
+  if (!row.has_equity_split || row.holdings <= 0) {
+    throw new Error(
+      `Reference client ${reference_qcode}/${strategy} has no equity split to copy Current ratios from`,
+    );
+  }
+  return {
+    gold: row.gold / row.holdings,
+    momentum: row.momentum / row.holdings,
+    lowvol: row.lowvol / row.holdings,
+  };
+}
+
+async function computeQawDeploy(
+  input: DeployInput,
+  defaults: Awaited<ReturnType<typeof fetchStrategyDefaults>>,
+): Promise<QawDeployResult> {
+  if (!input.ratio_type) {
+    throw new Error("ratio_type is required for this strategy");
+  }
+  if (input.account_value == null) {
+    throw new Error("account_value is required for this strategy");
+  }
+
+  const equity_pct = input.equity_pct ?? defaults.equity_pct;
+  if (equity_pct == null) {
+    throw new Error(`equity_pct not configured for '${input.strategy}'`);
+  }
+  const { cash_pct, lc_pct } = resolveCashLiquidcaseSplit(
+    equity_pct,
+    defaults.cash_pct,
+    input.cash_pct,
+    input.lc_pct,
+  );
+
+  const subRatios = await resolveQawSubRatios(
+    input.ratio_type,
+    input.strategy,
+    input.reference_qcode,
+    defaults,
+  );
+
+  const ltps = await fetchLtps([
+    ETF_SYMBOLS.gold,
+    ETF_SYMBOLS.momentum,
+    ETF_SYMBOLS.lowvol,
+    ETF_SYMBOLS.liquidcase,
+  ]);
+
+  const equityBookValue = input.account_value * equity_pct;
+  const liquidcaseValue = input.account_value * lc_pct;
+  const cashValue = input.account_value * cash_pct;
+
+  const goldTarget = equityBookValue * subRatios.gold;
+  const momentumTarget = equityBookValue * subRatios.momentum;
+  const lowvolTarget = equityBookValue * subRatios.lowvol;
+
+  const gold = buildPricedSleeve(
+    "Gold",
+    subRatios.gold * equity_pct,
+    goldTarget,
+    ltps.get(ETF_SYMBOLS.gold),
+  );
+  const momentum = buildPricedSleeve(
+    "Momentum",
+    subRatios.momentum * equity_pct,
+    momentumTarget,
+    ltps.get(ETF_SYMBOLS.momentum),
+  );
+  const lowvol = buildPricedSleeve(
+    "Low Vol",
+    subRatios.lowvol * equity_pct,
+    lowvolTarget,
+    ltps.get(ETF_SYMBOLS.lowvol),
+  );
+  const liquidcase = buildPricedSleeve(
+    "Liquidcase",
+    lc_pct,
+    liquidcaseValue,
+    ltps.get(ETF_SYMBOLS.liquidcase),
+  );
+
+  // rounding dust from flooring quantities absorbed into Cash — Cash is the
+  // one row with no unit-size constraint, so it's the natural plug
+  const dust = gold.dust + momentum.dust + lowvol.dust + liquidcase.dust;
+
+  const equityRollup: DeploySleeve = {
+    particular: "Equity - Stock",
+    target_pct: equity_pct,
+    target_value: round(equityBookValue, 2)!,
+    actual_value: round(equityBookValue, 2)!, // rollup itself is never rounded — only its Gold/Momentum/Low Vol components are
+    ltp: null,
+    quantity: null,
+  };
+  const cashTarget = round(cashValue, 2)!;
+  const cashSleeve: DeploySleeve = {
+    particular: "Cash",
+    target_pct: cash_pct,
+    target_value: cashTarget, // pure target — same meaning as every other sleeve's target_value
+    actual_value: round(cashValue + dust, 2)!, // what Cash genuinely ends up holding, once it absorbs the other sleeves' rounding dust
+    ltp: null,
+    quantity: null,
+  };
+
+  return {
+    ratio_type: input.ratio_type,
+    strategy: input.strategy,
+    account_value: input.account_value,
+    sleeves: [
+      equityRollup,
+      gold.sleeve,
+      momentum.sleeve,
+      lowvol.sleeve,
+      liquidcase.sleeve,
+      cashSleeve,
+    ],
+  };
+}
+
+// ── QYE ───────────────────────────────────────────────────────────────────
+
+export interface QyeDeployResult {
+  input_mode: "holdings" | "account_value" | "cash";
+  strategy: string;
+  account_value: number;
+  sleeves: DeploySleeve[]; // Holdings (Mutual Funds), Liquidcase, Cash
+}
+
+async function computeQyeDeploy(
+  input: DeployInput,
+  defaults: Awaited<ReturnType<typeof fetchStrategyDefaults>>,
+): Promise<QyeDeployResult> {
+  if (!input.input_mode) {
+    throw new Error("input_mode is required for this strategy");
+  }
+  if (input.value == null) {
+    throw new Error("value is required for this strategy");
+  }
+
+  const equity_pct = input.equity_pct ?? defaults.equity_pct;
+  if (equity_pct == null) {
+    throw new Error(`equity_pct not configured for '${input.strategy}'`);
+  }
+  const { cash_pct, lc_pct } = resolveCashLiquidcaseSplit(
+    equity_pct,
+    defaults.cash_pct,
+    input.cash_pct,
+    input.lc_pct,
+  );
+
+  let account_value: number;
+  if (input.input_mode === "holdings") {
+    account_value = input.value / equity_pct;
+  } else if (input.input_mode === "cash") {
+    account_value = input.value / cash_pct;
+  } else {
+    account_value = input.value;
+  }
+
+  const ltps = await fetchLtps([ETF_SYMBOLS.liquidcase]);
+
+  const holdingsValue = account_value * equity_pct;
+  const liquidcaseValue = account_value * lc_pct;
+  const cashValue = account_value * cash_pct;
+
+  const liquidcase = buildPricedSleeve(
+    "Liquidcase",
+    lc_pct,
+    liquidcaseValue,
+    ltps.get(ETF_SYMBOLS.liquidcase),
+  );
+
+  const holdingsSleeve: DeploySleeve = {
+    particular: "Mutual Funds",
+    target_pct: equity_pct,
+    target_value: round(holdingsValue, 2)!,
+    actual_value: round(holdingsValue, 2)!, // no rounding involved for this sleeve — no LTP/quantity constraint
+    ltp: null,
+    quantity: null,
+  };
+  const cashTarget = round(cashValue, 2)!;
+  const cashSleeve: DeploySleeve = {
+    particular: "Cash",
+    target_pct: cash_pct,
+    target_value: cashTarget, // pure target — same meaning as every other sleeve's target_value
+    actual_value: round(cashValue + liquidcase.dust, 2)!, // absorbs Liquidcase's rounding dust
+    ltp: null,
+    quantity: null,
+  };
+
+  return {
+    input_mode: input.input_mode,
+    strategy: input.strategy,
+    account_value: round(account_value, 2)!,
+    sleeves: [holdingsSleeve, liquidcase.sleeve, cashSleeve],
+  };
+}
+
+// ── unified entry point — one route, no strategy-name check. has_equity_split
+// is resolved once here (from strategy_defaults.gold_pct, config-driven, same
+// signal used everywhere else in this file) and decides which path runs.
+export async function computeDeploy(
+  input: DeployInput,
+): Promise<QawDeployResult | QyeDeployResult> {
+  const defaults = await fetchStrategyDefaults(input.strategy);
+  const has_equity_split = defaults.gold_pct != null;
+
+  return has_equity_split
+    ? computeQawDeploy(input, defaults)
+    : computeQyeDeploy(input, defaults);
 }
