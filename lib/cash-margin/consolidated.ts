@@ -109,6 +109,38 @@ export function computeConsolidatedExcessCash(
   };
 }
 
+export type CombinedCashStatus = "HEALTHY" | "ACTION_REQUIRED" | "WARNING" | "CRITICAL";
+
+/**
+ * Combined (whole-client) Cash % health -- ported verbatim from
+ * SMA_Dashboard_v12.xlsx's P2 sheet, cell 8K:
+ *   IF(cashPct>=0.17,"Healthy", IF(>=0.15,"Action Required", IF(>=0.13,"Warning","Critical")))
+ * A DIFFERENT concept from thresholds.ts's classifyMarginMetric -- that one
+ * runs per-strategy (Cash %/CC %/NCC %, DB-driven bands via
+ * resolveThresholdConfig), this one runs once per CLIENT on the combined
+ * Cash+Liquidcase % of combined Account Value, with its own flat,
+ * hardcoded 17%/15%/13% bands (not present in strategy_defaults or
+ * client_strategy_configs -- this exact bands-and-tiers set exists only in
+ * the source workbook). See docs/assumptions-and-changes-from-krish-logic.md
+ * §19.2 for the full writeup, including two things ported AS-IS, unresolved:
+ *  - the tier ORDER looks backwards ("Action Required" fires above
+ *    "Warning" as cash% drops, opposite of thresholds.ts's own ordering)
+ *  - "Critical" is a tier with no equivalent anywhere else in this codebase
+ * Neither was "fixed" here -- this reproduces the sheet's own formula
+ * exactly, on the theory that a faithful port is more useful than a
+ * silently "corrected" guess. Revisit if Akash confirms the sheet's
+ * ordering is itself a labeling bug.
+ */
+const COMBINED_CASH_STATUS_BANDS = { healthy: 0.17, actionRequired: 0.15, warning: 0.13 } as const;
+
+/** @param cashPct - fraction (0-1) of combined Account Value, e.g. currentCash / accountValue -- NOT percent-scale. */
+export function classifyCombinedCashStatus(cashPct: number): CombinedCashStatus {
+  if (cashPct >= COMBINED_CASH_STATUS_BANDS.healthy) return "HEALTHY";
+  if (cashPct >= COMBINED_CASH_STATUS_BANDS.actionRequired) return "ACTION_REQUIRED";
+  if (cashPct >= COMBINED_CASH_STATUS_BANDS.warning) return "WARNING";
+  return "CRITICAL";
+}
+
 export interface AccountSummaryLine {
   label: string;
   value: number;

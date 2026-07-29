@@ -7,6 +7,21 @@ describes what to send and what comes back — not the internal math (see
 `docs/page2-cell-by-cell-calculations.md` and
 `docs/assumptions-and-changes-from-krish-logic.md` for that).
 
+## Building the Page 2 (Client Detail) screen? Read this first
+
+**`POST /api/internal/cash-margin/page2` (endpoint 10 below) returns
+everything Page 2 needs — Account Summary, System Breakup, Margin
+Requirements, Debt-to-Equity, and Inputs — in one call**, instead of 5
+separate requests to endpoints 3, 4, 5, 6, and 9. Same request body shape as
+`margin-requirements` (`qcode` + optional `overrides`/`asOfDate`/`niftyLtp`),
+and each nested key in the response is byte-for-byte the same shape as that
+table's own standalone endpoint — if you've already built a component
+against one of those, point it at `page2Response.<key>` and it works
+unchanged. Use the individual endpoints only if you need to lazy-load one
+tab independently of the rest of the page. Jump to
+[endpoint 10](#10-post-apiinternalcash-marginpage2--all-of-2b2f-in-one-call)
+for the full shape.
+
 ## Conventions that apply to every endpoint
 
 - **Auth**: every route (except `withdrawal`, which is Krish's, out of scope
@@ -453,9 +468,8 @@ from the `byStrategy` rows — always use the `combined` object as-is.
 ## 7. `POST /api/internal/cash-margin/top-bar`
 
 **Single-client KPI strip**: Account Value, Liquidcase, Holdings,
-Cash+Liquidcase, Excess Cash — combined across all of that client's active
-strategies. No Alert Status here (there's no per-client rollup of the
-tiered Margin Health thresholds outside of `alerts`/`client-registry`).
+Cash+Liquidcase, Excess Cash, Alert Status — combined across all of that
+client's active strategies.
 
 **Request body**:
 ```jsonc
@@ -474,6 +488,7 @@ tiered Margin Health thresholds outside of `alerts`/`client-registry`).
   "strategies": ["QAW++", "QYE++"],
   "tier": "++",              // "+" if every active (non-XTS) strategy is a "+" tier, else "++"
   "mastersheetDate": "2026-07-29",
+  "alertStatus": "HEALTHY",  // "HEALTHY" | "ACTION_REQUIRED" | "WARNING" | "CRITICAL" -- see note below, added 2026-07-30
   "kpis": {
     "accountValue": { "value": 40468858508, "pct": 100 },
     "liquidcase": { "value": 8000000, "pct": 19.77 },
@@ -483,6 +498,21 @@ tiered Margin Health thresholds outside of `alerts`/`client-registry`).
   }
 }
 ```
+**`alertStatus` is a different, once-per-client concept from `alerts`'s
+per-strategy HEALTHY/WARNING/ACTION_REQUIRED/UPSIDE/UNAVAILABLE bands** —
+don't render them with the same badge logic. This one classifies the
+combined `Cash+Liquidcase / Account Value` ratio against its own flat
+17%/15%/13% bands (`>=17% HEALTHY`, `>=15% ACTION_REQUIRED`, `>=13%
+WARNING`, else `CRITICAL`), ported verbatim from the real reference
+workbook. Two things worth knowing before you build a badge/color mapping
+for it: the tier **order looks backwards** — `ACTION_REQUIRED` fires at a
+*higher* cash % than `WARNING` does, the opposite of how `alerts`'s bands
+work — and `CRITICAL` doesn't exist as a value anywhere else in this API.
+Both are intentional ports of the source sheet's own (possibly buggy)
+logic, not something this endpoint corrected — see
+`docs/assumptions-and-changes-from-krish-logic.md` §19.2 if that ordering
+ever needs revisiting.
+
 `pct` on every KPI is that value's share of `accountValue` (always
 100 for `accountValue` itself). The ideal-holdings ratio used to compute
 `excessCash` is resolved from this client's **first active, non-XTS
@@ -624,7 +654,59 @@ network failure, but the frontend should probably flag it visually (e.g.
 
 ---
 
-## 10. `POST /api/internal/cash-margin/withdrawal`
+## 10. `POST /api/internal/cash-margin/page2` — all of §2b–§2f in one call
+
+Combines **Account Summary (§2b) + System Breakup (§2d) + Margin
+Requirements (§2c) + Debt-to-Equity (§2e) + Inputs (§2f)** — endpoints
+3-6 and 9 above — into a single response for one client, instead of 5
+separate requests when rendering the whole Page 2 client-detail screen.
+Purely additive: endpoints 3-6 and 9 still exist and work exactly as
+documented above — use this one when you need the whole page at once, use
+the individual ones when you only need one table (e.g. a lazy-loaded tab).
+
+**Request body**: identical to `margin-requirements`'s (the union of what
+every sub-table accepts):
+```jsonc
+{
+  "qcode": "QAC00041",
+  "overrides": { "QAW++": { "equityPct": 0.72, "longOptPct": 0.015 } }, // optional -- same StrategyOverride shape as every other route, applied to every sub-table that reads that field
+  "asOfDate": "2026-07-15", // optional
+  "niftyLtp": 24800 // optional -- feeds ONLY marginRequirements' Put Protection line (see endpoint 5); inputs' Put Protection Calculation still fetches its own live NIFTY LTP regardless (see endpoint 9)
+}
+```
+
+**Response** `200`: same top-level shape as every single-qcode endpoint
+(`qcode`/`accountName`/`strategies`/`mastersheetDate`), plus one key per
+sub-table — each nested value is **exactly** the corresponding field from
+that table's own standalone response (endpoints 3-6, 9 above), so if
+you've already built a component against one of those, it reads directly
+off `page2Response.<key>` with no reshaping:
+```jsonc
+{
+  "qcode": "QAC00041",
+  "accountName": "Sarla Performance Fibers",
+  "strategies": ["QAW++"],
+  "mastersheetDate": "2026-07-29",
+  "accountSummary": { "combined": { /* same shape as endpoint 3's summary.combined */ }, "byStrategy": { "QAW++": { /* ... */ } } },
+  "systemBreakup": { "combined": { /* same shape as endpoint 4's systemBreakup.combined */ }, "byStrategy": { "QAW++": { /* ... */ } } },
+  "marginRequirements": { "marginFetchOk": true, "combined": { /* same shape as endpoint 5's combined */ }, "byStrategy": { "QAW++": { /* ... */ } } },
+  "debtEquity": { "combined": { /* same shape as endpoint 6's debtEquity.combined */ }, "byStrategy": { "QAW++": { /* ... */ } } },
+  "inputs": { "tierReference": [ /* ... */ ], "byStrategy": { /* ... */ }, "combined": { /* ... */ }, "putProtectionCalculation": { /* same shape as endpoint 9's putProtectionCalculation */ } }
+}
+```
+Note `marginRequirements` and `inputs` are nested one level deeper here than
+their standalone responses (`marginFetchOk`/`combined`/`byStrategy` live
+under `marginRequirements`, not at the response root) — everything else
+about their contents is identical to endpoints 5 and 9.
+
+404/500 behavior is the same as every other single-qcode endpoint (404 if
+the qcode has no active mandate; the whole request fails together, there's
+no partial-success shape — if one sub-table's computation throws, the
+entire response is a 500, not a mix of good and null sections).
+
+---
+
+## 11. `POST /api/internal/cash-margin/withdrawal`
 
 Pre-existing route (Krish's, not part of this API family's `overrides`/
 `asOfDate` conventions above) — included here for completeness since it's

@@ -7,20 +7,30 @@ import {
   computeConsolidated,
   computeConsolidatedExcessCash,
   detectConsolidatedTier,
+  classifyCombinedCashStatus,
 } from "@/lib/cash-margin/consolidated";
 import { resolveRatioConfig } from "@/lib/cash-margin/config";
 import { parseCashMarginBody } from "@/lib/cash-margin/request-utils";
 
 /**
  * Single-client KPI top-bar: Account Value / Liquidcase / Holdings /
- * Cash+Liquidcase / Excess Cash for one qcode, combined across all of that
- * client's active strategies (e.g. a QYE+++QAW++ mandate).
+ * Cash+Liquidcase / Excess Cash / Alert Status for one qcode, combined
+ * across all of that client's active strategies (e.g. a QYE+++QAW++
+ * mandate).
  *
  * Ported from managed_accounts_analysis/common_report_utils.py's
  * compute_consolidated() + compute_excess_cash() -- reads the no-prefix
- * ("whole client") mastersheet tags. No Alert Status column: there is no
- * per-client (as opposed to per-strategy) rollup of the tiered Margin
- * Health thresholds anywhere yet -- see docs/cash-margin-client-dashboard-plan.md.
+ * ("whole client") mastersheet tags.
+ *
+ * `alertStatus` is a DIFFERENT concept from alerts.ts's per-strategy
+ * HEALTHY/WARNING/ACTION_REQUIRED/UPSIDE/UNAVAILABLE bands -- this is a
+ * once-per-client classification of combined Cash % against its own flat
+ * 17%/15%/13% bands, ported verbatim from SMA_Dashboard_v12.xlsx's P2 sheet
+ * (cell 8K) -- see lib/cash-margin/consolidated.ts's classifyCombinedCashStatus()
+ * and docs/assumptions-and-changes-from-krish-logic.md §19.2 for the full
+ * writeup, including two oddities ported as-is, not "fixed": the tier
+ * ordering looks backwards vs. thresholds.ts's own convention, and
+ * "CRITICAL" has no equivalent anywhere else in this codebase.
  *
  * The Excess Cash ideal-holdings % comes from client_strategy_configs ??
  * strategy_defaults' equity_pct for this client's first active (non-XTS)
@@ -90,6 +100,8 @@ export async function POST(request: Request) {
 
     const av = summary.accountValue;
     const pct = (part: number) => (av ? (part / av) * 100 : 0);
+    const combinedCashPct = av ? ec.currentCash / av : 0;
+    const alertStatus = classifyCombinedCashStatus(combinedCashPct);
 
     return NextResponse.json({
       qcode,
@@ -97,6 +109,7 @@ export async function POST(request: Request) {
       strategies: mandates.map((m) => m.strategy),
       tier,
       mastersheetDate: ms.date ? ms.date.toISOString().slice(0, 10) : null,
+      alertStatus,
       kpis: {
         accountValue: { value: av, pct: 100 },
         liquidcase: { value: summary.liquidcase, pct: pct(summary.liquidcase) },
