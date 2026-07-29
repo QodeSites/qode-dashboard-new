@@ -21,11 +21,13 @@
  *    ISOLATED from margin-requirements.ts: its own live fetch
  *    (nifty-ltp.ts), never margin-requirements' caller-supplied `niftyLtp`.
  *    It never feeds margin-requirements' contractValue/niftyLtp and is
- *    never fed by it. NIFTY_LOT_SIZE, however, IS shared with
- *    margin-requirements.ts -- both read the same global_config.NIFTY_LOT_SIZE
- *    row (lib/cash-margin/global-config.ts), per Akash's instruction to use
- *    one source for that constant in both places. Only the ATM *value* and
- *    the avg-price constant stay separate/isolated.
+ *    never fed by it. NIFTY_LOT_SIZE and PUT_PROTECTION_AVG_PRICE_PER_QTY,
+ *    however, ARE shared with margin-requirements.ts -- both files read the
+ *    same global_config rows (lib/cash-margin/global-config.ts's
+ *    getNiftyLotSize()/getPutProtectionAvgPricePerQty()), per Akash's
+ *    instruction to use one source for both constants in both places. Only
+ *    the ATM *value* itself stays separate/isolated -- never the two
+ *    constants.
  *  - "Put Protection (%)" in the tier reference table is NOT a distinct DB
  *    column -- strategy_defaults has no such field. It equals long_opt_pct
  *    for every tier today (see docs/cash-margin-client-dashboard-plan.md
@@ -36,10 +38,7 @@ import { loadMastersheet, computeAccountSummary, getVal } from "./mastersheet";
 import { resolveMarginConfig, type MandateRow, type StrategyDefaultRow } from "./margin-requirements";
 import type { StrategyOverrides } from "./config";
 import { fetchNiftyLtp } from "./nifty-ltp";
-import { getNiftyLotSize } from "./global-config";
-
-/** No global_config row for this yet -- stays hardcoded, isolated per-file (see file header). */
-const PUT_PROTECTION_AVG_PRICE_PER_QTY = 450;
+import { getNiftyLotSize, getPutProtectionAvgPricePerQty } from "./global-config";
 
 const TIERS = ["QYE+", "QYE++", "QAW+", "QAW++"] as const;
 
@@ -162,6 +161,7 @@ export async function buildInputsPanel(
   const allDefaults = await prisma.strategy_defaults.findMany({ orderBy: { strategy_name: "asc" } });
   const defaultsByStrategy = new Map(allDefaults.map((d) => [d.strategy_name, d as unknown as StrategyDefaultRow]));
   const niftyLotSize = await getNiftyLotSize();
+  const avgPricePerQty = await getPutProtectionAvgPricePerQty();
 
   const tierReference = TIERS.map((t) => defaultsByStrategy.get(t))
     .filter((d): d is StrategyDefaultRow => !!d)
@@ -229,7 +229,7 @@ export async function buildInputsPanel(
     stale: niftyResult.stale,
     fetchOk: niftyResult.fetchOk,
     exposurePerLot,
-    avgPricePerQty: PUT_PROTECTION_AVG_PRICE_PER_QTY,
+    avgPricePerQty,
     niftyLotSize,
     protectedVal,
     lotsRequired,

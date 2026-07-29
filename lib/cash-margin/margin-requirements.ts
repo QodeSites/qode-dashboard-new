@@ -26,13 +26,14 @@
  *    out to be a signed delta-like figure, not ATM * lot size -- it flips
  *    sign day to day for every qcode. Dropped in favor of niftyLtp, which is
  *    the real Python input this table was standing in for.)
- *  - NIFTY_LOT_SIZE now comes from global_config (Akash added the row
- *    2026-07-29 -- lib/cash-margin/global-config.ts's getNiftyLotSize()),
- *    no longer a hardcoded TS literal. PUT_PROTECTION_AVG_PRICE_PER_QTY
- *    (450) stays hardcoded -- no global_config row for it yet. Algebraically
- *    NIFTY_LOT_SIZE still cancels out of putProtectionCash (contractValue
- *    already has a NIFTY_LOT_SIZE factor), but it's read fresh per request
- *    for Python/DB parity. See docs/assumptions-and-changes-from-krish-logic.md §14b.
+ *  - NIFTY_LOT_SIZE and PUT_PROTECTION_AVG_PRICE_PER_QTY both now come from
+ *    global_config (Akash added both rows 2026-07-29 --
+ *    lib/cash-margin/global-config.ts's getNiftyLotSize()/
+ *    getPutProtectionAvgPricePerQty()), no longer hardcoded TS literals.
+ *    Algebraically NIFTY_LOT_SIZE still cancels out of putProtectionCash
+ *    (contractValue already has a niftyLotSize factor), but it's read fresh
+ *    per request for Python/DB parity. See
+ *    docs/assumptions-and-changes-from-krish-logic.md §14b.
  *  - Available Cash comes from cm_margin_collateral.live_balance * exposure
  *    share, NOT the mastersheet "cash" residual Python uses -- confirmed
  *    against the pasted target table (D2 in the plan doc).
@@ -50,10 +51,8 @@ import { prisma } from "@/lib/prisma";
 import { loadMastersheet, getVal, type MastersheetSnapshot } from "./mastersheet";
 import { computeExposureShare } from "./exposure";
 import { loadMarginCollaterals, type MarginAvailable } from "./margin-api";
-import { getNiftyLotSize } from "./global-config";
+import { getNiftyLotSize, getPutProtectionAvgPricePerQty } from "./global-config";
 import type { StrategyOverrides } from "./config";
-
-const PUT_PROTECTION_AVG_PRICE_PER_QTY = 450;
 
 export interface MarginLine {
   system: "Long Options" | "PSAR" | "Put Protection" | "Drawdown Margin";
@@ -183,6 +182,7 @@ function computeRequiredLines(
   exposureTagSuffix: string,
   config: ResolvedMarginConfig,
   niftyLotSize: number,
+  avgPricePerQty: number,
   niftyLtp?: number,
 ): {
   lines: MarginLine[];
@@ -217,7 +217,7 @@ function computeRequiredLines(
     // niftyLotSize algebraically cancels out here (contractValue already
     // carries a niftyLotSize factor), but it's still read from global_config
     // and applied explicitly, for parity with Python/the DB value.
-    const putProtectionCash = niftyLotSize * PUT_PROTECTION_AVG_PRICE_PER_QTY * lotsRequired;
+    const putProtectionCash = niftyLotSize * avgPricePerQty * lotsRequired;
     lines.push({ system: "Put Protection", cashComponent: null, nonCashComponent: null, cash: putProtectionCash });
     putProtectionDebug = {
       momentumVal,
@@ -226,7 +226,7 @@ function computeRequiredLines(
       contractValue,
       niftyLotSize,
       niftyLtp: niftyLtp ?? null,
-      avgPricePerQty: PUT_PROTECTION_AVG_PRICE_PER_QTY,
+      avgPricePerQty,
       lotsRequired,
       putProtectionCash,
     };
@@ -343,6 +343,7 @@ export async function buildMarginRequirements(
   const margin: MarginAvailable | null = marginMap.get(qcode) ?? null;
   const marginFetchOk = margin !== null;
   const niftyLotSize = await getNiftyLotSize();
+  const avgPricePerQty = await getPutProtectionAvgPricePerQty();
 
   const byStrategy: Record<string, MarginRequirementsScope> = {};
   const combinedLines = new Map<string, MarginLine>();
@@ -358,6 +359,7 @@ export async function buildMarginRequirements(
       m.exposure_tag_suffix,
       config,
       niftyLotSize,
+      avgPricePerQty,
       niftyLtpOverride,
     );
 
