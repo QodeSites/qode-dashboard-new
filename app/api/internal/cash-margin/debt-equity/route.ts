@@ -6,6 +6,7 @@ import {
   computeDebtEquityForStrategy,
   computeDebtEquityCombined,
 } from "@/lib/cash-margin/debt-equity";
+import { parseCashMarginBody } from "@/lib/cash-margin/request-utils";
 
 /**
  * "DEBT TO EQUITY RATIO" for one client (qcode).
@@ -21,7 +22,12 @@ import {
  * body is accepted but unused.
  *
  * POST /api/internal/cash-margin/debt-equity
- * body: { qcode: string }
+ * body: { qcode: string, asOfDate?: string }
+ *
+ * `asOfDate` (YYYY-MM-DD) is TEMPORARY -- for verifying against frozen
+ * managed_accounts_analysis Excels by pinning the mastersheet read to a
+ * historical date instead of always-latest. Remove once done (see
+ * lib/cash-margin/mastersheet.ts's loadMastersheet).
  */
 export const dynamic = "force-dynamic";
 
@@ -29,11 +35,10 @@ export async function POST(request: Request) {
   const { error } = await requireInternal();
   if (error) return error;
 
-  const body = await request.json().catch(() => null);
-  const qcode: string | undefined = body?.qcode?.trim();
-  if (!qcode) {
-    return NextResponse.json({ error: "Missing required field: qcode" }, { status: 400 });
-  }
+  const { data, error: parseError } = await parseCashMarginBody(request, { requireQcode: true });
+  if (parseError) return parseError;
+  const { asOfDate } = data;
+  const qcode = data.qcode as string;
 
   try {
     const mandates = await prisma.client_strategy_configs.findMany({
@@ -56,7 +61,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const ms = await loadMastersheet(qcode);
+    const ms = await loadMastersheet(qcode, asOfDate);
 
     const scopes = mandates.map((m) =>
       computeDebtEquityForStrategy(ms, m.strategy, m.exposure_tag_suffix),

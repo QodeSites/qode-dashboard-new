@@ -86,8 +86,10 @@ function pct(part: number, whole: number): number | null {
  * @param overrides - optional, request-scoped only, never persisted (POST
  *   body override of the resolved threshold bands -- see
  *   lib/cash-margin/config.ts and docs/thresholds-to-table-and-post-override-plan.md).
+ * @param asOfDate - TEMPORARY, for verification against frozen
+ *   managed_accounts_analysis Excels -- see loadMastersheet(). Remove once done.
  */
-export async function buildAlertRows(overrides?: StrategyOverrides): Promise<AlertRow[]> {
+export async function buildAlertRows(overrides?: StrategyOverrides, asOfDate?: Date): Promise<AlertRow[]> {
   const mandates = await loadActiveMandates();
 
   const strategyNames = Array.from(new Set(mandates.map((m) => m.strategy)));
@@ -113,7 +115,7 @@ export async function buildAlertRows(overrides?: StrategyOverrides): Promise<Ale
   for (const m of mandates) {
     let ms = msCache.get(m.qcode);
     if (!ms) {
-      ms = await loadMastersheet(m.qcode);
+      ms = await loadMastersheet(m.qcode, asOfDate);
       msCache.set(m.qcode, ms);
     }
 

@@ -46,10 +46,16 @@ export interface AccountSummary {
  * client, indexed by system_tag. Returns an empty snapshot (date null) if the
  * client has no rows at all. Latest date is resolved PER qcode (clients lag
  * independently), matching Python's "max Date in the sheet".
+ *
+ * @param asOfDate - TEMPORARY, for verifying against frozen managed_accounts_analysis
+ *   Excels: when given, resolves the latest snapshot on or before this date
+ *   instead of the overall latest. Read-only (findFirst/findMany only), same
+ *   as the no-arg path. Remove once verification against the old Excels is
+ *   done -- not meant to be a permanent feature.
  */
-export async function loadMastersheet(qcode: string): Promise<MastersheetSnapshot> {
+export async function loadMastersheet(qcode: string, asOfDate?: Date): Promise<MastersheetSnapshot> {
   const latest = await prisma.bifurcated_master_sheet_test.findFirst({
-    where: { qcode },
+    where: asOfDate ? { qcode, date: { lte: asOfDate } } : { qcode },
     orderBy: { date: "desc" },
     select: { date: true },
   });

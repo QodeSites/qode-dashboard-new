@@ -8,7 +8,8 @@ import {
   computeConsolidatedExcessCash,
   detectConsolidatedTier,
 } from "@/lib/cash-margin/consolidated";
-import { resolveRatioConfig, type StrategyOverrides } from "@/lib/cash-margin/config";
+import { resolveRatioConfig } from "@/lib/cash-margin/config";
+import { parseCashMarginBody } from "@/lib/cash-margin/request-utils";
 
 /**
  * Single-client KPI top-bar: Account Value / Liquidcase / Holdings /
@@ -28,7 +29,12 @@ import { resolveRatioConfig, type StrategyOverrides } from "@/lib/cash-margin/co
  * docs/thresholds-to-table-and-post-override-plan.md.
  *
  * POST /api/internal/cash-margin/top-bar
- * body: { qcode: string, overrides?: { [strategy: string]: { equityPct?, ... } } }
+ * body: { qcode: string, overrides?: { [strategy: string]: { equityPct?, ... } }, asOfDate?: string }
+ *
+ * `asOfDate` (YYYY-MM-DD) is TEMPORARY -- for verifying against frozen
+ * managed_accounts_analysis Excels by pinning the mastersheet read to a
+ * historical date instead of always-latest. Remove once done (see
+ * lib/cash-margin/mastersheet.ts's loadMastersheet).
  */
 export const dynamic = "force-dynamic";
 
@@ -36,12 +42,10 @@ export async function POST(request: Request) {
   const { error } = await requireInternal();
   if (error) return error;
 
-  const body = await request.json().catch(() => null);
-  const qcode: string | undefined = body?.qcode?.trim();
-  const overrides: StrategyOverrides | undefined = body?.overrides;
-  if (!qcode) {
-    return NextResponse.json({ error: "Missing required field: qcode" }, { status: 400 });
-  }
+  const { data, error: parseError } = await parseCashMarginBody(request, { requireQcode: true });
+  if (parseError) return parseError;
+  const { overrides, asOfDate } = data;
+  const qcode = data.qcode as string;
 
   try {
     const mandates = await prisma.client_strategy_configs.findMany({
@@ -76,7 +80,7 @@ export async function POST(request: Request) {
       select: { equity_pct: true, cash_pct: true, lc_pct: true, derivative_pct: true },
     });
 
-    const ms = await loadMastersheet(qcode);
+    const ms = await loadMastersheet(qcode, asOfDate);
     const summary = computeConsolidated(ms);
     const tier = detectConsolidatedTier(
       nonXtsMandates.length ? nonXtsMandates.map((m) => m.strategy) : mandates.map((m) => m.strategy),
