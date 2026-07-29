@@ -20,6 +20,11 @@
  *    {"QAW+","QAW++"} name check.
  *  - Put Protection lots are fractional (no math.ceil), and exposure_per_lot
  *    comes from cm_contract_value.contract_value, not a live Nifty ATM feed.
+ *  - NIFTY_LOT_SIZE is derived at request time as
+ *    (live NIFTY LTP from Yahoo Finance) / PUT_PROTECTION_AVG_PRICE_PER_QTY,
+ *    not a hardcoded 65 -- see ./nifty-ltp.ts. Falls back to the hardcoded
+ *    65 if the live fetch fails (Yahoo's chart API is unauthenticated, no
+ *    SLA). See docs/assumptions-and-changes-from-krish-logic.md §14b.
  *  - Available Cash comes from cm_margin_collateral.live_balance * exposure
  *    share, NOT the mastersheet "cash" residual Python uses -- confirmed
  *    against the pasted target table (D2 in the plan doc).
@@ -32,9 +37,10 @@ import { loadMastersheet, getVal, type MastersheetSnapshot } from "./mastersheet
 import { computeExposureShare } from "./exposure";
 import { loadMarginCollaterals, type MarginAvailable } from "./margin-api";
 import { loadContractValues } from "./contract-value";
+import { getNiftyLtp } from "./nifty-ltp";
 import type { StrategyOverrides } from "./config";
 
-const NIFTY_LOT_SIZE = 65;
+const FALLBACK_NIFTY_LOT_SIZE = 65;
 const PUT_PROTECTION_AVG_PRICE_PER_QTY = 450;
 
 export interface MarginLine {
@@ -143,6 +149,7 @@ function computeRequiredLines(
   exposureTagSuffix: string,
   config: ResolvedMarginConfig,
   contractValue: number | null,
+  niftyLotSize: number,
 ): { lines: MarginLine[]; accountValue: number; required: MarginTotals } {
   const accountValue = getVal(ms, `${strategy} ${exposureTagSuffix}`.trim());
   const lines: MarginLine[] = [];
@@ -162,7 +169,7 @@ function computeRequiredLines(
     const lowVolVal = getVal(ms, `${strategy} Low Vol Stock Holdings`);
     const protectedVal = momentumVal + lowVolVal;
     const lotsRequired = contractValue ? protectedVal / contractValue : 0;
-    const putProtectionCash = NIFTY_LOT_SIZE * PUT_PROTECTION_AVG_PRICE_PER_QTY * lotsRequired;
+    const putProtectionCash = niftyLotSize * PUT_PROTECTION_AVG_PRICE_PER_QTY * lotsRequired;
     lines.push({ system: "Put Protection", cashComponent: null, nonCashComponent: null, cash: putProtectionCash });
   }
 
@@ -209,6 +216,12 @@ export interface MarginRequirementsResult {
   strategies: string[];
   mastersheetDate: string | null;
   marginFetchOk: boolean;
+  /** Live NIFTY 50 LTP from Yahoo Finance, or null if the fetch failed. */
+  niftyLtp: number | null;
+  /** niftyLtp / PUT_PROTECTION_AVG_PRICE_PER_QTY, or the hardcoded fallback (65) if niftyLtp is null. */
+  niftyLotSize: number;
+  /** false when niftyLtp came from the hardcoded fallback rather than a live/cached fetch. */
+  niftyFetchOk: boolean;
   combined: MarginRequirementsScope;
   byStrategy: Record<string, MarginRequirementsScope>;
 }
@@ -258,6 +271,10 @@ export async function buildMarginRequirements(
   const marginFetchOk = margin !== null;
   const contractValue = contractValueMap.get(qcode) ?? null;
 
+  const niftyLtp = await getNiftyLtp();
+  const niftyFetchOk = niftyLtp !== null;
+  const niftyLotSize = niftyFetchOk ? niftyLtp / PUT_PROTECTION_AVG_PRICE_PER_QTY : FALLBACK_NIFTY_LOT_SIZE;
+
   const byStrategy: Record<string, MarginRequirementsScope> = {};
   const combinedLines = new Map<string, MarginLine>();
   const combinedRequired: MarginTotals = { cc: 0, ncc: 0, cash: 0 };
@@ -272,6 +289,7 @@ export async function buildMarginRequirements(
       m.exposure_tag_suffix,
       config,
       contractValue,
+      niftyLotSize,
     );
 
     const share = computeExposureShare(ms, m.strategy, m.exposure_tag_suffix, mandates.length);
@@ -327,6 +345,9 @@ export async function buildMarginRequirements(
     strategies: mandates.map((m) => m.strategy),
     mastersheetDate: ms.date ? ms.date.toISOString().slice(0, 10) : null,
     marginFetchOk,
+    niftyLtp,
+    niftyLotSize,
+    niftyFetchOk,
     combined,
     byStrategy,
   };
