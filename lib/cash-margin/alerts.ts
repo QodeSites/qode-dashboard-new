@@ -18,14 +18,8 @@ import { detectTier, isXtsMandate, type Tier } from "./tags";
 import { loadMastersheet, computeAccountSummary } from "./mastersheet";
 import { computeExposureShare } from "./exposure";
 import { loadMarginCollaterals, type MarginAvailable } from "./margin-api";
-import {
-  METRIC_ORDER,
-  METRIC_LABEL,
-  MARGIN_HEALTH_THRESHOLDS,
-  classifyMarginMetric,
-  type MetricKey,
-  type Severity,
-} from "./thresholds";
+import { METRIC_ORDER, METRIC_LABEL, classifyMarginMetric, type MetricKey, type Severity } from "./thresholds";
+import { resolveThresholdConfig, type StrategyOverrides } from "./config";
 
 export interface AlertRow {
   client: string;
@@ -51,13 +45,32 @@ interface ActiveMandate {
   account_name: string;
   strategy: string;
   exposure_tag_suffix: string;
+  cash_pct_healthy: unknown;
+  cash_pct_warning: unknown;
+  cash_pct_upside: unknown;
+  cash_collateral_pct_healthy: unknown;
+  cash_collateral_pct_warning: unknown;
+  non_cash_collateral_pct_healthy: unknown;
+  non_cash_collateral_pct_warning: unknown;
 }
 
 /** Currently-active, non-XTS mandates from client_strategy_configs. */
 async function loadActiveMandates(): Promise<ActiveMandate[]> {
   const rows = await prisma.client_strategy_configs.findMany({
     where: { OR: [{ effective_to: null }, { effective_to: { gte: new Date() } }] },
-    select: { qcode: true, account_name: true, strategy: true, exposure_tag_suffix: true },
+    select: {
+      qcode: true,
+      account_name: true,
+      strategy: true,
+      exposure_tag_suffix: true,
+      cash_pct_healthy: true,
+      cash_pct_warning: true,
+      cash_pct_upside: true,
+      cash_collateral_pct_healthy: true,
+      cash_collateral_pct_warning: true,
+      non_cash_collateral_pct_healthy: true,
+      non_cash_collateral_pct_warning: true,
+    },
     orderBy: [{ account_name: "asc" }, { strategy: "asc" }],
   });
   return rows.filter((r) => !isXtsMandate(r.exposure_tag_suffix));
@@ -69,9 +82,19 @@ function pct(part: number, whole: number): number | null {
 
 /**
  * Build all alert-table rows. One row per (active non-XTS mandate) x (metric).
+ *
+ * @param overrides - optional, request-scoped only, never persisted (POST
+ *   body override of the resolved threshold bands -- see
+ *   lib/cash-margin/config.ts and docs/thresholds-to-table-and-post-override-plan.md).
  */
-export async function buildAlertRows(): Promise<AlertRow[]> {
+export async function buildAlertRows(overrides?: StrategyOverrides): Promise<AlertRow[]> {
   const mandates = await loadActiveMandates();
+
+  const strategyNames = Array.from(new Set(mandates.map((m) => m.strategy)));
+  const defaults = await prisma.strategy_defaults.findMany({
+    where: { strategy_name: { in: strategyNames } },
+  });
+  const defaultsByStrategy = new Map(defaults.map((d) => [d.strategy_name, d]));
 
   // Count active strategies per qcode, for the multi-strategy exposure split.
   const strategyCount = new Map<string, number>();
@@ -117,10 +140,12 @@ export async function buildAlertRows(): Promise<AlertRow[]> {
       non_cash_collateral_pct: availNcc === null ? null : pct(availNcc, accountValue),
     };
 
+    const bands = resolveThresholdConfig(m.strategy, m, defaultsByStrategy.get(m.strategy), overrides);
+
     for (const metricKey of METRIC_ORDER) {
       const value = metricPct[metricKey];
-      const band = MARGIN_HEALTH_THRESHOLDS[metricKey][tier];
-      const severity = classifyMarginMetric(value, tier, metricKey);
+      const band = bands[metricKey];
+      const severity = classifyMarginMetric(value, band);
       rows.push({
         client: m.account_name,
         qcode: m.qcode,

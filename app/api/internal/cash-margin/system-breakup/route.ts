@@ -7,6 +7,7 @@ import {
   computeSystemBreakupForStrategy,
   computeSystemBreakupCombined,
 } from "@/lib/cash-margin/system-breakup";
+import { resolveRatioConfig, type StrategyOverrides } from "@/lib/cash-margin/config";
 
 /**
  * "SYSTEM BREAKUP SCHEME (ABSOLUTE)" for one client (qcode).
@@ -18,17 +19,27 @@ import {
  * hasEquitySplit is resolved as: clientConfig.gold_pct ?? strategyDefault.gold_pct != null
  * (same gate as Krish's has_equity_split in internal-utils.ts:2153).
  *
- * GET /api/internal/cash-margin/system-breakup?qcode=QAC00071
+ * Equity Book %, Cash sub-%, and the Gold/Momentum/LowVol split come from
+ * client_strategy_configs ?? strategy_defaults (equity_pct/cash_pct/lc_pct/
+ * derivative_pct/gold_pct/momentum_pct/lowvol_pct) -- optionally overridden
+ * per-strategy via `overrides` in the POST body. `overrides` is
+ * request-scoped only and is never written back to the DB. See
+ * docs/thresholds-to-table-and-post-override-plan.md.
+ *
+ * POST /api/internal/cash-margin/system-breakup
+ * body: { qcode: string, overrides?: { [strategy: string]: { equityPct?, ... } } }
  */
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+export async function POST(request: Request) {
   const { error } = await requireInternal();
   if (error) return error;
 
-  const qcode = new URL(request.url).searchParams.get("qcode")?.trim();
+  const body = await request.json().catch(() => null);
+  const qcode: string | undefined = body?.qcode?.trim();
+  const overrides: StrategyOverrides | undefined = body?.overrides;
   if (!qcode) {
-    return NextResponse.json({ error: "Missing required query param: qcode" }, { status: 400 });
+    return NextResponse.json({ error: "Missing required field: qcode" }, { status: 400 });
   }
 
   try {
@@ -43,11 +54,26 @@ export async function GET(request: Request) {
           strategy: true,
           exposure_tag_suffix: true,
           gold_pct: true,
+          equity_pct: true,
+          cash_pct: true,
+          lc_pct: true,
+          derivative_pct: true,
+          momentum_pct: true,
+          lowvol_pct: true,
         },
         orderBy: { strategy: "asc" },
       }),
       prisma.strategy_defaults.findMany({
-        select: { strategy_name: true, gold_pct: true },
+        select: {
+          strategy_name: true,
+          gold_pct: true,
+          equity_pct: true,
+          cash_pct: true,
+          lc_pct: true,
+          derivative_pct: true,
+          momentum_pct: true,
+          lowvol_pct: true,
+        },
       }),
     ]);
 
@@ -63,12 +89,8 @@ export async function GET(request: Request) {
 
     const scopes = mandates.map((m) => {
       const tier = detectTier(m.strategy);
-      const resolvedGoldPct =
-        (m.gold_pct != null ? Number(m.gold_pct) : null) ??
-        (defaultMap.get(m.strategy)?.gold_pct != null
-          ? Number(defaultMap.get(m.strategy)!.gold_pct)
-          : null);
-      const hasEquitySplit = resolvedGoldPct != null;
+      const ratios = resolveRatioConfig(m.strategy, m, defaultMap.get(m.strategy), overrides);
+      const hasEquitySplit = ratios.goldPct != null;
 
       return computeSystemBreakupForStrategy(
         ms,
@@ -76,6 +98,7 @@ export async function GET(request: Request) {
         m.exposure_tag_suffix,
         tier,
         hasEquitySplit,
+        ratios,
       );
     });
 

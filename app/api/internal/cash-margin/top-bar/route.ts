@@ -8,6 +8,7 @@ import {
   computeConsolidatedExcessCash,
   detectConsolidatedTier,
 } from "@/lib/cash-margin/consolidated";
+import { resolveRatioConfig, type StrategyOverrides } from "@/lib/cash-margin/config";
 
 /**
  * Single-client KPI top-bar: Account Value / Liquidcase / Holdings /
@@ -20,17 +21,26 @@ import {
  * per-client (as opposed to per-strategy) rollup of the tiered Margin
  * Health thresholds anywhere yet -- see docs/cash-margin-client-dashboard-plan.md.
  *
- * GET /api/internal/cash-margin/top-bar?qcode=QAC00071
+ * The Excess Cash ideal-holdings % comes from client_strategy_configs ??
+ * strategy_defaults' equity_pct for this client's first active (non-XTS)
+ * strategy -- optionally overridden via `overrides` in the POST body
+ * (request-scoped only, never persisted). See
+ * docs/thresholds-to-table-and-post-override-plan.md.
+ *
+ * POST /api/internal/cash-margin/top-bar
+ * body: { qcode: string, overrides?: { [strategy: string]: { equityPct?, ... } } }
  */
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+export async function POST(request: Request) {
   const { error } = await requireInternal();
   if (error) return error;
 
-  const qcode = new URL(request.url).searchParams.get("qcode")?.trim();
+  const body = await request.json().catch(() => null);
+  const qcode: string | undefined = body?.qcode?.trim();
+  const overrides: StrategyOverrides | undefined = body?.overrides;
   if (!qcode) {
-    return NextResponse.json({ error: "Missing required query param: qcode" }, { status: 400 });
+    return NextResponse.json({ error: "Missing required field: qcode" }, { status: 400 });
   }
 
   try {
@@ -39,7 +49,15 @@ export async function GET(request: Request) {
         qcode,
         OR: [{ effective_to: null }, { effective_to: { gte: new Date() } }],
       },
-      select: { account_name: true, strategy: true, exposure_tag_suffix: true },
+      select: {
+        account_name: true,
+        strategy: true,
+        exposure_tag_suffix: true,
+        equity_pct: true,
+        cash_pct: true,
+        lc_pct: true,
+        derivative_pct: true,
+      },
       orderBy: { strategy: "asc" },
     });
 
@@ -50,14 +68,21 @@ export async function GET(request: Request) {
       );
     }
 
-    const nonXtsStrategies = mandates
-      .filter((m) => !isXtsMandate(m.exposure_tag_suffix))
-      .map((m) => m.strategy);
+    const nonXtsMandates = mandates.filter((m) => !isXtsMandate(m.exposure_tag_suffix));
+    const primaryMandate = nonXtsMandates[0] ?? mandates[0];
+
+    const strategyDefault = await prisma.strategy_defaults.findUnique({
+      where: { strategy_name: primaryMandate.strategy },
+      select: { equity_pct: true, cash_pct: true, lc_pct: true, derivative_pct: true },
+    });
 
     const ms = await loadMastersheet(qcode);
     const summary = computeConsolidated(ms);
-    const tier = detectConsolidatedTier(nonXtsStrategies.length ? nonXtsStrategies : mandates.map((m) => m.strategy));
-    const ec = computeConsolidatedExcessCash(summary, tier);
+    const tier = detectConsolidatedTier(
+      nonXtsMandates.length ? nonXtsMandates.map((m) => m.strategy) : mandates.map((m) => m.strategy),
+    );
+    const ratios = resolveRatioConfig(primaryMandate.strategy, primaryMandate, strategyDefault ?? undefined, overrides);
+    const ec = computeConsolidatedExcessCash(summary, ratios.equityPct);
 
     const av = summary.accountValue;
     const pct = (part: number) => (av ? (part / av) * 100 : 0);

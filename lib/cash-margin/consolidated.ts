@@ -10,9 +10,9 @@
  * The two can disagree if a client's no-prefix tags aren't populated exactly
  * as the sum of their legs -- kept as a separate function rather than merged.
  *
- * Does NOT compute Alert Status -- that's thresholds.ts's tiered
- * MARGIN_HEALTH_THRESHOLDS, and there is no per-client (as opposed to
- * per-strategy) rollup of it yet.
+ * Does NOT compute Alert Status -- that's alerts.ts's per-metric bands
+ * (resolved via config.ts's resolveThresholdConfig), and there is no
+ * per-client (as opposed to per-strategy) rollup of it yet.
  */
 import type { MastersheetSnapshot } from "./mastersheet";
 import { getVal, computeAccountSummary } from "./mastersheet";
@@ -77,7 +77,11 @@ export function computeConsolidated(ms: MastersheetSnapshot): ConsolidatedSummar
 
 /**
  * holdings            = mutualFunds + equityStock + bondStock
- * idealHoldingsPct     = override, else 70% (tier '++') / 80% (tier '+')
+ * idealHoldingsPct     = caller-resolved (client_strategy_configs.equity_pct
+ *                        ?? strategy_defaults.equity_pct ?? POST-body
+ *                        override -- see lib/cash-margin/config.ts's
+ *                        resolveRatioConfig(); tier-based hardcode removed,
+ *                        see docs/thresholds-to-table-and-post-override-plan.md)
  * idealAccountValue    = holdings / idealHoldingsPct
  * utilizedCash         = idealAccountValue - holdings
  * currentCash          = cash + liquidcase
@@ -85,11 +89,9 @@ export function computeConsolidated(ms: MastersheetSnapshot): ConsolidatedSummar
  */
 export function computeConsolidatedExcessCash(
   summary: ConsolidatedSummary,
-  tier: Tier,
-  idealHoldingsPctOverride?: number,
+  idealHoldingsPct: number,
 ): ConsolidatedExcessCash {
   const holdings = summary.mutualFunds + summary.equityStock + summary.bondStock;
-  const idealHoldingsPct = idealHoldingsPctOverride ?? (tier === "++" ? 0.7 : 0.8);
   const idealCashPct = 1 - idealHoldingsPct;
   const idealAccountValue = idealHoldingsPct ? holdings / idealHoldingsPct : 0;
   const utilizedCash = idealAccountValue - holdings;

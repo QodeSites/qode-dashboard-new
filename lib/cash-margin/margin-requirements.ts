@@ -32,6 +32,7 @@ import { loadMastersheet, getVal, type MastersheetSnapshot } from "./mastersheet
 import { computeExposureShare } from "./exposure";
 import { loadMarginCollaterals, type MarginAvailable } from "./margin-api";
 import { loadContractValues } from "./contract-value";
+import type { StrategyOverrides } from "./config";
 
 const NIFTY_LOT_SIZE = 65;
 const PUT_PROTECTION_AVG_PRICE_PER_QTY = 450;
@@ -107,16 +108,26 @@ function toNum(v: unknown): number | null {
   return v === null || v === undefined ? null : Number(v);
 }
 
-/** client_strategy_configs.<field> ?? strategy_defaults[strategy].<field>. */
-function resolveMarginConfig(mandate: MandateRow, fallback: StrategyDefaultRow | undefined): ResolvedMarginConfig {
+/**
+ * overrides[strategy]?.<field> ?? client_strategy_configs.<field> ??
+ * strategy_defaults[strategy].<field>. `overrides` is request-scoped only
+ * (POST body), never persisted -- see docs/thresholds-to-table-and-post-override-plan.md.
+ */
+function resolveMarginConfig(
+  mandate: MandateRow,
+  fallback: StrategyDefaultRow | undefined,
+  overrides: StrategyOverrides | undefined,
+): ResolvedMarginConfig {
+  const ov = overrides?.[mandate.strategy];
   return {
-    longOptPct: toNum(mandate.long_opt_pct) ?? toNum(fallback?.long_opt_pct) ?? 0,
-    psarMultiplier: toNum(mandate.psar_multiplier) ?? toNum(fallback?.psar_multiplier) ?? 0,
-    psarLeverage: toNum(mandate.psar_leverage) ?? toNum(fallback?.psar_leverage) ?? 0,
-    drawdownMarginPct: toNum(mandate.drawdown_margin_pct) ?? toNum(fallback?.drawdown_margin_pct) ?? 0,
-    goldPct: toNum(mandate.gold_pct) ?? toNum(fallback?.gold_pct),
-    momentumPct: toNum(mandate.momentum_pct) ?? toNum(fallback?.momentum_pct),
-    lowvolPct: toNum(mandate.lowvol_pct) ?? toNum(fallback?.lowvol_pct),
+    longOptPct: ov?.longOptPct ?? toNum(mandate.long_opt_pct) ?? toNum(fallback?.long_opt_pct) ?? 0,
+    psarMultiplier: ov?.psarMultiplier ?? toNum(mandate.psar_multiplier) ?? toNum(fallback?.psar_multiplier) ?? 0,
+    psarLeverage: ov?.psarLeverage ?? toNum(mandate.psar_leverage) ?? toNum(fallback?.psar_leverage) ?? 0,
+    drawdownMarginPct:
+      ov?.drawdownMarginPct ?? toNum(mandate.drawdown_margin_pct) ?? toNum(fallback?.drawdown_margin_pct) ?? 0,
+    goldPct: ov?.goldPct ?? toNum(mandate.gold_pct) ?? toNum(fallback?.gold_pct),
+    momentumPct: ov?.momentumPct ?? toNum(mandate.momentum_pct) ?? toNum(fallback?.momentum_pct),
+    lowvolPct: ov?.lowvolPct ?? toNum(mandate.lowvol_pct) ?? toNum(fallback?.lowvol_pct),
   };
 }
 
@@ -206,8 +217,15 @@ export interface MarginRequirementsResult {
  * Full Margin Requirements build for one client (qcode): per-strategy scopes
  * plus a Combined scope that's a straight sum of the per-strategy Required
  * line items and (already exposure-split) Available figures.
+ *
+ * @param overrides - optional, request-scoped only, never persisted (POST
+ *   body override of long_opt_pct/psar_multiplier/psar_leverage/
+ *   drawdown_margin_pct/gold_pct/momentum_pct/lowvol_pct).
  */
-export async function buildMarginRequirements(qcode: string): Promise<MarginRequirementsResult | null> {
+export async function buildMarginRequirements(
+  qcode: string,
+  overrides?: StrategyOverrides,
+): Promise<MarginRequirementsResult | null> {
   const mandates = await prisma.client_strategy_configs.findMany({
     where: { qcode, OR: [{ effective_to: null }, { effective_to: { gte: new Date() } }] },
     select: {
@@ -247,7 +265,7 @@ export async function buildMarginRequirements(qcode: string): Promise<MarginRequ
   let combinedAccountValue = 0;
 
   for (const m of mandates as unknown as MandateRow[]) {
-    const config = resolveMarginConfig(m, defaultsByStrategy.get(m.strategy));
+    const config = resolveMarginConfig(m, defaultsByStrategy.get(m.strategy), overrides);
     const { lines, accountValue, required } = computeRequiredLines(
       ms,
       m.strategy,

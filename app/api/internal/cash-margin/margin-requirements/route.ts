@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireInternal } from "@/app/lib/admin-utils";
 import { buildMarginRequirements } from "@/lib/cash-margin/margin-requirements";
+import type { StrategyOverrides } from "@/lib/cash-margin/config";
 
 /**
  * "MARGIN REQUIREMENTS - Combined / {strategy}" for one client (qcode) --
@@ -10,21 +11,31 @@ import { buildMarginRequirements } from "@/lib/cash-margin/margin-requirements";
  * of per-strategy Required + already exposure-split Available -- Python has
  * no Combined view for this table, see margin-requirements.ts).
  *
- * GET /api/internal/cash-margin/margin-requirements?qcode=QAC00071
+ * long_opt_pct/psar_multiplier/psar_leverage/drawdown_margin_pct/gold_pct/
+ * momentum_pct/lowvol_pct come from client_strategy_configs ??
+ * strategy_defaults -- optionally overridden per-strategy via `overrides`
+ * in the POST body (request-scoped only, never persisted). NIFTY_LOT_SIZE /
+ * PUT_PROTECTION_AVG_PRICE_PER_QTY are NOT overridable -- deferred, see
+ * docs/thresholds-to-table-and-post-override-plan.md.
+ *
+ * POST /api/internal/cash-margin/margin-requirements
+ * body: { qcode: string, overrides?: { [strategy: string]: { longOptPct?, ... } } }
  */
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+export async function POST(request: Request) {
   const { error } = await requireInternal();
   if (error) return error;
 
-  const qcode = new URL(request.url).searchParams.get("qcode")?.trim();
+  const body = await request.json().catch(() => null);
+  const qcode: string | undefined = body?.qcode?.trim();
+  const overrides: StrategyOverrides | undefined = body?.overrides;
   if (!qcode) {
-    return NextResponse.json({ error: "Missing required query param: qcode" }, { status: 400 });
+    return NextResponse.json({ error: "Missing required field: qcode" }, { status: 400 });
   }
 
   try {
-    const result = await buildMarginRequirements(qcode);
+    const result = await buildMarginRequirements(qcode, overrides);
     if (!result) {
       return NextResponse.json(
         { error: `No active mandate found for qcode "${qcode}"` },

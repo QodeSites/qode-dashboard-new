@@ -11,23 +11,17 @@
  * (compute_qaw_equity_book, EQUITY_BOOK_PCT, QAW_SUBS) and
  * common_report_utils.py (compute_excess_cash, DEFAULT_IDEAL_CASH_PCT).
  *
- * Hardcodes tier defaults only — no per-client ideal-% override support,
- * since client_strategy_configs has no such columns (see
- * docs/assumptions-and-changes-from-krish-logic.md §10).
+ * Ratios (Equity Book %, Cash sub-%, Gold/Momentum/LowVol split) are
+ * resolved by the caller from client_strategy_configs ?? strategy_defaults
+ * (+ an optional POST-body override) via lib/cash-margin/config.ts's
+ * resolveRatioConfig() -- no more hardcoded tier constants here. See
+ * docs/thresholds-to-table-and-post-override-plan.md and
+ * docs/assumptions-and-changes-from-krish-logic.md §14a.
  */
 import type { MastersheetSnapshot } from "./mastersheet";
 import type { Tier } from "./tags";
 import { computeAccountSummaryForStrategy } from "./consolidated";
-
-// ─── Tier-based allocation constants ──────────────────────────────────────────
-// Fractions (0-1) internally; *100 for output percent fields.
-// Source: qaw_report.py EQUITY_BOOK_PCT / common_report_utils.py DEFAULT_IDEAL_CASH_PCT.
-const EQUITY_BOOK_PCT: Record<Tier, number> = { "+": 0.8, "++": 0.7 };
-const IDEAL_CASH_PCT: Record<Tier, number> = { "+": 0.07, "++": 0.1 };
-
-// Sub-split within the QAW Equity Book.
-// Source: qaw_report.py QAW_SUBS — tier-independent.
-const QAW_SUB_PCT = { gold: 0.4, momentum: 0.4, lowVol: 0.2 } as const;
+import type { RatioConfig } from "./config";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -80,6 +74,12 @@ export interface SystemBreakupScope {
  * @param hasEquitySplit - true when the resolved config has gold_pct set
  *   (client override OR strategy_defaults fallback). Same gate as Krish's
  *   `has_equity_split = split.gold_pct != null` (internal-utils.ts:2153).
+ * @param ratios - equityPct/cashPct/goldPct/momentumPct/lowvolPct resolved
+ *   by the caller (lib/cash-margin/config.ts's resolveRatioConfig, from
+ *   client_strategy_configs ?? strategy_defaults ?? POST-body override).
+ *   gold/momentum/lowvol are only read when hasEquitySplit is true -- the
+ *   caller guarantees they're non-null in that case (same invariant that
+ *   already governs hasEquitySplit itself).
  */
 export function computeSystemBreakupForStrategy(
   ms: MastersheetSnapshot,
@@ -87,10 +87,11 @@ export function computeSystemBreakupForStrategy(
   exposureTagSuffix: string,
   tier: Tier,
   hasEquitySplit: boolean,
+  ratios: RatioConfig,
 ): SystemBreakupScope {
   const summary = computeAccountSummaryForStrategy(ms, strategy, exposureTagSuffix);
   const av = summary.accountValue;
-  const equityBookPct = EQUITY_BOOK_PCT[tier];
+  const equityBookPct = ratios.equityPct;
   const funds = equityBookPct * av; // "Funds to Deploy in Equity Book" (Python)
 
   // ── Equity Book ──────────────────────────────────────────────────────────
@@ -122,9 +123,9 @@ export function computeSystemBreakupForStrategy(
     };
 
     equityRows = [
-      makeQawRow("Gold", QAW_SUB_PCT.gold, summary.gold),
-      makeQawRow("Momentum", QAW_SUB_PCT.momentum, summary.momentum),
-      makeQawRow("Low Vol ETF", QAW_SUB_PCT.lowVol, summary.lowVol),
+      makeQawRow("Gold", ratios.goldPct ?? 0, summary.gold),
+      makeQawRow("Momentum", ratios.momentumPct ?? 0, summary.momentum),
+      makeQawRow("Low Vol ETF", ratios.lowvolPct ?? 0, summary.lowVol),
     ];
   } else {
     // Non-split (e.g. QYE): single "Holdings" row.
@@ -158,11 +159,11 @@ export function computeSystemBreakupForStrategy(
   };
 
   // ── Derivative Book ───────────────────────────────────────────────────────
-  // Always 2 rows: Cash (IDEAL_CASH_PCT) + Liquid Case (remainder up to derivPct).
+  // Always 2 rows: Cash (ratios.cashPct) + Liquid Case (ratios.lcPct).
   // currentPct denominator = Account Value (consistent with % columns shown in pasted table).
-  const derivPct = 1 - equityBookPct;
-  const cashSubPct = IDEAL_CASH_PCT[tier];
-  const liquidSubPct = derivPct - cashSubPct;
+  const derivPct = ratios.derivativePct;
+  const cashSubPct = ratios.cashPct;
+  const liquidSubPct = ratios.lcPct;
 
   const makeDerivRow = (
     label: string,

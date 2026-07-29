@@ -15,17 +15,24 @@ import {
  * see docs/debt-to-equity-plan.md. No config-gating: every active strategy
  * gets the same 13-row breakup regardless of tier or QAW/QYE.
  *
- * GET /api/internal/cash-margin/debt-equity?qcode=QAC00071
+ * This table has no threshold/ratio inputs of its own -- POST is used only
+ * for shape consistency with the rest of the cash-margin routes (see
+ * docs/thresholds-to-table-and-post-override-plan.md); `overrides` in the
+ * body is accepted but unused.
+ *
+ * POST /api/internal/cash-margin/debt-equity
+ * body: { qcode: string }
  */
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+export async function POST(request: Request) {
   const { error } = await requireInternal();
   if (error) return error;
 
-  const qcode = new URL(request.url).searchParams.get("qcode")?.trim();
+  const body = await request.json().catch(() => null);
+  const qcode: string | undefined = body?.qcode?.trim();
   if (!qcode) {
-    return NextResponse.json({ error: "Missing required query param: qcode" }, { status: 400 });
+    return NextResponse.json({ error: "Missing required field: qcode" }, { status: 400 });
   }
 
   try {
