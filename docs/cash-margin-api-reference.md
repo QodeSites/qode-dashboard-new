@@ -129,8 +129,9 @@ Status here is rolled up from the same alert table as `/alerts`.
       "holdingsPct": 74.1,
       "marginStatus": "Healthy",       // "Shortfall" | "Healthy"
       "currentDrawdownPct": -4.99,     // percent-scale, can be null if no drawdown tag
-      "alertStatus": "HEALTHY",        // "HEALTHY" | "WARNING" | "ACTION_REQUIRED" | "UPSIDE" | "UNAVAILABLE" -- worst-of across this CLIENT's alert rows
-      "action": "No action required",  // "Review Margin and Collateral" | "Deploy Excess Cash" | "No action required"
+      "alertStatus": "HEALTHY",        // "HEALTHY" | "WARNING" | "ACTION_REQUIRED" | "UPSIDE" | "UNAVAILABLE" -- worst-of across THIS ROW'S OWN strategy's 3 alert rows only
+      "clientAlertStatus": "WARNING",  // same 5 values -- worst-of across EVERY one of this client's active strategies (repeats across all of a client's rows)
+      "action": "No action required",  // "Review Margin & Collateral" | "Deploy - Excess Cash" | "No action required"
       "debtEquityHybridRatio": "31-69-0" // "{debt%}-{equity%}-{hybrid%}", each rounded to whole numbers
     }
     // ... one row per active mandate, all clients
@@ -140,19 +141,35 @@ Status here is rolled up from the same alert table as `/alerts`.
     "totalAum": 123456789000,
     "totalExcessCash": 9876543,
     "marginShortfalls": 2,             // count of rows with marginStatus === "Shortfall"
-    "alertsTriggered": 5               // count of DISTINCT clients with worst alertStatus WARNING/ACTION_REQUIRED
+    "alertsTriggered": 5               // count of DISTINCT clients with worst clientAlertStatus WARNING/ACTION_REQUIRED
   },
   "actionQueue": [
-    "Sarla Performance Fibers QAW++ — Deploy Excess Cash"
+    "Sarla Performance Fibers QAW++ — Deploy - Excess Cash"
     // one line per row whose action isn't "No action required"
   ]
 }
 ```
+Two different alert fields, both worth showing: `alertStatus` is this
+specific row's own strategy (e.g. a client running QAW++ and QYE++ can show
+QAW++ = ACTION_REQUIRED, QYE++ = HEALTHY on their two rows), `clientAlertStatus`
+is the same worst-of-everything value repeated on every row for that
+client, for an at-a-glance "does this client need attention anywhere" read.
+Verified directly against the real `SMA_Dashboard_v12.xlsx` source workbook
+(2026-07-30) — see assumptions doc §18 for the full writeup, including why
+the source itself doesn't have one clean answer here (the sheet's own
+per-client Alert Status formula was only ever finished for one example
+client; every other client's cell is a placeholder note, not a working
+formula) and why `alertsTriggered` counts distinct clients rather than raw
+alert rows (the source's own `N5` formula counts raw non-Healthy rows,
+which we deliberately did not copy — noisier and less useful as a banner
+KPI).
+
 Note: `action`/`marginStatus`/`excessCashStatus` here are a different,
 simpler "healthy vs not" concept than `alertStatus`'s tiered
 HEALTHY/WARNING/ACTION_REQUIRED bands — don't conflate the two in the UI.
-The ₹50L "Deploy Excess Cash" trigger is currently a hardcoded flat
-threshold (not client/tier-specific).
+The ₹50L "Deploy - Excess Cash" trigger is currently a hardcoded flat
+threshold (not client/tier-specific) — confirmed against the real source
+workbook, which hardcodes the same `5000000` value.
 
 ---
 

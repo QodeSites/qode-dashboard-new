@@ -54,7 +54,9 @@ const DEPLOY_EXCESS_CASH_THRESHOLD = 50_00_000;
 
 export type ExcessCashStatus = "Excess Cash Levels" | "Low Cash Levels";
 export type MarginStatus = "Shortfall" | "Healthy";
-export type RegistryAction = "Review Margin and Collateral" | "Deploy Excess Cash" | "No action required";
+/** Verbatim labels from SMA_Dashboard_v12.xlsx's "P1 Clients" sheet, column P
+ *  (checked 2026-07-30 -- see docs/assumptions-and-changes-from-krish-logic.md §18). */
+export type RegistryAction = "Review Margin & Collateral" | "Deploy - Excess Cash" | "No action required";
 
 /** Worst-of ranking for Severity -- higher is worse. UPSIDE/UNAVAILABLE rank
  *  below the two the plan doc explicitly calls out (Action Required > Warning
@@ -93,8 +95,16 @@ export interface ClientRegistryRow {
   marginStatus: MarginStatus;
   /** Percent-scale (e.g. -4.99), null if the tag has no drawdown row. */
   currentDrawdownPct: number | null;
-  /** Worst-of across every one of this CLIENT's (not just this mandate's) active strategies' alert rows. */
+  /** Worst-of across just THIS mandate's own 3 metric alert rows (Cash %,
+   *  Cash Collateral %, Non-Cash Collateral %) -- strategy-level granularity,
+   *  so a 3-strategy client can show 2 strategies alerting and 1 healthy
+   *  instead of one blended value repeated on every row. */
   alertStatus: Severity;
+  /** Worst-of across EVERY one of this client's active strategies' alert
+   *  rows (all mandates, all metrics) -- the client-level rollup, for a
+   *  "does this client need attention anywhere" glance. Same value repeats
+   *  across every row for a given qcode. */
+  clientAlertStatus: Severity;
   action: RegistryAction;
   /** "{debtPct}-{equityPct}-{hybridPct}", each rounded to the nearest whole percent. */
   debtEquityHybridRatio: string;
@@ -133,8 +143,8 @@ function round(n: number): number {
 }
 
 function resolveAction(excessCash: number): RegistryAction {
-  if (excessCash < 0) return "Review Margin and Collateral";
-  if (excessCash > DEPLOY_EXCESS_CASH_THRESHOLD) return "Deploy Excess Cash";
+  if (excessCash < 0) return "Review Margin & Collateral";
+  if (excessCash > DEPLOY_EXCESS_CASH_THRESHOLD) return "Deploy - Excess Cash";
   return "No action required";
 }
 
@@ -210,7 +220,10 @@ export async function buildClientRegistry(
     const debtEquityRow = computeDebtEquityForStrategy(ms, m.strategy, m.exposure_tag_suffix);
     const debtEquityHybridRatio = `${round(debtEquityRow.debtPct)}-${round(debtEquityRow.equityPct)}-${round(debtEquityRow.hybridPct)}`;
 
-    const alertStatus = worstSeverity(alertsByQcode.get(m.qcode) ?? []);
+    const clientAlerts = alertsByQcode.get(m.qcode) ?? [];
+    const ownStrategyAlerts = clientAlerts.filter((r) => r.strategy === m.strategy);
+    const alertStatus = worstSeverity(ownStrategyAlerts);
+    const clientAlertStatus = worstSeverity(clientAlerts);
 
     rows.push({
       qcode: m.qcode,
@@ -228,6 +241,7 @@ export async function buildClientRegistry(
       marginStatus: excessCashResult.excessCash < 0 ? "Shortfall" : "Healthy",
       currentDrawdownPct,
       alertStatus,
+      clientAlertStatus,
       action: resolveAction(excessCashResult.excessCash),
       debtEquityHybridRatio,
     });
