@@ -8,13 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Download, FileSpreadsheet, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 
 type State = "idle" | "loading" | "done" | "error";
+type Stage = "dashboard" | "holdings";
 
 export default function DownloadAllExcelsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
 
   const [state, setState]       = useState<State>("idle");
-  const [progress, setProgress] = useState(0);      // 0-100 animated estimate
+  const [stage, setStage]       = useState<Stage>("dashboard");
+  const [progress, setProgress] = useState(0);      // 0-100 animated estimate per stage
   const [elapsed, setElapsed]   = useState(0);
   const [errorMsg, setErrorMsg] = useState("");
   const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -54,33 +56,58 @@ export default function DownloadAllExcelsPage() {
     if (progressRef.current) clearInterval(progressRef.current);
   }
 
+  // Fetch one zip and trigger a browser download.
+  async function fetchAndSave(url: string, filename: string) {
+    const res = await fetch(url);
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      throw new Error(json.error ?? `Server returned ${res.status}`);
+    }
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(objectUrl);
+  }
+
   async function handleDownload() {
     setState("loading");
+    setErrorMsg("");
+    const date = new Date().toISOString().slice(0, 10);
+
+    // ── Stage 1: dashboard ────────────────────────────────────────────────
+    setStage("dashboard");
     startTimers();
-
     try {
-      const res = await fetch("/api/admin/download-all-excels");
+      await fetchAndSave(
+        "/api/admin/download-all-excels/dashboard",
+        `qode_dashboard_excels_${date}.zip`
+      );
+      setProgress(100);
+    } catch (e) {
+      stopTimers();
+      setErrorMsg(`Dashboard: ${e instanceof Error ? e.message : String(e)}`);
+      setState("error");
+      return;
+    }
+    stopTimers();
 
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.error ?? `Server returned ${res.status}`);
-      }
-
-      const blob = await res.blob();
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement("a");
-      a.href     = url;
-      const date = new Date().toISOString().slice(0, 10);
-      a.download = `qode_excels_all_clients_${date}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
+    // ── Stage 2: holdings ─────────────────────────────────────────────────
+    setStage("holdings");
+    startTimers();
+    try {
+      await fetchAndSave(
+        "/api/admin/download-all-excels/holdings",
+        `qode_holdings_excels_${date}.zip`
+      );
       setProgress(100);
       setState("done");
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : String(e));
+      setErrorMsg(`Holdings: ${e instanceof Error ? e.message : String(e)}`);
       setState("error");
     } finally {
       stopTimers();
@@ -106,9 +133,7 @@ export default function DownloadAllExcelsPage() {
             Download All Client Excels
           </h1>
           <p className="text-sm text-card-text-secondary">
-            Generates portfolio and holdings Excels for every client and returns a single ZIP.
-            The ZIP contains a <strong>dashboard/</strong> folder (portfolio Excels) and a <strong>holdings/</strong> folder (holdings Excels).
-            This may take a few minutes depending on the number of clients.
+            Generates two zips sequentially
           </p>
         </div>
 
@@ -119,7 +144,7 @@ export default function DownloadAllExcelsPage() {
           {isLoading && (
             <div className="space-y-2">
               <div className="flex justify-between text-xs text-card-text-secondary">
-                <span>Generating portfolios…</span>
+                <span>Step {stage === "dashboard" ? "1/2 — Dashboard" : "2/2 — Holdings"} Excels…</span>
                 <span>{Math.min(Math.floor(progress), 99)}%</span>
               </div>
               <div className="h-2 w-full bg-card-text-secondary/15 rounded-full overflow-hidden">
@@ -136,7 +161,7 @@ export default function DownloadAllExcelsPage() {
           {state === "done" && (
             <div className="flex items-center gap-3 text-sm text-logo-green bg-green-50 border border-green-200 rounded-xl px-4 py-3">
               <CheckCircle2 className="h-4 w-4 shrink-0" />
-              Download complete — file saved to your downloads folder. ({elapsed}s)
+              Both zips downloaded (dashboard + holdings). Check your downloads folder.
             </div>
           )}
 

@@ -112,11 +112,19 @@ async function fetchBifurcatedHoldings(qcode: string): Promise<{ holdingsSummary
     select: { as_of_date: true },
   });
 
-  const equityRows = latestEquity
-    ? await prisma.bifurcated_equity_holding_test.findMany({ where: { qcode, date: latestEquity.date } })
+  // Mirror /api/bifurcated-holdings: read BOTH tables at the SAME snapshot date
+  // (max of latest equity/MF). Reading each category at its own latest date
+  // resurrects the exit-day snapshot of a category the client has fully exited
+  // (e.g. Kanu Doshi liquidated MFs on 2026-06-24 but has newer equity rows).
+  const equityTime = latestEquity?.date.getTime() ?? 0;
+  const mfTime = latestMf?.as_of_date.getTime() ?? 0;
+  const asOf = equityTime || mfTime ? new Date(Math.max(equityTime, mfTime)) : null;
+
+  const equityRows = asOf
+    ? await prisma.bifurcated_equity_holding_test.findMany({ where: { qcode, date: asOf } })
     : [];
-  const mfRows = latestMf
-    ? await prisma.bifurcated_mutual_fund_holding_sheet_test.findMany({ where: { qcode, as_of_date: latestMf.as_of_date } })
+  const mfRows = asOf
+    ? await prisma.bifurcated_mutual_fund_holding_sheet_test.findMany({ where: { qcode, as_of_date: asOf } })
     : [];
 
   const allHoldings: Holding[] = [
@@ -156,10 +164,6 @@ async function fetchBifurcatedHoldings(qcode: string): Promise<{ holdingsSummary
       strategy: r.strategy || undefined,
     })),
   ];
-
-  const equityTime = latestEquity?.date.getTime() ?? 0;
-  const mfTime = latestMf?.as_of_date.getTime() ?? 0;
-  const asOf = equityTime || mfTime ? new Date(Math.max(equityTime, mfTime)) : null;
 
   return { holdingsSummary: buildSummary(allHoldings), dataAsOfDate: asOf ? asOf.toISOString() : null };
 }
