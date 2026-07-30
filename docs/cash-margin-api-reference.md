@@ -705,27 +705,3 @@ no partial-success shape — if one sub-table's computation throws, the
 entire response is a 500, not a mix of good and null sections).
 
 ---
-
-## 11. `POST /api/internal/cash-margin/withdrawal`
-
-Pre-existing route (Krish's, not part of this API family's `overrides`/
-`asOfDate` conventions above) — included here for completeness since it's
-the same `/cash-margin/` namespace. No `.tsx` component calls this yet.
-
-**Request body**:
-```jsonc
-{
-  "qcode": "QAC00041",       // required
-  "strategy": "QAW++",       // optional -- omit for just the raw per-client snapshot
-  "amount": 500000,          // optional -- omit for "how much excess cash is available" only
-  "equity_pct": 0.7,         // optional target overrides
-  "cash_pct": 0.1,
-  "liquidcase_pct": 0.2
-}
-```
-**Response** `200`: `{ snapshot, blocked, excess_cash, withdrawal }` — a
-`400 { error }` if `qcode` is missing or the strategy/config isn't found.
-This route has its own "Holdings"/"Cash" formula that's **known to diverge
-from `account-summary`'s** for certain portfolios (see assumptions doc
-§1) — treat its `holdings`/`cash` figures as belonging to this endpoint
-only, don't mix them with `account-summary`'s numbers in the same view.
