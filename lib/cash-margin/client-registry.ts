@@ -1,0 +1,271 @@
+/**
+ * lib/cash-margin/client-registry.ts
+ * "Clients / Portfolio Overview" (P1) -- a multi-client registry: one row
+ * per active client-strategy mandate, across every client at once, plus a
+ * Summary Banner and an Action Queue. Different shape from every other
+ * table in lib/cash-margin, which are all single-qcode detail views.
+ *
+ * See docs/page1-client-portfolio-overview-plan.md for the source Excel
+ * columns and the open-questions this implements answers to:
+ *  - Excess Cash Status labels: "Excess Cash Levels" / "Low Cash Levels"
+ *    (matching the pasted target table, not the formula-explanation text's
+ *    "Action Required"/"Check Cash Levels").
+ *  - Alert Status / Alerts Triggered granularity: per CLIENT (worst-of
+ *    across every one of that client's active strategies' alert rows), not
+ *    per single mandate.
+ *  - Manual date selection: reuses the existing `asOfDate` plumbing already
+ *    threaded through loadMastersheet()/buildAlertRows() -- no new date
+ *    mechanism needed.
+ *  - The ₹50L "Deploy Excess Cash" trigger stays a hardcoded flat constant,
+ *    matching every other table's current state.
+ *
+ * Each row reuses existing per-mandate building blocks:
+ *  - Account Value / Cash / Holdings: mastersheet.ts's computeAccountSummary
+ *    (prefixed tags), same shape as consolidated.ts's ConsolidatedSummary.
+ *  - Excess Cash: consolidated.ts's computeConsolidatedExcessCash(), fed
+ *    that mandate's own AccountSummary + its resolved equityPct (same ratio
+ *    System Breakup's Equity Book uses) -- NOT the no-prefix "whole client"
+ *    rollup computeAccountSummaryCombined uses; this is a per-mandate row.
+ *  - Current Drawdown %: mastersheet.ts's getDrawdown(), read off the same
+ *    account-value tag row (confirmed via read-only DB spot-check that
+ *    `drawdown` varies per system_tag, not one value per qcode/date).
+ *  - Alert Status: alerts.ts's buildAlertRows(), grouped by qcode, worst-of.
+ *  - Debt-Equity-Hybrid Ratio: debt-equity.ts's computeDebtEquityForStrategy().
+ *
+ * Margin Status / Excess Cash Status / Action are all genuinely new: plain
+ * sign-of-Excess-Cash checks, distinct from thresholds.ts's tiered
+ * classifyMarginMetric (a different "health" concept entirely -- see the
+ * plan doc).
+ */
+import { prisma } from "@/lib/prisma";
+import { loadMastersheet, getDrawdown } from "./mastersheet";
+import { computeAccountSummary } from "./mastersheet";
+import { computeConsolidatedExcessCash, type ConsolidatedSummary } from "./consolidated";
+import { computeDebtEquityForStrategy } from "./debt-equity";
+import { buildAlertRows, type AlertRow } from "./alerts";
+import { resolveRatioConfig, type StrategyOverrides } from "./config";
+import { resolveAccountValueTag, detectTier, isXtsMandate, type Tier } from "./tags";
+import type { Severity } from "./thresholds";
+
+/** ₹50L flat trigger for the "Deploy Excess Cash" action -- hardcoded, matching
+ *  every other table's current state (see docs/page1-client-portfolio-overview-plan.md
+ *  open question #4). */
+const DEPLOY_EXCESS_CASH_THRESHOLD = 50_00_000;
+
+export type ExcessCashStatus = "Excess Cash Levels" | "Low Cash Levels";
+export type MarginStatus = "Shortfall" | "Healthy";
+/** Verbatim labels from SMA_Dashboard_v12.xlsx's "P1 Clients" sheet, column P
+ *  (checked 2026-07-30 -- see docs/assumptions-and-changes-from-krish-logic.md §18). */
+export type RegistryAction = "Review Margin & Collateral" | "Deploy - Excess Cash" | "No action required";
+
+/** Worst-of ranking for Severity -- higher is worse. UPSIDE/UNAVAILABLE rank
+ *  below the two the plan doc explicitly calls out (Action Required > Warning
+ *  > Healthy), since neither is a "this needs attention" signal in the same
+ *  sense. */
+const SEVERITY_RANK: Record<Severity, number> = {
+  ACTION_REQUIRED: 4,
+  WARNING: 3,
+  UNAVAILABLE: 2,
+  UPSIDE: 1,
+  HEALTHY: 0,
+};
+
+function worstSeverity(rows: AlertRow[]): Severity {
+  if (rows.length === 0) return "UNAVAILABLE";
+  return rows.reduce<Severity>(
+    (worst, r) => (SEVERITY_RANK[r.severity] > SEVERITY_RANK[worst] ? r.severity : worst),
+    "HEALTHY",
+  );
+}
+
+export interface ClientRegistryRow {
+  qcode: string;
+  client: string;
+  strategy: string;
+  tier: Tier;
+  accountValue: number;
+  cash: number;
+  /** (Cash + Liquidcase) / AV * 100 -- NOT `cash / AV` (see Cash column vs Cash % in the plan doc). */
+  cashPct: number;
+  excessCash: number;
+  excessCashPct: number;
+  excessCashStatus: ExcessCashStatus;
+  holdings: number;
+  holdingsPct: number;
+  marginStatus: MarginStatus;
+  /** Percent-scale (e.g. -4.99), null if the tag has no drawdown row. */
+  currentDrawdownPct: number | null;
+  /** Worst-of across just THIS mandate's own 3 metric alert rows (Cash %,
+   *  Cash Collateral %, Non-Cash Collateral %) -- strategy-level granularity,
+   *  so a 3-strategy client can show 2 strategies alerting and 1 healthy
+   *  instead of one blended value repeated on every row. */
+  alertStatus: Severity;
+  /** Worst-of across EVERY one of this client's active strategies' alert
+   *  rows (all mandates, all metrics) -- the client-level rollup, for a
+   *  "does this client need attention anywhere" glance. Same value repeats
+   *  across every row for a given qcode. */
+  clientAlertStatus: Severity;
+  action: RegistryAction;
+  /** "{debtPct}-{equityPct}-{hybridPct}", each rounded to the nearest whole percent. */
+  debtEquityHybridRatio: string;
+}
+
+export interface SummaryBanner {
+  totalClients: number;
+  totalAum: number;
+  totalExcessCash: number;
+  marginShortfalls: number;
+  alertsTriggered: number;
+}
+
+export interface ClientRegistryResult {
+  rows: ClientRegistryRow[];
+  summary: SummaryBanner;
+  /** "{client} {strategy} — {action}" for every row whose action isn't "No action required". */
+  actionQueue: string[];
+}
+
+interface MandateRow {
+  qcode: string;
+  account_name: string;
+  strategy: string;
+  exposure_tag_suffix: string;
+  equity_pct: unknown;
+}
+
+interface StrategyDefaultRow {
+  strategy_name: string;
+  equity_pct: unknown;
+}
+
+function round(n: number): number {
+  return Math.round(n);
+}
+
+function resolveAction(excessCash: number): RegistryAction {
+  if (excessCash < 0) return "Review Margin & Collateral";
+  if (excessCash > DEPLOY_EXCESS_CASH_THRESHOLD) return "Deploy - Excess Cash";
+  return "No action required";
+}
+
+/**
+ * Full Client Registry build across every active, non-XTS mandate.
+ *
+ * @param overrides - optional, request-scoped only, never persisted (POST
+ *   body override of equity_pct and the alert threshold bands -- see
+ *   lib/cash-margin/config.ts).
+ * @param asOfDate - TEMPORARY, for verification against frozen
+ *   managed_accounts_analysis Excels -- see loadMastersheet(). Remove once done.
+ */
+export async function buildClientRegistry(
+  overrides?: StrategyOverrides,
+  asOfDate?: Date,
+): Promise<ClientRegistryResult> {
+  const mandates = (
+    await prisma.client_strategy_configs.findMany({
+      where: { OR: [{ effective_to: null }, { effective_to: { gte: new Date() } }] },
+      select: {
+        qcode: true,
+        account_name: true,
+        strategy: true,
+        exposure_tag_suffix: true,
+        equity_pct: true,
+      },
+      orderBy: [{ account_name: "asc" }, { strategy: "asc" }],
+    })
+  ).filter((m) => !isXtsMandate(m.exposure_tag_suffix)) as unknown as MandateRow[];
+
+  const strategyNames = Array.from(new Set(mandates.map((m) => m.strategy)));
+  const defaults = await prisma.strategy_defaults.findMany({
+    where: { strategy_name: { in: strategyNames } },
+  });
+  const defaultsByStrategy = new Map(defaults.map((d) => [d.strategy_name, d as unknown as StrategyDefaultRow]));
+
+  // Alert Status is rolled up per CLIENT (worst-of across all of that
+  // client's active strategies), so build the full alert table once and
+  // group by qcode -- see the file header + plan doc open question #2.
+  const alertRows = await buildAlertRows(overrides, asOfDate);
+  const alertsByQcode = new Map<string, AlertRow[]>();
+  for (const r of alertRows) {
+    const list = alertsByQcode.get(r.qcode);
+    if (list) list.push(r);
+    else alertsByQcode.set(r.qcode, [r]);
+  }
+
+  const msCache = new Map<string, Awaited<ReturnType<typeof loadMastersheet>>>();
+
+  const rows: ClientRegistryRow[] = [];
+  for (const m of mandates) {
+    let ms = msCache.get(m.qcode);
+    if (!ms) {
+      ms = await loadMastersheet(m.qcode, asOfDate);
+      msCache.set(m.qcode, ms);
+    }
+
+    const tier = detectTier(m.strategy);
+    const summary = computeAccountSummary(ms, m.strategy, m.exposure_tag_suffix);
+    const accountValue = summary.accountValue;
+
+    const ratioConfig = resolveRatioConfig(m.strategy, m, defaultsByStrategy.get(m.strategy), overrides);
+    const consolidatedSummary: ConsolidatedSummary = summary;
+    const excessCashResult = computeConsolidatedExcessCash(consolidatedSummary, ratioConfig.equityPct);
+
+    const cashPct = accountValue ? (excessCashResult.currentCash / accountValue) * 100 : 0;
+    const holdingsPct = accountValue ? (excessCashResult.holdingsValue / accountValue) * 100 : 0;
+    const excessCashPct = accountValue ? (excessCashResult.excessCash / accountValue) * 100 : 0;
+
+    const drawdownTag = resolveAccountValueTag(m.strategy, m.exposure_tag_suffix);
+    const currentDrawdownPct = getDrawdown(ms, drawdownTag);
+
+    const debtEquityRow = computeDebtEquityForStrategy(ms, m.strategy, m.exposure_tag_suffix);
+    const debtEquityHybridRatio = `${round(debtEquityRow.debtPct)}-${round(debtEquityRow.equityPct)}-${round(debtEquityRow.hybridPct)}`;
+
+    const clientAlerts = alertsByQcode.get(m.qcode) ?? [];
+    const ownStrategyAlerts = clientAlerts.filter((r) => r.strategy === m.strategy);
+    const alertStatus = worstSeverity(ownStrategyAlerts);
+    const clientAlertStatus = worstSeverity(clientAlerts);
+
+    rows.push({
+      qcode: m.qcode,
+      client: m.account_name,
+      strategy: m.strategy,
+      tier,
+      accountValue,
+      cash: summary.cash,
+      cashPct,
+      excessCash: excessCashResult.excessCash,
+      excessCashPct,
+      excessCashStatus: excessCashResult.excessCash > 0 ? "Excess Cash Levels" : "Low Cash Levels",
+      holdings: excessCashResult.holdingsValue,
+      holdingsPct,
+      marginStatus: excessCashResult.excessCash < 0 ? "Shortfall" : "Healthy",
+      currentDrawdownPct,
+      alertStatus,
+      clientAlertStatus,
+      action: resolveAction(excessCashResult.excessCash),
+      debtEquityHybridRatio,
+    });
+  }
+
+  const totalClients = new Set(mandates.map((m) => m.qcode)).size;
+  const totalAum = rows.reduce((s, r) => s + r.accountValue, 0);
+  const totalExcessCash = rows.reduce((s, r) => s + r.excessCash, 0);
+  const marginShortfalls = rows.filter((r) => r.marginStatus === "Shortfall").length;
+
+  const alertedClients = new Set<string>();
+  for (const [qcode, rowsForClient] of alertsByQcode) {
+    const worst = worstSeverity(rowsForClient);
+    if (worst === "ACTION_REQUIRED" || worst === "WARNING") alertedClients.add(qcode);
+  }
+  const alertsTriggered = alertedClients.size;
+
+  const actionQueue = rows
+    .filter((r) => r.action !== "No action required")
+    .map((r) => `${r.client} ${r.strategy} — ${r.action}`);
+
+  return {
+    rows,
+    summary: { totalClients, totalAum, totalExcessCash, marginShortfalls, alertsTriggered },
+    actionQueue,
+  };
+}

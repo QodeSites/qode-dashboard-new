@@ -30,6 +30,12 @@ export interface MastersheetSnapshot {
   values: Map<string, number>;
   /** system_tag -> exposure_value */
   exposures: Map<string, number>;
+  /** system_tag -> drawdown, percent-scale (e.g. -4.99 for -4.99%), matching
+   *  app/lib/internal-utils.ts's NavPoint.drawdown convention. Confirmed via
+   *  read-only spot-check that this varies per system_tag (not one value per
+   *  qcode/date) -- it lives on the same account-value tag row as
+   *  portfolio_value/exposure_value, for both prefixed and no-prefix tags. */
+  drawdowns: Map<string, number>;
 }
 
 export interface AccountSummary {
@@ -46,10 +52,16 @@ export interface AccountSummary {
  * client, indexed by system_tag. Returns an empty snapshot (date null) if the
  * client has no rows at all. Latest date is resolved PER qcode (clients lag
  * independently), matching Python's "max Date in the sheet".
+ *
+ * @param asOfDate - TEMPORARY, for verifying against frozen managed_accounts_analysis
+ *   Excels: when given, resolves the latest snapshot on or before this date
+ *   instead of the overall latest. Read-only (findFirst/findMany only), same
+ *   as the no-arg path. Remove once verification against the old Excels is
+ *   done -- not meant to be a permanent feature.
  */
-export async function loadMastersheet(qcode: string): Promise<MastersheetSnapshot> {
+export async function loadMastersheet(qcode: string, asOfDate?: Date): Promise<MastersheetSnapshot> {
   const latest = await prisma.bifurcated_master_sheet_test.findFirst({
-    where: { qcode },
+    where: asOfDate ? { qcode, date: { lte: asOfDate } } : { qcode },
     orderBy: { date: "desc" },
     select: { date: true },
   });
@@ -59,18 +71,20 @@ export async function loadMastersheet(qcode: string): Promise<MastersheetSnapsho
     date: latest?.date ?? null,
     values: new Map(),
     exposures: new Map(),
+    drawdowns: new Map(),
   };
   if (!latest?.date) return snapshot;
 
   const rows = await prisma.bifurcated_master_sheet_test.findMany({
     where: { qcode, date: latest.date },
-    select: { system_tag: true, portfolio_value: true, exposure_value: true },
+    select: { system_tag: true, portfolio_value: true, exposure_value: true, drawdown: true },
   });
 
   for (const r of rows) {
     if (!r.system_tag) continue;
     snapshot.values.set(r.system_tag, r.portfolio_value ? Number(r.portfolio_value) : 0);
     snapshot.exposures.set(r.system_tag, r.exposure_value ? Number(r.exposure_value) : 0);
+    if (r.drawdown !== null) snapshot.drawdowns.set(r.system_tag, Number(r.drawdown));
   }
   return snapshot;
 }
@@ -83,6 +97,11 @@ export function getVal(ms: MastersheetSnapshot, tag: string): number {
 /** Exposure Value for a tag (0 if absent). Port of get_exposure. */
 export function getExposure(ms: MastersheetSnapshot, tag: string): number {
   return ms.exposures.get(tag) ?? 0;
+}
+
+/** Drawdown % for a tag (null if absent), percent-scale (e.g. -4.99). */
+export function getDrawdown(ms: MastersheetSnapshot, tag: string): number | null {
+  return ms.drawdowns.get(tag) ?? null;
 }
 
 /**

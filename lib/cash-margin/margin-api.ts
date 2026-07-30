@@ -14,6 +14,10 @@ export interface MarginAvailable {
   liquidCollateral: number;
   /** cm_margin_collateral.non_cash_collateral -- Non-Cash Collateral (stocks). */
   stockCollateral: number;
+  /** cm_margin_collateral.live_balance -- Available Cash source for Margin
+   * Requirements (§2c). NOT the same as the mastersheet-residual "Cash" used
+   * by Account Summary -- see docs/cash-margin-client-dashboard-plan.md D2. */
+  liveBalance: number;
 }
 
 /**
@@ -28,7 +32,13 @@ export async function loadMarginCollaterals(qcodes: string[]): Promise<Map<strin
 
   const rows = await prisma.cm_margin_collateral.findMany({
     where: { qcode: { in: unique }, broker: "zerodha" },
-    select: { qcode: true, date: true, cash_collateral: true, non_cash_collateral: true },
+    select: {
+      qcode: true,
+      date: true,
+      cash_collateral: true,
+      non_cash_collateral: true,
+      live_balance: true,
+    },
     orderBy: { date: "desc" },
   });
 
@@ -47,6 +57,7 @@ export async function loadMarginCollaterals(qcodes: string[]): Promise<Map<strin
     map.set(qcode, {
       liquidCollateral: row.cash_collateral ? Number(row.cash_collateral) : 0,
       stockCollateral: row.non_cash_collateral ? Number(row.non_cash_collateral) : 0,
+      liveBalance: row.live_balance ? Number(row.live_balance) : 0,
     });
   }
   return map;
