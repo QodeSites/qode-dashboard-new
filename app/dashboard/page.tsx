@@ -1459,7 +1459,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                     const isActive = sarlaData[strategy].metadata.isActive;
                     return (
                       <SelectItem key={strategy} value={strategy}>
-                        {strategy} {!isActive ? "(Inactive)" : ""}
+                        {(sarlaData[strategy]?.metadata as any)?.displayName || strategy} {!isActive ? "(Inactive)" : ""}
                       </SelectItem>
                     );
                   })}

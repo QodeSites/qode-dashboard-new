@@ -6,6 +6,7 @@ interface CashFlow {
   date: string;
   amount: number;
   dividend: number;
+  excludeFromAmountDeposited?: boolean;
 }
 
 interface QuarterlyPnL {
@@ -97,6 +98,7 @@ interface PortfolioData {
 
 interface Metadata {
   icode: string;
+  displayName?: string;
   accountCount: number;
   lastUpdated: string;
   filtersApplied: {
@@ -303,8 +305,13 @@ export class PortfolioApi {
 
     // Everything else from master_sheet by (effectiveQcode + system_tag)
     const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
+    const schemeStartDate = PortfolioApi.SCHEME_BIFURCATED_SOURCE[scheme]?.startDate;
     const profitSum = await PortfolioApi.schemeTable(scheme).aggregate({
-      where: { qcode: effectiveQcode, system_tag: PortfolioApi.rewriteTag(scheme, systemTag) },
+      where: {
+        qcode: effectiveQcode,
+        system_tag: PortfolioApi.rewriteTag(scheme, systemTag),
+        ...(schemeStartDate ? { date: { gte: PortfolioApi.prevDay(schemeStartDate) } } : {}),
+      },
       _sum: { pnl: true },
     });
     return Number(profitSum._sum.pnl) || 0;
@@ -1915,7 +1922,7 @@ export class PortfolioApi {
           // Source: "QYE Zerodha Total Portfolio" (instead of "QYE Total Portfolio Value")
           { date: "2025-11-28", amount: 79998180.50, dividend: 0 },
           { date: "2025-12-12", amount: -30000000.00, dividend: 0 },
-          // { date: "2026-01-06", amount: -51041445.53, dividend: 0 },
+          { date: "2026-01-06", amount: -51041445.53, dividend: 0, excludeFromAmountDeposited: true },
         ],
         strategyName: "Scheme QYE++ (Old)",
       },
@@ -1950,8 +1957,9 @@ export class PortfolioApi {
       for (const s of schemes) {
         // Check for hardcoded data first (for inactive schemes like QYE++)
         if (HC?.[s]) {
-          const schemeCashFlows = HC[s].data.cashFlows || [];
-          const schemeDeposited = schemeCashFlows.reduce((sum: number, cf: { amount: number }) => sum + cf.amount, 0);
+          const schemeCashFlows = (HC[s].data.cashFlows || [])
+            .filter((cf: CashFlow) => !cf.excludeFromAmountDeposited);
+          const schemeDeposited = schemeCashFlows.reduce((sum: number, cf: CashFlow) => sum + cf.amount, 0);
           totalDeposited += schemeDeposited;
         } else if (s === "Scheme B" || s === "Scheme A") {
           const systemTag = s === "Scheme B" ? "Zerodha Total Portfolio" : PortfolioApi.getSystemTag(s, qcode);
@@ -2355,12 +2363,17 @@ export class PortfolioApi {
 
     // For other accounts (e.g., Satidham QAC00046) keep their own set
     const satidhamSchemes = ["Scheme B", "Scheme PMS QAW", "Scheme A", "Scheme A (Old)", "Scheme QAW++", "Scheme QYE++", "Scheme QYE++ (Old)"];
+    const HC2 = this.getHardcoded(qcode);
+    console.log(`\n========== [TotalProfit DEBUG] ${qcode} ==========`);
     for (const s of satidhamSchemes) {
+      const isHardcoded = !!HC2?.[s];
       const part = await this.getSingleSchemeProfit(qcode, s);
-      console.log(`[TotalProfit] ${qcode} | ${s} = ${part}`);
+      const source = isHardcoded ? "HARDCODED" : (s === "Scheme PMS QAW" ? "PMS_DB" : "LIVE_DB");
+      console.log(`[TotalProfit] ${s.padEnd(20)} | ${source.padEnd(10)} | ₹ ${part.toFixed(2)} | running total: ₹ ${(total + part).toFixed(2)}`);
       total += part;
     }
-    console.log(`[TotalProfit] ${qcode} | TOTAL = ${total}`);
+    console.log(`[TotalProfit] ${"TOTAL".padEnd(20)} | ${"".padEnd(10)} | ₹ ${total.toFixed(2)}`);
+    console.log(`========== [TotalProfit DEBUG END] ==========\n`);
     return total;
   }
   private static async getHistoricalData(qcode: string, scheme: string): Promise<{ date: Date; nav: number; prevNav: number | null; drawdown: number; pnl: number; capitalInOut: number }[]> {
@@ -2446,7 +2459,7 @@ export class PortfolioApi {
         for (const s of satidhamSchemes) {
           if (HC?.[s]) {
             cashFlows = cashFlows.concat(
-              HC[s].data.cashFlows.map(entry => ({
+              HC[s].data.cashFlows.map((entry: CashFlow) => ({
                 date: PortfolioApi.normalizeDate(entry.date)!,
                 amount: entry.amount,
                 dividend: entry.dividend || 0,
@@ -2459,26 +2472,44 @@ export class PortfolioApi {
           }
         }
 
-        // Combined Zerodha Total Portfolio for QAC00066 (covers QAW++ + QYE++ together)
-        // starting from when QAW++ was incepted on 2026-01-07
-        const qac66StartDate = new Date("2026-01-06");
-        const combinedCashFlows = await prisma.bifurcated_master_sheet_test.findMany({
+        // QAW++ — scheme-specific tag, from inception 2026-01-07
+        const qawStartDate = PortfolioApi.SCHEME_BIFURCATED_SOURCE["Scheme QAW++"]?.startDate ?? new Date("2026-01-07");
+        const qawCashFlows = await prisma.bifurcated_master_sheet_test.findMany({
           where: {
             qcode: "QAC00066",
-            system_tag: "Zerodha Total Portfolio",
+            system_tag: "QAW++ Zerodha Total Portfolio",
             capital_in_out: { not: null },
-            date: { gte: PortfolioApi.prevDay(qac66StartDate) },
+            date: { gte: PortfolioApi.prevDay(qawStartDate) },
           },
           select: { date: true, capital_in_out: true },
           orderBy: { date: "asc" },
         });
         cashFlows = cashFlows.concat(
-          combinedCashFlows
-            .map(entry => ({
-              date: PortfolioApi.normalizeDate(entry.date)!,
-              amount: entry.capital_in_out!.toNumber(),
-              dividend: 0,
-            }))
+          qawCashFlows.map(entry => ({
+            date: PortfolioApi.normalizeDate(entry.date)!,
+            amount: entry.capital_in_out!.toNumber(),
+            dividend: 0,
+          }))
+        );
+
+        // QYE++ — scheme-specific tag, from inception 2026-07-24
+        const qyeStartDate = PortfolioApi.SCHEME_BIFURCATED_SOURCE["Scheme QYE++"]?.startDate ?? new Date("2026-07-24");
+        const qyeCashFlows = await prisma.bifurcated_master_sheet_test.findMany({
+          where: {
+            qcode: "QAC00066",
+            system_tag: "QYE++ Zerodha Total Portfolio",
+            capital_in_out: { not: null },
+            date: { gte: PortfolioApi.prevDay(qyeStartDate) },
+          },
+          select: { date: true, capital_in_out: true },
+          orderBy: { date: "asc" },
+        });
+        cashFlows = cashFlows.concat(
+          qyeCashFlows.map(entry => ({
+            date: PortfolioApi.normalizeDate(entry.date)!,
+            amount: entry.capital_in_out!.toNumber(),
+            dividend: 0,
+          }))
         );
 
         // Ensure cash flows are sorted by date, exclude zero-amount entries
@@ -3594,6 +3625,7 @@ if (scheme === "Scheme PMS QAW") {
           holdingsSummary,
         };
 
+        const HC_meta = PortfolioApi.getHardcoded(qcode);
         const metadata: Metadata = {
           icode: `${scheme}`,
           accountCount: 1,
@@ -3610,6 +3642,7 @@ if (scheme === "Scheme PMS QAW") {
           dataAsOfDate: latestExposure?.date.toISOString().split("T")[0] || "2025-07-18",
           strategyName: scheme,
           isActive: portfolioNames.isActive,
+          ...(HC_meta?.[scheme]?.metadata.displayName ? { displayName: HC_meta[scheme].metadata.displayName } : {}),
         };
 
         results = {
