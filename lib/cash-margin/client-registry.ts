@@ -85,13 +85,35 @@ export interface ClientRegistryRow {
   tier: Tier;
   accountValue: number;
   cash: number;
-  /** (Cash + Liquidcase) / AV * 100 -- NOT `cash / AV` (see Cash column vs Cash % in the plan doc). */
+  /** (Cash + Liquidcase) / AV * 100 -- NOT `cash / AV` (see Cash column vs Cash % in the plan doc).
+   *  This is the Excel "Cash Component (% of Account Value)" column. */
   cashPct: number;
+  /** Cash + Liquidcase, in rupees -- the Excel "Cash Component (₹)" column
+   *  (this is `cash` and `cashPct`'s numerator; `computeConsolidatedExcessCash`'s
+   *  `currentCash`, surfaced here since the row previously discarded it). */
+  cashComponentValue: number;
+  /** `cash / AV * 100` -- cash ALONE, excluding Liquidcase. The Excel
+   *  "Cash (% of Account Value)" column, distinct from `cashPct` above. */
+  cashOnlyPct: number;
+  /** `cashOnlyPct - resolveRatioConfig(...).cashPct * 100` -- actual cash-only
+   *  % vs. the DB-resolved Cash sub-target (Derivative Book's `cash_pct`
+   *  column, same field app/lib/internal-utils.ts's Withdrawal feature reads
+   *  as `split.cash_pct`). The Excel "Cash Drift (%)" column. */
+  cashDriftPct: number;
+  /** `cashPct - idealCashPct` (both percent-scale), where `idealCashPct` is
+   *  `computeConsolidatedExcessCash`'s derived `1 - idealHoldingsPct` -- same
+   *  formula as internal-utils.ts's `cash_component_drift`. The Excel
+   *  "Cash Component Drift from Ideal (%)" column. */
+  cashComponentDriftPct: number;
   excessCash: number;
   excessCashPct: number;
   excessCashStatus: ExcessCashStatus;
   holdings: number;
   holdingsPct: number;
+  /** `holdingsPct - idealHoldingsPct` (both percent-scale) -- same formula as
+   *  internal-utils.ts's `holdings_drift`. The Excel "Holdings Drift from
+   *  Ideal (%)" column. */
+  holdingsDriftPct: number;
   marginStatus: MarginStatus;
   /** Percent-scale (e.g. -4.99), null if the tag has no drawdown row. */
   currentDrawdownPct: number | null;
@@ -214,6 +236,11 @@ export async function buildClientRegistry(
     const holdingsPct = accountValue ? (excessCashResult.holdingsValue / accountValue) * 100 : 0;
     const excessCashPct = accountValue ? (excessCashResult.excessCash / accountValue) * 100 : 0;
 
+    const cashOnlyPct = accountValue ? (summary.cash / accountValue) * 100 : 0;
+    const cashDriftPct = cashOnlyPct - ratioConfig.cashPct * 100;
+    const holdingsDriftPct = holdingsPct - excessCashResult.idealHoldingsPct;
+    const cashComponentDriftPct = cashPct - excessCashResult.idealCashPct;
+
     const drawdownTag = resolveAccountValueTag(m.strategy, m.exposure_tag_suffix);
     const currentDrawdownPct = getDrawdown(ms, drawdownTag);
 
@@ -233,11 +260,16 @@ export async function buildClientRegistry(
       accountValue,
       cash: summary.cash,
       cashPct,
+      cashComponentValue: excessCashResult.currentCash,
+      cashOnlyPct,
+      cashDriftPct,
+      cashComponentDriftPct,
       excessCash: excessCashResult.excessCash,
       excessCashPct,
       excessCashStatus: excessCashResult.excessCash > 0 ? "Excess Cash Levels" : "Low Cash Levels",
       holdings: excessCashResult.holdingsValue,
       holdingsPct,
+      holdingsDriftPct,
       marginStatus: excessCashResult.excessCash < 0 ? "Shortfall" : "Healthy",
       currentDrawdownPct,
       alertStatus,
