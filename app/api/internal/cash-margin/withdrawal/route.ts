@@ -15,10 +15,13 @@ export async function POST(req: Request) {
     const result = await computeCashMarginWithdrawal({
       qcode: body.qcode,
       strategy: body.strategy,
+      source: body.source,
+      total_profits: body.total_profits,
       amount: body.amount,
+      ratio_type: body.ratio_type,
       equity_pct: body.equity_pct,
       cash_pct: body.cash_pct,
-      liquidcase_pct: body.liquidcase_pct,
+      lc_pct: body.lc_pct,
     });
     return NextResponse.json(result);
   } catch (e: any) {
