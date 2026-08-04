@@ -2099,6 +2099,10 @@ function buildCashMarginSnapshot(
     const split = splitMap.get(`${pair.qcode}|${pair.strategy}`)!;
     const mutual_funds =
       valueMap.get(`${pair.qcode}|${pair.strategy} Mutual Funds`) ?? 0;
+    const equity_stock_holdings =
+      valueMap.get(`${pair.qcode}|${pair.strategy} Equity Stock Holdings`) ?? 0;
+    const bond_stock_holdings =
+      valueMap.get(`${pair.qcode}|${pair.strategy} Bond Stock Holdings`) ?? 0;
     const gold =
       valueMap.get(`${pair.qcode}|${pair.strategy} Gold Stock Holdings`) ?? 0;
     const momentum =
@@ -2109,7 +2113,15 @@ function buildCashMarginSnapshot(
       0;
     // gated on resolved config, never a strategy-name check
     const has_equity_split = split.gold_pct != null;
-    const holdings = has_equity_split ? gold + momentum + lowvol : mutual_funds;
+
+    const holdings = has_equity_split
+      ? gold +
+        momentum +
+        lowvol +
+        equity_stock_holdings +
+        bond_stock_holdings +
+        mutual_funds
+      : mutual_funds + equity_stock_holdings + bond_stock_holdings;
 
     const liquidcase =
       valueMap.get(
