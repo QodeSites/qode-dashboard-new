@@ -6,6 +6,7 @@ interface CashFlow {
   date: string;
   amount: number;
   dividend: number;
+  excludeFromAmountDeposited?: boolean;
 }
 
 interface QuarterlyPnL {
@@ -97,6 +98,7 @@ interface PortfolioData {
 
 interface Metadata {
   icode: string;
+  displayName?: string;
   accountCount: number;
   lastUpdated: string;
   filtersApplied: {
@@ -188,6 +190,13 @@ const PORTFOLIO_MAPPING = {
       // This scheme uses QAC00066 instead of QAC00046
     },
     "Scheme QYE++": {
+      current: "Zerodha Total Portfolio",
+      metrics: "Total Portfolio Value",
+      nav: "Total Portfolio Value",
+      isActive: true,
+      // This scheme uses QAC00066 instead of QAC00046, data from bifurcated_master_sheet_test
+    },
+    "Scheme QYE++ (Old)": {
       current: "QYE Total Portfolio Value",
       metrics: "QYE Total Portfolio Value",
       nav: "QYE Total Portfolio Value",
@@ -296,8 +305,13 @@ export class PortfolioApi {
 
     // Everything else from master_sheet by (effectiveQcode + system_tag)
     const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
+    const schemeStartDate = PortfolioApi.SCHEME_BIFURCATED_SOURCE[scheme]?.startDate;
     const profitSum = await PortfolioApi.schemeTable(scheme).aggregate({
-      where: { qcode: effectiveQcode, system_tag: PortfolioApi.rewriteTag(scheme, systemTag) },
+      where: {
+        qcode: effectiveQcode,
+        system_tag: PortfolioApi.rewriteTag(scheme, systemTag),
+        ...(schemeStartDate ? { date: { gte: PortfolioApi.prevDay(schemeStartDate) } } : {}),
+      },
       _sum: { pnl: true },
     });
     return Number(profitSum._sum.pnl) || 0;
@@ -343,12 +357,14 @@ export class PortfolioApi {
     "Scheme A (Old)": "Total Portfolio Value Old",
     "Scheme PMS QAW": "PMS QAW Portfolio",
     "Scheme QAW++": "Zerodha Total Portfolio", // Uses QAC00066
-    "Scheme QYE++": "QYE Total Portfolio Value", // Inactive scheme - uses hardcoded data
+    "Scheme QYE++ (Old)": "QYE Total Portfolio Value", // Inactive scheme - uses hardcoded data
+    "Scheme QYE++": "Zerodha Total Portfolio", // Uses QAC00066, data from bifurcated_master_sheet_test
   };
 
   // Scheme to qcode override mapping - schemes that use a different qcode than the default
   private static readonly SCHEME_QCODE_OVERRIDE: Record<string, string> = {
     "Scheme QAW++": "QAC00066", // This scheme fetches from QAC00066 instead of the default qcode
+    "Scheme QYE++": "QAC00066", // This scheme fetches from QAC00066 instead of the default qcode
   };
 
   // Helper method to get the effective qcode for a scheme (handles overrides)
@@ -374,7 +390,7 @@ export class PortfolioApi {
   // table read, so keying by name is safe here.
   private static readonly SCHEME_BIFURCATED_SOURCE: Record<
     string,
-    { tagRewrite?: Record<string, string> }
+    { tagRewrite?: Record<string, string>; startDate?: Date }
   > = {
     // Sarla Scheme B — same tag names in the bifurcated table (both
     // "Zerodha Total Portfolio" and "Total Portfolio Value"), so no rewrite.
@@ -385,6 +401,15 @@ export class PortfolioApi {
         "Zerodha Total Portfolio": "QAW++ Zerodha Total Portfolio",
         "Total Portfolio Value": "QAW++ Total Portfolio Value",
       },
+    },
+    // Satidham Scheme QYE++ — bifurcated table uses the "QYE++ " prefixed tags.
+    // startDate guards against pre-inception rows in the shared QAC00066 table.
+    "Scheme QYE++": {
+      tagRewrite: {
+        "Zerodha Total Portfolio": "QYE++ Zerodha Total Portfolio",
+        "Total Portfolio Value": "QYE++ Total Portfolio Value",
+      },
+      startDate: new Date("2026-07-24"),
     },
   };
 
@@ -402,6 +427,10 @@ export class PortfolioApi {
   // migrated scheme (identity for non-migrated schemes or unmapped tags).
   private static rewriteTag(scheme: string, tag: string): string {
     return this.SCHEME_BIFURCATED_SOURCE[scheme]?.tagRewrite?.[tag] ?? tag;
+  }
+
+  private static prevDay(d: Date): Date {
+    return new Date(d.getTime() - 24 * 60 * 60 * 1000);
   }
 
   private static resolvePmsAccountCode(input?: string): string {
@@ -1757,7 +1786,7 @@ export class PortfolioApi {
         isActive: false,
       },
     },
-    "Scheme QYE++": {
+    "Scheme QYE++ (Old)": {
       data: {
         amountDeposited: "0.00",
         currentExposure: "0.00",
@@ -1893,18 +1922,19 @@ export class PortfolioApi {
           // Source: "QYE Zerodha Total Portfolio" (instead of "QYE Total Portfolio Value")
           { date: "2025-11-28", amount: 79998180.50, dividend: 0 },
           { date: "2025-12-12", amount: -30000000.00, dividend: 0 },
-          { date: "2026-01-06", amount: -51041445.53, dividend: 0 },
+          { date: "2026-01-06", amount: -51041445.53, dividend: 0, excludeFromAmountDeposited: true },
         ],
-        strategyName: "Scheme QYE++",
+        strategyName: "Scheme QYE++ (Old)",
       },
       metadata: {
-        icode: "Scheme QYE++",
+        icode: "Scheme QYE++ (Old)",
         accountCount: 1,
         lastUpdated: "2026-01-16",
         filtersApplied: { accountType: null, broker: null, startDate: null, endDate: null },
         inceptionDate: "2025-11-28",
         dataAsOfDate: "2026-01-06",
-        strategyName: "Scheme QYE++",
+        strategyName: "Scheme QYE++ (Old)",
+        displayName: "Scheme QYE++",
         isActive: false,
       },
     },
@@ -1920,15 +1950,16 @@ export class PortfolioApi {
       // For Satidham, Amount Invested = net flow of all schemes (PMS added separately below)
       const isSatidham = qcode === "QAC00046";
       const schemes = isSatidham
-        ? ["Scheme A", "Scheme A (Old)", "Scheme B", "Scheme QAW++", "Scheme QYE++"]
+        ? ["Scheme A", "Scheme A (Old)", "Scheme B", "Scheme QYE++ (Old)"]
         : ["Scheme B", "Scheme PMS QAW"];
       let totalDeposited = 0;
 
       for (const s of schemes) {
         // Check for hardcoded data first (for inactive schemes like QYE++)
         if (HC?.[s]) {
-          const schemeCashFlows = HC[s].data.cashFlows || [];
-          const schemeDeposited = schemeCashFlows.reduce((sum: number, cf: { amount: number }) => sum + cf.amount, 0);
+          const schemeCashFlows = (HC[s].data.cashFlows || [])
+            .filter((cf: CashFlow) => !cf.excludeFromAmountDeposited);
+          const schemeDeposited = schemeCashFlows.reduce((sum: number, cf: CashFlow) => sum + cf.amount, 0);
           totalDeposited += schemeDeposited;
         } else if (s === "Scheme B" || s === "Scheme A") {
           const systemTag = s === "Scheme B" ? "Zerodha Total Portfolio" : PortfolioApi.getSystemTag(s, qcode);
@@ -1941,20 +1972,25 @@ export class PortfolioApi {
             _sum: { capital_in_out: true },
           });
           totalDeposited += Number(depositSum._sum.capital_in_out) || 0;
-        } else if (s === "Scheme QAW++") {
-          // This scheme uses QAC00066 instead of QAC00046
-          const effectiveQcode = PortfolioApi.getEffectiveQcode(s, qcode);
-          const systemTag = PortfolioApi.getSystemTag(s, effectiveQcode);
-          const depositSum = await PortfolioApi.schemeTable(s).aggregate({
-            where: {
-              qcode: effectiveQcode,
-              system_tag: PortfolioApi.rewriteTag(s, systemTag),
-              capital_in_out: { not: null },
-            },
-            _sum: { capital_in_out: true },
-          });
-          totalDeposited += Number(depositSum._sum.capital_in_out) || 0;
         }
+      }
+
+      // Combined Zerodha Total Portfolio for QAC00066 (covers QAW++ + QYE++ together)
+      // starting from when QAW++ was incepted on 2026-01-07
+      if (isSatidham) {
+        const qac66StartDate = new Date("2026-01-06");
+        const combinedDepositRows = await prisma.bifurcated_master_sheet_test.findMany({
+          where: {
+            qcode: "QAC00066",
+            system_tag: "Zerodha Total Portfolio",
+            capital_in_out: { not: null },
+            date: { gte: PortfolioApi.prevDay(qac66StartDate) },
+          },
+          select: { capital_in_out: true },
+        });
+        const combinedSum = combinedDepositRows
+          .reduce((sum, r) => sum + r.capital_in_out!.toNumber(), 0);
+        totalDeposited += combinedSum;
       }
 
       const pmsData = await this.getPMSData(qcode);
@@ -1996,6 +2032,23 @@ export class PortfolioApi {
       return Number(depositSum._sum.capital_in_out) || 0;
     }
 
+    // Handle Scheme QYE++ (uses QAC00066 instead of default qcode)
+    if (scheme === "Scheme QYE++") {
+      const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
+      const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
+      const qyeStartDate = PortfolioApi.SCHEME_BIFURCATED_SOURCE["Scheme QYE++"].startDate;
+      const depositSum = await PortfolioApi.schemeTable(scheme).aggregate({
+        where: {
+          qcode: effectiveQcode,
+          system_tag: PortfolioApi.rewriteTag(scheme, systemTag),
+          capital_in_out: { not: null },
+          ...(qyeStartDate ? { date: { gte: PortfolioApi.prevDay(qyeStartDate) } } : {}),
+        },
+        _sum: { capital_in_out: true },
+      });
+      return Number(depositSum._sum.capital_in_out) || 0;
+    }
+
     return 0;
   }
   private static async getLatestExposure(qcode: string, scheme: string): Promise<{ portfolioValue: number; drawdown: number; nav: number; date: Date } | null> {
@@ -2013,7 +2066,7 @@ export class PortfolioApi {
       // Satidham (QAC00046) includes different schemes than Sarla (QAC00041)
       const isSatidham = qcode === "QAC00046";
       const schemes = isSatidham
-        ? ["Scheme A", "Scheme B", "Scheme PMS QAW", "Scheme QAW++", "Scheme QYE++"]
+        ? ["Scheme A", "Scheme B", "Scheme PMS QAW", "Scheme QAW++", "Scheme QYE++", "Scheme QYE++ (Old)"]
         : ["Scheme B", "Scheme PMS QAW"];
       let totalPortfolioValue = 0;
       let latestDrawdown = 0;
@@ -2048,6 +2101,23 @@ export class PortfolioApi {
             }
           }
         } else if (s === "Scheme QAW++") {
+          // This scheme uses QAC00066 instead of QAC00046
+          const effectiveQcode = PortfolioApi.getEffectiveQcode(s, qcode);
+          const systemTag = PortfolioApi.getSystemTag(s, effectiveQcode);
+          const record = await PortfolioApi.schemeTable(s).findFirst({
+            where: { qcode: effectiveQcode, system_tag: PortfolioApi.rewriteTag(s, systemTag) },
+            orderBy: { date: "desc" },
+            select: { portfolio_value: true, drawdown: true, nav: true, date: true },
+          });
+          if (record) {
+            totalPortfolioValue += Number(record.portfolio_value) || 0;
+            latestNav += Number(record.nav) || 0;
+            if (!latestDate || record.date > latestDate) {
+              latestDate = record.date;
+              latestDrawdown = Math.abs(Number(record.drawdown) || 0);
+            }
+          }
+        } else if (s === "Scheme QYE++") {
           // This scheme uses QAC00066 instead of QAC00046
           const effectiveQcode = PortfolioApi.getEffectiveQcode(s, qcode);
           const systemTag = PortfolioApi.getSystemTag(s, effectiveQcode);
@@ -2147,8 +2217,8 @@ export class PortfolioApi {
 
             const originalInitialNav = Number(first.nav) || 0;
             const finalNav = Number(last.nav) || 0;
-            // For Scheme QAW++, use 100 as baseline (first record's prev_nav is 100, but nav is EOD value)
-            const initialNav = scheme === "Scheme QAW++" && originalInitialNav !== 100 ? 100 : originalInitialNav;
+            // For Scheme QAW++ / QYE++, use 100 as baseline (first record's prev_nav is 100, but nav is EOD value)
+            const initialNav = (scheme === "Scheme QAW++" || scheme === "Scheme QYE++") && originalInitialNav !== 100 ? 100 : originalInitialNav;
 
             if (initialNav > 0) {
               if (years >= 1) {
@@ -2265,8 +2335,13 @@ export class PortfolioApi {
       // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ uses QAC00066)
       const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
       const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
+      const schemeStartDate = PortfolioApi.SCHEME_BIFURCATED_SOURCE[scheme]?.startDate;
       const profitSum = await PortfolioApi.schemeTable(scheme).aggregate({
-        where: { qcode: effectiveQcode, system_tag: PortfolioApi.rewriteTag(scheme, systemTag) },
+        where: {
+          qcode: effectiveQcode,
+          system_tag: PortfolioApi.rewriteTag(scheme, systemTag),
+          ...(schemeStartDate ? { date: { gte: PortfolioApi.prevDay(schemeStartDate) } } : {}),
+        },
         _sum: { pnl: true },
       });
       return Number(profitSum._sum.pnl) || 0;
@@ -2287,13 +2362,18 @@ export class PortfolioApi {
     }
 
     // For other accounts (e.g., Satidham QAC00046) keep their own set
-    const satidhamSchemes = ["Scheme B", "Scheme PMS QAW", "Scheme A", "Scheme A (Old)", "Scheme QAW++", "Scheme QYE++"];
+    const satidhamSchemes = ["Scheme B", "Scheme PMS QAW", "Scheme A", "Scheme A (Old)", "Scheme QAW++", "Scheme QYE++", "Scheme QYE++ (Old)"];
+    const HC2 = this.getHardcoded(qcode);
+    console.log(`\n========== [TotalProfit DEBUG] ${qcode} ==========`);
     for (const s of satidhamSchemes) {
+      const isHardcoded = !!HC2?.[s];
       const part = await this.getSingleSchemeProfit(qcode, s);
-      console.log(`[TotalProfit] ${qcode} | ${s} = ${part}`);
+      const source = isHardcoded ? "HARDCODED" : (s === "Scheme PMS QAW" ? "PMS_DB" : "LIVE_DB");
+      console.log(`[TotalProfit] ${s.padEnd(20)} | ${source.padEnd(10)} | ₹ ${part.toFixed(2)} | running total: ₹ ${(total + part).toFixed(2)}`);
       total += part;
     }
-    console.log(`[TotalProfit] ${qcode} | TOTAL = ${total}`);
+    console.log(`[TotalProfit] ${"TOTAL".padEnd(20)} | ${"".padEnd(10)} | ₹ ${total.toFixed(2)}`);
+    console.log(`========== [TotalProfit DEBUG END] ==========\n`);
     return total;
   }
   private static async getHistoricalData(qcode: string, scheme: string): Promise<{ date: Date; nav: number; prevNav: number | null; drawdown: number; pnl: number; capitalInOut: number }[]> {
@@ -2329,12 +2409,14 @@ export class PortfolioApi {
     const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
     const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
 
+    const schemeStartDate = PortfolioApi.SCHEME_BIFURCATED_SOURCE[scheme]?.startDate;
     const data = await PortfolioApi.schemeTable(scheme).findMany({
       where: {
         qcode: effectiveQcode,
         system_tag: PortfolioApi.rewriteTag(scheme, systemTag),
         nav: { not: null },
         drawdown: { not: null },
+        ...(schemeStartDate ? { date: { gte: PortfolioApi.prevDay(schemeStartDate) } } : {}),
       },
       select: { date: true, nav: true, prev_nav: true, drawdown: true, pnl: true, capital_in_out: true },
       orderBy: { date: "asc" },
@@ -2368,15 +2450,16 @@ export class PortfolioApi {
 
     if (scheme === "Total Portfolio") {
       if (qcode === "QAC00046") {
-        // Satidham Total Portfolio: aggregate cash flows from Scheme A, Scheme B, Scheme A (Old), Scheme PMS QAW, Scheme QAW++, and Scheme QYE++
-        const satidhamSchemes = ["Scheme A", "Scheme B", "Scheme A (Old)", "Scheme PMS QAW", "Scheme QAW++", "Scheme QYE++"];
+        // Satidham Total Portfolio: aggregate cash flows from Scheme A, Scheme B, Scheme A (Old), Scheme PMS QAW, Scheme QYE++ (Old)
+        // QAW++ and QYE++ are combined via a single Zerodha Total Portfolio fetch on QAC00066 below
+        const satidhamSchemes = ["Scheme A", "Scheme B", "Scheme A (Old)", "Scheme PMS QAW", "Scheme QYE++ (Old)"];
         let cashFlows: CashFlow[] = [];
 
         // Use hardcoded data for Satidham schemes
         for (const s of satidhamSchemes) {
           if (HC?.[s]) {
             cashFlows = cashFlows.concat(
-              HC[s].data.cashFlows.map(entry => ({
+              HC[s].data.cashFlows.map((entry: CashFlow) => ({
                 date: PortfolioApi.normalizeDate(entry.date)!,
                 amount: entry.amount,
                 dividend: entry.dividend || 0,
@@ -2386,31 +2469,51 @@ export class PortfolioApi {
             // Fetch from pms_master_sheet using getPMSData
             const pmsData = await this.getPMSData(qcode);
             cashFlows = cashFlows.concat(pmsData.cashFlows);
-          } else if (s === "Scheme QAW++") {
-            // Fetch from database using QAC00066
-            const effectiveQcode = PortfolioApi.getEffectiveQcode(s, qcode);
-            const systemTag = PortfolioApi.getSystemTag(s, effectiveQcode);
-            const schemeCashFlows = await PortfolioApi.schemeTable(s).findMany({
-              where: {
-                qcode: effectiveQcode,
-                system_tag: PortfolioApi.rewriteTag(s, systemTag),
-                capital_in_out: { not: null, not: new Decimal(0) },
-              },
-              select: { date: true, capital_in_out: true },
-              orderBy: { date: "asc" },
-            });
-            cashFlows = cashFlows.concat(
-              schemeCashFlows.map(entry => ({
-                date: PortfolioApi.normalizeDate(entry.date)!,
-                amount: entry.capital_in_out!.toNumber(),
-                dividend: 0,
-              }))
-            );
           }
         }
 
-        // Ensure cash flows are sorted by date
-        return cashFlows.sort((a, b) => a.date.localeCompare(b.date));
+        // QAW++ — scheme-specific tag, from inception 2026-01-07
+        const qawStartDate = PortfolioApi.SCHEME_BIFURCATED_SOURCE["Scheme QAW++"]?.startDate ?? new Date("2026-01-07");
+        const qawCashFlows = await prisma.bifurcated_master_sheet_test.findMany({
+          where: {
+            qcode: "QAC00066",
+            system_tag: "QAW++ Zerodha Total Portfolio",
+            capital_in_out: { not: null },
+            date: { gte: PortfolioApi.prevDay(qawStartDate) },
+          },
+          select: { date: true, capital_in_out: true },
+          orderBy: { date: "asc" },
+        });
+        cashFlows = cashFlows.concat(
+          qawCashFlows.map(entry => ({
+            date: PortfolioApi.normalizeDate(entry.date)!,
+            amount: entry.capital_in_out!.toNumber(),
+            dividend: 0,
+          }))
+        );
+
+        // QYE++ — scheme-specific tag, from inception 2026-07-24
+        const qyeStartDate = PortfolioApi.SCHEME_BIFURCATED_SOURCE["Scheme QYE++"]?.startDate ?? new Date("2026-07-24");
+        const qyeCashFlows = await prisma.bifurcated_master_sheet_test.findMany({
+          where: {
+            qcode: "QAC00066",
+            system_tag: "QYE++ Zerodha Total Portfolio",
+            capital_in_out: { not: null },
+            date: { gte: PortfolioApi.prevDay(qyeStartDate) },
+          },
+          select: { date: true, capital_in_out: true },
+          orderBy: { date: "asc" },
+        });
+        cashFlows = cashFlows.concat(
+          qyeCashFlows.map(entry => ({
+            date: PortfolioApi.normalizeDate(entry.date)!,
+            amount: entry.capital_in_out!.toNumber(),
+            dividend: 0,
+          }))
+        );
+
+        // Ensure cash flows are sorted by date, exclude zero-amount entries
+        return cashFlows.filter(cf => cf.amount !== 0).sort((a, b) => a.date.localeCompare(b.date));
       } else {
         // Existing logic for other accounts (e.g., Sarla)
         const schemes = ["Scheme B", "Scheme PMS QAW"];
@@ -2441,19 +2544,21 @@ export class PortfolioApi {
         const pmsData = await this.getPMSData(qcode);
         cashFlows = cashFlows.concat(pmsData.cashFlows);
 
-        return cashFlows.sort((a, b) => a.date.localeCompare(b.date));
+        return cashFlows.filter(cf => cf.amount !== 0).sort((a, b) => a.date.localeCompare(b.date));
       }
     }
 
     // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ uses QAC00066)
     const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
     const systemTag = scheme === "Scheme B" ? "Zerodha Total Portfolio" : PortfolioApi.getSystemTag(scheme, effectiveQcode);
+    const fallthroughStartDate = PortfolioApi.SCHEME_BIFURCATED_SOURCE[scheme]?.startDate;
 
     const cashFlows = await PortfolioApi.schemeTable(scheme).findMany({
       where: {
         qcode: effectiveQcode,
         system_tag: PortfolioApi.rewriteTag(scheme, systemTag),
         capital_in_out: { not: null, not: new Decimal(0) },
+        ...(fallthroughStartDate ? { date: { gte: PortfolioApi.prevDay(fallthroughStartDate) } } : {}),
       },
       select: { date: true, capital_in_out: true },
       orderBy: { date: "asc" },
@@ -2820,6 +2925,15 @@ export class PortfolioApi {
           pnl: item.pnl,
           capitalInOut: item.capitalInOut,
         })));
+
+        const schemeQYEOldData = await PortfolioApi.getHistoricalData(qcode, "Scheme QYE++ (Old)");
+        allData.push(...schemeQYEOldData.map(item => ({
+          date: PortfolioApi.normalizeDate(item.date)!,
+          nav: item.nav,
+          prevNav: item.prevNav,
+          pnl: item.pnl,
+          capitalInOut: item.capitalInOut,
+        })));
       }
 
       if (!allData.length) {
@@ -3065,10 +3179,11 @@ export class PortfolioApi {
         }))
       );
 
-      // For Satidham, also calculate Scheme A, Scheme QAW++, and Scheme QYE++
+      // For Satidham, also calculate Scheme A, Scheme QAW++, Scheme QYE++, and Scheme QYE++ (Old)
       let schemeAQuarterlyPnl: QuarterlyPnL = {};
       let schemeQAWPlusQuarterlyPnl: QuarterlyPnL = {};
       let schemeQYEQuarterlyPnl: QuarterlyPnL = {};
+      let schemeQYEOldQuarterlyPnl: QuarterlyPnL = {};
       if (isSatidham) {
         const schemeAData = await PortfolioApi.getHistoricalData(qcode, "Scheme A");
         schemeAQuarterlyPnl = this.calculateQuarterlyPnLFromNavData(
@@ -3090,21 +3205,21 @@ export class PortfolioApi {
           }))
         );
 
-        // For QYE++, use hardcoded quarterlyPnl directly since historical data has pnl=0
-        // (pnl field is set to 0 in getHistoricalData for hardcoded schemes)
+        // New active QYE++ — fetch live data from bifurcated table (QAC00066)
+        const schemeQYEData = await PortfolioApi.getHistoricalData(qcode, "Scheme QYE++");
+        schemeQYEQuarterlyPnl = this.calculateQuarterlyPnLFromNavData(
+          schemeQYEData.map(d => ({
+            date: PortfolioApi.normalizeDate(d.date)!,
+            nav: d.nav,
+            prevNav: d.prevNav,
+            pnl: d.pnl,
+          }))
+        );
+
+        // Old inactive QYE++ — use hardcoded quarterlyPnl (pnl=0 in historical data)
         const qyeHC = this.getHardcoded(qcode);
-        if (qyeHC?.["Scheme QYE++"]) {
-          schemeQYEQuarterlyPnl = qyeHC["Scheme QYE++"].data.quarterlyPnl;
-        } else {
-          const schemeQYEData = await PortfolioApi.getHistoricalData(qcode, "Scheme QYE++");
-          schemeQYEQuarterlyPnl = this.calculateQuarterlyPnLFromNavData(
-            schemeQYEData.map(d => ({
-              date: PortfolioApi.normalizeDate(d.date)!,
-              nav: d.nav,
-              prevNav: d.prevNav,
-              pnl: d.pnl,
-            }))
-          );
+        if (qyeHC?.["Scheme QYE++ (Old)"]) {
+          schemeQYEOldQuarterlyPnl = qyeHC["Scheme QYE++ (Old)"].data.quarterlyPnl;
         }
       }
 
@@ -3163,6 +3278,7 @@ export class PortfolioApi {
         ...(isSatidham ? Object.keys(schemeAQuarterlyPnl) : []),
         ...(isSatidham ? Object.keys(schemeQAWPlusQuarterlyPnl) : []),
         ...(isSatidham ? Object.keys(schemeQYEQuarterlyPnl) : []),
+        ...(isSatidham ? Object.keys(schemeQYEOldQuarterlyPnl) : []),
       ]);
 
       const quarterKeys = ["q1", "q2", "q3", "q4"] as const;
@@ -3185,12 +3301,13 @@ export class PortfolioApi {
             const bVal = PortfolioApi.safeNum(schemeBQuarterlyPnl[year]?.cash[quarter]);
             let sum = pmsVal + bVal;
 
-            // For Satidham, also add Scheme A, Scheme QAW++, and Scheme QYE++
+            // For Satidham, also add Scheme A, Scheme QAW++, Scheme QYE++, and Scheme QYE++ (Old)
             if (isSatidham) {
               const aVal = PortfolioApi.safeNum(schemeAQuarterlyPnl[year]?.cash[quarter]);
               const qawPlusVal = PortfolioApi.safeNum(schemeQAWPlusQuarterlyPnl[year]?.cash[quarter]);
               const qyeVal = PortfolioApi.safeNum(schemeQYEQuarterlyPnl[year]?.cash[quarter]);
-              sum += aVal + qawPlusVal + qyeVal;
+              const qyeOldVal = PortfolioApi.safeNum(schemeQYEOldQuarterlyPnl[year]?.cash[quarter]);
+              sum += aVal + qawPlusVal + qyeVal + qyeOldVal;
             }
 
             combinedQuarterlyPnL[year].cash[quarter] = sum.toFixed(2);
@@ -3240,8 +3357,14 @@ if (scheme === "Scheme PMS QAW") {
     // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ uses QAC00066)
     const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
     const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
+    const portfolioValuesStartDate = PortfolioApi.SCHEME_BIFURCATED_SOURCE[scheme]?.startDate;
     const portfolioValues = await PortfolioApi.schemeTable(scheme).findMany({
-      where: { qcode: effectiveQcode, system_tag: PortfolioApi.rewriteTag(scheme, systemTag), portfolio_value: { not: null } },
+      where: {
+        qcode: effectiveQcode,
+        system_tag: PortfolioApi.rewriteTag(scheme, systemTag),
+        portfolio_value: { not: null },
+        ...(portfolioValuesStartDate ? { date: { gte: PortfolioApi.prevDay(portfolioValuesStartDate) } } : {}),
+      },
       select: { date: true, portfolio_value: true, daily_p_l: true },
       orderBy: { date: "asc" },
     });
@@ -3474,7 +3597,7 @@ if (scheme === "Scheme PMS QAW") {
             const rawCurve = historicalData.map(d => ({ date: PortfolioApi.normalizeDate(d.date)!, nav: d.nav }));
             // For Scheme QAW++ and QYE++, prepend a baseline point with NAV = 100 (day before inception)
             // This ensures the chart uses 100 as the baseline, matching the trailing returns calculation
-            if ((scheme === "Scheme QAW++" || scheme === "Scheme QYE++") && rawCurve.length > 0) {
+            if ((scheme === "Scheme QAW++" || scheme === "Scheme QYE++" || scheme === "Scheme QYE++ (Old)") && rawCurve.length > 0) {
               const firstDate = new Date(rawCurve[0].date);
               firstDate.setDate(firstDate.getDate() - 1);
               const baselineDate = firstDate.toISOString().split('T')[0];
@@ -3486,7 +3609,7 @@ if (scheme === "Scheme PMS QAW") {
             const rawDDCurve = drawdownMetrics.ddCurve;
             // For Scheme QAW++ and QYE++, prepend a baseline point with drawdown = 0 (day before inception)
             // This aligns with the equity curve baseline prepend
-            if ((scheme === "Scheme QAW++" || scheme === "Scheme QYE++") && rawDDCurve.length > 0 && historicalData.length > 0) {
+            if ((scheme === "Scheme QAW++" || scheme === "Scheme QYE++" || scheme === "Scheme QYE++ (Old)") && rawDDCurve.length > 0 && historicalData.length > 0) {
               const firstDate = new Date(historicalData[0].date);
               firstDate.setDate(firstDate.getDate() - 1);
               const baselineDate = firstDate.toISOString().split('T')[0];
@@ -3502,6 +3625,7 @@ if (scheme === "Scheme PMS QAW") {
           holdingsSummary,
         };
 
+        const HC_meta = PortfolioApi.getHardcoded(qcode);
         const metadata: Metadata = {
           icode: `${scheme}`,
           accountCount: 1,
@@ -3512,10 +3636,13 @@ if (scheme === "Scheme PMS QAW") {
             startDate: null,
             endDate: null,
           },
-          inceptionDate: historicalData.length > 0 ? PortfolioApi.normalizeDate(historicalData[0].date)! : "2022-09-14",
+          inceptionDate: PortfolioApi.SCHEME_BIFURCATED_SOURCE[scheme]?.startDate
+            ? PortfolioApi.SCHEME_BIFURCATED_SOURCE[scheme]!.startDate!.toISOString().split("T")[0]
+            : historicalData.length > 0 ? PortfolioApi.normalizeDate(historicalData[0].date)! : "2022-09-14",
           dataAsOfDate: latestExposure?.date.toISOString().split("T")[0] || "2025-07-18",
           strategyName: scheme,
           isActive: portfolioNames.isActive,
+          ...(HC_meta?.[scheme]?.metadata.displayName ? { displayName: HC_meta[scheme].metadata.displayName } : {}),
         };
 
         results = {

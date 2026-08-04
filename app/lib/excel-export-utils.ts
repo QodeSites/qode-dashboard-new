@@ -143,88 +143,167 @@ export async function fetchStrategies(
   return entries;
 }
 
-/**
- * Builds a ZIP buffer containing one .xlsx per strategy per client, for the
- * given list of clients. Shared by the admin and partner "download all
- * Excels" routes — the only difference between them is which clients are
- * passed in.
- */
-export async function buildExcelZipForClients(
+// Process at most N clients in parallel. Higher = faster but risks Prisma pool
+// exhaustion and DB drops (P1001). 3 is a safe default for our pool size.
+const CLIENT_CONCURRENCY = 3;
+
+// Retry a Prisma-touching operation once on transient connection errors (P1001,
+// P1002, P2024). One retry is enough to survive brief network blips without
+// masking real failures.
+async function withDbRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    const code = (e as { code?: string })?.code;
+    if (code === "P1001" || code === "P1002" || code === "P2024") {
+      console.warn(`[excel-export] ${label} hit ${code}, retrying once`);
+      await new Promise((r) => setTimeout(r, 500));
+      return await fn();
+    }
+    throw e;
+  }
+}
+
+/** Run `worker` over `items` with a fixed concurrency pool. */
+async function runPool<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>
+): Promise<void> {
+  let cursor = 0;
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (true) {
+      const idx = cursor++;
+      if (idx >= items.length) return;
+      await worker(items[idx]);
+    }
+  });
+  await Promise.all(runners);
+}
+
+// ============================================================================
+// Dashboard-only builder
+// ============================================================================
+
+async function writeDashboardForClient(
+  client: ExcelExportClient,
+  folder: JSZip,
+  errors: string[]
+): Promise<number> {
+  const clientName = (client.user_name ?? client.icode).replace(/[/\\?%*:|"<>]/g, "_");
+  let produced = 0;
+
+  let strategies: PortfolioEntry[] = [];
+  try {
+    strategies = await withDbRetry(`fetchStrategies(${client.icode})`, () =>
+      fetchStrategies(client.icode, client.accounts)
+    );
+  } catch (e) {
+    errors.push(`${client.icode} — failed to fetch strategies: ${String(e)}`);
+  }
+
+  for (const strategy of strategies) {
+    try {
+      const input = toExcelInput(strategy, client.user_name ?? client.icode);
+
+      const inceptionDate = strategy.metadata.inceptionDate ?? strategy.metadata.startDate;
+      if (inceptionDate && strategy.metadata.dataAsOfDate) {
+        try {
+          input.benchmarkReturns = await fetchBenchmarkForDateRange(
+            inceptionDate,
+            strategy.metadata.dataAsOfDate
+          );
+        } catch {
+          // benchmark columns will be blank
+        }
+      }
+
+      const buffer = await generateExcelBufferServer(input);
+      const fileName = strategies.length === 1
+        ? `${clientName}.xlsx`
+        : `${clientName} - ${strategy.strategyName.replace(/[/\\?%*:|"<>]/g, "_")}.xlsx`;
+      folder.file(fileName, buffer);
+      produced++;
+    } catch (e) {
+      errors.push(`${client.icode}/${strategy.strategyName} — ${String(e)}`);
+    }
+  }
+
+  return produced;
+}
+
+export async function buildDashboardZipForClients(
   clients: ExcelExportClient[]
 ): Promise<{ zipBuffer: Buffer; totalFiles: number; errors: string[] }> {
-  const masterZip      = new JSZip();
-  const dashboardFolder = masterZip.folder("dashboard")!;
-  const holdingsFolder  = masterZip.folder("holdings")!;
-  let   totalFiles = 0;
+  const zip = new JSZip();
+  const folder = zip.folder("dashboard")!;
   const errors: string[] = [];
+  let totalFiles = 0;
 
-  for (const client of clients) {
-    const clientName = (client.user_name ?? client.icode).replace(/[/\\?%*:|"<>]/g, "_");
+  await runPool(clients, CLIENT_CONCURRENCY, async (client) => {
+    const produced = await writeDashboardForClient(client, folder, errors);
+    totalFiles += produced;
+  });
 
-    // ── Dashboard (portfolio) Excels ──────────────────────────────────────
-    let strategies: PortfolioEntry[] = [];
-    try {
-      strategies = await fetchStrategies(client.icode, client.accounts);
-    } catch (e) {
-      errors.push(`${client.icode} — failed to fetch strategies: ${String(e)}`);
-    }
+  if (errors.length > 0) zip.file("_errors.txt", errors.join("\n"));
+  const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
+  return { zipBuffer, totalFiles, errors };
+}
 
-    for (const strategy of strategies) {
+// ============================================================================
+// Holdings-only builder
+// ============================================================================
+
+async function writeHoldingsForClient(
+  client: ExcelExportClient,
+  folder: JSZip,
+  errors: string[]
+): Promise<number> {
+  const clientName = (client.user_name ?? client.icode).replace(/[/\\?%*:|"<>]/g, "_");
+  let produced = 0;
+
+  try {
+    const holdingsEntries = await withDbRetry(`fetchHoldingsForClient(${client.icode})`, () =>
+      fetchHoldingsForClient(client.icode, client.accounts)
+    );
+    for (const entry of holdingsEntries) {
       try {
-        const input = toExcelInput(strategy, client.user_name ?? client.icode);
-
-        const inceptionDate = strategy.metadata.inceptionDate ?? strategy.metadata.startDate;
-        if (inceptionDate && strategy.metadata.dataAsOfDate) {
-          try {
-            input.benchmarkReturns = await fetchBenchmarkForDateRange(
-              inceptionDate,
-              strategy.metadata.dataAsOfDate
-            );
-          } catch {
-            // benchmark columns will be blank
-          }
-        }
-
-        const buffer = await generateExcelBufferServer(input);
-        const fileName = strategies.length === 1
+        const buffer = generateHoldingsExcelBuffer(
+          entry.holdingsSummary,
+          client.user_name ?? client.icode,
+          entry.dataAsOfDate
+        );
+        const label = entry.label.replace(/[/\\?%*:|"<>]/g, "_");
+        const fileName = holdingsEntries.length === 1
           ? `${clientName}.xlsx`
-          : `${clientName} - ${strategy.strategyName.replace(/[/\\?%*:|"<>]/g, "_")}.xlsx`;
-        dashboardFolder.file(fileName, buffer);
-        totalFiles++;
+          : `${clientName} - ${label}.xlsx`;
+        folder.file(fileName, buffer);
+        produced++;
       } catch (e) {
-        errors.push(`${client.icode}/${strategy.strategyName} — ${String(e)}`);
+        errors.push(`${client.icode}/holdings/${entry.label} — ${String(e)}`);
       }
     }
-
-    // ── Holdings Excels ───────────────────────────────────────────────────
-    try {
-      const holdingsEntries = await fetchHoldingsForClient(client.icode, client.accounts);
-      for (const entry of holdingsEntries) {
-        try {
-          const buffer = generateHoldingsExcelBuffer(
-            entry.holdingsSummary,
-            client.user_name ?? client.icode,
-            entry.dataAsOfDate
-          );
-          const label = entry.label.replace(/[/\\?%*:|"<>]/g, "_");
-          const fileName = holdingsEntries.length === 1
-            ? `${clientName}.xlsx`
-            : `${clientName} - ${label}.xlsx`;
-          holdingsFolder.file(fileName, buffer);
-          totalFiles++;
-        } catch (e) {
-          errors.push(`${client.icode}/holdings/${entry.label} — ${String(e)}`);
-        }
-      }
-    } catch (e) {
-      errors.push(`${client.icode} — failed to fetch holdings: ${String(e)}`);
-    }
+  } catch (e) {
+    errors.push(`${client.icode} — failed to fetch holdings: ${String(e)}`);
   }
 
-  if (errors.length > 0) {
-    masterZip.file("_errors.txt", errors.join("\n"));
-  }
+  return produced;
+}
 
-  const zipBuffer = await masterZip.generateAsync({ type: "nodebuffer" });
+export async function buildHoldingsZipForClients(
+  clients: ExcelExportClient[]
+): Promise<{ zipBuffer: Buffer; totalFiles: number; errors: string[] }> {
+  const zip = new JSZip();
+  const folder = zip.folder("holdings")!;
+  const errors: string[] = [];
+  let totalFiles = 0;
+
+  await runPool(clients, CLIENT_CONCURRENCY, async (client) => {
+    const produced = await writeHoldingsForClient(client, folder, errors);
+    totalFiles += produced;
+  });
+
+  if (errors.length > 0) zip.file("_errors.txt", errors.join("\n"));
+  const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
   return { zipBuffer, totalFiles, errors };
 }

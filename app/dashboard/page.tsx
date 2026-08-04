@@ -1084,7 +1084,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
               const isActive = sarlaData[strategy].metadata.isActive;
               return (
                 <SelectItem key={strategy} value={strategy}>
-                  {strategy} {!isActive ? "(Inactive)" : ""}
+                  {(sarlaData[strategy]?.metadata as any)?.displayName || strategy} {!isActive ? "(Inactive)" : ""}
                 </SelectItem>
               );
             })}
@@ -1138,7 +1138,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
             variant="outline"
             className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
           >
-            {selectedStrategy} {!isActive ? "(Inactive)" : ""}
+            {(strategyData?.metadata as any)?.displayName || selectedStrategy} {!isActive ? "(Inactive)" : ""}
           </Button>
           <div className="flex gap-2 ml-auto">
             <Button
@@ -1227,7 +1227,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
             variant="outline"
             className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
           >
-            {selectedStrategy} {!isActive ? "(Inactive)" : ""}
+            {(strategyData?.metadata as any)?.displayName || selectedStrategy} {!isActive ? "(Inactive)" : ""}
           </Button>
           <div className="flex gap-2 ml-auto">
             <Button
@@ -1319,7 +1319,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
             variant="outline"
             className={`bg-logo-green font-heading text-button-text text-sm sm:text-sm px-3 py-1 rounded-full ${!isActive ? "opacity-70" : ""}`}
           >
-            {selectedStrategy} {!isActive ? "(Inactive)" : ""}
+            {(strategyData?.metadata as any)?.displayName || selectedStrategy} {!isActive ? "(Inactive)" : ""}
           </Button>
           <div className="flex gap-2 ml-auto">
             <Button
@@ -1459,7 +1459,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                     const isActive = sarlaData[strategy].metadata.isActive;
                     return (
                       <SelectItem key={strategy} value={strategy}>
-                        {strategy} {!isActive ? "(Inactive)" : ""}
+                        {(sarlaData[strategy]?.metadata as any)?.displayName || strategy} {!isActive ? "(Inactive)" : ""}
                       </SelectItem>
                     );
                   })}

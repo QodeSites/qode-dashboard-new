@@ -16,12 +16,15 @@ export async function POST(req: Request) {
 
   try {
     const result = await computeDeploy({
+      qcode: body.qcode,
       strategy: body.strategy,
       ratio_type: body.ratio_type,
       account_value: body.account_value,
       reference_qcode: body.reference_qcode,
       input_mode: body.input_mode,
       value: body.value,
+      amount: body.amount,
+      today_pnl: body.today_pnl,
       equity_pct: body.equity_pct,
       cash_pct: body.cash_pct,
       lc_pct: body.lc_pct,

@@ -515,9 +515,19 @@ const HoldingsSummaryPage = () => {
     const [selectedStrategy, setSelectedStrategy] = useState<string>("ALL");
 
 
-    const isSarla = session?.user?.icode === "QUS0007";
-    const isSatidham = session?.user?.icode === "QUS0010";
-    const bifurcatedClient = findByIcode(session?.user?.icode ?? "");
+    // Admin/partner impersonation: an admin/partner session carries no `icode`
+    // of its own — the client being viewed lives in `impersonating`. Resolving
+    // identity from `session.user.icode` alone made every impersonated view
+    // fall through to the generic accounts branch (mirrors dashboard/page.tsx).
+    const canImpersonate =
+        session?.user?.accessType === "admin" || session?.user?.accessType === "partner";
+    const effectiveIcode = canImpersonate && session?.user?.impersonating
+        ? session.user.impersonating.icode
+        : session?.user?.icode;
+
+    const isSarla = effectiveIcode === "QUS0007";
+    const isSatidham = effectiveIcode === "QUS0010";
+    const bifurcatedClient = findByIcode(effectiveIcode ?? "");
 
     useEffect(() => {
         if (status === "unauthenticated") {

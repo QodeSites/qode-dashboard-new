@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import YahooFinance from "yahoo-finance2";
 
-// ── Types ──────────────────────────────────────────────────────────────────
+// Types
 
 export interface NavPoint {
   date: Date;
@@ -66,7 +66,7 @@ export interface BenchmarkResult {
   series: { date: string; nav: number; drawdown: number }[];
 }
 
-// ── DB ─────────────────────────────────────────────────────────────────────
+// DB
 
 // Fetch summary (non-numbered) tags filtered by strategy or combined view
 export async function fetchTagData(
@@ -139,7 +139,7 @@ function groupRows(rows: any[]): Record<string, NavPoint[]> {
   return grouped;
 }
 
-// ── Math helpers ────────────────────────────────────────────────────────────
+// Math helpers
 
 const MS = 1000 * 60 * 60 * 24;
 
@@ -158,22 +158,19 @@ function std(a: number[]): number {
   return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / (a.length - 1));
 }
 
-// ── Core metrics ────────────────────────────────────────────────────────────
+// Core metrics
 
 export function calcSinceInception(nav: NavPoint[]): number | null {
   if (nav.length < 2) return null;
   const days =
     (nav[nav.length - 1].date.getTime() - nav[0].date.getTime()) / MS;
-  // true inception has no prior day (null) — 100 is the indexed starting point.
-  // a windowed start_date does have a real prior day; use it as the base
-  // instead, same fallback calcMonthlyReturns already uses for its first bucket
+  // true inception has no prior day; windowed start uses nav[0].prev_nav as base
   const baseNav =
     nav[0].prev_nav != null && nav[0].prev_nav > 0 ? nav[0].prev_nav : 100;
   const startNav = nav[0].nav;
   const endNav = nav[nav.length - 1].nav;
   if (endNav <= 0 || startNav <= 0 || days <= 0) return null;
-  // < 365 days: simple return from baseNav
-  // >= 365 days: CAGR using actual first recorded NAV
+  // <365 days: simple return from baseNav; >=365: CAGR using actual first NAV
   return round(
     days < 365 ? endNav / baseNav - 1 : (endNav / startNav) ** (365 / days) - 1,
     4,
@@ -402,8 +399,7 @@ export function buildTagMetrics(nav: NavPoint[], rfr: number): TagMetrics {
 const NIFTY_URL =
   "https://qode360-backend.qodeinvest.com/api/v1/returns/indices/?downloadNav=true";
 
-// raw price fetch only — no metrics math, so it can be shared across many
-// clients' date ranges with a single external call instead of one per client
+// raw price fetch only, shared across clients instead of one call each
 async function fetchNiftyRawSeries(
   startDate: Date,
   endDate: Date,
@@ -427,8 +423,7 @@ async function fetchNiftyRawSeries(
   return Array.isArray(raw) && raw.length > 0 ? raw : null;
 }
 
-// pure — slices/derives metrics for one [startDate, endDate] window from an
-// already-fetched raw series, so N clients only cost 1 external fetch total
+// pure — slices metrics for one window from an already-fetched raw series
 function computeBenchmarkMetrics(
   raw: { date: string; nav: number }[],
   startDate: Date,
@@ -463,7 +458,7 @@ function computeBenchmarkMetrics(
     return {
       date: p.date,
       nav: parseFloat(((p.nav / refPrice) * 100).toFixed(4)),
-      drawdown: round(dd, 4),
+      drawdown: round(dd, 4)!,
     };
   });
 
@@ -551,8 +546,7 @@ function toNum(v: unknown): number | null {
   return v != null ? Number(v) : null;
 }
 
-// one row per (qcode, strategy), latest config revision wins.
-// suffixField picks which tag family: exposure (AUM) or profit (NAV/returns).
+// one row per (qcode, strategy), latest revision wins; suffixField picks exposure vs profit
 async function fetchStrategyPairs(
   suffixField: "exposure_tag_suffix" | "profit_tag_suffix",
 ): Promise<StrategyPair[]> {
@@ -589,11 +583,7 @@ async function fetchStrategyPairs(
   return [...map.values()];
 }
 
-// carry-forward sum across N series onto a shared date axis — single pass.
-// each series stops contributing once `d` passes its own `until` (if set) —
-// prevents lapsed/switched strategies from being counted forever. `dates` is
-// shared across all callers so a strategy with no currently active clients
-// still resolves to 0 today instead of freezing at its last real value.
+// carries values forward per series until each one's `until` date, so lapsed strategies drop to 0
 function mergeFfillSum(
   seriesList: { series: SeriesPoint[]; until: string | null }[],
   dates: string[],
@@ -617,16 +607,14 @@ function mergeFfillSum(
   return out;
 }
 
-// drop the trailing zero run once a strategy has no active clients left —
-// keeps the real history, cuts the redundant "still 0" repeats out to today
+// drop the trailing zero run once a strategy has no active clients left
 function trimTrailingZeros(series: AumPoint[]): AumPoint[] {
   let end = series.length;
   while (end > 0 && series[end - 1].aum === 0) end--;
   return series.slice(0, end);
 }
 
-// drop the leading zero run before a strategy's first real client — same no-signal
-// padding as the trailing case, just mirrored at the start of the array
+// drop the leading zero run before a strategy's first real client
 function trimLeadingZeros(series: AumPoint[]): AumPoint[] {
   let start = 0;
   while (start < series.length && series[start].aum === 0) start++;
@@ -726,7 +714,7 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
     strategySeries.get(pair.strategy)!.push(entry);
   }
 
-  // shared axis so every strategy resolves to 0 (not a frozen stale value) once its clients lapse
+  // shared axis so a lapsed strategy resolves to 0, not a frozen stale value
   const dateSet = new Set<string>();
   for (const { series } of allSeries)
     for (const p of series) dateSet.add(p.date);
@@ -757,8 +745,7 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
   };
 }
 
-// resolves payload override → global_config, no hardcoded fallback — shared
-// by every route that needs an rfr instead of each duplicating the lookup
+// resolves payload override -> global_config, shared by every route needing rfr
 export async function resolveRiskFreeRate(
   payloadValue?: number | null,
 ): Promise<number | null> {
@@ -793,16 +780,14 @@ export interface StrategyBreakupRow {
   end_date: string | null;
 }
 
-// top-level query window — distinct from each row's own end_date (that
-// client-strategy pair's own effective_to, unrelated to the request filter)
+// top-level query window — distinct from each row's own effective_to
 export interface StrategyBreakupResult {
   start_date: string | null;
   end_date: string;
   clients: StrategyBreakupRow[];
 }
 
-// batched nav/prev_nav/drawdown/pnl fetch for any list of (qcode, tag) pairs —
-// same unnest-join pattern as Portfolio Summary, one round trip total
+// batched nav/prev_nav/drawdown/pnl fetch for any (qcode, tag) list, one round trip
 async function fetchBulkNavSeries(
   pairs: { qcode: string; tag: string }[],
   end?: Date, // optional upper bound — omit for latest available
@@ -845,17 +830,14 @@ async function fetchBulkNavSeries(
   return seriesMap;
 }
 
-// parses an optional "YYYY-MM-DD" date — undefined if omitted, null if invalid.
-// shared by start_date and end_date on every endpoint below
+// parses optional "YYYY-MM-DD" — undefined if omitted, null if invalid
 export function parseOptionalDate(input?: string): Date | null | undefined {
   if (!input) return undefined;
   const d = new Date(input);
   return isNaN(d.getTime()) ? null : d;
 }
 
-// month-end value per calendar bucket, keyed by "YYYY-MM" — lets portfolio and
-// benchmark monthly returns be aligned by actual calendar month rather than by
-// position, which avoids misalignment when the two series start on different days
+// keyed by "YYYY-MM" so portfolio/benchmark align by calendar month, not position
 function toMonthlyReturnMap(
   series: { date: string; nav: number }[],
 ): Map<string, number> {
@@ -942,8 +924,7 @@ export interface ExtraRatios {
   beta: number | null;
 }
 
-// benchmark-relative ratios not covered by calcRatios — monthly basis, since
-// Capture Ratios above has no daily equivalent and these pair naturally with it
+// benchmark-relative ratios, monthly basis — Capture Ratios has no daily equivalent
 export function calcExtraRatios(port: number[], bm: number[]): ExtraRatios {
   const empty: ExtraRatios = {
     tracking_error: null,
@@ -1050,8 +1031,7 @@ export async function computeStrategyBreakup(
       beta = extra.beta;
     }
 
-    // Sharpe/Sortino/Calmar/Vol reuse the existing daily-basis calcRatios —
-    // keeps this tab consistent with Client Dashboards (see commit discussion)
+    // Sharpe/Sortino/Calmar/Vol reuse calcRatios, consistent with Client Dashboards
     const ratios = calcRatios(nav, monthly, rfr);
 
     rows.push({
@@ -1082,9 +1062,7 @@ export async function computeStrategyBreakup(
 
 // ── Account Value Breakup ────────────────────────────────────────────────────
 
-// fixed instrument-category tag suffixes — these describe what bifurcation
-// always produces, not a per-client business setting, so unlike
-// exposure/profit tags they aren't sourced from client_strategy_configs
+// fixed tag suffixes — bifurcation output, not a per-client config
 const COMPONENT_TAGS = [
   "Mutual Funds",
   "Equity Stock Holdings",
@@ -1187,9 +1165,7 @@ async function resolveSplitConfigs(
   return result;
 }
 
-// latest portfolio_value per (qcode, tag) across every client × every tag
-// (total + 7 components) in one query — DISTINCT ON, no history fetched,
-// since this endpoint is a point-in-time snapshot, not a time series
+// DISTINCT ON — snapshot only, no history needed
 async function fetchLatestTagValues(
   pairs: StrategyPair[],
 ): Promise<Map<string, number>> {
@@ -1254,6 +1230,15 @@ export async function computeAccountValueBreakup(
       gold_pct: override.gold_pct ?? base.gold_pct,
       lowvol_pct: override.lowvol_pct ?? base.lowvol_pct,
       momentum_pct: override.momentum_pct ?? base.momentum_pct,
+      // added when SplitConfig grew for Withdrawal/Deploy — always pass through
+      psar_leverage: base.psar_leverage,
+      psar_multiplier: base.psar_multiplier,
+      long_opt_pct: base.long_opt_pct,
+      gold_model_pct: base.gold_model_pct,
+      momentum_model_pct: base.momentum_model_pct,
+      lowvol_model_pct: base.lowvol_model_pct,
+      cash_pct_healthy: base.cash_pct_healthy,
+      liquidcase_pct_gate: base.liquidcase_pct_gate,
     });
   }
 
@@ -1309,9 +1294,7 @@ export async function computeAccountValueBreakup(
         split.cash_pct != null ? round(split.cash_pct - cash_pct, 4) : null,
     });
 
-    // gate purely on resolved config — never a strategy-name check. A strategy
-    // whose gold/lowvol/momentum split isn't defined (client override AND
-    // strategy_defaults both null) simply has no equity sub-breakdown to show.
+    // gated on resolved config, never a strategy-name check
     if (
       split.gold_pct == null ||
       split.lowvol_pct == null ||
@@ -1452,8 +1435,7 @@ export async function computeSubStrategyPerformance(
 
   const splitMap = await resolveSplitConfigs(pairs);
 
-  // build every (qcode, tag) this response could possibly need, once, so the
-  // NAV fetch is a single batched round trip regardless of section count
+  // build every (qcode, tag) needed once, so NAV fetch is a single batched round trip
   const queries: { qcode: string; tag: string }[] = [];
   for (const pair of pairs) {
     const split = splitMap.get(`${pair.qcode}|${pair.strategy}`)!;
@@ -1512,8 +1494,7 @@ export interface DailyPnlSeries {
   points: DailyPnlPoint[];
 }
 
-// per-day nav ratio — same formula calcMonthlyReturns chains across a month,
-// applied to a single day instead
+// per-day nav ratio — same formula calcMonthlyReturns chains across a month
 function calcDailyReturns(nav: NavPoint[]): DailyPnlPoint[] {
   return nav.map((p) => ({
     date: p.date.toISOString().split("T")[0],
@@ -1539,8 +1520,7 @@ export async function computeSubStrategyDailyPnl(
   const allPairs = await fetchStrategyPairs("profit_tag_suffix");
   const pairMap = new Map(allPairs.map((p) => [`${p.qcode}|${p.strategy}`, p]));
 
-  // dedupe requested selections before the unnest join — same lesson as
-  // computeCompare's duplication fix, applied here proactively
+  // dedupe selections before the unnest join, same fix as computeCompare
   const uniqueKeys = new Set(selections.map((s) => `${s.qcode}|${s.strategy}`));
   const pairs = [...uniqueKeys]
     .map((k) => pairMap.get(k))
@@ -1639,8 +1619,7 @@ const combinedMetricsCache = new Map<
   { data: any; fetchedAt: number }
 >();
 
-// every COMPLETED run, newest first — cached briefly; a stale cache on a
-// transient fetch failure beats returning nothing
+// every COMPLETED run, newest first — cached; stale beats nothing on fetch failure
 async function resolveCompletedLiveRunIds(): Promise<string[]> {
   if (
     cachedLiveRunIds &&
@@ -1667,8 +1646,7 @@ async function resolveCompletedLiveRunIds(): Promise<string[]> {
   }
 }
 
-// one option's full combined-metrics payload — immutable once COMPLETED, so
-// this sits in cache far longer than the run-id list above
+// one option's combined-metrics payload — immutable once COMPLETED, cached longer
 async function fetchCombinedMetrics(
   liveRunId: string,
   option: string,
@@ -1693,9 +1671,7 @@ async function fetchCombinedMetrics(
   }
 }
 
-// tries every COMPLETED run newest-first for this option, stopping at the
-// first one with usable data — a bad/incomplete latest run for one option
-// doesn't have to sink that option for the whole request
+// tries newest-first completed run; a bad run doesn't sink the whole option
 async function fetchCombinedMetricsWithFallback(
   liveRunIds: string[],
   option: string,
@@ -1707,8 +1683,7 @@ async function fetchCombinedMetricsWithFallback(
   return null;
 }
 
-// client's own strategy field -> research dashboard's scheme option. QTF has
-// no scheme here at all — absent on purpose, any QTF tag just finds nothing
+// client's strategy field -> research dashboard scheme; QTF has none, by design
 const SCHEME_OPTION: Record<string, string> = {
   "QAW+": "qaw_plus",
   "QAW++": "qaw_plus_plus",
@@ -1716,10 +1691,7 @@ const SCHEME_OPTION: Record<string, string> = {
   "QYE++": "qye_plus_plus",
 };
 
-// mastersheet tag -> where its curve lives inside a scheme's combined-metrics
-// payload. Locked in against Cross_check.xlsx + the real response: PSAR/BTST's
-// ALL-tab curves are columns in the scheme-level nav_curve, not a nested
-// psar.nav_curve/btst.nav_curve — that nested path doesn't exist in the data
+// PSAR/BTST curves are columns in the scheme-level nav_curve, not nested
 type BacktestSource =
   | {
       kind: "scheme";
@@ -1764,8 +1736,7 @@ const BACKTEST_TAG_SOURCE: Record<string, BacktestSource> = {
   DMA1: { kind: "qaw_split", split: "qaw_put_prot_matrics" },
 };
 
-// bare tags with NO scheme prefix (a client running the strategy directly,
-// not bifurcated under QAW/QYE) — Section 3's standalone options
+// bare tags with no scheme prefix — Section 3's standalone options
 const UNPREFIXED_OPTION: Record<string, string> = {
   PSAR: "pbsar",
   NPSAR: "pbsar",
@@ -1786,8 +1757,7 @@ const UNPREFIXED_SOURCE: Record<string, BacktestSource> = {
   DMA1: { kind: "standalone", tab: "all" },
 };
 
-// pulls the raw {date, nav} pairs a tag's source points at, out of an
-// already-fetched scheme payload — no network I/O here
+// pulls {date, nav} pairs out of an already-fetched scheme payload — no I/O
 function extractBacktestRaw(
   schemeData: any,
   source: BacktestSource,
@@ -1841,9 +1811,7 @@ export async function computeCompare(
   if (selections.length === 0)
     return { benchmark_series: [], backtest_series: [], results: [] };
 
-  // dedupe before querying — a repeated pair would otherwise double-match
-  // rows in fetchBulkNavSeries' unnest join, corrupting that series with
-  // doubled NAV points, not just wasting a redundant compute pass
+  // dedupe first — a repeated pair would double NAV points in the join
   const uniquePairs = new Map<string, CompareSelection>();
   for (const s of selections) uniquePairs.set(`${s.qcode}|${s.system_tag}`, s);
   const unique = [...uniquePairs.values()];
@@ -1888,8 +1856,7 @@ export async function computeCompare(
       ? computeBenchmarkMetrics(niftyRaw, minStart, maxEnd)
       : null;
 
-  // overview card per unique pair: rebased at THAT pair's own start — cached
-  // so a repeated pair reuses this instead of re-slicing the raw series
+  // overview card per unique pair, rebased at that pair's own start; cached
   const overviewCache = new Map<string, CompareResult["benchmark_overview"]>();
   function benchmarkOverview(key: string, nav: NavPoint[]) {
     if (overviewCache.has(key)) return overviewCache.get(key)!;
@@ -1907,8 +1874,7 @@ export async function computeCompare(
     return result;
   }
 
-  // rebuild in the ORIGINAL request order/count — duplicates in the request
-  // still get one result entry each, just reusing the cached computation
+  // rebuilt in original request order — duplicates still get one entry each
   const results: CompareResult[] = selections.map((s) => {
     const key = `${s.qcode}|${s.system_tag}`;
     const b = built.get(key)!;
@@ -1929,9 +1895,7 @@ export async function computeCompare(
   });
 
   // ── Backtest curves — one per distinct system_tag, not one shared line
-  // like Nifty. Selections sharing a tag merge into a single curve rebased
-  // at the earliest of their starts; different tags never merge, even if
-  // one client's start is earlier than another's for a different tag
+  // shared-tag selections merge into one rebased curve; different tags never merge
   const tagGroups = new Map<string, NavPoint[][]>();
   for (const s of unique) {
     const b = built.get(`${s.qcode}|${s.system_tag}`);
@@ -1944,8 +1908,7 @@ export async function computeCompare(
   if (tagGroups.size > 0) {
     const liveRunIds = await resolveCompletedLiveRunIds();
     if (liveRunIds.length > 0) {
-      // one combined-metrics fetch (with fallback) per distinct scheme,
-      // reused across every tag group that scheme covers
+      // one combined-metrics fetch per distinct scheme, reused across its tag groups
       const schemeCache = new Map<string, any | null>();
       for (const [systemTag, members] of tagGroups) {
         const trimmed = systemTag.trim();
@@ -1954,8 +1917,7 @@ export async function computeCompare(
         let option: string | undefined;
         let source: BacktestSource | undefined;
         if (spaceIdx === -1) {
-          // no scheme prefix — a client running the strategy directly, not
-          // bifurcated under QAW/QYE. Section 3's standalone option, Compounded tab
+          // no scheme prefix — client runs the strategy directly, not bifurcated
           option = UNPREFIXED_OPTION[trimmed];
           source = UNPREFIXED_SOURCE[trimmed];
         } else {
@@ -2018,8 +1980,7 @@ async function fetchClientStrategies(qcode: string): Promise<string[]> {
   return [...new Set(configs.map((c) => c.strategy))];
 }
 
-// distinct tags for a qcode + strategy. "combined" mirrors fetchTagData's
-// combined branch — tags matching none of the client's known strategy prefixes
+// distinct tags for a qcode+strategy; "combined" = no known strategy prefix match
 export async function fetchSystemTags(
   qcode: string,
   strategy: string,
@@ -2065,11 +2026,7 @@ export async function fetchSystemTags(
 
 // ── Cash & Margin: Snapshot ──────────────────────────────────────────────────
 
-// account_value uses the Exposure Tag, by explicit instruction — a deliberate
-// departure from the formula notes' §2.2/§13 convention (P1/P2/P3 use Profit
-// Tag). For QYE++ these are two different tags (Zerodha Total Portfolio vs
-// Total Portfolio Value) that diverge whenever F&O positions are open, so
-// Withdrawal's Account Value will differ from Portfolio Review's in that case.
+// uses Exposure Tag, not Profit Tag — diverges from Portfolio Review when F&O positions are open
 export interface CashMarginSnapshotRow {
   account_name: string;
   strategy: string;
@@ -2114,7 +2071,7 @@ async function fetchCashMarginContext(qcode: string): Promise<{
   splitMap: Map<string, SplitConfig>;
 }> {
   const today = new Date().toISOString().split("T")[0];
-  // Exposure Tag, not Profit Tag — deliberate; diverges from Portfolio Review for QYE++ with open F&O
+  // Exposure Tag, not Profit Tag — diverges from Portfolio Review with open F&O
   const allPairs = await fetchStrategyPairs("exposure_tag_suffix");
   const pairs = allPairs.filter(
     (p) => p.qcode === qcode && isActive(p.effective_to, today),
@@ -2253,8 +2210,7 @@ export interface WithdrawalTargets {
   equity_pct: number;
   cash_pct: number;
   lc_pct: number; // §10.1 — derived by default (1 - equity_pct - cash_pct), overridable via liquidcase_pct
-  // safety-floor and model-ratio fields — resolved via the same client→default
-  // cascade, but never payload-overridable (only equity_pct/cash_pct/liquidcase_pct are)
+  // safety-floor/model-ratio fields — same cascade, never payload-overridable
   cash_pct_healthy: number | null;
   liquidcase_pct_gate: number | null;
   gold_model_pct: number | null;
@@ -2264,12 +2220,7 @@ export interface WithdrawalTargets {
 
 const RATIO_EPSILON = 0.0001; // tolerance for the equity+cash+liquidcase = 1 identity check
 
-// shared by Withdrawal and Deploy — equity_pct/cash_pct/lc_pct must sum to 1,
-// only two of the three are ever independent:
-//   - liquidcase given, cash not  -> cash derived from the other two
-//   - cash given, liquidcase not  -> lc derived, §10.1 default
-//   - both given                  -> validated against equity_pct, error if inconsistent
-//   - neither given                -> cash from defaultCashPct, lc derived
+// only two of equity/cash/lc are ever independent — third is derived, or validated if both given
 function resolveCashLiquidcaseSplit(
   equity_pct: number,
   defaultCashPct: number | null,
@@ -2296,8 +2247,7 @@ function resolveCashLiquidcaseSplit(
   return { cash_pct, lc_pct: 1 - equity_pct - cash_pct }; // §10.1, default derivation
 }
 
-// payload override → already-resolved SplitConfig. Pure — no DB access, since
-// the caller already has SplitConfig from fetchCashMarginContext.
+// payload override -> resolved SplitConfig, pure, no DB access
 function mergeWithdrawalTargets(
   split: SplitConfig,
   equityPctOverride?: number,
@@ -2327,446 +2277,465 @@ function mergeWithdrawalTargets(
   };
 }
 
-interface WaterfallResult {
-  cashWithdrawn: number;
-  liquidcaseSold: number;
-  newCash: number;
-  newLiquidcase: number;
-  newAccountValue: number;
-  totalWithdrawn: number; // may be less than requested — see waterfallCapped
-  waterfallCapped: boolean; // true if the request exceeded the literal Cash+Liquidcase total
-  floor_restored: boolean; // true if New Cash ended at/above the cash_pct target floor
-}
+// ── Cash & Margin: Withdrawal — reworked to match Sahil's four-source /
+// four sources resolve one amount; Balanced/Holdings-Frozen/Cash-Frozen
+// always compute together. Liquidcase LTP is informational only here.
 
-// cash-first-then-liquidcase waterfall, §10.3 L35-L49. Also self-corrects a
-// pre-existing floor breach: if Cash is already below the floor even with
-// totalToWithdraw = 0, the algebra below still sells enough Liquidcase to
-// bring Cash back up to the floor first.
-//
-// Ceiling is the literal physical total (Cash + Liquidcase, i.e. Cash → 0) —
-// NOT the cash_pct ratio floor. That floor is now a soft gate, checked
-// separately by the caller against cash_pct_healthy/liquidcase_pct_gate;
-// this function only enforces §4's one hard rule: "zero or negative Cash/
-// Liquidcase is still a hard block regardless of confirmation." Below that,
-// New Cash is free to dip under the target floor — floor_restored reports
-// whether it did.
-function withdrawFromLiquidBuffer(
-  row: Pick<CashMarginSnapshotRow, "cash" | "liquidcase" | "account_value">,
-  minCashPct: number,
-  requestedTotal: number,
-): WaterfallResult {
-  const hardCeiling = row.cash + row.liquidcase;
-  const totalToWithdraw = Math.min(Math.max(0, requestedTotal), hardCeiling);
-  const waterfallCapped = requestedTotal > hardCeiling;
-
-  const newAccountValue = row.account_value - totalToWithdraw;
-  const requiredCashAfter = newAccountValue * minCashPct;
-  const cashOnlyCapacity = Math.max(
-    0,
-    (row.cash - requiredCashAfter) / (1 - minCashPct),
+// last bucket absorbs the rounding remainder so the parts sum exactly to `total`
+function allocateWithRounding(total: number, weights: number[]): number[] {
+  const sumWeights = weights.reduce((a, b) => a + b, 0);
+  const amounts = weights.map((w) =>
+    sumWeights > 0 ? round((total * w) / sumWeights, 2)! : 0,
   );
-
-  const cashWithdrawn = Math.min(totalToWithdraw, cashOnlyCapacity);
-  const liquidcaseSold = Math.max(
-    0,
-    Math.min(row.liquidcase, totalToWithdraw - row.cash + requiredCashAfter),
-  );
-
-  const newCash = row.cash + liquidcaseSold - totalToWithdraw;
-
-  return {
-    cashWithdrawn,
-    liquidcaseSold,
-    newCash,
-    newLiquidcase: row.liquidcase - liquidcaseSold,
-    newAccountValue,
-    totalWithdrawn: totalToWithdraw,
-    waterfallCapped,
-    floor_restored: newCash >= requiredCashAfter - EPSILON,
-  };
+  const allocatedSoFar = amounts.slice(0, -1).reduce((a, b) => a + b, 0);
+  amounts[amounts.length - 1] = round(total - allocatedSoFar, 2)!;
+  return amounts;
 }
 
-interface ThresholdBreach {
-  threshold_breached: "cash" | "liquidcase" | "holdings_capacity";
-  projected_value_pct: number | null; // n/a for holdings_capacity
-  threshold_pct: number | null; // n/a for holdings_capacity
-  message: string;
-}
+export type WithdrawalDirection =
+  | "Sell"
+  | "Buy"
+  | "Withdraw"
+  | "Deposit"
+  | "None";
 
-// §4 soft gates — cash checked first (more fundamental floor), liquidcase
-// second. A value can only report one breach at a time, matching the spec's
-// single threshold_breached field.
-function checkLiquidGateBreach(
-  newCashPct: number,
-  newLiquidcasePct: number,
-  targets: WithdrawalTargets,
-): ThresholdBreach | null {
-  if (
-    targets.cash_pct_healthy != null &&
-    newCashPct < targets.cash_pct_healthy
-  ) {
-    return {
-      threshold_breached: "cash",
-      projected_value_pct: newCashPct,
-      threshold_pct: targets.cash_pct_healthy,
-      message: `This would take Cash % to ${round(newCashPct * 100, 1)}%, below the ${round(targets.cash_pct_healthy * 100, 1)}% threshold.`,
-    };
-  }
-  if (
-    targets.liquidcase_pct_gate != null &&
-    newLiquidcasePct < targets.liquidcase_pct_gate
-  ) {
-    return {
-      threshold_breached: "liquidcase",
-      projected_value_pct: newLiquidcasePct,
-      threshold_pct: targets.liquidcase_pct_gate,
-      message: `This would take Liquidcase % to ${round(newLiquidcasePct * 100, 1)}%, below the ${round(targets.liquidcase_pct_gate * 100, 1)}% threshold.`,
-    };
-  }
-  return null;
-}
-
-// §4's third gate — not a %, a direct feasibility check for Path i
-function checkHoldingsCapacityBreach(
-  remainder: number,
-  available: number,
-): ThresholdBreach | null {
-  if (remainder <= available + EPSILON) return null;
-  return {
-    threshold_breached: "holdings_capacity",
-    projected_value_pct: null,
-    threshold_pct: null,
-    message: `This would require liquidating ₹${round(remainder, 0)} of holdings, exceeding the current ₹${round(available, 0)} available.`,
-  };
+function directionFor(
+  changeAmount: number,
+  unit: "sell_buy" | "withdraw_deposit",
+): WithdrawalDirection {
+  if (Math.abs(changeAmount) < 0.005) return "None";
+  if (unit === "sell_buy") return changeAmount > 0 ? "Sell" : "Buy";
+  return changeAmount > 0 ? "Withdraw" : "Deposit";
 }
 
 export interface WithdrawalSleeve {
   particular: string;
-  current: number;
-  withdrawal: number; // negative = amount removed
+  current_value: number;
   new_value: number;
+  change_amount: number; // positive = value left this bucket
+  direction: WithdrawalDirection;
+  ltp: number | null; // Liquidcase only — informational, see note above
+  quantity: number | null; // fractional, informational — NOT whole-unit floored
   new_pct: number;
 }
 
-export interface WithdrawalResult {
-  withdrawn_amount: number;
-  capped: boolean; // exceeded what this method can support
-  sleeves: WithdrawalSleeve[];
-  new_account_value: number;
-  new_cash_pct: number;
-  floor_restored: boolean;
-  threshold_breached: "cash" | "liquidcase" | "holdings_capacity" | null;
-  projected_value_pct: number | null;
-  threshold_pct: number | null;
-  message: string | null;
-  status: string;
-}
-
-function buildLiquidOnlySleeves(
-  holdings: number,
-  currentLiquidcase: number,
-  currentCash: number,
-  wf: WaterfallResult,
-): WithdrawalSleeve[] {
-  const holdingsPct =
-    wf.newAccountValue > 0 ? holdings / wf.newAccountValue : 0;
-  return [
-    {
-      particular: "Holdings",
-      current: holdings,
-      withdrawal: 0, // never touched — stops at Liquidcase
-      new_value: holdings,
-      new_pct: round(holdingsPct, 4)!,
-    },
-    {
-      particular: "Liquidcase",
-      current: currentLiquidcase,
-      withdrawal: round(-wf.liquidcaseSold, 2)!,
-      new_value: wf.newLiquidcase,
-      new_pct:
-        wf.newAccountValue > 0
-          ? round(wf.newLiquidcase / wf.newAccountValue, 4)!
-          : 0,
-    },
-    {
-      particular: "Cash",
-      current: currentCash,
-      withdrawal: round(-wf.cashWithdrawn, 2)!,
-      new_value: wf.newCash,
-      new_pct:
-        wf.newAccountValue > 0 ? round(wf.newCash / wf.newAccountValue, 4)! : 0,
-    },
-  ];
-}
-
-// §1/§6 — full excess cash if no amount given, else capped at it. Status keyed
-// off withdrawn=0 vs >0 and floor_restored.
-export function computeExcessCashWithdrawal(
-  row: CashMarginSnapshotRow,
-  targets: WithdrawalTargets,
-  requestedAmount?: number,
-): { result: WithdrawalResult; wf: WaterfallResult } {
-  const available = Math.max(0, row.excess_cash);
-  const requestedTotal =
-    requestedAmount != null ? Math.min(requestedAmount, available) : available;
-
-  const wf = withdrawFromLiquidBuffer(row, targets.cash_pct, requestedTotal);
-  const capped =
-    (requestedAmount != null && requestedAmount > available) ||
-    wf.waterfallCapped;
-  const newCashPct =
-    wf.newAccountValue > 0 ? round(wf.newCash / wf.newAccountValue, 4)! : 0;
-  const newLiquidcasePct =
-    wf.newAccountValue > 0
-      ? round(wf.newLiquidcase / wf.newAccountValue, 4)!
-      : 0;
-
-  const breach = checkLiquidGateBreach(newCashPct, newLiquidcasePct, targets);
-
-  const shortfall = round(
-    Math.max(0, targets.cash_pct * wf.newAccountValue - wf.newCash),
-    0,
-  );
-  const status =
-    wf.totalWithdrawn === 0
-      ? wf.floor_restored
-        ? "No excess cash — liquidcase sold to restore cash floor"
-        : `No excess cash — liquidcase insufficient to restore cash floor (shortfall ₹${shortfall})`
-      : wf.floor_restored
-        ? "Excess cash withdrawn — cash floor maintained"
-        : `Withdrawn, but liquidcase insufficient to fully restore cash floor (shortfall ₹${shortfall})`;
-
+function buildWithdrawalSleeve(
+  particular: string,
+  oldValue: number,
+  newValue: number,
+  newAccountValue: number,
+  unit: "sell_buy" | "withdraw_deposit",
+  ltp?: number,
+): WithdrawalSleeve {
+  const changeAmount = round(oldValue - newValue, 2)!;
   return {
-    wf,
-    result: {
-      withdrawn_amount: round(wf.totalWithdrawn, 2)!,
-      capped,
-      sleeves: buildLiquidOnlySleeves(
-        row.holdings,
-        row.liquidcase,
-        row.cash,
-        wf,
-      ),
-      new_account_value: wf.newAccountValue,
-      new_cash_pct: newCashPct,
-      floor_restored: wf.floor_restored,
-      threshold_breached: breach?.threshold_breached ?? null,
-      projected_value_pct: breach?.projected_value_pct ?? null,
-      threshold_pct: breach?.threshold_pct ?? null,
-      message: breach?.message ?? null,
-      status,
-    },
+    particular,
+    current_value: round(oldValue, 2)!,
+    new_value: round(newValue, 2)!,
+    change_amount: changeAmount,
+    direction: directionFor(changeAmount, unit),
+    ltp: ltp ?? null,
+    quantity: ltp ? round(Math.abs(changeAmount) / ltp, 2)! : null,
+    new_pct: newAccountValue > 0 ? round(newValue / newAccountValue, 4)! : 0,
   };
 }
 
-// B1/B2a/B2b share this. scaleTarget: "holdings" = amount IS the Holdings
-// reduction; "cash_liquidcase" = amount is the combined Cash+Liquidcase
-// reduction. formula: "snap" forces Cash to exact new_account_value ×
-// cash_pct, Liquidcase plugs the rest; "proportional" splits total_reduction
-// by each bucket's ideal % (cash_liquidcase only). Always runs against the
-// raw Snapshot row, no chaining. Only holdings_capacity gates this — no cash/
-// liquidcase ratio gate, since "snap" lands Cash on ideal by construction.
-function computeScaledWithdrawal(
+// current/ideal/model split from data on hand, not a separate defaults fetch
+function resolveWithdrawalEqSplit(
   row: CashMarginSnapshotRow,
   targets: WithdrawalTargets,
-  amount: number,
-  scaleTarget: "holdings" | "cash_liquidcase",
-  formula: "snap" | "proportional",
-  ratioMode: "model" | "current",
-): WithdrawalResult {
-  const combinedPct = targets.cash_pct + targets.lc_pct;
-  const lcPct = targets.lc_pct;
-
-  const divisor = scaleTarget === "holdings" ? targets.equity_pct : combinedPct;
-  const totalReduction = amount / divisor;
-
-  let holdingsReduction: number;
-  let cashReduction: number;
-  let liquidcaseReduction: number;
-
-  if (formula === "proportional") {
-    holdingsReduction = totalReduction * targets.equity_pct;
-    cashReduction = totalReduction * targets.cash_pct;
-    liquidcaseReduction = totalReduction * lcPct;
-  } else {
-    // snap: Cash forced to ideal for the new account size; Liquidcase plugs the rest
-    holdingsReduction =
-      scaleTarget === "holdings" ? amount : totalReduction * targets.equity_pct;
-    const newAccountValueUnclamped = row.account_value - totalReduction;
-    const newCashSnapped = newAccountValueUnclamped * targets.cash_pct;
-    cashReduction = row.cash - newCashSnapped;
-    liquidcaseReduction = totalReduction - holdingsReduction - cashReduction;
+  ratioType: "current" | "ideal" | "model",
+): { gold: number; momentum: number; lowvol: number } {
+  if (ratioType === "ideal") {
+    return { gold: 0.4, momentum: 0.4, lowvol: 0.2 };
   }
+  if (ratioType === "model") {
+    const g = targets.gold_model_pct ?? 0;
+    const m = targets.momentum_model_pct ?? 0;
+    const l = targets.lowvol_model_pct ?? 0;
+    const total = g + m + l;
+    return total > 0
+      ? { gold: g / total, momentum: m / total, lowvol: l / total }
+      : { gold: 0, momentum: 0, lowvol: 0 };
+  }
+  // current
+  return row.holdings > 0
+    ? {
+        gold: row.gold / row.holdings,
+        momentum: row.momentum / row.holdings,
+        lowvol: row.lowvol / row.holdings,
+      }
+    : { gold: 0, momentum: 0, lowvol: 0 };
+}
 
-  // Holdings/Liquidcase never go negative or oversell. Cash isn't floored at
-  // 0 — a negative cashReduction means Cash needs to genuinely increase,
-  // legitimate when the account started under-allocated to Cash.
-  const breach = checkHoldingsCapacityBreach(holdingsReduction, row.holdings);
-  const cappedHoldingsReduction = Math.max(
-    0,
-    Math.min(holdingsReduction, row.holdings),
-  );
-  const cappedLiquidcaseReduction = Math.max(
-    0,
-    Math.min(liquidcaseReduction, row.liquidcase),
-  );
-  const cappedCashReduction = Math.min(cashReduction, row.cash);
-  const liquidcaseCapped = cappedLiquidcaseReduction !== liquidcaseReduction;
-  const capped =
-    breach != null ||
-    cappedHoldingsReduction !== holdingsReduction ||
-    liquidcaseCapped ||
-    cappedCashReduction !== cashReduction;
-
-  const newHoldings = row.holdings - cappedHoldingsReduction;
-  const newLiquidcase = row.liquidcase - cappedLiquidcaseReduction;
-  const newCash = row.cash - cappedCashReduction;
-  const newAccountValue = newHoldings + newLiquidcase + newCash;
-
-  // holdings-internal split (model vs current), orthogonal to scaleTarget/formula
-  let holdingSleeves: { particular: string; current: number; weight: number }[];
-  if (row.has_equity_split) {
-    if (ratioMode === "model") {
-      const g = targets.gold_model_pct ?? 0;
-      const m = targets.momentum_model_pct ?? 0;
-      const l = targets.lowvol_model_pct ?? 0;
-      const total = g + m + l;
-      holdingSleeves = [
-        {
-          particular: "Gold",
-          current: row.gold,
-          weight: total > 0 ? g / total : 0,
-        },
-        {
-          particular: "Momentum",
-          current: row.momentum,
-          weight: total > 0 ? m / total : 0,
-        },
-        {
-          particular: "Low Vol",
-          current: row.lowvol,
-          weight: total > 0 ? l / total : 0,
-        },
-      ];
-    } else {
-      holdingSleeves = [
-        {
-          particular: "Gold",
-          current: row.gold,
-          weight: row.holdings > 0 ? row.gold / row.holdings : 0,
-        },
-        {
-          particular: "Momentum",
-          current: row.momentum,
-          weight: row.holdings > 0 ? row.momentum / row.holdings : 0,
-        },
-        {
-          particular: "Low Vol",
-          current: row.lowvol,
-          weight: row.holdings > 0 ? row.lowvol / row.holdings : 0,
-        },
-      ];
+function resolveWithdrawalAmount(
+  source: "all_profits" | "specific" | "fees" | "excess_cash",
+  totalProfits: number | undefined,
+  amount: number | undefined,
+  excessCashBeforeWithdrawal: number,
+): { blocked: boolean; warning: string | null; amount: number | null } {
+  if (source === "specific" || source === "fees") {
+    if (amount == null || amount <= 0) {
+      throw new Error(
+        `amount is required and must be positive for source '${source}'`,
+      );
     }
-  } else {
-    holdingSleeves = [
-      { particular: "Mutual Funds", current: row.mutual_funds, weight: 1 },
-    ];
+    return { blocked: false, warning: null, amount };
   }
-
-  const holdingResults: WithdrawalSleeve[] = holdingSleeves.map((s) => {
-    const withdrawal = cappedHoldingsReduction * s.weight;
-    const new_value = s.current - withdrawal;
+  if (source === "all_profits") {
+    if (totalProfits == null) {
+      throw new Error("total_profits is required for source 'all_profits'");
+    }
+    if (totalProfits <= 0) {
+      return {
+        blocked: true,
+        warning: "Client has no profits available to withdraw",
+        amount: null,
+      };
+    }
+    return { blocked: false, warning: null, amount: totalProfits };
+  }
+  // excess_cash
+  if (excessCashBeforeWithdrawal <= 0) {
     return {
-      particular: s.particular,
-      current: s.current,
-      withdrawal: round(-withdrawal, 2)!,
-      new_value: round(new_value, 2)!,
-      new_pct: newAccountValue > 0 ? round(new_value / newAccountValue, 4)! : 0,
+      blocked: true,
+      warning: "Client currently does not have excess cash",
+      amount: null,
     };
-  });
-
-  const sleeves: WithdrawalSleeve[] = [
-    ...holdingResults,
-    {
-      particular: "Liquidcase",
-      current: row.liquidcase,
-      withdrawal: round(-cappedLiquidcaseReduction, 2)!,
-      new_value: round(newLiquidcase, 2)!,
-      new_pct:
-        newAccountValue > 0 ? round(newLiquidcase / newAccountValue, 4)! : 0,
-    },
-    {
-      particular: "Cash",
-      current: row.cash,
-      withdrawal: round(-cappedCashReduction, 2)!,
-      new_value: round(newCash, 2)!,
-      new_pct: newAccountValue > 0 ? round(newCash / newAccountValue, 4)! : 0,
-    },
-  ];
-
-  return {
-    withdrawn_amount: round(
-      cappedHoldingsReduction + cappedLiquidcaseReduction + cappedCashReduction,
-      2,
-    )!,
-    capped,
-    sleeves,
-    new_account_value: newAccountValue,
-    new_cash_pct:
-      newAccountValue > 0 ? round(newCash / newAccountValue, 4)! : 0,
-    floor_restored: true, // this formula family can't breach the ratio floor
-    threshold_breached: breach?.threshold_breached ?? null,
-    projected_value_pct: breach?.projected_value_pct ?? null,
-    threshold_pct: breach?.threshold_pct ?? null,
-    message: breach?.message ?? null,
-    status:
-      breach != null
-        ? `Capped — Holdings reduction target exceeds available Holdings by ₹${round(holdingsReduction - row.holdings, 0)}`
-        : liquidcaseCapped
-          ? `Capped — required Liquidcase sale exceeds available Liquidcase by ₹${round(liquidcaseReduction - row.liquidcase, 0)}`
-          : formula === "snap"
-            ? `Account scaled, cash snapped to ideal (${ratioMode})`
-            : `Account scaled proportionally to ideal ratios (${ratioMode})`,
-  };
+  }
+  return { blocked: false, warning: null, amount: excessCashBeforeWithdrawal };
 }
 
-// ── Cash & Margin: Withdrawal endpoint orchestration ─────────────────────────
-// Deploy (D-1/D-2) is a separate endpoint, not built yet.
-//
-// MODE A (amount absent) — Excess Cash only, full amount, always.
-// MODE B (amount present) — bypasses excess cash, runs against raw Snapshot.
-// reduce_holdings_* (B1) always uses the full formula regardless of amount
-// size. withdraw_cash_proportional_*/snapped_* (B2a/B2b) collapse to the
-// plain Excess-Cash result when amount ≤ excess cash — no reason to touch
-// Holdings if the liquid buffer covers it alone.
+export interface WithdrawalViewResult {
+  new_account_value: number;
+  sleeves: WithdrawalSleeve[];
+}
 
-export interface CashMarginWithdrawalInput {
+// ── Balanced — two regimes joined exactly at the excess-cash boundary ──────
+function computeBalancedQye(
+  row: CashMarginSnapshotRow,
+  targets: WithdrawalTargets,
+  amountToWithdraw: number,
+  excessCashBeforeWithdrawal: number,
+  liquidcaseLtp: number | undefined,
+): WithdrawalViewResult {
+  const newAccountValue = row.account_value - amountToWithdraw;
+  const isRegimeB = amountToWithdraw > excessCashBeforeWithdrawal;
+  const newHoldings = isRegimeB
+    ? newAccountValue * targets.equity_pct
+    : row.holdings;
+  const newCash = newAccountValue * targets.cash_pct;
+  const newLiquidcase = newAccountValue - newHoldings - newCash;
+
+  const sleeves = [
+    buildWithdrawalSleeve(
+      "Mutual Funds",
+      row.mutual_funds,
+      newHoldings,
+      newAccountValue,
+      "sell_buy",
+    ),
+    buildWithdrawalSleeve(
+      "Liquidcase",
+      row.liquidcase,
+      newLiquidcase,
+      newAccountValue,
+      "sell_buy",
+      liquidcaseLtp,
+    ),
+    buildWithdrawalSleeve(
+      "Cash",
+      row.cash,
+      newCash,
+      newAccountValue,
+      "withdraw_deposit",
+    ),
+  ];
+  return { new_account_value: round(newAccountValue, 2)!, sleeves };
+}
+
+async function computeBalancedQaw(
+  row: CashMarginSnapshotRow,
+  targets: WithdrawalTargets,
+  amountToWithdraw: number,
+  excessCashBeforeWithdrawal: number,
+  ratioType: "current" | "ideal" | "model",
+  liquidcaseLtp: number | undefined,
+): Promise<WithdrawalViewResult> {
+  const newAccountValue = row.account_value - amountToWithdraw;
+  const isRegimeB = amountToWithdraw > excessCashBeforeWithdrawal;
+
+  let newGold = row.gold;
+  let newMomentum = row.momentum;
+  let newLowvol = row.lowvol;
+  if (isRegimeB) {
+    const subRatios = resolveWithdrawalEqSplit(row, targets, ratioType);
+    const newEquityTotal = newAccountValue * targets.equity_pct;
+    const equityReduction = row.holdings - newEquityTotal;
+    const [redGold, redMomentum, redLowvol] = allocateWithRounding(
+      equityReduction,
+      [subRatios.gold, subRatios.momentum, subRatios.lowvol],
+    );
+    newGold = row.gold - redGold;
+    newMomentum = row.momentum - redMomentum;
+    newLowvol = row.lowvol - redLowvol;
+  }
+  const newCash = newAccountValue * targets.cash_pct;
+  const newLiquidcase =
+    newAccountValue - newGold - newMomentum - newLowvol - newCash;
+
+  const sleeves = [
+    buildWithdrawalSleeve(
+      "Gold",
+      row.gold,
+      newGold,
+      newAccountValue,
+      "sell_buy",
+    ),
+    buildWithdrawalSleeve(
+      "Momentum",
+      row.momentum,
+      newMomentum,
+      newAccountValue,
+      "sell_buy",
+    ),
+    buildWithdrawalSleeve(
+      "Low Vol",
+      row.lowvol,
+      newLowvol,
+      newAccountValue,
+      "sell_buy",
+    ),
+    buildWithdrawalSleeve(
+      "Liquidcase",
+      row.liquidcase,
+      newLiquidcase,
+      newAccountValue,
+      "sell_buy",
+      liquidcaseLtp,
+    ),
+    buildWithdrawalSleeve(
+      "Cash",
+      row.cash,
+      newCash,
+      newAccountValue,
+      "withdraw_deposit",
+    ),
+  ];
+  return { new_account_value: round(newAccountValue, 2)!, sleeves };
+}
+
+// ── Holdings-Frozen — "don't reduce exposure". Liquidcase can come out
+// Liquidcase can go negative — the informative signal, not capped
+function computeHoldingsFrozenQye(
+  row: CashMarginSnapshotRow,
+  targets: WithdrawalTargets,
+  amountToWithdraw: number,
+  liquidcaseLtp: number | undefined,
+): WithdrawalViewResult {
+  const newAccountValue = row.account_value - amountToWithdraw;
+  const newCash = newAccountValue * targets.cash_pct;
+  const newLiquidcase = newAccountValue - row.holdings - newCash;
+
+  const sleeves = [
+    buildWithdrawalSleeve(
+      "Mutual Funds",
+      row.mutual_funds,
+      row.holdings,
+      newAccountValue,
+      "sell_buy",
+    ),
+    buildWithdrawalSleeve(
+      "Liquidcase",
+      row.liquidcase,
+      newLiquidcase,
+      newAccountValue,
+      "sell_buy",
+      liquidcaseLtp,
+    ),
+    buildWithdrawalSleeve(
+      "Cash",
+      row.cash,
+      newCash,
+      newAccountValue,
+      "withdraw_deposit",
+    ),
+  ];
+  return { new_account_value: round(newAccountValue, 2)!, sleeves };
+}
+
+function computeHoldingsFrozenQaw(
+  row: CashMarginSnapshotRow,
+  targets: WithdrawalTargets,
+  amountToWithdraw: number,
+  liquidcaseLtp: number | undefined,
+): WithdrawalViewResult {
+  const newAccountValue = row.account_value - amountToWithdraw;
+  const newCash = newAccountValue * targets.cash_pct;
+  const newLiquidcase = newAccountValue - row.holdings - newCash;
+
+  const sleeves = [
+    buildWithdrawalSleeve(
+      "Gold",
+      row.gold,
+      row.gold,
+      newAccountValue,
+      "sell_buy",
+    ),
+    buildWithdrawalSleeve(
+      "Momentum",
+      row.momentum,
+      row.momentum,
+      newAccountValue,
+      "sell_buy",
+    ),
+    buildWithdrawalSleeve(
+      "Low Vol",
+      row.lowvol,
+      row.lowvol,
+      newAccountValue,
+      "sell_buy",
+    ),
+    buildWithdrawalSleeve(
+      "Liquidcase",
+      row.liquidcase,
+      newLiquidcase,
+      newAccountValue,
+      "sell_buy",
+      liquidcaseLtp,
+    ),
+    buildWithdrawalSleeve(
+      "Cash",
+      row.cash,
+      newCash,
+      newAccountValue,
+      "withdraw_deposit",
+    ),
+  ];
+  return { new_account_value: round(newAccountValue, 2)!, sleeves };
+}
+
+// ── Cash-Frozen — "only reduce exposure". Becomes null with a reason when
+// null + reason when amount exceeds Holdings — never a partial execution
+function computeCashFrozenQye(
+  row: CashMarginSnapshotRow,
+  amountToWithdraw: number,
+): WithdrawalViewResult {
+  const newHoldings = row.holdings - amountToWithdraw;
+  const newAccountValue = row.account_value - amountToWithdraw;
+
+  const sleeves = [
+    buildWithdrawalSleeve(
+      "Mutual Funds",
+      row.mutual_funds,
+      newHoldings,
+      newAccountValue,
+      "sell_buy",
+    ),
+    buildWithdrawalSleeve(
+      "Liquidcase",
+      row.liquidcase,
+      row.liquidcase,
+      newAccountValue,
+      "sell_buy",
+    ),
+    buildWithdrawalSleeve(
+      "Cash",
+      row.cash,
+      row.cash,
+      newAccountValue,
+      "withdraw_deposit",
+    ),
+  ];
+  return { new_account_value: round(newAccountValue, 2)!, sleeves };
+}
+
+function computeCashFrozenQaw(
+  row: CashMarginSnapshotRow,
+  targets: WithdrawalTargets,
+  amountToWithdraw: number,
+  ratioType: "current" | "ideal" | "model",
+): WithdrawalViewResult {
+  const newAccountValue = row.account_value - amountToWithdraw;
+
+  const subRatios = resolveWithdrawalEqSplit(row, targets, ratioType);
+  const [redGold, redMomentum, redLowvol] = allocateWithRounding(
+    amountToWithdraw,
+    [subRatios.gold, subRatios.momentum, subRatios.lowvol],
+  );
+  const newGold = row.gold - redGold;
+  const newMomentum = row.momentum - redMomentum;
+  const newLowvol = row.lowvol - redLowvol;
+
+  const sleeves = [
+    buildWithdrawalSleeve(
+      "Gold",
+      row.gold,
+      newGold,
+      newAccountValue,
+      "sell_buy",
+    ),
+    buildWithdrawalSleeve(
+      "Momentum",
+      row.momentum,
+      newMomentum,
+      newAccountValue,
+      "sell_buy",
+    ),
+    buildWithdrawalSleeve(
+      "Low Vol",
+      row.lowvol,
+      newLowvol,
+      newAccountValue,
+      "sell_buy",
+    ),
+    buildWithdrawalSleeve(
+      "Liquidcase",
+      row.liquidcase,
+      row.liquidcase,
+      newAccountValue,
+      "sell_buy",
+    ),
+    buildWithdrawalSleeve(
+      "Cash",
+      row.cash,
+      row.cash,
+      newAccountValue,
+      "withdraw_deposit",
+    ),
+  ];
+  return { new_account_value: round(newAccountValue, 2)!, sleeves };
+}
+
+// ── Orchestration ────────────────────────────────────────────────────────
+export interface WithdrawalInput {
   qcode: string;
-  strategy?: string;
-  amount?: number;
+  strategy?: string; // absent → snapshot-only preview, matching prior behavior
+  source?: "all_profits" | "specific" | "fees" | "excess_cash";
+  total_profits?: number; // required when source = "all_profits" — manual input, no automated source, confirmed
+  amount?: number; // required when source = "specific" or "fees"
+  ratio_type?: "current" | "ideal" | "model"; // required for QAW strategies
   equity_pct?: number;
   cash_pct?: number;
-  liquidcase_pct?: number;
-}
-
-export interface ModeBResult {
-  reduce_holdings_model: WithdrawalResult | null; // QAW only — null for QYE
-  reduce_holdings_current: WithdrawalResult;
-  withdraw_cash_proportional_model: WithdrawalResult | null; // QAW only
-  withdraw_cash_proportional_current: WithdrawalResult;
-  withdraw_cash_snapped_model: WithdrawalResult | null; // QAW only
-  withdraw_cash_snapped_current: WithdrawalResult;
+  lc_pct?: number; // renamed from liquidcase_pct to match Deploy's naming exactly
 }
 
 export interface CashMarginWithdrawalResult {
   snapshot: CashMarginSnapshotResult;
-  blocked: boolean; // §2 — true if this strategy's own snapshot is below its cash floor
-  excess_cash: WithdrawalResult | null; // Mode A only
-  withdrawal: ModeBResult | null; // Mode B only
+  blocked: boolean;
+  warning: string | null;
+  amount_to_withdraw: number | null;
+  excess_cash_before_withdrawal: number | null;
+  ratio_type: "current" | "ideal" | "model" | null;
+  balanced: WithdrawalViewResult | null;
+  holdings_frozen: WithdrawalViewResult | null;
+  cash_frozen: WithdrawalViewResult | null;
+  // set only when cash_frozen is null
+  cash_frozen_unavailable_reason: string | null;
 }
 
 export async function computeCashMarginWithdrawal(
-  input: CashMarginWithdrawalInput,
+  input: WithdrawalInput,
 ): Promise<CashMarginWithdrawalResult> {
   const { pairs, valueMap, splitMap } = await fetchCashMarginContext(
     input.qcode,
@@ -2776,8 +2745,20 @@ export async function computeCashMarginWithdrawal(
       ? { strategies: [], combined: null }
       : buildCashMarginSnapshot(pairs, valueMap, splitMap);
 
+  const empty = {
+    blocked: false,
+    warning: null,
+    amount_to_withdraw: null,
+    excess_cash_before_withdrawal: null,
+    ratio_type: null,
+    balanced: null,
+    holdings_frozen: null,
+    cash_frozen: null,
+    cash_frozen_unavailable_reason: null,
+  } as const;
+
   if (!input.strategy) {
-    return { snapshot, blocked: false, excess_cash: null, withdrawal: null };
+    return { snapshot, ...empty };
   }
 
   const row = snapshot.strategies.find((r) => r.strategy === input.strategy);
@@ -2787,10 +2768,14 @@ export async function computeCashMarginWithdrawal(
     );
   }
 
-  // §2 — blocks outright rather than warning-and-continuing, so every
-  // withdrawal method downstream doesn't have to re-derive whether it's safe
+  // §2 — blocks outright so every view downstream doesn't re-derive safety
   if (row.snapshot_below_floor) {
-    return { snapshot, blocked: true, excess_cash: null, withdrawal: null };
+    return {
+      snapshot,
+      ...empty,
+      blocked: true,
+      warning: "Account is below its cash floor — withdrawal blocked",
+    };
   }
 
   const split = splitMap.get(`${input.qcode}|${input.strategy}`);
@@ -2803,102 +2788,123 @@ export async function computeCashMarginWithdrawal(
     split,
     input.equity_pct,
     input.cash_pct,
-    input.liquidcase_pct,
+    input.lc_pct,
   );
 
-  // MODE A — no amount, full Excess Cash only
-  if (input.amount == null) {
-    const { result } = computeExcessCashWithdrawal(row, targets, undefined);
-    return { snapshot, blocked: false, excess_cash: result, withdrawal: null };
+  if (!input.source) {
+    throw new Error("source is required");
   }
 
-  // MODE B — amount present, raw Snapshot, excess cash bypassed
-  const amount = input.amount;
-
-  // also the "within excess cash" collapse case for withdraw_cash_*
-  const { result: withinExcessCashResult } = computeExcessCashWithdrawal(
-    row,
-    targets,
-    amount,
+  // override-aware, not row.excess_cash (tier-default) — also drives the Regime A/B boundary below
+  const excessCashBeforeWithdrawal = calcExcessCash(
+    row.holdings,
+    row.cash_plus_liquidcase,
+    targets.equity_pct,
   );
-  const exceedsExcessCash = amount > Math.max(0, row.excess_cash) + EPSILON;
 
-  const reduce_holdings_current = computeScaledWithdrawal(
-    row,
-    targets,
-    amount,
-    "holdings",
-    "snap",
-    "current",
+  const resolved = resolveWithdrawalAmount(
+    input.source,
+    input.total_profits,
+    input.amount,
+    excessCashBeforeWithdrawal,
   );
-  const reduce_holdings_model = row.has_equity_split
-    ? computeScaledWithdrawal(row, targets, amount, "holdings", "snap", "model")
-    : null;
+  if (resolved.blocked) {
+    return {
+      snapshot,
+      ...empty,
+      blocked: true,
+      warning: resolved.warning,
+      excess_cash_before_withdrawal: round(excessCashBeforeWithdrawal, 2)!,
+      ratio_type: input.ratio_type ?? null,
+    };
+  }
+  const amountToWithdraw = resolved.amount!;
 
-  const withdraw_cash_proportional_current = exceedsExcessCash
-    ? computeScaledWithdrawal(
-        row,
-        targets,
-        amount,
-        "cash_liquidcase",
-        "proportional",
-        "current",
-      )
-    : withinExcessCashResult;
-  const withdraw_cash_proportional_model = !row.has_equity_split
-    ? null
-    : exceedsExcessCash
-      ? computeScaledWithdrawal(
-          row,
-          targets,
-          amount,
-          "cash_liquidcase",
-          "proportional",
-          "model",
-        )
-      : withinExcessCashResult;
+  // top-level impossibility — graceful block, not a throw
+  if (amountToWithdraw >= row.account_value) {
+    return {
+      snapshot,
+      ...empty,
+      blocked: true,
+      warning: "Withdrawal amount cannot meet or exceed the Account Value",
+      amount_to_withdraw: round(amountToWithdraw, 2)!,
+      excess_cash_before_withdrawal: round(excessCashBeforeWithdrawal, 2)!,
+      ratio_type: input.ratio_type ?? null,
+    };
+  }
 
-  const withdraw_cash_snapped_current = exceedsExcessCash
-    ? computeScaledWithdrawal(
-        row,
-        targets,
-        amount,
-        "cash_liquidcase",
-        "snap",
-        "current",
-      )
-    : withinExcessCashResult;
-  const withdraw_cash_snapped_model = !row.has_equity_split
-    ? null
-    : exceedsExcessCash
-      ? computeScaledWithdrawal(
-          row,
-          targets,
-          amount,
-          "cash_liquidcase",
-          "snap",
-          "model",
-        )
-      : withinExcessCashResult;
+  let balanced: WithdrawalViewResult;
+  let holdings_frozen: WithdrawalViewResult;
+  let cash_frozen: WithdrawalViewResult | null;
+  let cash_frozen_unavailable_reason: string | null = null;
+
+  // informational only, fetched live like Deploy; degrades to null on failure
+  const liquidcaseLtp = (await fetchLtps([ETF_SYMBOLS.liquidcase])).get(
+    ETF_SYMBOLS.liquidcase,
+  );
+
+  // see computeCashFrozenQaw/Qye
+  const cashFrozenAvailable = amountToWithdraw <= row.holdings;
+  if (!cashFrozenAvailable) {
+    cash_frozen_unavailable_reason = `Cash-Frozen can't fund this withdrawal without also selling Holdings — ₹${round(row.holdings, 2)} available, ₹${round(amountToWithdraw, 2)} requested.`;
+  }
+
+  if (row.has_equity_split) {
+    if (!input.ratio_type) {
+      throw new Error("ratio_type is required for this strategy");
+    }
+    balanced = await computeBalancedQaw(
+      row,
+      targets,
+      amountToWithdraw,
+      excessCashBeforeWithdrawal,
+      input.ratio_type,
+      liquidcaseLtp,
+    );
+    holdings_frozen = computeHoldingsFrozenQaw(
+      row,
+      targets,
+      amountToWithdraw,
+      liquidcaseLtp,
+    );
+    cash_frozen = cashFrozenAvailable
+      ? computeCashFrozenQaw(row, targets, amountToWithdraw, input.ratio_type)
+      : null;
+  } else {
+    balanced = computeBalancedQye(
+      row,
+      targets,
+      amountToWithdraw,
+      excessCashBeforeWithdrawal,
+      liquidcaseLtp,
+    );
+    holdings_frozen = computeHoldingsFrozenQye(
+      row,
+      targets,
+      amountToWithdraw,
+      liquidcaseLtp,
+    );
+    cash_frozen = cashFrozenAvailable
+      ? computeCashFrozenQye(row, amountToWithdraw)
+      : null;
+  }
 
   return {
     snapshot,
     blocked: false,
-    excess_cash: null,
-    withdrawal: {
-      reduce_holdings_model,
-      reduce_holdings_current,
-      withdraw_cash_proportional_model,
-      withdraw_cash_proportional_current,
-      withdraw_cash_snapped_model,
-      withdraw_cash_snapped_current,
-    },
+    warning: null,
+    amount_to_withdraw: round(amountToWithdraw, 2)!,
+    excess_cash_before_withdrawal: round(excessCashBeforeWithdrawal, 2)!,
+    ratio_type: input.ratio_type ?? null,
+    balanced,
+    holdings_frozen,
+    cash_frozen,
+    cash_frozen_unavailable_reason,
   };
 }
 
 // ── Cash & Margin: Deploy (D0 — hypothetical new-client deployment) ─────────
-// LTP via yahoo-finance2 — no auth needed (unlike Kite), so no Python bridge.
-// Batched into one call per computation, not one per symbol.
+// LTP via yahoo-finance2 (no auth needed) — batched into one call per computation
 
 const yahooFinance = new YahooFinance();
 
@@ -2930,7 +2936,7 @@ async function fetchLtps(symbols: string[]): Promise<Map<string, number>> {
   return map;
 }
 
-// strategy_defaults only — a hypothetical client has no client_strategy_configs row to cascade through
+// strategy_defaults only — no client_strategy_configs row for a hypothetical client
 async function fetchStrategyDefaults(strategy: string): Promise<{
   equity_pct: number | null;
   cash_pct: number | null;
@@ -2959,14 +2965,12 @@ export interface DeploySleeve {
   particular: string;
   target_pct: number;
   target_value: number; // pure ideal target, never adjusted for rounding — same meaning on every row
-  actual_value: number; // what this sleeve will genuinely hold after whole-unit rounding; equals target_value except where rounding forces a difference
+  actual_value: number; // what this sleeve genuinely holds after rounding
   ltp: number | null; // null for non-tradeable rows (Cash, Holdings rollup)
   quantity: number | null;
 }
 
-// floors to whole units (fractional units aren't tradeable); the rupee
-// remainder from flooring is returned separately so the caller can absorb it
-// into Cash's actual_value rather than silently losing it
+// floors to whole units; remainder returned for the caller to sweep into Cash
 function buildPricedSleeve(
   particular: string,
   target_pct: number,
@@ -2987,7 +2991,8 @@ function buildPricedSleeve(
       dust: 0,
     };
   }
-  const quantity = Math.floor(target_value / ltp);
+  // trunc, not floor — floor over-sells on negative targets
+  const quantity = Math.trunc(target_value / ltp);
   const actualValue = quantity * ltp;
   return {
     sleeve: {
@@ -3003,18 +3008,21 @@ function buildPricedSleeve(
 }
 
 // ── unified input — one route, no strategy-name check anywhere. Which fields
-// are required depends on has_equity_split (config-driven), resolved once by
-// computeDeploy before either path below ever runs.
+// required fields depend on has_equity_split, resolved once by computeDeploy
 export interface DeployInput {
+  qcode?: string; // presence decides D0 vs real-client path
   strategy: string;
-  // QAW-shaped (has_equity_split) fields
+  // D0-only (qcode absent) — QAW-shaped
   ratio_type?: "current" | "ideal" | "model";
   account_value?: number;
-  reference_qcode?: string; // required only for ratio_type "current" — supplies proportions only, not its own account size
-  // QYE-shaped fields
+  reference_qcode?: string; // required only for ratio_type "current" — proportions only
+  // D0-only (qcode absent) — QYE-shaped
   input_mode?: "holdings" | "account_value" | "cash";
   value?: number;
-  // shared by both
+  // real-client only (qcode present)
+  amount?: number; // specific-amount deployment, sibling to the always-computed results
+  today_pnl?: number; // scoped to additional_cash_required/additional_holdings_required only — see applyTodayPnl
+  // shared by both paths
   equity_pct?: number;
   cash_pct?: number;
   lc_pct?: number;
@@ -3045,7 +3053,7 @@ async function resolveQawSubRatios(
     return { gold, momentum, lowvol };
   }
 
-  // "current" — proportions only, from the reference client's own holdings; its account size never enters the calc
+  // "current" — proportions only, from the reference client's own holdings
   if (!reference_qcode) {
     throw new Error("reference_qcode is required for ratio_type 'current'");
   }
@@ -3137,8 +3145,7 @@ async function computeQawDeploy(
     ltps.get(ETF_SYMBOLS.liquidcase),
   );
 
-  // rounding dust from flooring quantities absorbed into Cash — Cash is the
-  // one row with no unit-size constraint, so it's the natural plug
+  // rounding dust swept into Cash — the one row with no unit-size constraint
   const dust = gold.dust + momentum.dust + lowvol.dust + liquidcase.dust;
 
   const equityRollup: DeploySleeve = {
@@ -3253,14 +3260,1014 @@ async function computeQyeDeploy(
   };
 }
 
-// ── unified entry point — one route, no strategy-name check. has_equity_split
-// is resolved once here (from strategy_defaults.gold_pct, config-driven, same
-// signal used everywhere else in this file) and decides which path runs.
+// ── Real-client scenarios (qcode present) ───────────────────────────────────
+// re-derived independently, not ported from reference code
+
+// solve for Account Value at ideal ratio; distinct from row.excess_cash
+function computeAdditionalHoldingsGap(
+  cashComponent: number,
+  accountValue: number,
+  derivBookPct: number,
+): number {
+  return cashComponent / derivBookPct - accountValue;
+}
+
+// Scenario 2 — mirror: Holdings fixed, solve for the ideal Cash Component
+function computeAdditionalCashRequired(
+  holdingsValue: number,
+  cashComponent: number,
+  eqBookPct: number,
+  derivBookPct: number,
+): number {
+  const idealAccountValue = holdingsValue / eqBookPct;
+  const idealCashComponent = idealAccountValue * derivBookPct;
+  return idealCashComponent - cashComponent;
+}
+
+// manual overlay on Cash only, scoped to Scenario 2/3/5
+function applyTodayPnl(
+  row: CashMarginSnapshotRow,
+  todayPnl: number | undefined,
+): CashMarginSnapshotRow {
+  if (!todayPnl) return row;
+  const account_value = row.account_value + todayPnl;
+  const cash = row.cash + todayPnl;
+  return {
+    ...row,
+    account_value,
+    cash,
+    cash_plus_liquidcase: cash + row.liquidcase,
+  };
+}
+
+// Console total minus deployed, per symbol; assumes one symbol per strategy
+async function resolveUndeployedValue(
+  qcode: string,
+  strategy: string,
+): Promise<number> {
+  const [latestConsoleEq, latestConsoleMf, latestBifEq, latestBifMf] =
+    await Promise.all([
+      prisma.console_equity_holdings.aggregate({
+        where: { qcode },
+        _max: { date: true },
+      }),
+      prisma.console_mf_holdings.aggregate({
+        where: { qcode },
+        _max: { date: true },
+      }),
+      prisma.bifurcated_equity_holding_test.aggregate({
+        where: { qcode, strategy },
+        _max: { date: true },
+      }),
+      prisma.bifurcated_mutual_fund_holding_sheet_test.aggregate({
+        where: { qcode, strategy },
+        _max: { as_of_date: true },
+      }),
+    ]);
+
+  const [consoleEq, consoleMf, bifEq, bifMf] = await Promise.all([
+    latestConsoleEq._max.date
+      ? prisma.console_equity_holdings.findMany({
+          where: { qcode, date: latestConsoleEq._max.date },
+        })
+      : Promise.resolve([]),
+    latestConsoleMf._max.date
+      ? prisma.console_mf_holdings.findMany({
+          where: { qcode, date: latestConsoleMf._max.date },
+        })
+      : Promise.resolve([]),
+    latestBifEq._max.date
+      ? prisma.bifurcated_equity_holding_test.findMany({
+          where: { qcode, strategy, date: latestBifEq._max.date },
+        })
+      : Promise.resolve([]),
+    latestBifMf._max.as_of_date
+      ? prisma.bifurcated_mutual_fund_holding_sheet_test.findMany({
+          where: { qcode, strategy, as_of_date: latestBifMf._max.as_of_date },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const deployedEqBySymbol = new Map(
+    bifEq.map((r) => [
+      r.symbol,
+      { qty: Number(r.quantity ?? 0), ltp: toNum(r.ltp) },
+    ]),
+  );
+  const deployedMfByIsin = new Map(
+    bifMf.map((r) => [
+      r.isin ?? r.symbol,
+      { qty: Number(r.quantity ?? 0), nav: toNum(r.nav) },
+    ]),
+  );
+
+  let undeployedValue = 0;
+
+  for (const c of consoleEq) {
+    // pledged shares ADDITIVE for equity — don't skip collateral_quantity
+    const consoleQty =
+      (toNum(c.quantity) ?? 0) + (toNum(c.collateral_quantity) ?? 0);
+    const deployed = deployedEqBySymbol.get(c.symbol);
+    const undeployedQty = Math.max(0, consoleQty - (deployed?.qty ?? 0)); // floored — defensive, not expected in normal operation
+    const price = deployed?.ltp ?? toNum(c.last_price) ?? 0;
+    undeployedValue += undeployedQty * price;
+  }
+
+  for (const c of consoleMf) {
+    // pledged units NOT additive for MF — quantity already includes them
+    const consoleQty = toNum(c.quantity) ?? 0;
+    const deployed = deployedMfByIsin.get(c.isin);
+    const undeployedQty = Math.max(0, consoleQty - (deployed?.qty ?? 0));
+    const price = deployed?.nav ?? toNum(c.last_price) ?? 0;
+    undeployedValue += undeployedQty * price;
+  }
+
+  return round(undeployedValue, 2)!;
+}
+
+export interface GapDeploymentSleeve {
+  particular: string;
+  current_value: number;
+  addition_target: number; // pure target — how much MORE should be bought
+  addition_actual: number; // post-rounding — what will genuinely be bought
+  new_value: number; // current_value + addition_actual
+  ltp: number | null;
+  quantity: number | null; // units being newly bought
+}
+
+// QAW only — splits gap across Gold/Momentum/Low Vol; Liquidcase/Cash untouched
+async function computeGapSplitQaw(
+  row: CashMarginSnapshotRow,
+  qcode: string,
+  targets: { equity_pct: number; cash_pct: number; lc_pct: number },
+  defaults: Awaited<ReturnType<typeof fetchStrategyDefaults>>,
+  amountToAdd: number,
+  ratio_type: NonNullable<DeployInput["ratio_type"]>,
+): Promise<{ new_account_value: number; sleeves: GapDeploymentSleeve[] }> {
+  // "current" uses the client's own qcode as reference, same as D0
+  const subRatios = await resolveQawSubRatios(
+    ratio_type,
+    row.strategy,
+    qcode,
+    defaults,
+  );
+
+  const ltps = await fetchLtps([
+    ETF_SYMBOLS.gold,
+    ETF_SYMBOLS.momentum,
+    ETF_SYMBOLS.lowvol,
+  ]);
+
+  const buildGapSleeve = (
+    particular: string,
+    current: number,
+    additionTarget: number,
+    ltp: number | undefined,
+  ): { sleeve: GapDeploymentSleeve; dust: number } => {
+    const priced = buildPricedSleeve(particular, 0, additionTarget, ltp);
+    return {
+      sleeve: {
+        particular,
+        current_value: round(current, 2)!,
+        addition_target: priced.sleeve.target_value,
+        addition_actual: priced.sleeve.actual_value,
+        new_value: round(current + priced.sleeve.actual_value, 2)!,
+        ltp: priced.sleeve.ltp,
+        quantity: priced.sleeve.quantity,
+      },
+      dust: priced.dust,
+    };
+  };
+
+  const gold = buildGapSleeve(
+    "Gold",
+    row.gold,
+    amountToAdd * subRatios.gold,
+    ltps.get(ETF_SYMBOLS.gold),
+  );
+  const momentum = buildGapSleeve(
+    "Momentum",
+    row.momentum,
+    amountToAdd * subRatios.momentum,
+    ltps.get(ETF_SYMBOLS.momentum),
+  );
+  const lowvol = buildGapSleeve(
+    "Low Vol",
+    row.lowvol,
+    amountToAdd * subRatios.lowvol,
+    ltps.get(ETF_SYMBOLS.lowvol),
+  );
+
+  const liquidcaseSleeve: GapDeploymentSleeve = {
+    particular: "Liquidcase",
+    current_value: round(row.liquidcase, 2)!,
+    addition_target: 0,
+    addition_actual: 0,
+    new_value: round(row.liquidcase, 2)!,
+    ltp: null,
+    quantity: null,
+  };
+  // flooring remainder swept into Cash so new_account_value reconciles exactly
+  const dust = gold.dust + momentum.dust + lowvol.dust;
+  const cashSleeve: GapDeploymentSleeve = {
+    particular: "Cash",
+    current_value: round(row.cash, 2)!,
+    addition_target: 0,
+    addition_actual: round(dust, 2)!,
+    new_value: round(row.cash + dust, 2)!,
+    ltp: null,
+    quantity: null,
+  };
+
+  const actualTotal =
+    gold.sleeve.addition_actual +
+    momentum.sleeve.addition_actual +
+    lowvol.sleeve.addition_actual +
+    dust;
+
+  return {
+    new_account_value: round(row.account_value + actualTotal, 2)!,
+    sleeves: [
+      gold.sleeve,
+      momentum.sleeve,
+      lowvol.sleeve,
+      liquidcaseSleeve,
+      cashSleeve,
+    ],
+  };
+}
+
+// QYE — single bucket, no LTP (only Liquidcase is ever priced)
+function computeGapSplitQye(
+  row: CashMarginSnapshotRow,
+  amountToAdd: number,
+): { new_account_value: number; sleeves: GapDeploymentSleeve[] } {
+  const holdingsSleeve: GapDeploymentSleeve = {
+    particular: "Mutual Funds",
+    current_value: round(row.mutual_funds, 2)!,
+    addition_target: round(amountToAdd, 2)!,
+    addition_actual: round(amountToAdd, 2)!,
+    new_value: round(row.mutual_funds + amountToAdd, 2)!,
+    ltp: null,
+    quantity: null,
+  };
+  const liquidcaseSleeve: GapDeploymentSleeve = {
+    particular: "Liquidcase",
+    current_value: round(row.liquidcase, 2)!,
+    addition_target: 0,
+    addition_actual: 0,
+    new_value: round(row.liquidcase, 2)!,
+    ltp: null,
+    quantity: null,
+  };
+  const cashSleeve: GapDeploymentSleeve = {
+    particular: "Cash",
+    current_value: round(row.cash, 2)!,
+    addition_target: 0,
+    addition_actual: 0,
+    new_value: round(row.cash, 2)!,
+    ltp: null,
+    quantity: null,
+  };
+
+  return {
+    new_account_value: round(row.account_value + amountToAdd, 2)!,
+    sleeves: [holdingsSleeve, liquidcaseSleeve, cashSleeve],
+  };
+}
+
+// ── Excess Cash Deployment — genuinely different mechanism from the gap
+// Account Value stays fixed — Cash snaps to target, Liquidcase is the plug
+function computeExcessCashAvailable(
+  accountValue: number,
+  holdings: number,
+  equityPct: number,
+): number {
+  return accountValue * equityPct - holdings;
+}
+
+async function computeExcessCashSplitQaw(
+  row: CashMarginSnapshotRow,
+  qcode: string,
+  targets: { equity_pct: number; cash_pct: number; lc_pct: number },
+  defaults: Awaited<ReturnType<typeof fetchStrategyDefaults>>,
+  amountDeployed: number,
+  ratio_type: NonNullable<DeployInput["ratio_type"]>,
+): Promise<{ sleeves: GapDeploymentSleeve[] }> {
+  const subRatios = await resolveQawSubRatios(
+    ratio_type,
+    row.strategy,
+    qcode,
+    defaults,
+  );
+  const ltps = await fetchLtps([
+    ETF_SYMBOLS.gold,
+    ETF_SYMBOLS.momentum,
+    ETF_SYMBOLS.lowvol,
+    ETF_SYMBOLS.liquidcase,
+  ]);
+
+  const buildEquitySleeve = (
+    particular: string,
+    current: number,
+    target: number,
+    ltp: number | undefined,
+  ) => {
+    const priced = buildPricedSleeve(particular, 0, target, ltp);
+    const sleeve: GapDeploymentSleeve = {
+      particular,
+      current_value: round(current, 2)!,
+      addition_target: priced.sleeve.target_value,
+      addition_actual: priced.sleeve.actual_value,
+      new_value: round(current + priced.sleeve.actual_value, 2)!,
+      ltp: priced.sleeve.ltp,
+      quantity: priced.sleeve.quantity,
+    };
+    return { sleeve, target: priced.sleeve.target_value };
+  };
+
+  const gold = buildEquitySleeve(
+    "Gold",
+    row.gold,
+    amountDeployed * subRatios.gold,
+    ltps.get(ETF_SYMBOLS.gold),
+  );
+  const momentum = buildEquitySleeve(
+    "Momentum",
+    row.momentum,
+    amountDeployed * subRatios.momentum,
+    ltps.get(ETF_SYMBOLS.momentum),
+  );
+  const lowvol = buildEquitySleeve(
+    "Low Vol",
+    row.lowvol,
+    amountDeployed * subRatios.lowvol,
+    ltps.get(ETF_SYMBOLS.lowvol),
+  );
+  // target vs actual kept separate — using actual for both leaked dust into addition_target
+  const targetEquityTotal = gold.target + momentum.target + lowvol.target;
+  const actualEquityTotal =
+    gold.sleeve.addition_actual +
+    momentum.sleeve.addition_actual +
+    lowvol.sleeve.addition_actual;
+
+  // Liquidcase priced via LTP too, matching specific_deployment; Cash absorbs its dust
+  const newCashSnapped = targets.cash_pct * row.account_value;
+  const cashChangeTarget = newCashSnapped - row.cash;
+  const liquidcaseChangeTarget = -(targetEquityTotal + cashChangeTarget); // pure — for display only
+  const liquidcaseReconcileTarget = -(actualEquityTotal + cashChangeTarget); // what actually gets floored/transacted
+  const lcPriced = buildPricedSleeve(
+    "Liquidcase",
+    0,
+    liquidcaseReconcileTarget,
+    ltps.get(ETF_SYMBOLS.liquidcase),
+  );
+  const liquidcaseChangeActual = lcPriced.sleeve.actual_value;
+  const liquidcaseDust = lcPriced.dust;
+  const cashChangeActual = cashChangeTarget + liquidcaseDust;
+
+  const liquidcaseSleeve: GapDeploymentSleeve = {
+    particular: "Liquidcase",
+    current_value: round(row.liquidcase, 2)!,
+    addition_target: round(liquidcaseChangeTarget, 2)!,
+    addition_actual: round(liquidcaseChangeActual, 2)!,
+    new_value: round(row.liquidcase + liquidcaseChangeActual, 2)!,
+    ltp: lcPriced.sleeve.ltp,
+    quantity: lcPriced.sleeve.quantity,
+  };
+  const cashSleeve: GapDeploymentSleeve = {
+    particular: "Cash",
+    current_value: round(row.cash, 2)!,
+    addition_target: round(cashChangeTarget, 2)!,
+    addition_actual: round(cashChangeActual, 2)!,
+    new_value: round(row.cash + cashChangeActual, 2)!,
+    ltp: null,
+    quantity: null,
+  };
+
+  return {
+    sleeves: [
+      gold.sleeve,
+      momentum.sleeve,
+      lowvol.sleeve,
+      liquidcaseSleeve,
+      cashSleeve,
+    ],
+  };
+}
+
+async function computeExcessCashSplitQye(
+  row: CashMarginSnapshotRow,
+  targets: { cash_pct: number },
+  amountDeployed: number,
+): Promise<{ sleeves: GapDeploymentSleeve[] }> {
+  const ltps = await fetchLtps([ETF_SYMBOLS.liquidcase]);
+
+  const holdingsSleeve: GapDeploymentSleeve = {
+    particular: "Mutual Funds",
+    current_value: round(row.mutual_funds, 2)!,
+    addition_target: round(amountDeployed, 2)!,
+    addition_actual: round(amountDeployed, 2)!,
+    new_value: round(row.mutual_funds + amountDeployed, 2)!,
+    ltp: null,
+    quantity: null,
+  };
+
+  const newCashSnapped = targets.cash_pct * row.account_value;
+  const cashChangeTarget = newCashSnapped - row.cash;
+  const liquidcaseChangeTarget = -(amountDeployed + cashChangeTarget);
+  const lcPriced = buildPricedSleeve(
+    "Liquidcase",
+    0,
+    liquidcaseChangeTarget,
+    ltps.get(ETF_SYMBOLS.liquidcase),
+  );
+  const liquidcaseChangeActual = lcPriced.sleeve.actual_value;
+  const cashChangeActual = cashChangeTarget + lcPriced.dust;
+
+  const liquidcaseSleeve: GapDeploymentSleeve = {
+    particular: "Liquidcase",
+    current_value: round(row.liquidcase, 2)!,
+    addition_target: round(liquidcaseChangeTarget, 2)!,
+    addition_actual: round(liquidcaseChangeActual, 2)!,
+    new_value: round(row.liquidcase + liquidcaseChangeActual, 2)!,
+    ltp: lcPriced.sleeve.ltp,
+    quantity: lcPriced.sleeve.quantity,
+  };
+  const cashSleeve: GapDeploymentSleeve = {
+    particular: "Cash",
+    current_value: round(row.cash, 2)!,
+    addition_target: round(cashChangeTarget, 2)!,
+    addition_actual: round(cashChangeActual, 2)!,
+    new_value: round(row.cash + cashChangeActual, 2)!,
+    ltp: null,
+    quantity: null,
+  };
+
+  return { sleeves: [holdingsSleeve, liquidcaseSleeve, cashSleeve] };
+}
+
+// ── Specific Deployment — FIXED. Was wrongly reusing the gap-split
+// splits Eq Book/Deriv Book by equity_pct; Liquidcase/Cash share Deriv Book by their own ratio
+async function computeSpecificDeploymentQaw(
+  row: CashMarginSnapshotRow,
+  qcode: string,
+  targets: { equity_pct: number; cash_pct: number; lc_pct: number },
+  defaults: Awaited<ReturnType<typeof fetchStrategyDefaults>>,
+  amount: number,
+  ratio_type: NonNullable<DeployInput["ratio_type"]>,
+): Promise<{
+  eq_book_amount: number;
+  deriv_book_amount: number;
+  new_account_value: number;
+  sleeves: GapDeploymentSleeve[];
+}> {
+  const eqBookAmount = amount * targets.equity_pct;
+  const derivBookAmount = amount * (1 - targets.equity_pct);
+
+  const subRatios = await resolveQawSubRatios(
+    ratio_type,
+    row.strategy,
+    qcode,
+    defaults,
+  );
+  const ltps = await fetchLtps([
+    ETF_SYMBOLS.gold,
+    ETF_SYMBOLS.momentum,
+    ETF_SYMBOLS.lowvol,
+    ETF_SYMBOLS.liquidcase,
+  ]);
+
+  const buildSleeve = (
+    particular: string,
+    current: number,
+    target: number,
+    ltp: number | undefined,
+  ) => {
+    const priced = buildPricedSleeve(particular, 0, target, ltp);
+    const sleeve: GapDeploymentSleeve = {
+      particular,
+      current_value: round(current, 2)!,
+      addition_target: priced.sleeve.target_value,
+      addition_actual: priced.sleeve.actual_value,
+      new_value: round(current + priced.sleeve.actual_value, 2)!,
+      ltp: priced.sleeve.ltp,
+      quantity: priced.sleeve.quantity,
+    };
+    return { sleeve, dust: priced.dust };
+  };
+
+  const gold = buildSleeve(
+    "Gold",
+    row.gold,
+    eqBookAmount * subRatios.gold,
+    ltps.get(ETF_SYMBOLS.gold),
+  );
+  const momentum = buildSleeve(
+    "Momentum",
+    row.momentum,
+    eqBookAmount * subRatios.momentum,
+    ltps.get(ETF_SYMBOLS.momentum),
+  );
+  const lowvol = buildSleeve(
+    "Low Vol",
+    row.lowvol,
+    eqBookAmount * subRatios.lowvol,
+    ltps.get(ETF_SYMBOLS.lowvol),
+  );
+
+  const lcTarget =
+    derivBookAmount * (targets.lc_pct / (targets.lc_pct + targets.cash_pct));
+  const cashTarget =
+    derivBookAmount * (targets.cash_pct / (targets.lc_pct + targets.cash_pct));
+  const lc = buildSleeve(
+    "Liquidcase",
+    row.liquidcase,
+    lcTarget,
+    ltps.get(ETF_SYMBOLS.liquidcase),
+  );
+
+  // dust from every priced sleeve swept into Cash, the one unpriced bucket
+  const dust = gold.dust + momentum.dust + lowvol.dust + lc.dust;
+  const cashActual = round(cashTarget + dust, 2)!;
+  const cashSleeve: GapDeploymentSleeve = {
+    particular: "Cash",
+    current_value: round(row.cash, 2)!,
+    addition_target: round(cashTarget, 2)!,
+    addition_actual: cashActual,
+    new_value: round(row.cash + cashActual, 2)!,
+    ltp: null,
+    quantity: null,
+  };
+
+  const actualTotal =
+    gold.sleeve.addition_actual +
+    momentum.sleeve.addition_actual +
+    lowvol.sleeve.addition_actual +
+    lc.sleeve.addition_actual +
+    cashActual;
+
+  return {
+    eq_book_amount: round(eqBookAmount, 2)!,
+    deriv_book_amount: round(derivBookAmount, 2)!,
+    new_account_value: round(row.account_value + actualTotal, 2)!,
+    sleeves: [
+      gold.sleeve,
+      momentum.sleeve,
+      lowvol.sleeve,
+      lc.sleeve,
+      cashSleeve,
+    ],
+  };
+}
+
+async function computeSpecificDeploymentQye(
+  row: CashMarginSnapshotRow,
+  targets: { equity_pct: number; cash_pct: number; lc_pct: number },
+  amount: number,
+): Promise<{
+  eq_book_amount: null;
+  deriv_book_amount: null;
+  new_account_value: number;
+  sleeves: GapDeploymentSleeve[];
+}> {
+  const eqBookAmount = amount * targets.equity_pct;
+  const derivBookAmount = amount * (1 - targets.equity_pct);
+  const lcTarget =
+    derivBookAmount * (targets.lc_pct / (targets.lc_pct + targets.cash_pct));
+  const cashTarget =
+    derivBookAmount * (targets.cash_pct / (targets.lc_pct + targets.cash_pct));
+
+  const holdingsSleeve: GapDeploymentSleeve = {
+    particular: "Mutual Funds",
+    current_value: round(row.mutual_funds, 2)!,
+    addition_target: round(eqBookAmount, 2)!,
+    addition_actual: round(eqBookAmount, 2)!,
+    new_value: round(row.mutual_funds + eqBookAmount, 2)!,
+    ltp: null,
+    quantity: null,
+  };
+
+  // Liquidcase priced via LTP too, dust swept into Cash
+  const ltps = await fetchLtps([ETF_SYMBOLS.liquidcase]);
+  const lcPriced = buildPricedSleeve(
+    "Liquidcase",
+    0,
+    lcTarget,
+    ltps.get(ETF_SYMBOLS.liquidcase),
+  );
+  const liquidcaseSleeve: GapDeploymentSleeve = {
+    particular: "Liquidcase",
+    current_value: round(row.liquidcase, 2)!,
+    addition_target: lcPriced.sleeve.target_value,
+    addition_actual: lcPriced.sleeve.actual_value,
+    new_value: round(row.liquidcase + lcPriced.sleeve.actual_value, 2)!,
+    ltp: lcPriced.sleeve.ltp,
+    quantity: lcPriced.sleeve.quantity,
+  };
+
+  const cashActual = round(cashTarget + lcPriced.dust, 2)!;
+  const cashSleeve: GapDeploymentSleeve = {
+    particular: "Cash",
+    current_value: round(row.cash, 2)!,
+    addition_target: round(cashTarget, 2)!,
+    addition_actual: cashActual,
+    new_value: round(row.cash + cashActual, 2)!,
+    ltp: null,
+    quantity: null,
+  };
+
+  const actualTotal = eqBookAmount + lcPriced.sleeve.actual_value + cashActual;
+
+  return {
+    eq_book_amount: null,
+    deriv_book_amount: null,
+    new_account_value: round(row.account_value + actualTotal, 2)!,
+    sleeves: [holdingsSleeve, liquidcaseSleeve, cashSleeve],
+  };
+}
+
+// ── D6 — Buy Liquid Case from Excess Cash. Never built before now. Cash
+// D6 — Cash snaps to ideal, Liquidcase absorbs the diff; Holdings/AV untouched
+async function computeLiquidCaseFromExcessCash(
+  row: CashMarginSnapshotRow,
+  cashPct: number,
+): Promise<{
+  ideal_cash: number;
+  excess_cash_over_ideal: number;
+  blocked: boolean;
+  sleeves: GapDeploymentSleeve[];
+}> {
+  const idealCash = row.account_value * cashPct;
+  const excessOverIdeal = round(row.cash - idealCash, 2)!;
+
+  // action request — "nothing to move" is a hard stop here, unlike Scenario 2/3
+  if (excessOverIdeal <= 0) {
+    return {
+      ideal_cash: round(idealCash, 2)!,
+      excess_cash_over_ideal: excessOverIdeal,
+      blocked: true,
+      sleeves: [],
+    };
+  }
+
+  const ltps = await fetchLtps([ETF_SYMBOLS.liquidcase]);
+  const lcPriced = buildPricedSleeve(
+    "Liquidcase",
+    0,
+    excessOverIdeal,
+    ltps.get(ETF_SYMBOLS.liquidcase),
+  );
+  const liquidcaseActual = lcPriced.sleeve.actual_value;
+  // dust from Liquidcase's own flooring swept into Cash, same convention as everywhere else
+  const cashActual = -excessOverIdeal + lcPriced.dust;
+
+  const liquidcaseSleeve: GapDeploymentSleeve = {
+    particular: "Liquidcase",
+    current_value: round(row.liquidcase, 2)!,
+    addition_target: round(excessOverIdeal, 2)!,
+    addition_actual: round(liquidcaseActual, 2)!,
+    new_value: round(row.liquidcase + liquidcaseActual, 2)!,
+    ltp: lcPriced.sleeve.ltp,
+    quantity: lcPriced.sleeve.quantity,
+  };
+  const cashSleeve: GapDeploymentSleeve = {
+    particular: "Cash",
+    current_value: round(row.cash, 2)!,
+    addition_target: round(-excessOverIdeal, 2)!,
+    addition_actual: round(cashActual, 2)!,
+    new_value: round(row.cash + cashActual, 2)!,
+    ltp: null,
+    quantity: null,
+  };
+
+  return {
+    ideal_cash: round(idealCash, 2)!,
+    excess_cash_over_ideal: excessOverIdeal,
+    blocked: false,
+    sleeves: [liquidcaseSleeve, cashSleeve],
+  };
+}
+
+export interface AdditionalCashRequiredResult {
+  ideal_account_value: number;
+  additional_cash_required: number; // negative = already above ideal — shown plainly, never blocked
+  // Liquidcase/Cash can move opposite directions — the aggregate alone hides that
+  liquidcase_ideal: number;
+  liquidcase_inflow: number; // negative = already above ideal
+  cash_ideal: number;
+  cash_inflow: number; // negative = already above ideal
+}
+
+export interface AdditionalHoldingsRequiredResult {
+  gap: number; // negative = a reduction, not blocked
+  ratio_type: "current" | "ideal" | "model" | null; // null for QYE — no ratio choice
+  new_account_value: number;
+  sleeves: GapDeploymentSleeve[];
+  // QYE only; always computed even on a negative gap
+  undeployed_stock_value: number | null;
+  stock_deployed: number | null;
+  remaining_gap_after_stock: number | null;
+}
+
+export interface SpecificDeploymentResult {
+  amount: number;
+  ratio_type: "current" | "ideal" | "model" | null;
+  eq_book_amount: number | null; // null for QYE — no separate eq/deriv book split label, Holdings IS the eq book
+  deriv_book_amount: number | null;
+  new_account_value: number;
+  sleeves: GapDeploymentSleeve[];
+}
+
+export interface ExcessCashDeploymentResult {
+  // Account Value never changes here — money moves Liquidcase/Cash into equity
+  amount_available: number;
+  // blocks when nothing's available — action request, not a diagnostic
+  blocked: boolean;
+  ratio_type: "current" | "ideal" | "model" | null;
+  full: { amount_deployed: number; sleeves: GapDeploymentSleeve[] } | null;
+  // populated only when `amount` is given and not blocked
+  partial: {
+    amount_deployed: number;
+    capped: boolean;
+    sleeves: GapDeploymentSleeve[];
+  } | null;
+}
+
+export interface LiquidCaseFromExcessCashResult {
+  // D6 — Cash snaps to ideal, Liquidcase absorbs the diff; Holdings/AV untouched
+  ideal_cash: number;
+  excess_cash_over_ideal: number; // negative = Cash is already below ideal, shown plainly
+  blocked: boolean; // action request — true and sleeves empty when there's nothing to move
+  sleeves: GapDeploymentSleeve[]; // Liquidcase + Cash only — Holdings isn't included since it never moves
+}
+
+export interface RealClientDeployResult {
+  snapshot: CashMarginSnapshotRow; // current real state, as fetched — never reflects today_pnl, see applyTodayPnl
+  additional_cash_required: AdditionalCashRequiredResult;
+  // null for QAW when ratio_type wasn't given — skips just this section
+  additional_holdings_required: AdditionalHoldingsRequiredResult | null;
+  excess_cash_deployment: ExcessCashDeploymentResult;
+  liquid_case_from_excess_cash: LiquidCaseFromExcessCashResult;
+  specific_deployment: SpecificDeploymentResult | null; // only when amount is given
+}
+
+async function computeRealClientDeploy(
+  input: DeployInput,
+  has_equity_split: boolean,
+  defaults: Awaited<ReturnType<typeof fetchStrategyDefaults>>,
+): Promise<RealClientDeployResult> {
+  const qcode = input.qcode!;
+  const snapshot = await fetchCashMarginSnapshot(qcode);
+  const row = snapshot.strategies.find((r) => r.strategy === input.strategy);
+  if (!row) {
+    throw new Error(`No active '${input.strategy}' row found for ${qcode}`);
+  }
+
+  const equity_pct = input.equity_pct ?? defaults.equity_pct;
+  if (equity_pct == null) {
+    throw new Error(`equity_pct not configured for '${input.strategy}'`);
+  }
+  const { cash_pct, lc_pct } = resolveCashLiquidcaseSplit(
+    equity_pct,
+    defaults.cash_pct,
+    input.cash_pct,
+    input.lc_pct,
+  );
+  const derivBookPct = cash_pct + lc_pct; // = 1 - equity_pct, resolved consistently with everything else in this file
+  const targets = { equity_pct, cash_pct, lc_pct };
+
+  // today_pnl scoped to Scenario 2/3/5 only
+  const pnlRow = applyTodayPnl(row, input.today_pnl);
+  const pnlCashComponent = pnlRow.cash + pnlRow.liquidcase;
+
+  // Scenario 2 — always computed; per-bucket since Liquidcase/Cash can move opposite ways
+  const idealAccountValue = pnlRow.holdings / equity_pct;
+  const additionalCashRequired = computeAdditionalCashRequired(
+    pnlRow.holdings,
+    pnlCashComponent,
+    equity_pct,
+    derivBookPct,
+  );
+  const liquidcaseIdeal = idealAccountValue * lc_pct;
+  const cashIdeal = idealAccountValue * cash_pct;
+  const additional_cash_required: AdditionalCashRequiredResult = {
+    ideal_account_value: round(idealAccountValue, 2)!,
+    additional_cash_required: round(additionalCashRequired, 2)!,
+    liquidcase_ideal: round(liquidcaseIdeal, 2)!,
+    liquidcase_inflow: round(liquidcaseIdeal - pnlRow.liquidcase, 2)!,
+    cash_ideal: round(cashIdeal, 2)!,
+    cash_inflow: round(cashIdeal - pnlRow.cash, 2)!,
+  };
+
+  // Scenario 3/5 — never blocked; a negative gap is a reduction, not an error
+  const gap = computeAdditionalHoldingsGap(
+    pnlCashComponent,
+    pnlRow.account_value,
+    derivBookPct,
+  );
+
+  let additional_holdings_required: AdditionalHoldingsRequiredResult | null;
+  if (has_equity_split && !input.ratio_type) {
+    additional_holdings_required = null;
+  } else if (has_equity_split) {
+    const split = await computeGapSplitQaw(
+      pnlRow,
+      qcode,
+      targets,
+      defaults,
+      gap,
+      input.ratio_type!,
+    );
+    additional_holdings_required = {
+      gap: round(gap, 2)!,
+      ratio_type: input.ratio_type!,
+      new_account_value: split.new_account_value,
+      sleeves: split.sleeves,
+      undeployed_stock_value: null,
+      stock_deployed: null,
+      remaining_gap_after_stock: null,
+    };
+  } else {
+    // only Scenario 5's fields clamp at 0; the split below shows the real signed reduction
+    const split = computeGapSplitQye(pnlRow, gap);
+    // undeployed_stock_value is unconditional; only stock_deployed depends on sign
+    const undeployedStockValue = await resolveUndeployedValue(
+      qcode,
+      input.strategy,
+    );
+    const stockDeployed = gap <= 0 ? 0 : Math.min(undeployedStockValue, gap);
+    const remainingGap = gap - stockDeployed;
+    additional_holdings_required = {
+      gap: round(gap, 2)!,
+      ratio_type: null,
+      new_account_value: split.new_account_value,
+      sleeves: split.sleeves,
+      undeployed_stock_value: round(undeployedStockValue, 2)!,
+      stock_deployed: round(stockDeployed, 2)!,
+      remaining_gap_after_stock: round(remainingGap, 2)!,
+    };
+  }
+
+  // uses the raw (non-P&L) row; blocks entirely when nothing's available
+  const excessCashAvailable = computeExcessCashAvailable(
+    row.account_value,
+    row.holdings,
+    equity_pct,
+  );
+  const excessCashBlocked = excessCashAvailable <= 0;
+  let excess_cash_deployment: ExcessCashDeploymentResult;
+  if (excessCashBlocked) {
+    excess_cash_deployment = {
+      amount_available: round(excessCashAvailable, 2)!,
+      blocked: true,
+      ratio_type: has_equity_split ? (input.ratio_type ?? null) : null,
+      full: null,
+      partial: null,
+    };
+  } else if (has_equity_split && !input.ratio_type) {
+    // no ratio_type — amount_available still shown, only the split is skipped
+    excess_cash_deployment = {
+      amount_available: round(excessCashAvailable, 2)!,
+      blocked: false,
+      ratio_type: null,
+      full: null,
+      partial: null,
+    };
+  } else if (has_equity_split) {
+    const full = await computeExcessCashSplitQaw(
+      row,
+      qcode,
+      targets,
+      defaults,
+      excessCashAvailable,
+      input.ratio_type!,
+    );
+    let partial: ExcessCashDeploymentResult["partial"] = null;
+    if (input.amount != null) {
+      const capped = input.amount > excessCashAvailable;
+      const amountDeployed = capped ? excessCashAvailable : input.amount;
+      const partialSplit = await computeExcessCashSplitQaw(
+        row,
+        qcode,
+        targets,
+        defaults,
+        amountDeployed,
+        input.ratio_type!,
+      );
+      partial = {
+        amount_deployed: round(amountDeployed, 2)!,
+        capped,
+        sleeves: partialSplit.sleeves,
+      };
+    }
+    excess_cash_deployment = {
+      amount_available: round(excessCashAvailable, 2)!,
+      blocked: false,
+      ratio_type: input.ratio_type!,
+      full: {
+        amount_deployed: round(excessCashAvailable, 2)!,
+        sleeves: full.sleeves,
+      },
+      partial,
+    };
+  } else {
+    const full = await computeExcessCashSplitQye(
+      row,
+      targets,
+      excessCashAvailable,
+    );
+    let partial: ExcessCashDeploymentResult["partial"] = null;
+    if (input.amount != null) {
+      const capped = input.amount > excessCashAvailable;
+      const amountDeployed = capped ? excessCashAvailable : input.amount;
+      const partialSplit = await computeExcessCashSplitQye(
+        row,
+        targets,
+        amountDeployed,
+      );
+      partial = {
+        amount_deployed: round(amountDeployed, 2)!,
+        capped,
+        sleeves: partialSplit.sleeves,
+      };
+    }
+    excess_cash_deployment = {
+      amount_available: round(excessCashAvailable, 2)!,
+      blocked: false,
+      ratio_type: null,
+      full: {
+        amount_deployed: round(excessCashAvailable, 2)!,
+        sleeves: full.sleeves,
+      },
+      partial,
+    };
+  }
+
+  // D6 — Buy Liquid Case from Excess Cash. Never touches Holdings, so QAW/QYE share one function.
+  const liquid_case_from_excess_cash = await computeLiquidCaseFromExcessCash(
+    row,
+    cash_pct,
+  );
+
+  // FIXED to use the real Eq Book/Deriv Book split (was 100% into equity)
+  let specific_deployment: SpecificDeploymentResult | null = null;
+  if (input.amount != null) {
+    if (has_equity_split && input.ratio_type) {
+      const split = await computeSpecificDeploymentQaw(
+        row,
+        qcode,
+        targets,
+        defaults,
+        input.amount,
+        input.ratio_type,
+      );
+      specific_deployment = {
+        amount: input.amount,
+        ratio_type: input.ratio_type,
+        eq_book_amount: split.eq_book_amount,
+        deriv_book_amount: split.deriv_book_amount,
+        new_account_value: split.new_account_value,
+        sleeves: split.sleeves,
+      };
+    } else if (!has_equity_split) {
+      const split = await computeSpecificDeploymentQye(
+        row,
+        targets,
+        input.amount,
+      );
+      specific_deployment = {
+        amount: input.amount,
+        ratio_type: null,
+        eq_book_amount: split.eq_book_amount,
+        deriv_book_amount: split.deriv_book_amount,
+        new_account_value: split.new_account_value,
+        sleeves: split.sleeves,
+      };
+    }
+  }
+
+  return {
+    snapshot: row,
+    additional_cash_required,
+    additional_holdings_required,
+    excess_cash_deployment,
+    liquid_case_from_excess_cash,
+    specific_deployment,
+  };
+}
+
+// ── unified entry point — one route, no scenario-name field anywhere.
+// qcode presence picks D0 vs real-client; has_equity_split picks QAW vs QYE
 export async function computeDeploy(
   input: DeployInput,
-): Promise<QawDeployResult | QyeDeployResult> {
+): Promise<QawDeployResult | QyeDeployResult | RealClientDeployResult> {
   const defaults = await fetchStrategyDefaults(input.strategy);
   const has_equity_split = defaults.gold_pct != null;
+
+  if (input.qcode) {
+    return computeRealClientDeploy(input, has_equity_split, defaults);
+  }
 
   return has_equity_split
     ? computeQawDeploy(input, defaults)
