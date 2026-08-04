@@ -89,53 +89,61 @@ export interface ClientRegistryRow {
    *  value; differs client-to-client since each client's data can be as
    *  of a different date. */
   mastersheetDate: string | null;
+  /** True for an XTS mandate (isXtsMandate() on exposure_tag_suffix) -- runs
+   *  fully on cash with no Zerodha margin account behind it, so every field
+   *  below except accountValue/mastersheetDate is structurally meaningless
+   *  and is null. Still gets a row (accountValue included) so Page 1's table
+   *  total matches the Summary Banner's Total AUM, which always included
+   *  XTS -- see SummaryBanner's field docs. */
+  isXts: boolean;
   accountValue: number;
-  cash: number;
+  cash: number | null;
   /** (Cash + Liquidcase) / AV * 100 -- NOT `cash / AV` (see Cash column vs Cash % in the plan doc).
-   *  This is the Excel "Cash Component (% of Account Value)" column. */
-  cashPct: number;
+   *  This is the Excel "Cash Component (% of Account Value)" column. Null for XTS. */
+  cashPct: number | null;
   /** Cash + Liquidcase, in rupees -- the Excel "Cash Component (₹)" column
    *  (this is `cash` and `cashPct`'s numerator; `computeConsolidatedExcessCash`'s
-   *  `currentCash`, surfaced here since the row previously discarded it). */
-  cashComponentValue: number;
+   *  `currentCash`, surfaced here since the row previously discarded it). Null for XTS. */
+  cashComponentValue: number | null;
   /** `cash / AV * 100` -- cash ALONE, excluding Liquidcase. The Excel
-   *  "Cash (% of Account Value)" column, distinct from `cashPct` above. */
-  cashOnlyPct: number;
+   *  "Cash (% of Account Value)" column, distinct from `cashPct` above. Null for XTS. */
+  cashOnlyPct: number | null;
   /** `cashOnlyPct - resolveRatioConfig(...).cashPct * 100` -- actual cash-only
    *  % vs. the DB-resolved Cash sub-target (Derivative Book's `cash_pct`
    *  column, same field app/lib/internal-utils.ts's Withdrawal feature reads
-   *  as `split.cash_pct`). The Excel "Cash Drift (%)" column. */
-  cashDriftPct: number;
+   *  as `split.cash_pct`). The Excel "Cash Drift (%)" column. Null for XTS. */
+  cashDriftPct: number | null;
   /** `cashPct - idealCashPct` (both percent-scale), where `idealCashPct` is
    *  `computeConsolidatedExcessCash`'s derived `1 - idealHoldingsPct` -- same
    *  formula as internal-utils.ts's `cash_component_drift`. The Excel
-   *  "Cash Component Drift from Ideal (%)" column. */
-  cashComponentDriftPct: number;
-  excessCash: number;
-  excessCashPct: number;
-  excessCashStatus: ExcessCashStatus;
-  holdings: number;
-  holdingsPct: number;
+   *  "Cash Component Drift from Ideal (%)" column. Null for XTS. */
+  cashComponentDriftPct: number | null;
+  excessCash: number | null;
+  excessCashPct: number | null;
+  excessCashStatus: ExcessCashStatus | null;
+  holdings: number | null;
+  holdingsPct: number | null;
   /** `holdingsPct - idealHoldingsPct` (both percent-scale) -- same formula as
    *  internal-utils.ts's `holdings_drift`. The Excel "Holdings Drift from
-   *  Ideal (%)" column. */
-  holdingsDriftPct: number;
-  marginStatus: MarginStatus;
-  /** Percent-scale (e.g. -4.99), null if the tag has no drawdown row. */
+   *  Ideal (%)" column. Null for XTS. */
+  holdingsDriftPct: number | null;
+  marginStatus: MarginStatus | null;
+  /** Percent-scale (e.g. -4.99), null if the tag has no drawdown row (also null for XTS). */
   currentDrawdownPct: number | null;
   /** Worst-of across just THIS mandate's own 3 metric alert rows (Cash %,
    *  Cash Collateral %, Non-Cash Collateral %) -- strategy-level granularity,
    *  so a 3-strategy client can show 2 strategies alerting and 1 healthy
-   *  instead of one blended value repeated on every row. */
-  alertStatus: Severity;
+   *  instead of one blended value repeated on every row. Null for XTS (no
+   *  alert rows are built for XTS mandates at all). */
+  alertStatus: Severity | null;
   /** Worst-of across EVERY one of this client's active strategies' alert
    *  rows (all mandates, all metrics) -- the client-level rollup, for a
    *  "does this client need attention anywhere" glance. Same value repeats
-   *  across every row for a given qcode. */
-  clientAlertStatus: Severity;
-  action: RegistryAction;
-  /** "{debtPct}-{equityPct}-{hybridPct}", each rounded to the nearest whole percent. */
-  debtEquityHybridRatio: string;
+   *  across every row for a given qcode. Null for XTS. */
+  clientAlertStatus: Severity | null;
+  action: RegistryAction | null;
+  /** "{debtPct}-{equityPct}-{hybridPct}", each rounded to the nearest whole percent. Null for XTS. */
+  debtEquityHybridRatio: string | null;
 }
 
 export interface SummaryBanner {
@@ -216,9 +224,7 @@ export async function buildClientRegistry(
     orderBy: [{ account_name: "asc" }, { strategy: "asc" }],
   })) as unknown as MandateRow[];
 
-  const mandates = allActiveMandates.filter((m) => !isXtsMandate(m.exposure_tag_suffix));
-
-  const strategyNames = Array.from(new Set(mandates.map((m) => m.strategy)));
+  const strategyNames = Array.from(new Set(allActiveMandates.map((m) => m.strategy)));
   const defaults = await prisma.strategy_defaults.findMany({
     where: { strategy_name: { in: strategyNames } },
   });
@@ -238,7 +244,7 @@ export async function buildClientRegistry(
   const msCache = new Map<string, Awaited<ReturnType<typeof loadMastersheet>>>();
 
   const rows: ClientRegistryRow[] = [];
-  for (const m of mandates) {
+  for (const m of allActiveMandates) {
     let ms = msCache.get(m.qcode);
     if (!ms) {
       ms = await loadMastersheet(m.qcode, asOfDate);
@@ -248,6 +254,43 @@ export async function buildClientRegistry(
     const tier = detectTier(m.strategy);
     const summary = computeAccountSummary(ms, m.strategy, m.exposure_tag_suffix);
     const accountValue = summary.accountValue;
+    const mastersheetDate = ms.date ? ms.date.toISOString().slice(0, 10) : null;
+
+    if (isXtsMandate(m.exposure_tag_suffix)) {
+      // XTS mandate: fully cash, no Zerodha margin account behind it -- every
+      // metric below is structurally meaningless (see isXtsMandate's doc and
+      // the ClientRegistryRow field docs). Still gets a row so Page 1's table
+      // total lines up with the Summary Banner's Total AUM (which always
+      // included XTS).
+      rows.push({
+        qcode: m.qcode,
+        client: m.account_name,
+        strategy: m.strategy,
+        tier,
+        mastersheetDate,
+        isXts: true,
+        accountValue,
+        cash: null,
+        cashPct: null,
+        cashComponentValue: null,
+        cashOnlyPct: null,
+        cashDriftPct: null,
+        cashComponentDriftPct: null,
+        excessCash: null,
+        excessCashPct: null,
+        excessCashStatus: null,
+        holdings: null,
+        holdingsPct: null,
+        holdingsDriftPct: null,
+        marginStatus: null,
+        currentDrawdownPct: null,
+        alertStatus: null,
+        clientAlertStatus: null,
+        action: null,
+        debtEquityHybridRatio: null,
+      });
+      continue;
+    }
 
     const ratioConfig = resolveRatioConfig(m.strategy, m, defaultsByStrategy.get(m.strategy), overrides);
     const consolidatedSummary: ConsolidatedSummary = summary;
@@ -278,7 +321,8 @@ export async function buildClientRegistry(
       client: m.account_name,
       strategy: m.strategy,
       tier,
-      mastersheetDate: ms.date ? ms.date.toISOString().slice(0, 10) : null,
+      mastersheetDate,
+      isXts: false,
       accountValue,
       cash: summary.cash,
       cashPct,
@@ -301,26 +345,14 @@ export async function buildClientRegistry(
     });
   }
 
-  // XTS mandates never got a `rows` entry (Cash%/Excess Cash/Margin Status
-  // are structurally meaningless for them -- see tags.ts's isXtsMandate doc),
-  // but they're still real Account Value for the banner's Total AUM/Total
-  // Clients -- same "count everything" rule app/lib/internal-utils.ts's
-  // computePortfolioSummary() applies. Just the Account Value is needed here,
-  // not a full registry row.
-  const xtsMandates = allActiveMandates.filter((m) => isXtsMandate(m.exposure_tag_suffix));
-  let xtsAum = 0;
-  for (const m of xtsMandates) {
-    let ms = msCache.get(m.qcode);
-    if (!ms) {
-      ms = await loadMastersheet(m.qcode, asOfDate);
-      msCache.set(m.qcode, ms);
-    }
-    xtsAum += computeAccountSummary(ms, m.strategy, m.exposure_tag_suffix).accountValue;
-  }
-
+  // `rows` now includes XTS mandates (accountValue + mastersheetDate only,
+  // every other field null -- see the loop above), so Total AUM is a
+  // straight sum with no separate XTS term needed. Excess Cash / Margin
+  // Shortfalls / Action Queue stay implicitly XTS-free since those fields
+  // are null on XTS rows.
   const totalClients = new Set(allActiveMandates.map((m) => m.qcode)).size;
-  const totalAum = rows.reduce((s, r) => s + r.accountValue, 0) + xtsAum;
-  const totalExcessCash = rows.reduce((s, r) => s + r.excessCash, 0);
+  const totalAum = rows.reduce((s, r) => s + r.accountValue, 0);
+  const totalExcessCash = rows.reduce((s, r) => s + (r.excessCash ?? 0), 0);
   const marginShortfalls = rows.filter((r) => r.marginStatus === "Shortfall").length;
 
   const alertedClients = new Set<string>();
@@ -331,7 +363,7 @@ export async function buildClientRegistry(
   const alertsTriggered = alertedClients.size;
 
   const actionQueue = rows
-    .filter((r) => r.action !== "No action required")
+    .filter((r) => r.action !== null && r.action !== "No action required")
     .map((r) => `${r.client} ${r.strategy} — ${r.action}`);
 
   return {

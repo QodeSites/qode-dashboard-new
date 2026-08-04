@@ -48,7 +48,7 @@
  * once resolved -- not meant to ship long-term.
  */
 import { prisma } from "@/lib/prisma";
-import { loadMastersheet, getVal, type MastersheetSnapshot } from "./mastersheet";
+import { loadMastersheet, getVal, computeAccountSummary, type MastersheetSnapshot } from "./mastersheet";
 import { computeExposureShare } from "./exposure";
 import { loadMarginCollaterals, type MarginAvailable } from "./margin-api";
 import { getNiftyLotSize, getPutProtectionAvgPricePerQty } from "./global-config";
@@ -371,9 +371,14 @@ export async function buildMarginRequirements(
     );
 
     const share = computeExposureShare(ms, m.strategy, m.exposure_tag_suffix, mandates.length);
+    // Cash available is mastersheet-derived (compute_account_summary's residual
+    // cash), already strategy-specific -- no exposure split, unlike cc/ncc which
+    // come from one client-wide Zerodha collateral figure. See margin_report.py's
+    // get_available_from_zerodha/compute_account_summary split in the header comment.
+    const strategyCash = computeAccountSummary(ms, m.strategy, m.exposure_tag_suffix).cash;
     const available: MarginAvailableSplit = margin
-      ? { cc: margin.liquidCollateral * share, ncc: margin.stockCollateral * share, cash: margin.liveBalance * share }
-      : { cc: null, ncc: null, cash: null };
+      ? { cc: margin.liquidCollateral * share, ncc: margin.stockCollateral * share, cash: strategyCash }
+      : { cc: null, ncc: null, cash: strategyCash };
 
     byStrategy[m.strategy] = buildScope(
       m.strategy,
@@ -392,8 +397,10 @@ export async function buildMarginRequirements(
     if (margin) {
       combinedAvailable.cc = (combinedAvailable.cc ?? 0) + (available.cc ?? 0);
       combinedAvailable.ncc = (combinedAvailable.ncc ?? 0) + (available.ncc ?? 0);
-      combinedAvailable.cash = (combinedAvailable.cash ?? 0) + (available.cash ?? 0);
     }
+    // Cash available is mastersheet-derived, independent of the Zerodha margin
+    // fetch -- summed into Combined regardless of marginFetchOk.
+    combinedAvailable.cash = (combinedAvailable.cash ?? 0) + (available.cash ?? 0);
     for (const line of lines) {
       const existing = combinedLines.get(line.system);
       if (existing) {
