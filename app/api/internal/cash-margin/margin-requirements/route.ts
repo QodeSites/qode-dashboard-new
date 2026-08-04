@@ -15,13 +15,14 @@ import { parseCashMarginBody } from "@/lib/cash-margin/request-utils";
  * momentum_pct/lowvol_pct come from client_strategy_configs ??
  * strategy_defaults -- optionally overridden per-strategy via `overrides`
  * in the POST body (request-scoped only, never persisted).
- * NIFTY_LOT_SIZE comes from global_config.NIFTY_LOT_SIZE (read fresh per
- * request, not overridable via this route's POST body).
- * PUT_PROTECTION_AVG_PRICE_PER_QTY (450) has no DB column yet and stays
- * hardcoded. See docs/thresholds-to-table-and-post-override-plan.md.
+ * NIFTY_LOT_SIZE / PUT_PROTECTION_AVG_PRICE_PER_QTY come from global_config,
+ * read fresh per request, and are session-overridable via the POST body's
+ * `globalOverrides` (request-scoped only, never persisted -- see
+ * lib/cash-margin/request-utils.ts). The response's `globalConfig` field
+ * always reflects the currently-effective values.
  *
  * POST /api/internal/cash-margin/margin-requirements
- * body: { qcode: string, overrides?: { [strategy: string]: { longOptPct?, ... } }, asOfDate?: string, niftyLtp?: number }
+ * body: { qcode: string, overrides?: { [strategy: string]: { longOptPct?, ... } }, asOfDate?: string, niftyLtp?: number, globalOverrides?: { niftyLotSize?: number, avgPricePerQty?: number } }
  *
  * `asOfDate` (YYYY-MM-DD) is TEMPORARY -- for verifying against frozen
  * managed_accounts_analysis Excels by pinning the mastersheet read to a
@@ -43,11 +44,11 @@ export async function POST(request: Request) {
 
   const { data, error: parseError } = await parseCashMarginBody(request, { requireQcode: true });
   if (parseError) return parseError;
-  const { overrides, asOfDate, niftyLtpOverride } = data;
+  const { overrides, asOfDate, niftyLtpOverride, globalOverrides } = data;
   const qcode = data.qcode as string;
 
   try {
-    const result = await buildMarginRequirements(qcode, overrides, asOfDate, niftyLtpOverride);
+    const result = await buildMarginRequirements(qcode, overrides, asOfDate, niftyLtpOverride, globalOverrides);
     if (!result) {
       return NextResponse.json(
         { error: `No active mandate found for qcode "${qcode}"` },

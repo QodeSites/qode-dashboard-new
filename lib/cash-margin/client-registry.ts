@@ -83,6 +83,12 @@ export interface ClientRegistryRow {
   client: string;
   strategy: string;
   tier: Tier;
+  /** This qcode's latest mastersheet date (loadMastersheet(), qcode-wide,
+   *  no tag filter -- same convention as every other cash-margin table).
+   *  Cached per-qcode below, so every row for the same client shares one
+   *  value; differs client-to-client since each client's data can be as
+   *  of a different date. */
+  mastersheetDate: string | null;
   accountValue: number;
   cash: number;
   /** (Cash + Liquidcase) / AV * 100 -- NOT `cash / AV` (see Cash column vs Cash % in the plan doc).
@@ -133,10 +139,20 @@ export interface ClientRegistryRow {
 }
 
 export interface SummaryBanner {
+  /** Distinct qcodes across EVERY active client_strategy_configs mandate --
+   *  XTS included. See file header + buildClientRegistry() for why AUM/Client
+   *  count intentionally does NOT use the same XTS-excluded set as `rows`. */
   totalClients: number;
+  /** Sum of Account Value across EVERY active mandate, XTS included -- matches
+   *  app/lib/internal-utils.ts's computePortfolioSummary(), which never
+   *  special-cases XTS either (only `rows`/margin-shortfall/alert concepts do,
+   *  since Cash%/Collateral/Margin Status are structurally meaningless for a
+   *  fully-cash XTS mandate). */
   totalAum: number;
   totalExcessCash: number;
+  /** Scoped to non-XTS `rows` only -- Margin Status doesn't apply to XTS mandates. */
   marginShortfalls: number;
+  /** Scoped to non-XTS `rows` only -- Alert Status doesn't apply to XTS mandates. */
   alertsTriggered: number;
 }
 
@@ -183,19 +199,24 @@ export async function buildClientRegistry(
   overrides?: StrategyOverrides,
   asOfDate?: Date,
 ): Promise<ClientRegistryResult> {
-  const mandates = (
-    await prisma.client_strategy_configs.findMany({
-      where: { OR: [{ effective_to: null }, { effective_to: { gte: new Date() } }] },
-      select: {
-        qcode: true,
-        account_name: true,
-        strategy: true,
-        exposure_tag_suffix: true,
-        equity_pct: true,
-      },
-      orderBy: [{ account_name: "asc" }, { strategy: "asc" }],
-    })
-  ).filter((m) => !isXtsMandate(m.exposure_tag_suffix)) as unknown as MandateRow[];
+  // Fetched once, XTS included -- `rows`/margin-shortfall/alert-status stay
+  // scoped to the non-XTS subset below, but Total Clients/Total AUM in the
+  // Summary Banner intentionally cover EVERY active mandate (see SummaryBanner's
+  // field docs) -- matches app/lib/internal-utils.ts's computePortfolioSummary(),
+  // which never excludes XTS either.
+  const allActiveMandates = (await prisma.client_strategy_configs.findMany({
+    where: { OR: [{ effective_to: null }, { effective_to: { gte: new Date() } }] },
+    select: {
+      qcode: true,
+      account_name: true,
+      strategy: true,
+      exposure_tag_suffix: true,
+      equity_pct: true,
+    },
+    orderBy: [{ account_name: "asc" }, { strategy: "asc" }],
+  })) as unknown as MandateRow[];
+
+  const mandates = allActiveMandates.filter((m) => !isXtsMandate(m.exposure_tag_suffix));
 
   const strategyNames = Array.from(new Set(mandates.map((m) => m.strategy)));
   const defaults = await prisma.strategy_defaults.findMany({
@@ -257,6 +278,7 @@ export async function buildClientRegistry(
       client: m.account_name,
       strategy: m.strategy,
       tier,
+      mastersheetDate: ms.date ? ms.date.toISOString().slice(0, 10) : null,
       accountValue,
       cash: summary.cash,
       cashPct,
@@ -279,8 +301,25 @@ export async function buildClientRegistry(
     });
   }
 
-  const totalClients = new Set(mandates.map((m) => m.qcode)).size;
-  const totalAum = rows.reduce((s, r) => s + r.accountValue, 0);
+  // XTS mandates never got a `rows` entry (Cash%/Excess Cash/Margin Status
+  // are structurally meaningless for them -- see tags.ts's isXtsMandate doc),
+  // but they're still real Account Value for the banner's Total AUM/Total
+  // Clients -- same "count everything" rule app/lib/internal-utils.ts's
+  // computePortfolioSummary() applies. Just the Account Value is needed here,
+  // not a full registry row.
+  const xtsMandates = allActiveMandates.filter((m) => isXtsMandate(m.exposure_tag_suffix));
+  let xtsAum = 0;
+  for (const m of xtsMandates) {
+    let ms = msCache.get(m.qcode);
+    if (!ms) {
+      ms = await loadMastersheet(m.qcode, asOfDate);
+      msCache.set(m.qcode, ms);
+    }
+    xtsAum += computeAccountSummary(ms, m.strategy, m.exposure_tag_suffix).accountValue;
+  }
+
+  const totalClients = new Set(allActiveMandates.map((m) => m.qcode)).size;
+  const totalAum = rows.reduce((s, r) => s + r.accountValue, 0) + xtsAum;
   const totalExcessCash = rows.reduce((s, r) => s + r.excessCash, 0);
   const marginShortfalls = rows.filter((r) => r.marginStatus === "Shortfall").length;
 

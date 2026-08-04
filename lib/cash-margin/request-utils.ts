@@ -28,6 +28,16 @@ export interface ParsedCashMarginBody {
    * this override.
    */
   niftyLtpOverride?: number;
+  /**
+   * Session-scoped override for the two global_config constants
+   * (lib/cash-margin/global-config.ts's NIFTY_LOT_SIZE / PUT_PROTECTION_AVG_PRICE_PER_QTY),
+   * consumed by margin-requirements.ts and inputs.ts (and page2.ts, which
+   * calls both). Same contract as every other override in this codebase --
+   * request-scoped only, never persisted. Distinct from
+   * PUT /api/internal/global-config, which actually writes the DB value
+   * permanently for an internal admin.
+   */
+  globalOverrides?: { niftyLotSize?: number; avgPricePerQty?: number };
 }
 
 /**
@@ -64,5 +74,25 @@ export async function parseCashMarginBody(
     }
   }
 
-  return { data: { qcode, overrides, asOfDate, niftyLtpOverride } };
+  let globalOverrides: ParsedCashMarginBody["globalOverrides"];
+  if (body?.globalOverrides && typeof body.globalOverrides === "object") {
+    const { niftyLotSize, avgPricePerQty } = body.globalOverrides;
+    globalOverrides = {};
+    if (niftyLotSize !== undefined && niftyLotSize !== null && niftyLotSize !== "") {
+      const parsed = Number(niftyLotSize);
+      if (Number.isNaN(parsed) || parsed <= 0) {
+        return { error: NextResponse.json({ error: "Invalid globalOverrides.niftyLotSize" }, { status: 400 }) };
+      }
+      globalOverrides.niftyLotSize = parsed;
+    }
+    if (avgPricePerQty !== undefined && avgPricePerQty !== null && avgPricePerQty !== "") {
+      const parsed = Number(avgPricePerQty);
+      if (Number.isNaN(parsed) || parsed <= 0) {
+        return { error: NextResponse.json({ error: "Invalid globalOverrides.avgPricePerQty" }, { status: 400 }) };
+      }
+      globalOverrides.avgPricePerQty = parsed;
+    }
+  }
+
+  return { data: { qcode, overrides, asOfDate, niftyLtpOverride, globalOverrides } };
 }

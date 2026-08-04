@@ -18,12 +18,18 @@ import { parseCashMarginBody } from "@/lib/cash-margin/request-utils";
  * never feeds margin math and is never fed by it.
  *
  * POST /api/internal/cash-margin/inputs
- * body: { qcode: string, overrides?: { [strategy: string]: { longOptPct?, ... } }, asOfDate?: string }
+ * body: { qcode: string, overrides?: { [strategy: string]: { longOptPct?, ... } }, asOfDate?: string, globalOverrides?: { niftyLotSize?: number, avgPricePerQty?: number } }
  *
  * `asOfDate` (YYYY-MM-DD) is TEMPORARY -- for verifying against frozen
  * managed_accounts_analysis Excels by pinning the mastersheet read to a
  * historical date instead of always-latest. Remove once done (see
  * lib/cash-margin/mastersheet.ts's loadMastersheet).
+ *
+ * `globalOverrides` is a session-scoped override for the two global_config
+ * constants (niftyLotSize/avgPricePerQty) this panel's tierReference and
+ * Put Protection Calculation block read -- request-scoped only, never
+ * persisted. The response's `globalConfig` field always reflects the
+ * currently-effective values.
  */
 export const dynamic = "force-dynamic";
 
@@ -33,11 +39,11 @@ export async function POST(request: Request) {
 
   const { data, error: parseError } = await parseCashMarginBody(request, { requireQcode: true });
   if (parseError) return parseError;
-  const { overrides, asOfDate } = data;
+  const { overrides, asOfDate, globalOverrides } = data;
   const qcode = data.qcode as string;
 
   try {
-    const result = await buildInputsPanel(qcode, overrides, asOfDate);
+    const result = await buildInputsPanel(qcode, overrides, asOfDate, globalOverrides);
     if (!result) {
       return NextResponse.json(
         { error: `No active mandate found for qcode "${qcode}"` },

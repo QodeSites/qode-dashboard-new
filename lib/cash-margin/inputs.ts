@@ -36,11 +36,14 @@
 import { prisma } from "@/lib/prisma";
 import { loadMastersheet, computeAccountSummary, getVal } from "./mastersheet";
 import { resolveMarginConfig, type MandateRow, type StrategyDefaultRow } from "./margin-requirements";
-import type { StrategyOverrides } from "./config";
+import { resolveRatioConfig, type StrategyOverrides, type StrategyConfigFields } from "./config";
 import { fetchNiftyLtp } from "./nifty-ltp";
 import { getNiftyLotSize, getPutProtectionAvgPricePerQty } from "./global-config";
 
-const TIERS = ["QYE+", "QYE++", "QAW+", "QAW++"] as const;
+/** `MandateRow` (margin-requirements.ts) plus the ratio fields `resolveRatioConfig` needs
+ *  (equity_pct/cash_pct/lc_pct/derivative_pct) -- both are optional-field subsets of the
+ *  same client_strategy_configs row, so this just widens the selected columns' type. */
+type FullMandateRow = MandateRow & StrategyConfigFields;
 
 export interface TierReferenceRow {
   strategy: string;
@@ -94,6 +97,9 @@ export interface InputsPanelResult {
   accountName: string;
   strategies: string[];
   mastersheetDate: string | null;
+  /** Currently-effective global_config values (default, or session-overridden
+   *  via the POST body's globalOverrides -- see lib/cash-margin/request-utils.ts). */
+  globalConfig: { niftyLotSize: number; avgPricePerQty: number };
   tierReference: TierReferenceRow[];
   byStrategy: Record<string, StrategyInputsRow>;
   combined: CombinedInputsRow;
@@ -104,40 +110,28 @@ function toNum(v: unknown): number {
   return v === null || v === undefined ? 0 : Number(v);
 }
 
-function buildTierReferenceRow(d: StrategyDefaultRow & Record<string, unknown>, niftyLotSize: number): TierReferenceRow {
-  const longOptPct = toNum(d.long_opt_pct) * 100;
-  return {
-    strategy: d.strategy_name,
-    psarMultiplier: toNum(d.psar_multiplier),
-    psarLeverage: toNum(d.psar_leverage),
-    longOptPct,
-    drawdownMarginPct: toNum(d.drawdown_margin_pct) * 100,
-    niftyLotSize,
-    lcPct: toNum(d.lc_pct) * 100,
-    cashPct: toNum(d.cash_pct) * 100,
-    goldPct: d.gold_pct === null || d.gold_pct === undefined ? null : Number(d.gold_pct) * 100,
-    momentumPct: d.momentum_pct === null || d.momentum_pct === undefined ? null : Number(d.momentum_pct) * 100,
-    lowvolPct: d.lowvol_pct === null || d.lowvol_pct === undefined ? null : Number(d.lowvol_pct) * 100,
-    equityPct: toNum(d.equity_pct) * 100,
-    derivativePct: toNum(d.derivative_pct) * 100,
-    putProtectionPct: longOptPct,
-  };
-}
-
 /**
  * Full Inputs panel build for one client (qcode).
  *
  * @param overrides - optional, request-scoped only, never persisted (POST
  *   body override of long_opt_pct/psar_multiplier/psar_leverage/
- *   drawdown_margin_pct -- see lib/cash-margin/config.ts). Does not affect
- *   the tierReference table, which is always the raw strategy_defaults.
+ *   drawdown_margin_pct/equity_pct/cash_pct/lc_pct/derivative_pct/gold_pct/
+ *   momentum_pct/lowvol_pct -- see lib/cash-margin/config.ts). Affects BOTH
+ *   tierReference and byStrategy -- tierReference is no longer a static
+ *   strategy_defaults table, it's this client's own resolved config, one row
+ *   per active mandate (override -> client_strategy_configs -> strategy_defaults),
+ *   same chain as every other cash-margin table.
  * @param asOfDate - TEMPORARY, for verification against frozen
  *   managed_accounts_analysis Excels -- see loadMastersheet(). Remove once done.
+ * @param globalOverrides - optional, request-scoped only, never persisted --
+ *   session override for niftyLotSize/avgPricePerQty, falling back to
+ *   global_config when omitted. See lib/cash-margin/request-utils.ts.
  */
 export async function buildInputsPanel(
   qcode: string,
   overrides?: StrategyOverrides,
   asOfDate?: Date,
+  globalOverrides?: { niftyLotSize?: number; avgPricePerQty?: number },
 ): Promise<InputsPanelResult | null> {
   const mandates = await prisma.client_strategy_configs.findMany({
     where: { qcode, OR: [{ effective_to: null }, { effective_to: { gte: new Date() } }] },
@@ -153,6 +147,10 @@ export async function buildInputsPanel(
       gold_pct: true,
       momentum_pct: true,
       lowvol_pct: true,
+      equity_pct: true,
+      cash_pct: true,
+      lc_pct: true,
+      derivative_pct: true,
     },
     orderBy: { strategy: "asc" },
   });
@@ -160,15 +158,12 @@ export async function buildInputsPanel(
 
   const allDefaults = await prisma.strategy_defaults.findMany({ orderBy: { strategy_name: "asc" } });
   const defaultsByStrategy = new Map(allDefaults.map((d) => [d.strategy_name, d as unknown as StrategyDefaultRow]));
-  const niftyLotSize = await getNiftyLotSize();
-  const avgPricePerQty = await getPutProtectionAvgPricePerQty();
-
-  const tierReference = TIERS.map((t) => defaultsByStrategy.get(t))
-    .filter((d): d is StrategyDefaultRow => !!d)
-    .map((d) => buildTierReferenceRow(d as StrategyDefaultRow & Record<string, unknown>, niftyLotSize));
+  const niftyLotSize = globalOverrides?.niftyLotSize ?? (await getNiftyLotSize());
+  const avgPricePerQty = globalOverrides?.avgPricePerQty ?? (await getPutProtectionAvgPricePerQty());
 
   const ms = await loadMastersheet(qcode, asOfDate);
 
+  const tierReference: TierReferenceRow[] = [];
   const byStrategy: Record<string, StrategyInputsRow> = {};
   let combinedAv = 0;
   let combinedLongOptCash = 0;
@@ -178,8 +173,10 @@ export async function buildInputsPanel(
 
   let putProtectionStrategy: string | null = null;
 
-  for (const m of mandates as unknown as MandateRow[]) {
+  for (const m of mandates as unknown as FullMandateRow[]) {
     const config = resolveMarginConfig(m, defaultsByStrategy.get(m.strategy), overrides);
+    const ratioConfig = resolveRatioConfig(m.strategy, m, defaultsByStrategy.get(m.strategy), overrides);
+
     byStrategy[m.strategy] = {
       strategy: m.strategy,
       psarMultiplier: config.psarMultiplier,
@@ -187,6 +184,24 @@ export async function buildInputsPanel(
       longOptPct: config.longOptPct * 100,
       drawdownMarginPct: config.drawdownMarginPct * 100,
     };
+
+    tierReference.push({
+      strategy: m.strategy,
+      psarMultiplier: config.psarMultiplier,
+      psarLeverage: config.psarLeverage,
+      longOptPct: config.longOptPct * 100,
+      drawdownMarginPct: config.drawdownMarginPct * 100,
+      niftyLotSize,
+      lcPct: ratioConfig.lcPct * 100,
+      cashPct: ratioConfig.cashPct * 100,
+      goldPct: ratioConfig.goldPct !== null ? ratioConfig.goldPct * 100 : null,
+      momentumPct: ratioConfig.momentumPct !== null ? ratioConfig.momentumPct * 100 : null,
+      lowvolPct: ratioConfig.lowvolPct !== null ? ratioConfig.lowvolPct * 100 : null,
+      equityPct: ratioConfig.equityPct * 100,
+      derivativePct: ratioConfig.derivativePct * 100,
+      putProtectionPct: config.longOptPct * 100,
+    });
+
     psarMultipliers.add(config.psarMultiplier);
     psarLeverages.add(config.psarLeverage);
 
@@ -240,6 +255,7 @@ export async function buildInputsPanel(
     accountName: mandates[0].account_name,
     strategies: mandates.map((m) => m.strategy),
     mastersheetDate: ms.date ? ms.date.toISOString().slice(0, 10) : null,
+    globalConfig: { niftyLotSize, avgPricePerQty },
     tierReference,
     byStrategy,
     combined,

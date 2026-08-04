@@ -16,7 +16,7 @@ import { parseCashMarginBody } from "@/lib/cash-margin/request-utils";
  * docs/cash-margin-api-reference.md.
  *
  * POST /api/internal/cash-margin/page2
- * body: { qcode: string, overrides?: { [strategy: string]: {...} }, asOfDate?: string, niftyLtp?: number }
+ * body: { qcode: string, overrides?: { [strategy: string]: {...} }, asOfDate?: string, niftyLtp?: number, globalOverrides?: { niftyLotSize?: number, avgPricePerQty?: number } }
  */
 export const dynamic = "force-dynamic";
 
@@ -26,11 +26,11 @@ export async function POST(request: Request) {
 
   const { data, error: parseError } = await parseCashMarginBody(request, { requireQcode: true });
   if (parseError) return parseError;
-  const { overrides, asOfDate, niftyLtpOverride } = data;
+  const { overrides, asOfDate, niftyLtpOverride, globalOverrides } = data;
   const qcode = data.qcode as string;
 
   try {
-    const result = await buildPage2Dashboard(qcode, overrides, asOfDate, niftyLtpOverride);
+    const result = await buildPage2Dashboard(qcode, overrides, asOfDate, niftyLtpOverride, globalOverrides);
     if (!result) {
       return NextResponse.json(
         { error: `No active mandate found for qcode "${qcode}"` },
