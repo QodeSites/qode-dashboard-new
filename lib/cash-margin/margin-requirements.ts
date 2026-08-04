@@ -18,8 +18,11 @@
  *  - Put Protection is gated on the resolved gold/momentum/lowvol_pct
  *    config being present for that strategy, not a hardcoded
  *    {"QAW+","QAW++"} name check.
- *  - Put Protection lots are rounded to the nearest whole lot (Math.round,
- *    not math.ceil). exposure_per_lot (contractValue) = niftyLtp *
+ *  - Put Protection lots use Math.ceil (matching Python's math.ceil), so
+ *    protection is never under-sized -- see docs/assumptions-and-changes-from-krish-logic.md
+ *    §19.1 (previously Math.round, changed after diffing against real client
+ *    Excels showed Math.round undercounts by 1 lot right at common boundaries).
+ *    exposure_per_lot (contractValue) = niftyLtp *
  *    NIFTY_LOT_SIZE -- caller-supplied niftyLtp
  *    standing in for Python's live/manual Nifty ATM feed. (Previously this
  *    read cm_contract_value.contract_value, but that column's data turned
@@ -213,7 +216,7 @@ function computeRequiredLines(
     // when no niftyLtp is supplied (Put Protection falls back to 0, same as
     // any other missing-input case).
     const contractValue = niftyLtp ? niftyLtp * niftyLotSize : null;
-    const lotsRequired = contractValue ? Math.round(protectedVal / contractValue) : 0;
+    const lotsRequired = contractValue ? Math.ceil(protectedVal / contractValue) : 0;
     // niftyLotSize algebraically cancels out here (contractValue already
     // carries a niftyLotSize factor), but it's still read from global_config
     // and applied explicitly, for parity with Python/the DB value.
