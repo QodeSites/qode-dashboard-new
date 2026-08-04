@@ -83,15 +83,43 @@ export interface ClientRegistryRow {
   client: string;
   strategy: string;
   tier: Tier;
+  /** This qcode's latest mastersheet date (loadMastersheet(), qcode-wide,
+   *  no tag filter -- same convention as every other cash-margin table).
+   *  Cached per-qcode below, so every row for the same client shares one
+   *  value; differs client-to-client since each client's data can be as
+   *  of a different date. */
+  mastersheetDate: string | null;
   accountValue: number;
   cash: number;
-  /** (Cash + Liquidcase) / AV * 100 -- NOT `cash / AV` (see Cash column vs Cash % in the plan doc). */
+  /** (Cash + Liquidcase) / AV * 100 -- NOT `cash / AV` (see Cash column vs Cash % in the plan doc).
+   *  This is the Excel "Cash Component (% of Account Value)" column. */
   cashPct: number;
+  /** Cash + Liquidcase, in rupees -- the Excel "Cash Component (₹)" column
+   *  (this is `cash` and `cashPct`'s numerator; `computeConsolidatedExcessCash`'s
+   *  `currentCash`, surfaced here since the row previously discarded it). */
+  cashComponentValue: number;
+  /** `cash / AV * 100` -- cash ALONE, excluding Liquidcase. The Excel
+   *  "Cash (% of Account Value)" column, distinct from `cashPct` above. */
+  cashOnlyPct: number;
+  /** `cashOnlyPct - resolveRatioConfig(...).cashPct * 100` -- actual cash-only
+   *  % vs. the DB-resolved Cash sub-target (Derivative Book's `cash_pct`
+   *  column, same field app/lib/internal-utils.ts's Withdrawal feature reads
+   *  as `split.cash_pct`). The Excel "Cash Drift (%)" column. */
+  cashDriftPct: number;
+  /** `cashPct - idealCashPct` (both percent-scale), where `idealCashPct` is
+   *  `computeConsolidatedExcessCash`'s derived `1 - idealHoldingsPct` -- same
+   *  formula as internal-utils.ts's `cash_component_drift`. The Excel
+   *  "Cash Component Drift from Ideal (%)" column. */
+  cashComponentDriftPct: number;
   excessCash: number;
   excessCashPct: number;
   excessCashStatus: ExcessCashStatus;
   holdings: number;
   holdingsPct: number;
+  /** `holdingsPct - idealHoldingsPct` (both percent-scale) -- same formula as
+   *  internal-utils.ts's `holdings_drift`. The Excel "Holdings Drift from
+   *  Ideal (%)" column. */
+  holdingsDriftPct: number;
   marginStatus: MarginStatus;
   /** Percent-scale (e.g. -4.99), null if the tag has no drawdown row. */
   currentDrawdownPct: number | null;
@@ -111,10 +139,20 @@ export interface ClientRegistryRow {
 }
 
 export interface SummaryBanner {
+  /** Distinct qcodes across EVERY active client_strategy_configs mandate --
+   *  XTS included. See file header + buildClientRegistry() for why AUM/Client
+   *  count intentionally does NOT use the same XTS-excluded set as `rows`. */
   totalClients: number;
+  /** Sum of Account Value across EVERY active mandate, XTS included -- matches
+   *  app/lib/internal-utils.ts's computePortfolioSummary(), which never
+   *  special-cases XTS either (only `rows`/margin-shortfall/alert concepts do,
+   *  since Cash%/Collateral/Margin Status are structurally meaningless for a
+   *  fully-cash XTS mandate). */
   totalAum: number;
   totalExcessCash: number;
+  /** Scoped to non-XTS `rows` only -- Margin Status doesn't apply to XTS mandates. */
   marginShortfalls: number;
+  /** Scoped to non-XTS `rows` only -- Alert Status doesn't apply to XTS mandates. */
   alertsTriggered: number;
 }
 
@@ -161,19 +199,24 @@ export async function buildClientRegistry(
   overrides?: StrategyOverrides,
   asOfDate?: Date,
 ): Promise<ClientRegistryResult> {
-  const mandates = (
-    await prisma.client_strategy_configs.findMany({
-      where: { OR: [{ effective_to: null }, { effective_to: { gte: new Date() } }] },
-      select: {
-        qcode: true,
-        account_name: true,
-        strategy: true,
-        exposure_tag_suffix: true,
-        equity_pct: true,
-      },
-      orderBy: [{ account_name: "asc" }, { strategy: "asc" }],
-    })
-  ).filter((m) => !isXtsMandate(m.exposure_tag_suffix)) as unknown as MandateRow[];
+  // Fetched once, XTS included -- `rows`/margin-shortfall/alert-status stay
+  // scoped to the non-XTS subset below, but Total Clients/Total AUM in the
+  // Summary Banner intentionally cover EVERY active mandate (see SummaryBanner's
+  // field docs) -- matches app/lib/internal-utils.ts's computePortfolioSummary(),
+  // which never excludes XTS either.
+  const allActiveMandates = (await prisma.client_strategy_configs.findMany({
+    where: { OR: [{ effective_to: null }, { effective_to: { gte: new Date() } }] },
+    select: {
+      qcode: true,
+      account_name: true,
+      strategy: true,
+      exposure_tag_suffix: true,
+      equity_pct: true,
+    },
+    orderBy: [{ account_name: "asc" }, { strategy: "asc" }],
+  })) as unknown as MandateRow[];
+
+  const mandates = allActiveMandates.filter((m) => !isXtsMandate(m.exposure_tag_suffix));
 
   const strategyNames = Array.from(new Set(mandates.map((m) => m.strategy)));
   const defaults = await prisma.strategy_defaults.findMany({
@@ -214,6 +257,11 @@ export async function buildClientRegistry(
     const holdingsPct = accountValue ? (excessCashResult.holdingsValue / accountValue) * 100 : 0;
     const excessCashPct = accountValue ? (excessCashResult.excessCash / accountValue) * 100 : 0;
 
+    const cashOnlyPct = accountValue ? (summary.cash / accountValue) * 100 : 0;
+    const cashDriftPct = cashOnlyPct - ratioConfig.cashPct * 100;
+    const holdingsDriftPct = holdingsPct - excessCashResult.idealHoldingsPct;
+    const cashComponentDriftPct = cashPct - excessCashResult.idealCashPct;
+
     const drawdownTag = resolveAccountValueTag(m.strategy, m.exposure_tag_suffix);
     const currentDrawdownPct = getDrawdown(ms, drawdownTag);
 
@@ -230,14 +278,20 @@ export async function buildClientRegistry(
       client: m.account_name,
       strategy: m.strategy,
       tier,
+      mastersheetDate: ms.date ? ms.date.toISOString().slice(0, 10) : null,
       accountValue,
       cash: summary.cash,
       cashPct,
+      cashComponentValue: excessCashResult.currentCash,
+      cashOnlyPct,
+      cashDriftPct,
+      cashComponentDriftPct,
       excessCash: excessCashResult.excessCash,
       excessCashPct,
       excessCashStatus: excessCashResult.excessCash > 0 ? "Excess Cash Levels" : "Low Cash Levels",
       holdings: excessCashResult.holdingsValue,
       holdingsPct,
+      holdingsDriftPct,
       marginStatus: excessCashResult.excessCash < 0 ? "Shortfall" : "Healthy",
       currentDrawdownPct,
       alertStatus,
@@ -247,8 +301,25 @@ export async function buildClientRegistry(
     });
   }
 
-  const totalClients = new Set(mandates.map((m) => m.qcode)).size;
-  const totalAum = rows.reduce((s, r) => s + r.accountValue, 0);
+  // XTS mandates never got a `rows` entry (Cash%/Excess Cash/Margin Status
+  // are structurally meaningless for them -- see tags.ts's isXtsMandate doc),
+  // but they're still real Account Value for the banner's Total AUM/Total
+  // Clients -- same "count everything" rule app/lib/internal-utils.ts's
+  // computePortfolioSummary() applies. Just the Account Value is needed here,
+  // not a full registry row.
+  const xtsMandates = allActiveMandates.filter((m) => isXtsMandate(m.exposure_tag_suffix));
+  let xtsAum = 0;
+  for (const m of xtsMandates) {
+    let ms = msCache.get(m.qcode);
+    if (!ms) {
+      ms = await loadMastersheet(m.qcode, asOfDate);
+      msCache.set(m.qcode, ms);
+    }
+    xtsAum += computeAccountSummary(ms, m.strategy, m.exposure_tag_suffix).accountValue;
+  }
+
+  const totalClients = new Set(allActiveMandates.map((m) => m.qcode)).size;
+  const totalAum = rows.reduce((s, r) => s + r.accountValue, 0) + xtsAum;
   const totalExcessCash = rows.reduce((s, r) => s + r.excessCash, 0);
   const marginShortfalls = rows.filter((r) => r.marginStatus === "Shortfall").length;
 

@@ -80,12 +80,17 @@ export interface Page2Result {
  *   Protection's contractValue there. NOT passed to the Inputs panel's Put
  *   Protection Calculation block, which fetches its own live NIFTY LTP by
  *   design (the two are deliberately isolated -- see inputs.ts).
+ * @param globalOverrides - optional, request-scoped only, never persisted --
+ *   session override for niftyLotSize/avgPricePerQty, forwarded as-is to
+ *   both buildMarginRequirements() and buildInputsPanel(). See
+ *   lib/cash-margin/request-utils.ts.
  */
 export async function buildPage2Dashboard(
   qcode: string,
   overrides?: StrategyOverrides,
   asOfDate?: Date,
   niftyLtpOverride?: number,
+  globalOverrides?: { niftyLotSize?: number; avgPricePerQty?: number },
 ): Promise<Page2Result | null> {
   const [mandates, strategyDefaultsList] = await Promise.all([
     prisma.client_strategy_configs.findMany({
@@ -159,8 +164,8 @@ export async function buildPage2Dashboard(
   // to avoid touching either file. Both are guaranteed non-null here since
   // we already confirmed mandates.length > 0 above with the same active-mandate filter.
   const [marginRequirements, inputs] = await Promise.all([
-    buildMarginRequirements(qcode, overrides, asOfDate, niftyLtpOverride),
-    buildInputsPanel(qcode, overrides, asOfDate),
+    buildMarginRequirements(qcode, overrides, asOfDate, niftyLtpOverride, globalOverrides),
+    buildInputsPanel(qcode, overrides, asOfDate, globalOverrides),
   ]);
 
   const { qcode: _mrQcode, accountName: _mrName, strategies: _mrStrategies, mastersheetDate: _mrDate, ...marginRequirementsRest } =

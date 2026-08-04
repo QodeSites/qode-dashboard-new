@@ -12,6 +12,15 @@ import { parseCashMarginBody } from "@/lib/cash-margin/request-utils";
  * optionally overridden per-strategy via `overrides` in the POST body.
  * `overrides` is request-scoped only and is never written back to the DB.
  *
+ * HEALTHY rows are filtered out here before responding -- this endpoint only
+ * surfaces rows that need attention (WARNING/ACTION_REQUIRED/UPSIDE/UNAVAILABLE).
+ * `buildAlertRows()` itself still returns every row including HEALTHY --
+ * `lib/cash-margin/client-registry.ts` calls it directly (not through this
+ * route) and needs the full set to correctly compute "worst-of" per client;
+ * filtering inside buildAlertRows() would silently turn a genuinely healthy
+ * client into a false UNAVAILABLE there. Only this route's response is scoped
+ * down to non-healthy rows.
+ *
  * POST /api/internal/cash-margin/alerts
  * body: { overrides?: { [strategy: string]: { cashPctHealthy?, ... } }, asOfDate?: string }
  *
@@ -31,7 +40,8 @@ export async function POST(request: Request) {
   const { overrides, asOfDate } = data;
 
   try {
-    const rows = await buildAlertRows(overrides, asOfDate);
+    const allRows = await buildAlertRows(overrides, asOfDate);
+    const rows = allRows.filter((r) => r.severity !== "HEALTHY");
     return NextResponse.json({ generatedAt: new Date().toISOString(), count: rows.length, rows });
   } catch (e) {
     console.error("[cash-margin/alerts] failed:", e);

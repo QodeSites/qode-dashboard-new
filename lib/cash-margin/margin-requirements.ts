@@ -286,6 +286,9 @@ export interface MarginRequirementsResult {
   strategies: string[];
   mastersheetDate: string | null;
   marginFetchOk: boolean;
+  /** Currently-effective global_config values (default, or session-overridden
+   *  via the POST body's globalOverrides -- see lib/cash-margin/request-utils.ts). */
+  globalConfig: { niftyLotSize: number; avgPricePerQty: number };
   combined: MarginRequirementsScope;
   byStrategy: Record<string, MarginRequirementsScope>;
 }
@@ -306,12 +309,16 @@ export interface MarginRequirementsResult {
  *   contractValue is null and Put Protection falls back to 0. niftyLotSize
  *   itself comes from global_config.NIFTY_LOT_SIZE (see global-config.ts),
  *   read fresh on every call -- no longer a hardcoded TS literal.
+ * @param globalOverrides - optional, request-scoped only, never persisted --
+ *   session override for niftyLotSize/avgPricePerQty, falling back to
+ *   global_config when omitted. See lib/cash-margin/request-utils.ts.
  */
 export async function buildMarginRequirements(
   qcode: string,
   overrides?: StrategyOverrides,
   asOfDate?: Date,
   niftyLtpOverride?: number,
+  globalOverrides?: { niftyLotSize?: number; avgPricePerQty?: number },
 ): Promise<MarginRequirementsResult | null> {
   const mandates = await prisma.client_strategy_configs.findMany({
     where: { qcode, OR: [{ effective_to: null }, { effective_to: { gte: new Date() } }] },
@@ -342,8 +349,8 @@ export async function buildMarginRequirements(
   const marginMap = await loadMarginCollaterals([qcode]);
   const margin: MarginAvailable | null = marginMap.get(qcode) ?? null;
   const marginFetchOk = margin !== null;
-  const niftyLotSize = await getNiftyLotSize();
-  const avgPricePerQty = await getPutProtectionAvgPricePerQty();
+  const niftyLotSize = globalOverrides?.niftyLotSize ?? (await getNiftyLotSize());
+  const avgPricePerQty = globalOverrides?.avgPricePerQty ?? (await getPutProtectionAvgPricePerQty());
 
   const byStrategy: Record<string, MarginRequirementsScope> = {};
   const combinedLines = new Map<string, MarginLine>();
@@ -424,6 +431,7 @@ export async function buildMarginRequirements(
     strategies: mandates.map((m) => m.strategy),
     mastersheetDate: ms.date ? ms.date.toISOString().slice(0, 10) : null,
     marginFetchOk,
+    globalConfig: { niftyLotSize, avgPricePerQty },
     combined,
     byStrategy,
   };
