@@ -231,21 +231,28 @@ if (tagMap.length > 0) {
     }
 
     // ✅ Satidham
-    const satidham = await PortfolioApi.getLatestExposure(
+    const satidham_qaw_pp = await PortfolioApi.getLatestExposure(
       "QAC00046",
       "Scheme QAW++"
     );
-    if (satidham) {
+
+    const satidham_qye_pp = await PortfolioApi.getLatestExposure(
+      "QAC00046",
+      "Scheme QYE++"
+    );
+
+
+    if (satidham_qaw_pp && satidham_qye_pp) {
       specialUpdates.push(
         prisma.account_aum.upsert({
           where: { qcode: "QAC00046" },
           update: {
-            aum: satidham.portfolioValue,
+            aum: satidham_qaw_pp.portfolioValue + satidham_qye_pp.portfolioValue,
             aum_updated_at: now,
           },
           create: {
             qcode: "QAC00046",
-            aum: satidham.portfolioValue,
+            aum: satidham_qaw_pp.portfolioValue + satidham_qye_pp.portfolioValue,
             aum_updated_at: now,
           },
         })
