@@ -158,6 +158,11 @@ export interface SummaryBanner {
    *  fully-cash XTS mandate). */
   totalAum: number;
   totalExcessCash: number;
+  /** Count of rows contributing a positive amount to `totalExcessCash`
+   *  (excessCashStatus === "Excess Cash Levels"). Scoped to non-XTS `rows`
+   *  only, same as marginShortfalls/alertsTriggered -- excessCashStatus is
+   *  null for XTS mandates. */
+  totalExcessCashCount: number;
   /** Scoped to non-XTS `rows` only -- Margin Status doesn't apply to XTS mandates. */
   marginShortfalls: number;
   /** Scoped to non-XTS `rows` only -- Alert Status doesn't apply to XTS mandates. */
@@ -353,6 +358,7 @@ export async function buildClientRegistry(
   const totalClients = new Set(allActiveMandates.map((m) => m.qcode)).size;
   const totalAum = rows.reduce((s, r) => s + r.accountValue, 0);
   const totalExcessCash = rows.reduce((s, r) => s + (r.excessCash ?? 0), 0);
+  const totalExcessCashCount = rows.filter((r) => r.excessCashStatus === "Excess Cash Levels").length;
   const marginShortfalls = rows.filter((r) => r.marginStatus === "Shortfall").length;
 
   const alertedClients = new Set<string>();
@@ -368,7 +374,7 @@ export async function buildClientRegistry(
 
   return {
     rows,
-    summary: { totalClients, totalAum, totalExcessCash, marginShortfalls, alertsTriggered },
+    summary: { totalClients, totalAum, totalExcessCash, totalExcessCashCount, marginShortfalls, alertsTriggered },
     actionQueue,
   };
 }
