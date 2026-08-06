@@ -4,6 +4,7 @@ import { requireInternal } from "@/app/lib/admin-utils";
 import {
   fetchTagData,
   fetchBenchmark,
+  fetchPnlSnapshot,
   buildTagMetrics,
 } from "@/app/lib/internal-utils";
 
@@ -16,6 +17,7 @@ export async function POST(req: Request) {
     strategy?: string;
     risk_free_rate?: number;
     as_of?: string;
+    pnl_on?: string;
   };
   try {
     body = await req.json();
@@ -38,6 +40,17 @@ export async function POST(req: Request) {
     if (isNaN(asOf.getTime())) {
       return NextResponse.json(
         { error: "Invalid as_of date" },
+        { status: 400 },
+      );
+    }
+  }
+
+  let pnlOn: Date | null = null;
+  if (body.pnl_on) {
+    pnlOn = new Date(body.pnl_on);
+    if (isNaN(pnlOn.getTime())) {
+      return NextResponse.json(
+        { error: "Invalid pnl_on date" },
         { status: 400 },
       );
     }
@@ -70,32 +83,49 @@ export async function POST(req: Request) {
   // All known strategy prefixes (needed to identify unbifurcated tags in combined view)
   const allPrefixes = [...new Set(configs.map((c) => c.strategy))];
 
+  // Solo Prop client — no strategy prefix in its tags, so "Prop" and "combined"
+  // both mean "just show this client's one config row's own tags"
+  const isSoloProp = configs.length === 1 && configs[0].strategy === "Prop";
+  const effectiveStrategy = isSoloProp ? "combined" : strategy;
+
   // Determine profit_tag and benchmark start date based on requested strategy
   let profitTag: string;
   let benchmarkStart: Date;
 
-  if (strategy === "combined") {
-    profitTag = "Qode Total Portfolio";
-    benchmarkStart = configs.reduce<Date>(
-      (min, c) => (c.effective_from < min ? c.effective_from : min),
-      configs[0].effective_from,
-    );
+  if (effectiveStrategy === "combined") {
+    if (isSoloProp) {
+      profitTag = configs[0].profit_tag_suffix; // unprefixed — Prop tags carry no strategy prefix
+      benchmarkStart = configs[0].effective_from;
+    } else {
+      profitTag = "Qode Total Portfolio";
+      benchmarkStart = configs.reduce<Date>(
+        (min, c) => (c.effective_from < min ? c.effective_from : min),
+        configs[0].effective_from,
+      );
+    }
   } else {
     // Most recent config row for this strategy (for up-to-date suffix)
-    const match = [...configs].reverse().find((c) => c.strategy === strategy);
+    const match = [...configs]
+      .reverse()
+      .find((c) => c.strategy === effectiveStrategy);
     if (!match) {
       return NextResponse.json(
         { error: `Strategy "${strategy}" not found for this client` },
         { status: 404 },
       );
     }
-    profitTag = `${strategy} ${match.profit_tag_suffix}`;
+    profitTag = `${effectiveStrategy} ${match.profit_tag_suffix}`;
     benchmarkStart = match.effective_from;
   }
 
   // Parallel: targeted DB query + Nifty fetch, both cut off at asOf when given
   const [tagData, benchmark] = await Promise.all([
-    fetchTagData(qcode, strategy, allPrefixes, asOf ?? undefined),
+    fetchTagData(
+      qcode,
+      effectiveStrategy,
+      isSoloProp ? [] : allPrefixes,
+      asOf ?? undefined,
+    ),
     fetchBenchmark(benchmarkStart, asOf ?? new Date()),
   ]);
 
@@ -121,6 +151,16 @@ export async function POST(req: Request) {
     tags[tag] = buildTagMetrics(nav, rfr);
   }
 
+  // pnl_on not given → latest mastersheet date actually available (respects asOf
+  // cutoff already, since dataAsOf is derived from tagData). Not new Date() — that's
+  // today's calendar date, which may have no row yet.
+  const resolvedPnlOn = pnlOn ?? new Date(dataAsOf);
+  const pnlSnapshot = await fetchPnlSnapshot(
+    qcode,
+    Object.keys(tagData),
+    resolvedPnlOn,
+  );
+
   return NextResponse.json({
     account_name: configs[0].account_name,
     data_as_of: dataAsOf,
@@ -128,5 +168,7 @@ export async function POST(req: Request) {
     benchmark,
     profit_tag: profitTag,
     tags,
+    pnl_on: resolvedPnlOn.toISOString().split("T")[0],
+    pnl_snapshot: pnlSnapshot,
   });
 }

@@ -139,6 +139,35 @@ function groupRows(rows: any[]): Record<string, NavPoint[]> {
   return grouped;
 }
 
+export interface PnlSnapshotEntry {
+  pnl_inr: number;
+  pnl_pct: number;
+}
+
+// single-day PnL (₹ and %) for a set of tags — one batched query, not one per tag
+export async function fetchPnlSnapshot(
+  qcode: string,
+  tags: string[],
+  date: Date,
+): Promise<Record<string, PnlSnapshotEntry>> {
+  if (tags.length === 0) return {};
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT system_tag, pnl, daily_p_l FROM bifurcated_master_sheet_test
+     WHERE qcode = $1 AND date = $2 AND system_tag = ANY($3::text[])`,
+    qcode,
+    date,
+    tags,
+  );
+  const out: Record<string, PnlSnapshotEntry> = {};
+  for (const row of rows) {
+    out[row.system_tag as string] = {
+      pnl_inr: Number(row.pnl) || 0,
+      pnl_pct: (Number(row.daily_p_l) || 0) / 100, // stored as %, response uses fraction like everything else
+    };
+  }
+  return out;
+}
+
 // Math helpers
 
 const MS = 1000 * 60 * 60 * 24;
