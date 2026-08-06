@@ -151,15 +151,22 @@ export async function POST(req: Request) {
     tags[tag] = buildTagMetrics(nav, rfr);
   }
 
-  // pnl_on not given → latest mastersheet date actually available (respects asOf
-  // cutoff already, since dataAsOf is derived from tagData). Not new Date() — that's
-  // today's calendar date, which may have no row yet.
-  const resolvedPnlOn = pnlOn ?? new Date(dataAsOf);
-  const pnlSnapshot = await fetchPnlSnapshot(
-    qcode,
-    Object.keys(tagData),
-    resolvedPnlOn,
-  );
+  // pnl_on not given → profit tag's OWN latest date, not the global dataAsOf.
+  // dataAsOf is the max across every tag; if another tag's series runs a day ahead
+  // of the profit tag's, that date has no row for the profit tag — exact match
+  // would come back empty. Using this tag's own last date avoids that mismatch.
+  const profitTagSeries = tagData[profitTag];
+  const profitTagLastDate = profitTagSeries?.length
+    ? profitTagSeries[profitTagSeries.length - 1].date
+    : null;
+  const resolvedPnlOnDate = pnlOn ?? profitTagLastDate;
+  const resolvedPnlOn = resolvedPnlOnDate
+    ? resolvedPnlOnDate.toISOString().split("T")[0]
+    : null;
+
+  const pnlSnapshot = resolvedPnlOn
+    ? await fetchPnlSnapshot(qcode, profitTag, resolvedPnlOn)
+    : null;
 
   return NextResponse.json({
     account_name: configs[0].account_name,
@@ -168,7 +175,7 @@ export async function POST(req: Request) {
     benchmark,
     profit_tag: profitTag,
     tags,
-    pnl_on: resolvedPnlOn.toISOString().split("T")[0],
+    pnl_on: resolvedPnlOn,
     pnl_snapshot: pnlSnapshot,
   });
 }

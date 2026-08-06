@@ -144,28 +144,25 @@ export interface PnlSnapshotEntry {
   pnl_pct: number;
 }
 
-// single-day PnL (₹ and %) for a set of tags — one batched query, not one per tag
+// single-day PnL (₹ and %) for one tag — null when that tag has no row on this date
 export async function fetchPnlSnapshot(
   qcode: string,
-  tags: string[],
-  date: Date,
-): Promise<Record<string, PnlSnapshotEntry>> {
-  if (tags.length === 0) return {};
+  tag: string,
+  dateStr: string, // "YYYY-MM-DD" — plain string, not Date, avoids driver timezone rounding on the exact match
+): Promise<PnlSnapshotEntry | null> {
   const rows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT system_tag, pnl, daily_p_l FROM bifurcated_master_sheet_test
-     WHERE qcode = $1 AND date = $2 AND system_tag = ANY($3::text[])`,
+    `SELECT pnl, daily_p_l FROM bifurcated_master_sheet_test
+     WHERE qcode = $1 AND date = $2::date AND system_tag = $3
+     LIMIT 1`,
     qcode,
-    date,
-    tags,
+    dateStr,
+    tag,
   );
-  const out: Record<string, PnlSnapshotEntry> = {};
-  for (const row of rows) {
-    out[row.system_tag as string] = {
-      pnl_inr: Number(row.pnl) || 0,
-      pnl_pct: (Number(row.daily_p_l) || 0) / 100, // stored as %, response uses fraction like everything else
-    };
-  }
-  return out;
+  if (rows.length === 0) return null;
+  return {
+    pnl_inr: Number(rows[0].pnl) || 0,
+    pnl_pct: (Number(rows[0].daily_p_l) || 0) / 100, // stored as %, response uses fraction like everything else
+  };
 }
 
 // Math helpers
