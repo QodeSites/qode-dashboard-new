@@ -1286,3 +1286,45 @@ model console_mf_holdings {
   @@index([qcode, date], map: "idx_console_mf_holdings_qcode_date")
   @@schema("public")
 }
+
+model equity_holdings_tradebook {
+  id              BigInt   @id @default(autoincrement())
+  qcode           String   @db.VarChar(20)
+  mastersheet_tag String?  @db.VarChar(100)
+  date            DateTime @db.Date
+  trade_type      String   @db.VarChar(10) // Buy / Sell
+  symbol          String   @db.VarChar(50)
+  exchange        String?  @db.VarChar(20)
+  quantity        Decimal? @db.Decimal(20, 4)
+  price           Decimal? @db.Decimal(20, 4)
+  broker          String?  @db.VarChar(20)
+  debt_equity     String?  @db.VarChar(20)
+  collateral      String?  @db.VarChar(20)
+  sub_category    String?  @db.VarChar(50)
+  strategy        String   @db.VarChar(20)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([qcode, strategy], map: "idx_equity_tradebook_qcode_strategy")
+  @@schema("public")
+}
+
+model mutual_funds_tradebook {
+  id              BigInt   @id @default(autoincrement())
+  qcode           String   @db.VarChar(20)
+  mastersheet_tag String?  @db.VarChar(100)
+  date            DateTime @db.Date
+  trade_type      String   @db.VarChar(10)
+  symbol          String   @db.VarChar(200) // fund name — can be long, unlike an equity ticker
+  isin            String?  @db.VarChar(20)
+  quantity        Decimal? @db.Decimal(20, 4)
+  price           Decimal? @db.Decimal(20, 4)
+  broker          String?  @db.VarChar(20)
+  debt_equity     String?  @db.VarChar(20)
+  collateral      String?  @db.VarChar(20)
+  sub_category    String?  @db.VarChar(50)
+  strategy        String   @db.VarChar(20)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([qcode, strategy], map: "idx_mf_tradebook_qcode_strategy")
+  @@schema("public")
+}
