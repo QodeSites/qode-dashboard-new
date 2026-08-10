@@ -26,6 +26,12 @@ interface MonthlyPnL {
   };
 }
 
+// Purpose of a system_tag lookup. Lets a single scheme resolve to different
+// tags depending on what the caller is reading (e.g. NAV curve vs deposit
+// column). Defaults to 'default' — existing callsites that don't pass a
+// purpose behave exactly as before.
+type TagPurpose = 'default' | 'nav' | 'deposit' | 'profit' | 'cashflow' | 'pnl';
+
 interface DrawdownMetrics {
   currentDD: number;
   mdd: number;
@@ -358,8 +364,37 @@ export class PortfolioApi {
     "Scheme PMS QAW": "PMS QAW Portfolio",
     "Scheme QAW++": "Zerodha Total Portfolio", // Uses QAC00066
     "Scheme QYE++ (Old)": "QYE Total Portfolio Value", // Inactive scheme - uses hardcoded data
-    "Scheme QYE++": "Zerodha Total Portfolio", // Uses QAC00066, data from bifurcated_master_sheet_test
+    "Scheme QYE++": "Total Portfolio Value", // Uses QAC00066, data from bifurcated_master_sheet_test
   };
+
+  // Per-purpose tag overrides (pre-rewrite). Override the base tag from
+  // SATIDHAM_SYSTEM_TAGS / SARLA_SYSTEM_TAGS for a specific call purpose so a
+  // single scheme can source different series (e.g. NAV vs deposit) from
+  // different tags. Purposes not listed here fall through to the base map, so
+  // existing callsites that don't pass a purpose are unaffected.
+  //
+  // To add a split for a new scheme: add an entry here keyed by scheme name,
+  // then pass the matching purpose at the callsite. The returned tag is still
+  // fed through rewriteTag(), so bifurcated-table prefixing continues to work.
+  private static readonly SATIDHAM_TAG_PURPOSE_OVERRIDES: Record<
+    string,
+    Partial<Record<TagPurpose, string>>
+  > = {
+    "Scheme QYE++": {
+      // Returns / equity curve read the Zerodha stream (rebased to 100).
+      nav: "Total Portfolio Value",
+      // Deposit and profit read the Total Portfolio Value stream. These are
+      // pinned explicitly (not left to fall through the base map) so the split
+      // survives any future change to SATIDHAM_SYSTEM_TAGS["Scheme QYE++"].
+      deposit: "Zerodha Total Portfolio",
+      profit: "Total Portfolio Value",
+    },
+  };
+
+  private static readonly SARLA_TAG_PURPOSE_OVERRIDES: Record<
+    string,
+    Partial<Record<TagPurpose, string>>
+  > = {};
 
   // Scheme to qcode override mapping - schemes that use a different qcode than the default
   private static readonly SCHEME_QCODE_OVERRIDE: Record<string, string> = {
@@ -372,10 +407,20 @@ export class PortfolioApi {
     return this.SCHEME_QCODE_OVERRIDE[scheme] || defaultQcode;
   }
 
-  private static getSystemTag(scheme: string, qcode?: string, accountCode?: string): string {
+  private static getSystemTag(
+    scheme: string,
+    qcode?: string,
+    accountCode?: string,
+    purpose: TagPurpose = 'default',
+  ): string {
     // Use accountCode if provided, otherwise infer from qcode
     const isSatidham = accountCode === "AC8" || qcode === "QAC00046" || qcode === "QAC00066";
     const map = isSatidham ? this.SATIDHAM_SYSTEM_TAGS : this.SARLA_SYSTEM_TAGS;
+    const purposeOverrides = isSatidham
+      ? this.SATIDHAM_TAG_PURPOSE_OVERRIDES[scheme]
+      : this.SARLA_TAG_PURPOSE_OVERRIDES[scheme];
+    const override = purposeOverrides?.[purpose];
+    if (override) return override;
     return map[scheme] || `Zerodha Total Portfolio ${scheme}`;
   }
 
@@ -2035,7 +2080,8 @@ export class PortfolioApi {
     // Handle Scheme QYE++ (uses QAC00066 instead of default qcode)
     if (scheme === "Scheme QYE++") {
       const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
-      const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
+      // 'deposit' purpose keeps this on TPV even if the base tag changes.
+      const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode, undefined, 'deposit');
       const qyeStartDate = PortfolioApi.SCHEME_BIFURCATED_SOURCE["Scheme QYE++"].startDate;
       const depositSum = await PortfolioApi.schemeTable(scheme).aggregate({
         where: {
@@ -2071,8 +2117,7 @@ export class PortfolioApi {
       let totalPortfolioValue = 0;
       let latestDrawdown = 0;
       let latestNav = 0;
-      let latestDate: Date | null = null;
-
+      let latestDate: Date | null = null;      
       for (const s of schemes) {
         // Check for hardcoded data first (for inactive schemes like QYE++)
         if (HC?.[s]) {
@@ -2120,7 +2165,10 @@ export class PortfolioApi {
         } else if (s === "Scheme QYE++") {
           // This scheme uses QAC00066 instead of QAC00046
           const effectiveQcode = PortfolioApi.getEffectiveQcode(s, qcode);
-          const systemTag = PortfolioApi.getSystemTag(s, effectiveQcode);
+          // 'deposit' purpose — exposure/portfolio_value tracks the TPV series for QYE++.
+          const systemTag = PortfolioApi.getSystemTag(s, effectiveQcode, undefined, 'deposit');
+          console.log("GET LATEST EXPOSURE",systemTag);
+          
           const record = await PortfolioApi.schemeTable(s).findFirst({
             where: { qcode: effectiveQcode, system_tag: PortfolioApi.rewriteTag(s, systemTag) },
             orderBy: { date: "desc" },
@@ -2178,7 +2226,7 @@ export class PortfolioApi {
 
     // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ uses QAC00066)
     const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
-    const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
+    const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode,undefined,'deposit');
 
     const record = await PortfolioApi.schemeTable(scheme).findFirst({
       where: { qcode: effectiveQcode, system_tag: PortfolioApi.rewriteTag(scheme, systemTag) },
@@ -2287,7 +2335,9 @@ export class PortfolioApi {
     try {
       // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ uses QAC00066)
       const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
-      const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
+      // 'nav' purpose lets schemes like QYE++ source their return series from a
+      // different tag than deposit/profit (see SATIDHAM_TAG_PURPOSE_OVERRIDES).
+      const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode, undefined, 'nav');
 
       const firstNavRecord = await PortfolioApi.schemeTable(scheme).findFirst({
         where: { qcode: effectiveQcode, system_tag: PortfolioApi.rewriteTag(scheme, systemTag), nav: { not: null } },
@@ -2334,7 +2384,9 @@ export class PortfolioApi {
       }
       // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ uses QAC00066)
       const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
-      const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
+      // 'profit' purpose — QYE++ sources profit from TPV via the override map;
+      // every other scheme has no override and falls through to its base tag.
+      const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode, undefined, 'profit');
       const schemeStartDate = PortfolioApi.SCHEME_BIFURCATED_SOURCE[scheme]?.startDate;
       const profitSum = await PortfolioApi.schemeTable(scheme).aggregate({
         where: {
@@ -2407,7 +2459,7 @@ export class PortfolioApi {
 
     // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ uses QAC00066)
     const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
-    const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode);
+    const systemTag = PortfolioApi.getSystemTag(scheme, effectiveQcode,undefined,'profit');
 
     const schemeStartDate = PortfolioApi.SCHEME_BIFURCATED_SOURCE[scheme]?.startDate;
     const data = await PortfolioApi.schemeTable(scheme).findMany({
@@ -2550,7 +2602,7 @@ export class PortfolioApi {
 
     // Get effective qcode for schemes with overrides (e.g., Scheme QAW++ uses QAC00066)
     const effectiveQcode = PortfolioApi.getEffectiveQcode(scheme, qcode);
-    const systemTag = scheme === "Scheme B" ? "Zerodha Total Portfolio" : PortfolioApi.getSystemTag(scheme, effectiveQcode);
+    const systemTag = scheme === "Scheme B" ? "Zerodha Total Portfolio" : PortfolioApi.getSystemTag(scheme, effectiveQcode,undefined,'deposit');
     const fallthroughStartDate = PortfolioApi.SCHEME_BIFURCATED_SOURCE[scheme]?.startDate;
 
     const cashFlows = await PortfolioApi.schemeTable(scheme).findMany({
@@ -2621,8 +2673,16 @@ export class PortfolioApi {
       .map(item => ({
         date: PortfolioApi.normalizeDate(item.date)!,
         nav: item.nav,
+        prevNav: item.prevNav,
       }))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    // For QYE++, use each row's prev_nav as the START of a period (end stays on
+    // EOD nav). This makes trailing returns cover a full day's move and gives
+    // sinceInception a proper 100 baseline (QYE++ row 1 has prev_nav = 100).
+    const usePrevNavForStart = scheme === "Scheme QYE++";
+    const startNavOf = (row: { nav: number; prevNav: number | null }): number =>
+      usePrevNavForStart && row.prevNav != null && row.prevNav !== 0 ? row.prevNav : row.nav;
 
     const lastNav = normalizedNavData[normalizedNavData.length - 1]?.nav;
     const currentDate = normalizedNavData[normalizedNavData.length - 1]?.date;
@@ -2647,8 +2707,11 @@ export class PortfolioApi {
           const oldestEntry = normalizedNavData[0];
           if (oldestEntry) {
             const years = (new Date(currentDate).getTime() - new Date(oldestEntry.date).getTime()) / (365 * 24 * 60 * 60 * 1000);
-            // For Scheme QAW++, use 100 as baseline (first record's prev_nav is 100, but nav is EOD value)
-            const initialNav = scheme === "Scheme QAW++" && oldestEntry.nav !== 100 ? 100 : oldestEntry.nav;
+            // QYE++ uses row.prev_nav (= 100 on inception day) via startNavOf.
+            // Scheme QAW++ keeps the explicit rebase to 100.
+            const initialNav = usePrevNavForStart
+              ? startNavOf(oldestEntry)
+              : (scheme === "Scheme QAW++" && oldestEntry.nav !== 100 ? 100 : oldestEntry.nav);
             returns[period] = years < 1
               ? ((lastNav - initialNav) / initialNav) * 100
               : (Math.pow(lastNav / initialNav, 1 / years) - 1) * 100;
@@ -2679,14 +2742,14 @@ export class PortfolioApi {
           const dataTime = new Date(dataPoint.date).getTime();
           if (dataTime <= exactOneYearAgo.getTime()) {
             if (!prevCandidate || dataTime > new Date(prevCandidate.date).getTime()) {
-              prevCandidate = { nav: dataPoint.nav, date: new Date(dataPoint.date) };
+              prevCandidate = { nav: dataPoint.nav, prevNav: dataPoint.prevNav, date: new Date(dataPoint.date) };
             }
           }
         }
 
         if (prevCandidate) {
           const years = 1; // exactly 1y
-          returns[period] = (Math.pow(lastNav / prevCandidate.nav, 1 / years) - 1) * 100;
+          returns[period] = (Math.pow(lastNav / startNavOf(prevCandidate), 1 / years) - 1) * 100;
         } else {
           returns[period] = null;
         }
@@ -2701,13 +2764,13 @@ export class PortfolioApi {
       }
 
       const targetTime = targetDate.getTime();
-      let candidate = null;
+      let candidate: { nav: number; prevNav: number | null; date: Date } | null = null;
 
       for (const dataPoint of normalizedNavData) {
         const dataTime = new Date(dataPoint.date).getTime();
         if (dataTime <= targetTime) {
           if (!candidate || dataTime > new Date(candidate.date).getTime()) {
-            candidate = { nav: dataPoint.nav, date: new Date(dataPoint.date) };
+            candidate = { nav: dataPoint.nav, prevNav: dataPoint.prevNav, date: new Date(dataPoint.date) };
           }
         }
       }
@@ -2719,7 +2782,7 @@ export class PortfolioApi {
           const diff = dataTime - targetTime;
           if (diff > 0 && diff < minDiff) {
             minDiff = diff;
-            candidate = { nav: dataPoint.nav, date: new Date(dataPoint.date) };
+            candidate = { nav: dataPoint.nav, prevNav: dataPoint.prevNav, date: new Date(dataPoint.date) };
           }
         }
       }
@@ -2734,12 +2797,13 @@ export class PortfolioApi {
           continue;
         }
 
+        const startNav = startNavOf(candidate);
         const durationYears = (new Date(currentDate).getTime() - candidate.date.getTime()) / (365 * 24 * 60 * 60 * 1000);
         let returnValue: number;
         if (durationYears >= 1) {
-          returnValue = (Math.pow(lastNav / candidate.nav, 1 / durationYears) - 1) * 100;
+          returnValue = (Math.pow(lastNav / startNav, 1 / durationYears) - 1) * 100;
         } else {
-          returnValue = ((lastNav - candidate.nav) / candidate.nav) * 100;
+          returnValue = ((lastNav - startNav) / startNav) * 100;
         }
         returns[period] = returnValue;
       } else {
