@@ -233,6 +233,15 @@ function computeRequiredLines(
       lotsRequired,
       putProtectionCash,
     };
+  } else {
+    // Placeholder row so every strategy (incl. QYE++, which has no Put
+    // Protection config) shows a Put Protection line instead of omitting it
+    // -- Akash's direction 2026-08-10. Cash is a flat 0, not null: this
+    // strategy genuinely has zero Put Protection requirement, as opposed to
+    // "unavailable" (contractValue being null when niftyLtp isn't supplied,
+    // which stays its own separate case for strategies that DO have the
+    // config). Adds nothing to `required.cash`/Combined's Put Protection sum.
+    lines.push({ system: "Put Protection", cashComponent: null, nonCashComponent: null, cash: 0 });
   }
 
   const drawdownCash = accountValue * config.drawdownMarginPct;
