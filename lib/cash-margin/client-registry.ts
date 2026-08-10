@@ -54,6 +54,10 @@ const DEPLOY_EXCESS_CASH_THRESHOLD = 50_00_000;
 
 export type ExcessCashStatus = "Excess Cash Levels" | "Low Cash Levels";
 export type MarginStatus = "Shortfall" | "Healthy";
+/** Derived from alerts.ts's cash_pct severity, same pattern as MarginStatus.
+ *  WARNING/ACTION_REQUIRED/UPSIDE (drifted either direction from its
+ *  threshold band) all read as "Cash Drift Alert". */
+export type CashDriftStatus = "Cash Drift Alert" | "Healthy";
 /** Verbatim labels from SMA_Dashboard_v12.xlsx's "P1 Clients" sheet, column P
  *  (checked 2026-07-30 -- see docs/assumptions-and-changes-from-krish-logic.md §18). */
 export type RegistryAction = "Review Margin & Collateral" | "Deploy - Excess Cash" | "No action required";
@@ -128,6 +132,10 @@ export interface ClientRegistryRow {
    *  Ideal (%)" column. Null for XTS. */
   holdingsDriftPct: number | null;
   marginStatus: MarginStatus | null;
+  /** Derived from alerts.ts's cash_pct severity (Cash % vs. its threshold
+   *  band) -- distinct from cashDriftPct (the raw number) above. Null for
+   *  XTS or when cash_pct is UNAVAILABLE. */
+  cashDriftStatus: CashDriftStatus | null;
   /** Percent-scale (e.g. -4.99), null if the tag has no drawdown row (also null for XTS). */
   currentDrawdownPct: number | null;
   /** Worst-of across just THIS mandate's own 3 metric alert rows (Cash %,
@@ -181,6 +189,11 @@ interface MandateRow {
   account_name: string;
   strategy: string;
   exposure_tag_suffix: string;
+  /** For Drawdown % only -- everything else in this file (Account Value,
+   *  holdings composition, XTS detection) correctly uses exposure_tag_suffix.
+   *  See app/lib/internal-utils.ts's fetchStrategyPairs("profit_tag_suffix")
+   *  for the same convention elsewhere in this app. */
+  profit_tag_suffix: string;
   equity_pct: unknown;
 }
 
@@ -224,6 +237,7 @@ export async function buildClientRegistry(
       account_name: true,
       strategy: true,
       exposure_tag_suffix: true,
+      profit_tag_suffix: true,
       equity_pct: true,
     },
     orderBy: [{ account_name: "asc" }, { strategy: "asc" }],
@@ -288,6 +302,7 @@ export async function buildClientRegistry(
         holdingsPct: null,
         holdingsDriftPct: null,
         marginStatus: null,
+        cashDriftStatus: null,
         currentDrawdownPct: null,
         alertStatus: null,
         clientAlertStatus: null,
@@ -310,7 +325,11 @@ export async function buildClientRegistry(
     const holdingsDriftPct = holdingsPct - excessCashResult.idealHoldingsPct;
     const cashComponentDriftPct = cashPct - excessCashResult.idealCashPct;
 
-    const drawdownTag = resolveAccountValueTag(m.strategy, m.exposure_tag_suffix);
+    // Drawdown % reads the For Profit Tag, not the exposure tag used
+    // everywhere else in this file -- matches Python's dedicated
+    // drawdown_lookup_report.py and this app's own internal-utils.ts
+    // (fetchStrategyPairs("profit_tag_suffix") for max/current drawdown).
+    const drawdownTag = resolveAccountValueTag(m.strategy, m.profit_tag_suffix);
     const currentDrawdownPct = getDrawdown(ms, drawdownTag);
 
     const debtEquityRow = computeDebtEquityForStrategy(ms, m.strategy, m.exposure_tag_suffix);
@@ -320,6 +339,30 @@ export async function buildClientRegistry(
     const ownStrategyAlerts = clientAlerts.filter((r) => r.strategy === m.strategy);
     const alertStatus = worstSeverity(ownStrategyAlerts);
     const clientAlertStatus = worstSeverity(clientAlerts);
+
+    // Margin Status inherits from alerts.ts's own Cash Collateral %/Non-Cash
+    // Collateral % severities (the actual Available-vs-Required margin
+    // metrics), NOT a sign-of-Excess-Cash check -- Akash's direction
+    // 2026-08-10, superseding the original plan-doc spec
+    // (docs/page1-client-portfolio-overview-plan.md's `IF(ExcessCash < 0,
+    // 'Shortfall', 'Healthy')`), which conflated Margin Status with Excess
+    // Cash Status (same trigger, two names). WARNING and ACTION_REQUIRED
+    // both read as "Shortfall" here; UNAVAILABLE (margin fetch failed) stays
+    // null -- distinct from "Healthy", since we genuinely don't know.
+    const marginAlerts = ownStrategyAlerts.filter(
+      (r) => r.metricKey === "cash_collateral_pct" || r.metricKey === "non_cash_collateral_pct",
+    );
+    const marginSeverity = worstSeverity(marginAlerts);
+    const marginStatus: MarginStatus | null =
+      marginSeverity === "UNAVAILABLE" ? null : marginSeverity === "HEALTHY" ? "Healthy" : "Shortfall";
+
+    // Cash Drift Alert, same pattern: inherits from alerts.ts's cash_pct
+    // severity (Cash % vs. its threshold band, including the UPSIDE cap --
+    // drifting too far above target is still a drift). Akash's direction
+    // 2026-08-10.
+    const cashDriftSeverity = ownStrategyAlerts.find((r) => r.metricKey === "cash_pct")?.severity ?? "UNAVAILABLE";
+    const cashDriftStatus: CashDriftStatus | null =
+      cashDriftSeverity === "UNAVAILABLE" ? null : cashDriftSeverity === "HEALTHY" ? "Healthy" : "Cash Drift Alert";
 
     rows.push({
       qcode: m.qcode,
@@ -341,7 +384,8 @@ export async function buildClientRegistry(
       holdings: excessCashResult.holdingsValue,
       holdingsPct,
       holdingsDriftPct,
-      marginStatus: excessCashResult.excessCash < 0 ? "Shortfall" : "Healthy",
+      marginStatus,
+      cashDriftStatus,
       currentDrawdownPct,
       alertStatus,
       clientAlertStatus,
@@ -368,9 +412,23 @@ export async function buildClientRegistry(
   }
   const alertsTriggered = alertedClients.size;
 
-  const actionQueue = rows
-    .filter((r) => r.action !== null && r.action !== "No action required")
-    .map((r) => `${r.client} ${r.strategy} — ${r.action}`);
+  // Union of every alert type -- a row can contribute more than one line
+  // (e.g. both a Margin Shortfall AND a Cash Drift Alert at once). `action`
+  // stays the single Excess-Cash-only column (verbatim Excel P1 label, see
+  // RegistryAction's doc), but the queue itself surfaces every alert that
+  // needs attention, not just that one column. Akash's direction 2026-08-10.
+  const actionQueue: string[] = [];
+  for (const r of rows) {
+    if (r.action !== null && r.action !== "No action required") {
+      actionQueue.push(`${r.client} ${r.strategy} — ${r.action}`);
+    }
+    if (r.marginStatus === "Shortfall") {
+      actionQueue.push(`${r.client} ${r.strategy} — Margin Shortfall`);
+    }
+    if (r.cashDriftStatus === "Cash Drift Alert") {
+      actionQueue.push(`${r.client} ${r.strategy} — Cash Drift Alert`);
+    }
+  }
 
   return {
     rows,
