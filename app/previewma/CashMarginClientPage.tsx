@@ -1,203 +1,82 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Users, CheckCircle, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Users, CheckCircle, AlertTriangle, Loader2, Search } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { useSearchParams } from "next/navigation";
 
-interface Props { clientName?: string; }
+interface Props { qcode?: string; clientName?: string; }
 
-// ─── Data from CSV ────────────────────────────────────────────────────────────
+// ─── Types (matching the real API response) ────────────────────────────────
 
-const D = {
-  clientName: "Arwani Research Services",
-  asOf: "09 Jun 2026",
-  strategies: "QYE++ & QAW++",
-
-  // Row 7-9: Top KPIs
+interface ClientListEntry { qcode: string; account_name: string; strategy: string; }
+interface SummaryRow { label: string; value: number; pct: number; }
+interface AccountSummaryScoped {
+  accountValue: number; holdings: number; liquidcase: number; cash: number; rows: SummaryRow[];
+}
+interface SystemBreakupBookRow {
+  label: string; subPct: number | null; systemPct: number; targetVal: number; currentVal: number;
+  diffVal: number; targetPct: number; currentPct: number; diffPct: number;
+}
+interface SystemBreakupBook { rows: SystemBreakupBookRow[]; }
+interface SystemBreakupScoped { equityBook: SystemBreakupBook; derivativeBook: SystemBreakupBook; }
+interface MarginLine { system: string; cashComponent: number | null; nonCashComponent: number | null; cash: number | null; }
+interface MarginTotals { cc: number | null; ncc: number | null; cash: number | null; }
+interface MarginScoped {
+  lines: MarginLine[]; required: MarginTotals; available: MarginTotals | null;
+  excessShortfall: MarginTotals | null; marginFetchOk: boolean;
+}
+interface DebtEquityScoped {
+  equityMf: number; debtMf: number; hybridMf: number; mfTotal: number;
+  liquidcase: number; debtStock: number; equityStock: number; stockTotal: number; cash: number;
+  accountValue: number; debtAmt: number; equityAmt: number; hybridAmt: number;
+  debtPct: number; equityPct: number; hybridPct: number;
+}
+interface TierRefRow {
+  strategy: string; psarMultiplier: number; longOptPct: number; drawdownMarginPct: number;
+  lcPct: number; cashPct: number; equityPct: number; derivativePct: number;
+}
+interface Page2Response {
+  qcode: string; accountName: string; strategies: string[]; mastersheetDate: string | null;
+  accountSummary: { combined: AccountSummaryScoped; byStrategy: Record<string, AccountSummaryScoped> };
+  systemBreakup: { combined: SystemBreakupScoped; byStrategy: Record<string, SystemBreakupScoped> };
+  marginRequirements: { combined: MarginScoped; byStrategy: Record<string, MarginScoped> };
+  debtEquity: { combined: DebtEquityScoped; byStrategy: Record<string, DebtEquityScoped> };
+  inputs: { tierReference: TierRefRow[] };
+}
+interface TopBarResponse {
+  tier: string;
+  alertStatus: "HEALTHY" | "ACTION_REQUIRED" | "WARNING" | "CRITICAL";
   kpis: {
-    accountValue:      { v: 394688585, pct: "100.00%" },
-    liquidCase:        { v: 82390266,  pct: "20.87%"  },
-    holdings:          { v: 279868576, pct: "70.91%"  },
-    cashPlusLC:        { v: 124820009, pct: "31.62%"  },
-    excessCash:        { v: 6640955,   pct: "1.68%"   },
-    alertStatus:       "Healthy",
-  },
-
-  // Rows 11-23: Account Summary tables
-  accountSummary: {
-    Combined: [
-      ["Account Value",        404688585, "100.0%"],
-      ["Mutual Funds",         213875573, "52.8%" ],
-      ["Equity Stock Holdings", 65993003, "16.3%" ],
-      ["Gold",                  27069820, "6.7%"  ],
-      ["Low Vol",               12272998, "3.0%"  ],
-      ["Momentum",              26650185, "6.6%"  ],
-      ["Bond Stock Holdings",          0, "0.0%"  ],
-      ["Liquidcase",            82390266, "20.4%" ],
-      ["Cash",                  42429743, "10.5%" ],
-      ["Holdings (MF+EQ+Bond)", 279868576,"69.2%" ],
-      ["Cash + Liquidcase",     124820009,"30.8%" ],
-    ],
-    "QYE++": [
-      ["Account Value",        312177488, "100.0%"],
-      ["Mutual Funds",         213875573, "68.5%" ],
-      ["Equity Stock Holdings",        0, "0.0%"  ],
-      ["Gold",                         0, "0.0%"  ],
-      ["Low Vol",                      0, "0.0%"  ],
-      ["Momentum",                     0, "0.0%"  ],
-      ["Bond Stock Holdings",          0, "0.0%"  ],
-      ["Liquidcase",            63975604, "20.5%" ],
-      ["Cash",                  34326310, "11.0%" ],
-      ["Holdings (MF+EQ+Bond)", 213875573,"68.5%" ],
-      ["Cash + Liquidcase",     98301915, "31.5%" ],
-    ],
-    "QAW++": [
-      ["Account Value",         92511097, "100.0%"],
-      ["Mutual Funds",                 0, "0.0%"  ],
-      ["Equity Stock Holdings", 65993003, "71.3%" ],
-      ["Gold",                  27069820, "41.02%"],
-      ["Low Vol",               12272998, "18.60%"],
-      ["Momentum",              26650185, "40.38%"],
-      ["Bond Stock Holdings",          0, "0.0%"  ],
-      ["Liquidcase",            18414662, "19.9%" ],
-      ["Cash",                   8103432, "8.8%"  ],
-      ["Holdings (MF+EQ+Bond)", 65993003, "71.3%" ],
-      ["Cash + Liquidcase",     26518094, "28.7%" ],
-    ],
-  } as Record<string, [string, number, string][]>,
-
-  // Rows 26-36: Cash & Non-Cash (Margin Health)
-  marginHealth: {
-    Combined: {
-      summary: { required: 140980120, available: 194611567, shortfall: 53631447 },
-      rows: [
-        { label: "Long Options", cashComp: null,       nonCash: null,       cash: 6070329,   total: 6070329   },
-        { label: "PSAR",         cashComp: 50586073,   nonCash: 50586073,   cash: null,      total: 101172146 },
-        { label: "Put Protection",cashComp: null,      nonCash: null,       cash: 726781,    total: 726781    },
-        { label: "Drawdown Margin",cashComp: null,     nonCash: null,       cash: 33010863,  total: 33010863  },
-      ],
-    },
-    "QAW++": {
-      summary: { required: 31717999, available: 42036821, shortfall: 10318822 },
-      rows: [
-        { label: "Long Options",  cashComp: null,      nonCash: null,       cash: 1387666,   total: 1387666  },
-        { label: "PSAR",          cashComp: 11563887,  nonCash: 11563887,   cash: null,      total: 23127774 },
-        { label: "Put Protection",cashComp: null,      nonCash: null,       cash: 726781,    total: 726781   },
-        { label: "Drawdown Margin",cashComp: null,     nonCash: null,       cash: 6475777,   total: 6475777  },
-      ],
-    },
-    "QYE++": {
-      summary: { required: 109262121, available: 152574746, shortfall: 43312625 },
-      rows: [
-        { label: "Long Options",  cashComp: null,      nonCash: null,       cash: 4682662,   total: 4682662  },
-        { label: "PSAR",          cashComp: 39022186,  nonCash: 39022186,   cash: null,      total: 78044372 },
-        { label: "Put Protection",cashComp: null,      nonCash: null,       cash: 726781,    total: 726781   },
-        { label: "Drawdown Margin",cashComp: null,     nonCash: null,       cash: 26535086,  total: 26535086 },
-      ],
-    },
-  } as Record<string, any>,
-
-  // Rows 39-64: System Breakup
-  equityBook: {
-    totalTarget: 283282010,
-    rows: [
-      { strategy: "Total",   label: "Holdings",    subPct: "—",     sysPct: "70.00%", target: 283282010, current: 279868577, diff: -3413433 },
-      { strategy: "QAW++",  label: "Gold",        subPct: "40.00%",sysPct: "70.00%", target: 25903107,  current: 27069820,  diff: 1166713  },
-      { strategy: "QAW++",  label: "Momentum",    subPct: "40.00%",sysPct: "—",      target: 25903107,  current: 26650185,  diff: 747078   },
-      { strategy: "QAW++",  label: "Low Vol ETF", subPct: "20.00%",sysPct: "—",      target: 12951554,  current: 12272998,  diff: -678556  },
-      { strategy: "QYE++",  label: "Holdings",    subPct: "—",     sysPct: "70.00%", target: 218524241, current: 213875573, diff: -4648668 },
-    ],
-    // Absolute % columns
-    pct: [
-      { strategy: "Total",  label: "Holdings",    target: "70.00%", current: "69.16%", diff: "-0.84%" },
-      { strategy: "QAW++", label: "Gold",         target: "40.00%", current: "41.02%", diff: "+1.02%" },
-      { strategy: "QAW++", label: "Momentum",     target: "40.00%", current: "40.38%", diff: "+0.38%" },
-      { strategy: "QAW++", label: "Low Vol ETF",  target: "20.00%", current: "18.60%", diff: "-1.40%" },
-      { strategy: "QYE++", label: "Holdings",     target: "70.00%", current: "68.51%", diff: "-1.49%" },
-    ],
-  },
-
-  derivativeBook: {
-    rows: [
-      { strategy: "Total",  label: "Cash",        subPct: "10.00%", sysPct: "30.00%", target: 40468859,  current: 42429743,  diff: 1960884  },
-      { strategy: "Total",  label: "Liquid Case", subPct: "20.00%", sysPct: "—",      target: 80937717,  current: 82390266,  diff: 1452549  },
-      { strategy: "QAW++", label: "Cash",         subPct: "10.00%", sysPct: "30.00%", target: 9251110,   current: 8103432,   diff: -1147677 },
-      { strategy: "QAW++", label: "Liquid Case",  subPct: "20.00%", sysPct: "—",      target: 18502219,  current: 18414662,  diff: -87558   },
-      { strategy: "QYE++", label: "Cash",         subPct: "10.00%", sysPct: "30.00%", target: 31217749,  current: 34326310,  diff: 3108561  },
-      { strategy: "QYE++", label: "Liquid Case",  subPct: "20.00%", sysPct: "—",      target: 62435498,  current: 63975604,  diff: 1540107  },
-    ],
-    pct: [
-      { strategy: "Total",  label: "Cash",        target: "10.00%", current: "10.48%", diff: "+0.48%" },
-      { strategy: "Total",  label: "Liquid Case", target: "20.00%", current: "20.36%", diff: "+0.36%" },
-      { strategy: "QAW++", label: "Cash",         target: "10.00%", current: "8.76%",  diff: "-1.24%" },
-      { strategy: "QAW++", label: "Liquid Case",  target: "20.00%", current: "19.91%", diff: "-0.09%" },
-      { strategy: "QYE++", label: "Cash",         target: "10.00%", current: "11.00%", diff: "+1.00%" },
-      { strategy: "QYE++", label: "Liquid Case",  target: "20.00%", current: "20.49%", diff: "+0.49%" },
-    ],
-  },
-
-  // Rows 66-83: Debt-to-Equity
-  debtEquity: {
-    Combined: { debt: 30.84, equity: 69.16, hybrid: 0 },
-    "QAW++":  { debt: 28.66, equity: 71.34, hybrid: 0 },
-    "QYE++":  { debt: 31.49, equity: 68.51, hybrid: 0 },
-  } as Record<string, { debt: number; equity: number; hybrid: number }>,
-
-  debtEquityDetail: {
-    Combined: {
-      equityMF: 213875573.25, debtMF: 0, hybridMF: 0,
-      mfTotal: 213875573.25, mfPct: "52.85%",
-      liquidcase: 82390266.00, debtStock: 0, equityStock: 65993003.25,
-      stockTotal: 148383269.25, stockPct: "36.67%",
-      cash: 42429742.58, cashPct: "10.48%",
-      accountValue: 404688585.08, accountPct: "100.00%",
-      pcts: { equityMF: "52.85%", debtMF: "0.00%", hybridMF: "0.00%", liquidcase: "20.36%", debtStock: "0.00%", equityStock: "16.31%" },
-    },
-    "QAW++": {
-      equityMF: 0, debtMF: 0, hybridMF: 0,
-      mfTotal: 0, mfPct: "0.00%",
-      liquidcase: 18414661.65, debtStock: 0, equityStock: 65993003.25,
-      stockTotal: 84407664.90, stockPct: "20.86%",
-      cash: 8103432.34, cashPct: "2.00%",
-      accountValue: 92511097.24, accountPct: "22.86%",
-      pcts: { equityMF: "0.00%", debtMF: "0.00%", hybridMF: "0.00%", liquidcase: "4.55%", debtStock: "0.00%", equityStock: "16.31%" },
-    },
-    "QYE++": {
-      equityMF: 213875573.25, debtMF: 0, hybridMF: 0,
-      mfTotal: 213875573.25, mfPct: "52.85%",
-      liquidcase: 63975604.35, debtStock: 0, equityStock: 0,
-      stockTotal: 63975604.35, stockPct: "15.81%",
-      cash: 34326310.24, cashPct: "8.48%",
-      accountValue: 312177487.84, accountPct: "77.14%",
-      pcts: { equityMF: "52.85%", debtMF: "0.00%", hybridMF: "0.00%", liquidcase: "15.81%", debtStock: "0.00%", equityStock: "0.00%" },
-    },
-  } as Record<string, any>,
-
-  // Rows 87-105: PSAR Inputs
-  inputs: {
-    "QYE+":  { psarMult: "1.0x", longOpt: "1.00%", drawdownMargin: "6.00%", liquidCase: "13.00%", cash: "7.00%", equityBook: "80.00%", derivBook: "20.00%" },
-    "QYE++": { psarMult: "2.0x", longOpt: "1.50%", drawdownMargin: "8.50%", liquidCase: "20.00%", cash: "10.00%", equityBook: "70.00%", derivBook: "30.00%" },
-    "QAW+":  { psarMult: "1.0x", longOpt: "1.00%", drawdownMargin: "5.00%", liquidCase: "13.00%", cash: "7.00%", equityBook: "80.00%", derivBook: "20.00%" },
-    "QAW++": { psarMult: "2.0x", longOpt: "1.50%", drawdownMargin: "7.00%", liquidCase: "20.00%", cash: "10.00%", equityBook: "70.00%", derivBook: "30.00%" },
-  },
-};
+    accountValue: { value: number; pct: number };
+    liquidcase: { value: number; pct: number };
+    holdings: { value: number; pct: number };
+    cashPlusLiquidcase: { value: number; pct: number };
+    excessCash: { value: number; pct: number };
+  };
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmtInr(v: number) {
+function fmtInr(v: number | null | undefined) {
+  if (v === null || v === undefined || !isFinite(v)) return "—";
   const abs = Math.abs(v);
   const sign = v < 0 ? "-" : "";
   if (abs >= 1e7) return `${sign}₹${(abs / 1e7).toFixed(2)} Cr`;
   if (abs >= 1e5) return `${sign}₹${(abs / 1e5).toFixed(2)} L`;
   return `${sign}₹${Math.round(abs).toLocaleString("en-IN")}`;
 }
+function fmtPct(v: number | null | undefined) {
+  if (v === null || v === undefined || !isFinite(v)) return "—";
+  return `${v.toFixed(2)}%`;
+}
 
 function DiffInr({ v }: { v: number }) {
   return <span className={v >= 0 ? "text-green-700 font-semibold" : "text-red-600 font-semibold"}>{fmtInr(v)}</span>;
 }
-function DiffPct({ v }: { v: string }) {
-  const n = parseFloat(v);
-  return <span className={n >= 0 ? "text-green-700 font-semibold" : "text-red-600 font-semibold"}>{n >= 0 ? "+" : ""}{v}</span>;
+function DiffPct({ v }: { v: number }) {
+  return <span className={v >= 0 ? "text-green-700 font-semibold" : "text-red-600 font-semibold"}>{v >= 0 ? "+" : ""}{v.toFixed(2)}%</span>;
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
@@ -211,10 +90,10 @@ function Sidebar() {
       </div>
       <nav className="flex-1 px-3 py-4 space-y-1">
         <Link href="/cash-margin" className="flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-xs font-medium text-white/60 hover:bg-white/10 hover:text-white transition-colors">
-          <Users className="h-3.5 w-3.5" />P1 — Portfolio Overview
+          <Users className="h-3.5 w-3.5" />Dashboard
         </Link>
         <div className="flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-xs font-medium bg-white/15 text-white">
-          <Users className="h-3.5 w-3.5" />P2 — Client Detail
+          <Users className="h-3.5 w-3.5" />CLient Dashboard
         </div>
       </nav>
       <div className="px-4 py-4 border-t border-white/10">
@@ -233,7 +112,6 @@ function SH({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
-
 function SubSH({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2 border-l-[3px] border-logo-green pl-3 py-0.5 my-4">
@@ -242,16 +120,138 @@ function SubSH({ children }: { children: React.ReactNode }) {
   );
 }
 
+// ─── Fallback client picker (only shown if no qcode prop is passed) ───────────
+
+function ClientPicker({ onSelect }: { onSelect: (qcode: string) => void }) {
+  const [clients, setClients] = useState<ClientListEntry[]>([]);
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+
+
+  const filtered = clients.filter(
+    (c) => c.account_name.toLowerCase().includes(search.toLowerCase()) || c.qcode.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="relative max-w-md">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-card-text-secondary" />
+        <input
+          type="text" value={search} onChange={(e) => setSearch(e.target.value)} onFocus={() => setOpen(true)}
+          placeholder="Search client name or qcode…"
+          className="w-full pl-9 pr-3 py-2.5 text-sm rounded-lg border border-logo-green/20 outline-none focus:border-logo-green/40"
+        />
+      </div>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute z-20 mt-1 w-full max-h-72 overflow-y-auto rounded-lg border border-logo-green/15 bg-white shadow-lg py-1">
+            {filtered.map((c) => (
+              <button key={`${c.qcode}-${c.strategy}`} type="button"
+                onClick={() => { onSelect(c.qcode); setOpen(false); }}
+                className="w-full text-left px-4 py-2 text-sm hover:bg-primary-bg/40 transition-colors">
+                <span className="font-medium text-card-text">{c.account_name}</span>
+                <span className="text-card-text-secondary ml-2 text-xs">{c.qcode} · {c.strategy}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-export default function CashMarginClientPageV2({ clientName }: Props) {
-  const k = D.kpis;
+export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }: Props) {
+  const [page2, setPage2] = useState<Page2Response | null>(null);
+  const [topBar, setTopBar] = useState<TopBarResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const qcode = searchParams.get("qcode");
+
+
+  console.log("==========>", qcode)
+  useEffect(() => {
+    if (!qcode) return;
+    setLoading(true);
+    setError(null);
+    fetch("/api/internal/cash-margin/page2", {
+      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ qcode }),
+    })
+      .then((r) => { if (!r.ok) throw new Error(`page2 failed (${r.status})`); return r.json(); })
+      .then((p2: Page2Response) => setPage2(p2))
+      .catch((e) => setError(e?.message || "Failed to load client detail."))
+      .finally(() => setLoading(false));
+  }, [qcode]);
+
+  useEffect(() => {
+    if (!qcode) return;
+    fetch("/api/internal/cash-margin/top-bar", {
+      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ qcode }),
+    })
+      .then((r) => { if (!r.ok) throw new Error(`top-bar failed (${r.status})`); return r.json(); })
+      .then((tb: TopBarResponse) => setTopBar(tb))
+      .catch(() => setTopBar(null)); // leave placeholders showing, don't surface an error for this
+  }, [qcode]);
+
+  if (loading || !page2 || !topBar) {
+    return (
+      <div className="flex min-h-screen bg-primary-bg">
+        <Sidebar />
+        <main className="flex-1 flex items-center justify-center gap-2 text-card-text-secondary">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading client detail…
+        </main>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex min-h-screen bg-primary-bg">
+        <Sidebar />
+        <main className="flex-1 flex items-center justify-center">
+          <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 max-w-md">
+            <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            {error}
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  const strategies = page2.strategies;
+  const summaryCombined = page2.accountSummary.combined;
 
   const combinedPie = [
-    { name: "Holdings", value: 69.16, color: "#02422B" },
-    { name: "Liquidcase", value: 20.36, color: "#4A9D7A" },
-    { name: "Cash", value: 10.48, color: "#DABD38" },
+    { name: "Holdings", value: (summaryCombined.holdings / summaryCombined.accountValue) * 100, color: "#02422B" },
+    { name: "Liquidcase", value: (summaryCombined.liquidcase / summaryCombined.accountValue) * 100, color: "#4A9D7A" },
+    { name: "Cash", value: (summaryCombined.cash / summaryCombined.accountValue) * 100, color: "#DABD38" },
   ];
+
+  // Union of Combined + per-strategy rows for the System Breakup tables.
+  const equityRows = [
+    ...page2.systemBreakup.combined.equityBook.rows.map((r) => ({ strategy: "Total", ...r })),
+    ...strategies.flatMap((s) => page2.systemBreakup.byStrategy[s].equityBook.rows.map((r) => ({ strategy: s, ...r }))),
+  ];
+  const derivativeRows = [
+    ...page2.systemBreakup.combined.derivativeBook.rows.map((r) => ({ strategy: "Total", ...r })),
+    ...strategies.flatMap((s) => page2.systemBreakup.byStrategy[s].derivativeBook.rows.map((r) => ({ strategy: s, ...r }))),
+  ];
+
+  function marginTotal(l: MarginLine) {
+    return l.cash !== null ? l.cash : (l.cashComponent ?? 0) + (l.nonCashComponent ?? 0);
+  }
+  function sumTotals(t: MarginTotals | null) {
+    if (!t) return null;
+    return (t.cc ?? 0) + (t.ncc ?? 0) + (t.cash ?? 0);
+  }
+
+  const alertColor = topBar.alertStatus === "HEALTHY" ? "text-green-700" : topBar.alertStatus === "CRITICAL" ? "text-red-800" : "text-amber-700";
 
   return (
     <div className="flex min-h-screen bg-primary-bg">
@@ -265,16 +265,11 @@ export default function CashMarginClientPageV2({ clientName }: Props) {
               <ArrowLeft className="h-4 w-4" />
             </Link>
             <div>
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-button-text mb-0.5">P2 — Individual Client Dashboard & Analysis</div>
-              <h1 className="font-serif text-2xl text-logo-green">{clientName || D.clientName}</h1>
+              <h1 className="font-serif text-2xl text-logo-green">{page2.accountName || clientName}</h1>
             </div>
           </div>
           <div className="flex items-center gap-4 text-xs text-card-text-secondary ml-7">
-            <span>📅 As of {D.asOf}</span>
-            <span>Strategies: {D.strategies}</span>
-            <span className="inline-flex items-center gap-1 text-green-700 font-medium">
-              <CheckCircle className="h-3 w-3" />{k.alertStatus}
-            </span>
+            <span>📅 As of {page2.mastersheetDate || "—"}</span>
           </div>
         </div>
 
@@ -283,12 +278,12 @@ export default function CashMarginClientPageV2({ clientName }: Props) {
           {/* ── SECTION 1: Top KPIs ── */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {[
-              { label: "Account Value", v: k.accountValue.v, pct: k.accountValue.pct, bg: "bg-logo-green" },
-              { label: "Liquidcase", v: k.liquidCase.v, pct: k.liquidCase.pct, bg: "bg-[#4A9D7A]" },
-              { label: "Holdings", v: k.holdings.v, pct: k.holdings.pct, bg: "bg-logo-green" },
-              { label: "Cash + Liquidcase", v: k.cashPlusLC.v, pct: k.cashPlusLC.pct, bg: "bg-[#4A9D7A]" },
-              { label: "Excess Cash", v: k.excessCash.v, pct: k.excessCash.pct, bg: "bg-green-700" },
-              { label: "Alert Status", v: k.alertStatus, pct: null, bg: "bg-logo-green" },
+              { label: "Account Value", v: topBar.kpis.accountValue.value, pct: `${topBar.kpis.accountValue.pct.toFixed(2)}%`, bg: "bg-logo-green" },
+              { label: "Liquidcase", v: topBar.kpis.liquidcase.value, pct: `${topBar.kpis.liquidcase.pct.toFixed(2)}%`, bg: "bg-[#4A9D7A]" },
+              { label: "Holdings", v: topBar.kpis.holdings.value, pct: `${topBar.kpis.holdings.pct.toFixed(2)}%`, bg: "bg-logo-green" },
+              { label: "Cash + Liquidcase", v: topBar.kpis.cashPlusLiquidcase.value, pct: `${topBar.kpis.cashPlusLiquidcase.pct.toFixed(2)}%`, bg: "bg-[#4A9D7A]" },
+              { label: "Excess Cash", v: topBar.kpis.excessCash.value, pct: `${topBar.kpis.excessCash.pct.toFixed(2)}%`, bg: "bg-green-700" },
+              { label: "Alert Status", v: topBar.alertStatus.replace("_", " "), pct: null, bg: "bg-logo-green" },
             ].map((item) => (
               <div key={item.label} className={`${item.bg} rounded-xl p-4 text-white`}>
                 <div className="text-[10px] font-semibold uppercase tracking-wide text-white/70 mb-1">{item.label}</div>
@@ -300,47 +295,76 @@ export default function CashMarginClientPageV2({ clientName }: Props) {
             ))}
           </div>
 
-          {/* ── SECTION 2: Account Summary (3 tables side by side) ── */}
+          {/* ── SECTION 2: Account Summary ── */}
           <div className="bg-white rounded-xl border border-logo-green/10 overflow-hidden">
             <SH>Account Summary</SH>
             <div className="p-4">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                {(["Combined", "QYE++", "QAW++"] as const).map((key) => (
-                  <div key={key}>
-                    <div className="text-xs font-bold text-logo-green mb-2">Account Summary — {key}</div>
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-primary-bg/40 text-card-text-secondary">
-                          <th className="px-2 py-1.5 text-left font-medium">Particulars</th>
-                          <th className="px-2 py-1.5 text-right font-medium">₹ Value</th>
-                          <th className="px-2 py-1.5 text-right font-medium">%</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {D.accountSummary[key].map(([label, value, pct]) => (
-                          <tr key={label} className="border-t border-logo-green/5">
-                            <td className="px-2 py-1.5 text-card-text-secondary">{label}</td>
-                            <td className="px-2 py-1.5 text-right text-card-text whitespace-nowrap">{fmtInr(value as number)}</td>
-                            <td className="px-2 py-1.5 text-right text-card-text-secondary">{pct}</td>
+                {["Combined", ...strategies].map((key) => {
+                  const s = key === "Combined" ? summaryCombined : page2.accountSummary.byStrategy[key];
+                  return (
+                    <div key={key}>
+                      <div className="text-xs font-bold text-logo-green mb-2">Account Summary : {key}</div>
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-primary-bg/40 text-card-text-secondary">
+                            <th className="px-2 py-1.5 text-left font-medium">Particulars</th>
+                            <th className="px-2 py-1.5 text-right font-medium">₹ Value</th>
+                            <th className="px-2 py-1.5 text-right font-medium">%</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ))}
+                        </thead>
+                        <tbody>
+                          {s.rows.map((r) => {
+                            const isTotal = r.label === "Account Value";
+                            const isSubtotal = r.label === "Holdings" || r.label === "Cash + Liquidcase";
+                            const isSubRow = ["Gold", "Low Vol", "Momentum"].includes(r.label);
+                            return (
+                              <tr
+                                key={r.label}
+                                className={`border-t border-logo-green/5 ${isTotal ? "bg-primary-bg/40" :
+                                    isSubtotal ? "bg-primary-bg/20 border-y border-logo-green/15" :
+                                      ""
+                                  }`}
+                              >
+                                <td className={`px-2 py-1.5 ${isTotal ? "font-bold text-card-text" :
+                                    isSubtotal ? "font-semibold text-card-text" :
+                                      isSubRow ? "pl-5 italic text-card-text-secondary" :
+                                        "text-card-text-secondary"
+                                  }`}>
+                                  {r.label}
+                                </td>
+                                <td className={`px-2 py-1.5 text-right whitespace-nowrap ${isTotal ? "font-bold text-card-text" :
+                                    isSubtotal ? "font-semibold text-card-text" :
+                                      isSubRow ? "italic text-card-text-secondary" :
+                                        "text-card-text"
+                                  }`}>
+                                  {fmtInr(r.value)}
+                                </td>
+                                <td className={`px-2 py-1.5 text-right ${isTotal ? "font-bold text-card-text" :
+                                    isSubtotal ? "font-semibold text-card-text" :
+                                      isSubRow ? "italic text-card-text-secondary" :
+                                        "text-card-text-secondary"
+                                  }`}>
+                                  {fmtPct(r.pct)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })}
               </div>
-              {/* Combined pie */}
               <div className="mt-5 pt-4 border-t border-logo-green/10">
                 <div className="text-xs font-bold text-logo-green mb-2">Combined Portfolio Split</div>
                 <div className="flex items-center gap-6">
                   <ResponsiveContainer width={200} height={160}>
                     <PieChart>
-                      <Pie data={combinedPie} dataKey="value" cx="50%" cy="50%" outerRadius={65}
-                        label={({ value }: any) => `${value.toFixed(1)}%`} labelLine={false} fontSize={9}>
+                      <Pie data={combinedPie} dataKey="value" cx="50%" cy="50%" outerRadius={65}>
                         {combinedPie.map((e) => <Cell key={e.name} fill={e.color} />)}
                       </Pie>
                       <Tooltip formatter={(v: number) => `${v.toFixed(1)}%`} />
-                      <Legend wrapperStyle={{ fontSize: 10 }} />
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="flex-1 text-xs space-y-2">
@@ -351,7 +375,7 @@ export default function CashMarginClientPageV2({ clientName }: Props) {
                         <div className="flex-1 h-2 rounded-full bg-primary-bg overflow-hidden">
                           <div className="h-full rounded-full" style={{ width: `${item.value}%`, background: item.color }} />
                         </div>
-                        <span className="font-semibold text-card-text w-10 text-right">{item.value}%</span>
+                        <span className="font-semibold text-card-text w-10 text-right">{item.value.toFixed(1)}%</span>
                       </div>
                     ))}
                   </div>
@@ -360,15 +384,21 @@ export default function CashMarginClientPageV2({ clientName }: Props) {
             </div>
           </div>
 
-          {/* ── SECTION 3: Cash & Non-Cash Component (Margin Health) ── */}
+          {/* ── SECTION 3: Margin Health ── */}
           <div className="bg-white rounded-xl border border-logo-green/10 overflow-hidden">
-            <SH>Cash & Non-Cash Component — Margin Health</SH>
+            <SH>Margin Summary</SH>
             <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-5">
-              {(["Combined", "QAW++", "QYE++"] as const).map((key) => {
-                const mg = D.marginHealth[key];
+              {["Combined", ...strategies].map((key) => {
+                const mg = key === "Combined" ? page2.marginRequirements.combined : page2.marginRequirements.byStrategy[key];
+                const required = sumTotals(mg.required);
+                const available = sumTotals(mg.available);
+                const excess = available !== null && required !== null ? available - required : null;
                 return (
                   <div key={key}>
                     <div className="text-xs font-bold text-logo-green mb-2">{key}</div>
+                    {!mg.marginFetchOk && (
+                      <p className="text-[10px] text-amber-700 mb-1.5">⚠ Margin fetch failed — Available figures unavailable.</p>
+                    )}
                     <table className="w-full text-xs mb-2">
                       <thead>
                         <tr className="bg-primary-bg/40 text-card-text-secondary">
@@ -380,23 +410,23 @@ export default function CashMarginClientPageV2({ clientName }: Props) {
                         </tr>
                       </thead>
                       <tbody>
-                        {mg.rows.map((row: any) => (
-                          <tr key={row.label} className="border-t border-logo-green/5">
-                            <td className="px-2 py-1.5 text-card-text-secondary">{row.label}</td>
-                            <td className="px-2 py-1.5 text-right text-card-text-secondary">{row.cashComp ? fmtInr(row.cashComp) : "—"}</td>
-                            <td className="px-2 py-1.5 text-right text-card-text-secondary">{row.nonCash ? fmtInr(row.nonCash) : "—"}</td>
-                            <td className="px-2 py-1.5 text-right text-card-text-secondary">{row.cash ? fmtInr(row.cash) : "—"}</td>
-                            <td className="px-2 py-1.5 text-right font-semibold text-card-text">{fmtInr(row.total)}</td>
+                        {mg.lines.map((row) => (
+                          <tr key={row.system} className="border-t border-logo-green/5">
+                            <td className="px-2 py-1.5 text-card-text-secondary">{row.system}</td>
+                            <td className="px-2 py-1.5 text-right text-card-text-secondary">{row.cashComponent !== null ? fmtInr(row.cashComponent) : "—"}</td>
+                            <td className="px-2 py-1.5 text-right text-card-text-secondary">{row.nonCashComponent !== null ? fmtInr(row.nonCashComponent) : "—"}</td>
+                            <td className="px-2 py-1.5 text-right text-card-text-secondary">{row.cash !== null ? fmtInr(row.cash) : "—"}</td>
+                            <td className="px-2 py-1.5 text-right font-semibold text-card-text">{fmtInr(marginTotal(row))}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                     <div className="bg-primary-bg/40 rounded-lg p-2.5 text-xs space-y-1">
-                      <div className="flex justify-between"><span className="text-card-text-secondary">Required</span><span className="font-semibold">{fmtInr(mg.summary.required)}</span></div>
-                      <div className="flex justify-between"><span className="text-card-text-secondary">Available</span><span className="font-semibold text-green-700">{fmtInr(mg.summary.available)}</span></div>
+                      <div className="flex justify-between"><span className="text-card-text-secondary">Required</span><span className="font-semibold">{fmtInr(required)}</span></div>
+                      <div className="flex justify-between"><span className="text-card-text-secondary">Available</span><span className="font-semibold text-green-700">{fmtInr(available)}</span></div>
                       <div className="flex justify-between border-t border-logo-green/10 pt-1">
                         <span className="text-card-text-secondary">Excess</span>
-                        <span className={`font-bold ${mg.summary.shortfall >= 0 ? "text-green-700" : "text-red-600"}`}>{fmtInr(mg.summary.shortfall)}</span>
+                        <span className={`font-bold ${excess !== null && excess >= 0 ? "text-green-700" : "text-red-600"}`}>{fmtInr(excess)}</span>
                       </div>
                     </div>
                   </div>
@@ -409,7 +439,6 @@ export default function CashMarginClientPageV2({ clientName }: Props) {
           <div className="bg-white rounded-xl border border-logo-green/10 overflow-hidden">
             <SH>System Breakup — Absolute</SH>
             <div className="p-4 space-y-5">
-              {/* Equity Book */}
               <SubSH>Equity Book</SubSH>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <table className="w-full text-xs">
@@ -425,15 +454,15 @@ export default function CashMarginClientPageV2({ clientName }: Props) {
                     </tr>
                   </thead>
                   <tbody>
-                    {D.equityBook.rows.map((row, i) => (
+                    {equityRows.map((row, i) => (
                       <tr key={i} className="border-t border-logo-green/5">
                         <td className="px-3 py-1.5 text-card-text-secondary text-[10px]">{row.strategy}</td>
                         <td className="px-3 py-1.5 text-card-text">{row.label}</td>
-                        <td className="px-3 py-1.5 text-right text-card-text-secondary">{row.subPct}</td>
-                        <td className="px-3 py-1.5 text-right text-card-text-secondary">{row.sysPct}</td>
-                        <td className="px-3 py-1.5 text-right text-card-text-secondary">{fmtInr(row.target)}</td>
-                        <td className="px-3 py-1.5 text-right text-card-text">{fmtInr(row.current)}</td>
-                        <td className="px-3 py-1.5 text-right"><DiffInr v={row.diff} /></td>
+                        <td className="px-3 py-1.5 text-right text-card-text-secondary">{row.subPct !== null ? fmtPct(row.subPct) : "—"}</td>
+                        <td className="px-3 py-1.5 text-right text-card-text-secondary">{fmtPct(row.systemPct)}</td>
+                        <td className="px-3 py-1.5 text-right text-card-text-secondary">{fmtInr(row.targetVal)}</td>
+                        <td className="px-3 py-1.5 text-right text-card-text">{fmtInr(row.currentVal)}</td>
+                        <td className="px-3 py-1.5 text-right"><DiffInr v={row.diffVal} /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -448,19 +477,18 @@ export default function CashMarginClientPageV2({ clientName }: Props) {
                     </tr>
                   </thead>
                   <tbody>
-                    {D.equityBook.pct.map((row, i) => (
+                    {equityRows.map((row, i) => (
                       <tr key={i} className="border-t border-logo-green/5">
                         <td className="px-3 py-1.5 text-card-text-secondary">{row.strategy} {row.label}</td>
-                        <td className="px-3 py-1.5 text-right text-card-text-secondary">{row.target}</td>
-                        <td className="px-3 py-1.5 text-right text-card-text">{row.current}</td>
-                        <td className="px-3 py-1.5 text-right"><DiffPct v={row.diff} /></td>
+                        <td className="px-3 py-1.5 text-right text-card-text-secondary">{fmtPct(row.targetPct)}</td>
+                        <td className="px-3 py-1.5 text-right text-card-text">{fmtPct(row.currentPct)}</td>
+                        <td className="px-3 py-1.5 text-right"><DiffPct v={row.diffPct} /></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
 
-              {/* Derivative Book */}
               <SubSH>Derivative Book</SubSH>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <table className="w-full text-xs">
@@ -476,15 +504,15 @@ export default function CashMarginClientPageV2({ clientName }: Props) {
                     </tr>
                   </thead>
                   <tbody>
-                    {D.derivativeBook.rows.map((row, i) => (
+                    {derivativeRows.map((row, i) => (
                       <tr key={i} className="border-t border-logo-green/5">
                         <td className="px-3 py-1.5 text-card-text-secondary text-[10px]">{row.strategy}</td>
                         <td className="px-3 py-1.5 text-card-text">{row.label}</td>
-                        <td className="px-3 py-1.5 text-right text-card-text-secondary">{row.subPct}</td>
-                        <td className="px-3 py-1.5 text-right text-card-text-secondary">{row.sysPct}</td>
-                        <td className="px-3 py-1.5 text-right text-card-text-secondary">{fmtInr(row.target)}</td>
-                        <td className="px-3 py-1.5 text-right text-card-text">{fmtInr(row.current)}</td>
-                        <td className="px-3 py-1.5 text-right"><DiffInr v={row.diff} /></td>
+                        <td className="px-3 py-1.5 text-right text-card-text-secondary">{row.subPct !== null ? fmtPct(row.subPct) : "—"}</td>
+                        <td className="px-3 py-1.5 text-right text-card-text-secondary">{fmtPct(row.systemPct)}</td>
+                        <td className="px-3 py-1.5 text-right text-card-text-secondary">{fmtInr(row.targetVal)}</td>
+                        <td className="px-3 py-1.5 text-right text-card-text">{fmtInr(row.currentVal)}</td>
+                        <td className="px-3 py-1.5 text-right"><DiffInr v={row.diffVal} /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -499,12 +527,12 @@ export default function CashMarginClientPageV2({ clientName }: Props) {
                     </tr>
                   </thead>
                   <tbody>
-                    {D.derivativeBook.pct.map((row, i) => (
+                    {derivativeRows.map((row, i) => (
                       <tr key={i} className="border-t border-logo-green/5">
                         <td className="px-3 py-1.5 text-card-text-secondary">{row.strategy} {row.label}</td>
-                        <td className="px-3 py-1.5 text-right text-card-text-secondary">{row.target}</td>
-                        <td className="px-3 py-1.5 text-right text-card-text">{row.current}</td>
-                        <td className="px-3 py-1.5 text-right"><DiffPct v={row.diff} /></td>
+                        <td className="px-3 py-1.5 text-right text-card-text-secondary">{fmtPct(row.targetPct)}</td>
+                        <td className="px-3 py-1.5 text-right text-card-text">{fmtPct(row.currentPct)}</td>
+                        <td className="px-3 py-1.5 text-right"><DiffPct v={row.diffPct} /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -514,18 +542,14 @@ export default function CashMarginClientPageV2({ clientName }: Props) {
           </div>
 
           {/* ── SECTION 5: Debt-to-Equity Ratio ── */}
-      {/* ── SECTION 5: Debt-to-Equity Ratio ── */}
           <div className="bg-white rounded-xl border border-logo-green/10 overflow-hidden">
             <SH>Debt-to-Equity Ratio</SH>
             <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-6">
-              {(["Combined", "QAW++", "QYE++"] as const).map((key) => {
-                const de = D.debtEquity[key];
-                const dd = D.debtEquityDetail[key];
+              {["Combined", ...strategies].map((key) => {
+                const dd = key === "Combined" ? page2.debtEquity.combined : page2.debtEquity.byStrategy[key];
                 return (
                   <div key={key}>
                     <div className="text-xs font-bold text-logo-green mb-2">Debt To Equity Ratio — {key}</div>
-
-                    {/* Breakup table */}
                     <table className="w-full text-xs mb-4">
                       <thead>
                         <tr className="bg-primary-bg/40 text-card-text-secondary">
@@ -538,75 +562,72 @@ export default function CashMarginClientPageV2({ clientName }: Props) {
                       <tbody>
                         <tr className="border-t border-logo-green/5">
                           <td className="px-2 py-1 text-card-text-secondary">Equity Mutual Funds</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtInr(dd.equityMF)}</td>
+                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtInr(dd.equityMf)}</td>
                           <td className="px-2 py-1 text-right text-card-text-secondary">—</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{dd.pcts.equityMF}</td>
+                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtPct((dd.equityMf / dd.accountValue) * 100)}</td>
                         </tr>
                         <tr className="border-t border-logo-green/5">
                           <td className="px-2 py-1 text-card-text-secondary">Debt Mutual Funds</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtInr(dd.debtMF)}</td>
+                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtInr(dd.debtMf)}</td>
                           <td className="px-2 py-1 text-right text-card-text-secondary">—</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{dd.pcts.debtMF}</td>
+                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtPct((dd.debtMf / dd.accountValue) * 100)}</td>
                         </tr>
                         <tr className="border-t border-logo-green/5">
                           <td className="px-2 py-1 text-card-text-secondary">Hybrid Mutual Funds</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtInr(dd.hybridMF)}</td>
+                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtInr(dd.hybridMf)}</td>
                           <td className="px-2 py-1 text-right text-card-text-secondary">—</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{dd.pcts.hybridMF}</td>
+                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtPct((dd.hybridMf / dd.accountValue) * 100)}</td>
                         </tr>
                         <tr className="border-t border-logo-green/10 bg-primary-bg/20">
                           <td className="px-2 py-1 font-bold text-card-text">Mutual Funds</td>
                           <td className="px-2 py-1 text-right">—</td>
                           <td className="px-2 py-1 text-right font-bold text-card-text">{fmtInr(dd.mfTotal)}</td>
-                          <td className="px-2 py-1 text-right font-bold text-card-text">{dd.mfPct}</td>
+                          <td className="px-2 py-1 text-right font-bold text-card-text">{fmtPct((dd.mfTotal / dd.accountValue) * 100)}</td>
                         </tr>
-
                         <tr className="border-t border-logo-green/5">
                           <td className="px-2 py-1 text-card-text-secondary">Liquidcase Stock Holdings</td>
                           <td className="px-2 py-1 text-right text-card-text-secondary">{fmtInr(dd.liquidcase)}</td>
                           <td className="px-2 py-1 text-right text-card-text-secondary">—</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{dd.pcts.liquidcase}</td>
+                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtPct((dd.liquidcase / dd.accountValue) * 100)}</td>
                         </tr>
                         <tr className="border-t border-logo-green/5">
                           <td className="px-2 py-1 text-card-text-secondary">Debt Stock Holdings</td>
                           <td className="px-2 py-1 text-right text-card-text-secondary">{fmtInr(dd.debtStock)}</td>
                           <td className="px-2 py-1 text-right text-card-text-secondary">—</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{dd.pcts.debtStock}</td>
+                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtPct((dd.debtStock / dd.accountValue) * 100)}</td>
                         </tr>
                         <tr className="border-t border-logo-green/5">
                           <td className="px-2 py-1 text-card-text-secondary">Equity Stock Holdings</td>
                           <td className="px-2 py-1 text-right text-card-text-secondary">{fmtInr(dd.equityStock)}</td>
                           <td className="px-2 py-1 text-right text-card-text-secondary">—</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{dd.pcts.equityStock}</td>
+                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtPct((dd.equityStock / dd.accountValue) * 100)}</td>
                         </tr>
                         <tr className="border-t border-logo-green/10 bg-primary-bg/20">
                           <td className="px-2 py-1 font-bold text-card-text">Stock Holdings</td>
                           <td className="px-2 py-1 text-right">—</td>
                           <td className="px-2 py-1 text-right font-bold text-card-text">{fmtInr(dd.stockTotal)}</td>
-                          <td className="px-2 py-1 text-right font-bold text-card-text">{dd.stockPct}</td>
+                          <td className="px-2 py-1 text-right font-bold text-card-text">{fmtPct((dd.stockTotal / dd.accountValue) * 100)}</td>
                         </tr>
-
                         <tr className="border-t border-logo-green/5">
                           <td className="px-2 py-1 text-card-text-secondary">Cash</td>
                           <td className="px-2 py-1 text-right">—</td>
                           <td className="px-2 py-1 text-right text-card-text-secondary">{fmtInr(dd.cash)}</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{dd.cashPct}</td>
+                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtPct((dd.cash / dd.accountValue) * 100)}</td>
                         </tr>
                         <tr className="border-t border-logo-green/10 bg-primary-bg/20">
                           <td className="px-2 py-1 font-bold text-card-text">Account Value</td>
                           <td className="px-2 py-1 text-right">—</td>
                           <td className="px-2 py-1 text-right font-bold text-card-text">{fmtInr(dd.accountValue)}</td>
-                          <td className="px-2 py-1 text-right font-bold text-card-text">{dd.accountPct}</td>
+                          <td className="px-2 py-1 text-right font-bold text-card-text">100.00%</td>
                         </tr>
                       </tbody>
                     </table>
 
-                    {/* Ratio bar (unchanged) */}
                     <div className="flex items-center gap-4 mb-3">
                       {[
-                        { label: "Debt",   value: de.debt,   color: "#DABD38" },
-                        { label: "Equity", value: de.equity, color: "#02422B" },
-                        { label: "Hybrid", value: de.hybrid, color: "#6B7280" },
+                        { label: "Debt", value: dd.debtPct, color: "#DABD38" },
+                        { label: "Equity", value: dd.equityPct, color: "#02422B" },
+                        { label: "Hybrid", value: dd.hybridPct, color: "#6B7280" },
                       ].map((item) => (
                         <div key={item.label} className="text-center">
                           <div className="text-xl font-bold" style={{ color: item.color }}>{item.value.toFixed(2)}%</div>
@@ -615,8 +636,8 @@ export default function CashMarginClientPageV2({ clientName }: Props) {
                       ))}
                     </div>
                     <div className="h-4 rounded-full overflow-hidden flex">
-                      <div className="h-full" style={{ width: `${de.debt}%`, background: "#DABD38" }} />
-                      <div className="h-full" style={{ width: `${de.equity}%`, background: "#02422B" }} />
+                      <div className="h-full" style={{ width: `${dd.debtPct}%`, background: "#DABD38" }} />
+                      <div className="h-full" style={{ width: `${dd.equityPct}%`, background: "#02422B" }} />
                     </div>
                   </div>
                 );
@@ -632,24 +653,24 @@ export default function CashMarginClientPageV2({ clientName }: Props) {
                 <thead>
                   <tr className="bg-primary-bg/40 text-card-text-secondary">
                     <th className="px-3 py-2 text-left font-medium">Parameter</th>
-                    {Object.keys(D.inputs).map((s) => <th key={s} className="px-3 py-2 text-right font-medium">{s}</th>)}
+                    {page2.inputs.tierReference.map((t) => <th key={t.strategy} className="px-3 py-2 text-right font-medium">{t.strategy}</th>)}
                   </tr>
                 </thead>
                 <tbody>
                   {[
-                    { label: "PSAR Multiplier",    key: "psarMult"      },
-                    { label: "Long Options (%)",   key: "longOpt"       },
-                    { label: "Drawdown Margin (%)",key: "drawdownMargin"},
-                    { label: "Liquid Case (%)",    key: "liquidCase"    },
-                    { label: "Cash (%)",           key: "cash"          },
-                    { label: "Equity Book (%)",    key: "equityBook"    },
-                    { label: "Derivative Book (%)",key: "derivBook"     },
+                    { label: "PSAR Multiplier", key: "psarMultiplier", fmt: (v: number) => `${v}x` },
+                    { label: "Long Options (%)", key: "longOptPct", fmt: fmtPct },
+                    { label: "Drawdown Margin (%)", key: "drawdownMarginPct", fmt: fmtPct },
+                    { label: "Liquid Case (%)", key: "lcPct", fmt: fmtPct },
+                    { label: "Cash (%)", key: "cashPct", fmt: fmtPct },
+                    { label: "Equity Book (%)", key: "equityPct", fmt: fmtPct },
+                    { label: "Derivative Book (%)", key: "derivativePct", fmt: fmtPct },
                   ].map((param) => (
                     <tr key={param.key} className="border-t border-logo-green/5">
                       <td className="px-3 py-1.5 text-card-text-secondary">{param.label}</td>
-                      {Object.entries(D.inputs).map(([s, vals]) => (
-                        <td key={s} className="px-3 py-1.5 text-right text-card-text">
-                          {(vals as any)[param.key]}
+                      {page2.inputs.tierReference.map((t) => (
+                        <td key={t.strategy} className="px-3 py-1.5 text-right text-card-text">
+                          {param.fmt((t as any)[param.key])}
                         </td>
                       ))}
                     </tr>
