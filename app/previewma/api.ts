@@ -261,7 +261,8 @@ export async function fetchClientDashboard(
   qcode: string,
   strategy: string,
   riskFreeRate?: number,
-  asOf?: string
+  asOf?: string,
+  pnlOn?: string,
 ): Promise<ClientDashboardResponse> {
   return apiFetch<ClientDashboardResponse>("/api/internal/portfolio-review/client-dashboard", {
     method: "POST",
@@ -270,6 +271,7 @@ export async function fetchClientDashboard(
       strategy,
       ...(riskFreeRate !== undefined ? { risk_free_rate: riskFreeRate } : {}),
       ...(asOf ? { as_of: asOf } : {}),
+       ...(pnlOn ? { pnl_on: pnlOn } : {}),
     }),
   });
 }

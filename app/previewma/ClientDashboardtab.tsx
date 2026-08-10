@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2, AlertCircle } from "lucide-react";
 
 import {
@@ -61,6 +61,30 @@ export function ClientDashboardsTab({
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
 
+const [mode, setMode] = useState<"managed" | "prop">("managed");
+const [pnlOn, setPnlOn] = useState<string>("");
+
+const isPropClient = (client: ClientListItem) =>
+  client.strategies.some((s) => s.strategy === "Prop");
+
+const filteredClients = useMemo(() =>
+  clients.filter((c) => mode === "prop" ? isPropClient(c) : !isPropClient(c)),
+[clients, mode]);
+
+const clientOptions = filteredClients.map((c) => ({
+  value: c.qcode, label: c.account_name, sublabel: c.qcode,
+}));
+
+// When mode changes, reset selected client/strategy:
+useEffect(() => {
+  setSelectedQcode(null);
+  setSelectedStrategy(null);
+  setDashboardData(null);
+}, [mode]);
+
+
+
+
   // Load the client list once on mount.
   useEffect(() => {
     let cancelled = false;
@@ -103,7 +127,11 @@ export function ClientDashboardsTab({
     setDashboardLoading(true);
     setDashboardError(null);
 
-    fetchClientDashboard(selectedQcode, selectedStrategy, riskFreeRate, asOf || undefined)
+    fetchClientDashboard(  selectedQcode,
+  mode === "prop" ? "combined" : selectedStrategy,
+  riskFreeRate,
+  asOf || undefined,
+  mode === "prop" ? pnlOn || undefined : undefined,)
       .then((data) => {
         if (cancelled) return;
         setDashboardData(data);
@@ -123,15 +151,10 @@ export function ClientDashboardsTab({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedQcode, selectedStrategy, fetchTrigger, asOf]);
+  }, [selectedQcode, selectedStrategy, fetchTrigger, asOf,pnlOn]);
 
-  const selectedClient = clients.find((c) => c.qcode === selectedQcode);
+  const selectedClient = filteredClients.find((c) => c.qcode === selectedQcode);
 
-  const clientOptions = clients.map((c) => ({
-    value: c.qcode,
-    label: c.account_name,
-    sublabel: c.qcode,
-  }));
 
   // A client with only one real strategy (+ the synthetic "combined") should
   // not show "combined" as an option — just show and auto-select the real one.
@@ -184,7 +207,26 @@ export function ClientDashboardsTab({
 
   return (
     <div>
+      {/* Managed / Prop tab toggle */}
+      <div className="flex items-center gap-1 rounded-lg bg-primary-bg/60 border border-logo-green/10 p-1 w-fit mb-5">
+        {(["managed", "prop"] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setMode(tab)}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors capitalize ${
+              mode === tab
+                ? "bg-white text-logo-green shadow-sm"
+                : "text-card-text-secondary hover:text-card-text"
+            }`}
+          >
+            {tab === "managed" ? "Managed" : "Prop"}
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 max-w-3xl">
+        {/* Client */}
         <SearchableSelect
           label="Client"
           placeholder="Select a client"
@@ -192,14 +234,32 @@ export function ClientDashboardsTab({
           value={selectedQcode}
           onChange={handleClientChange}
         />
-        <SearchableSelect
-          label="Strategy"
-          placeholder="Select a strategy"
-          options={strategyOptions}
-          value={selectedStrategy}
-          onChange={setSelectedStrategy}
-          disabled={!selectedClient}
-        />
+
+        {/* Strategy (Managed) — OR — P&L On Date (Prop) */}
+        {mode === "managed" ? (
+          <SearchableSelect
+            label="Strategy"
+            placeholder="Select a strategy"
+            options={strategyOptions}
+            value={selectedStrategy}
+            onChange={setSelectedStrategy}
+            disabled={!selectedClient}
+          />
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wide text-card-text-secondary">
+              P&L On Date
+            </label>
+            <input
+              type="date"
+              value={pnlOn}
+              onChange={(e) => setPnlOn(e.target.value)}
+              className="w-full rounded-lg border border-logo-green/20 bg-white px-3 py-2.5 text-sm text-card-text focus:outline-none focus:border-logo-green/40"
+            />
+          </div>
+        )}
+
+        {/* As of Date */}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-semibold uppercase tracking-wide text-card-text-secondary">
             As of Date
