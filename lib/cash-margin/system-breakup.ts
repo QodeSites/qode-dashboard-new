@@ -116,7 +116,11 @@ export function computeSystemBreakupForStrategy(
         targetVal,
         currentVal,
         diffVal: currentVal - targetVal,
-        targetPct: (targetVal / av) * 100,
+        // Target % is this instrument's share WITHIN the equity book (subPct),
+        // matching Python's compute_qaw_equity_book() (r["target_pct"] = r["sub_pct"])
+        // and this row's own currentPct (also computed against the equity-book
+        // leg-sum, not av) -- NOT re-scaled by equityBookPct a second time.
+        targetPct: subPct * 100,
         currentPct: legSum ? (currentVal / legSum) * 100 : 0,
         diffPct: legSum ? (currentVal / legSum) * 100 - subPct * 100 : -subPct * 100,
       };

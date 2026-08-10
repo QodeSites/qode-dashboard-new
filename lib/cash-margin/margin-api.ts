@@ -14,10 +14,15 @@ export interface MarginAvailable {
   liquidCollateral: number;
   /** cm_margin_collateral.non_cash_collateral -- Non-Cash Collateral (stocks). */
   stockCollateral: number;
-  /** cm_margin_collateral.live_balance -- Available Cash source for Margin
-   * Requirements (§2c). NOT the same as the mastersheet-residual "Cash" used
-   * by Account Summary -- see docs/cash-margin-client-dashboard-plan.md D2. */
+  /** cm_margin_collateral.live_balance -- kept for reference, no longer the
+   * Available Cash source for Margin Requirements (§2c) -- see openingBalance. */
   liveBalance: number;
+  /** cm_margin_collateral.opening_balance -- Available Cash source for Margin
+   * Requirements (§2c), split by exposure share like liquidCollateral/
+   * stockCollateral. NOT the same as the mastersheet-residual "Cash" used
+   * by Account Summary -- see docs/cash-margin-client-dashboard-plan.md D2.
+   * Zerodha only (equity.available.opening_balance); no XTS equivalent. */
+  openingBalance: number;
 }
 
 /**
@@ -38,6 +43,7 @@ export async function loadMarginCollaterals(qcodes: string[]): Promise<Map<strin
       cash_collateral: true,
       non_cash_collateral: true,
       live_balance: true,
+      opening_balance: true,
     },
     orderBy: { date: "desc" },
   });
@@ -58,6 +64,7 @@ export async function loadMarginCollaterals(qcodes: string[]): Promise<Map<strin
       liquidCollateral: row.cash_collateral ? Number(row.cash_collateral) : 0,
       stockCollateral: row.non_cash_collateral ? Number(row.non_cash_collateral) : 0,
       liveBalance: row.live_balance ? Number(row.live_balance) : 0,
+      openingBalance: row.opening_balance ? Number(row.opening_balance) : 0,
     });
   }
   return map;
