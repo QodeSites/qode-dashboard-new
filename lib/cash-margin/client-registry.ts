@@ -102,22 +102,25 @@ export interface ClientRegistryRow {
   isXts: boolean;
   accountValue: number;
   cash: number | null;
-  /** (Cash + Liquidcase) / AV * 100 -- NOT `cash / AV` (see Cash column vs Cash % in the plan doc).
-   *  This is the Excel "Cash Component (% of Account Value)" column. Null for XTS. */
-  cashPct: number | null;
   /** Cash + Liquidcase, in rupees -- the Excel "Cash Component (₹)" column
-   *  (this is `cash` and `cashPct`'s numerator; `computeConsolidatedExcessCash`'s
+   *  (this is `cash` and `cashComponentPct`'s numerator; `computeConsolidatedExcessCash`'s
    *  `currentCash`, surfaced here since the row previously discarded it). Null for XTS. */
   cashComponentValue: number | null;
+  /** `cashComponentValue / AV * 100` -- (Cash + Liquidcase) / AV, NOT
+   *  `cash / AV` (see Cash column vs Cash % in the plan doc; also distinct
+   *  from alerts.ts's own "cash_pct" metric, which IS cash alone -- don't
+   *  confuse the two). This is the Excel "Cash Component (% of Account
+   *  Value)" column. Null for XTS. */
+  cashComponentPct: number | null;
   /** `cash / AV * 100` -- cash ALONE, excluding Liquidcase. The Excel
-   *  "Cash (% of Account Value)" column, distinct from `cashPct` above. Null for XTS. */
+   *  "Cash (% of Account Value)" column, distinct from `cashComponentPct` above. Null for XTS. */
   cashOnlyPct: number | null;
   /** `cashOnlyPct - resolveRatioConfig(...).cashPct * 100` -- actual cash-only
    *  % vs. the DB-resolved Cash sub-target (Derivative Book's `cash_pct`
    *  column, same field app/lib/internal-utils.ts's Withdrawal feature reads
    *  as `split.cash_pct`). The Excel "Cash Drift (%)" column. Null for XTS. */
   cashDriftPct: number | null;
-  /** `cashPct - idealCashPct` (both percent-scale), where `idealCashPct` is
+  /** `cashComponentPct - idealCashPct` (both percent-scale), where `idealCashPct` is
    *  `computeConsolidatedExcessCash`'s derived `1 - idealHoldingsPct` -- same
    *  formula as internal-utils.ts's `cash_component_drift`. The Excel
    *  "Cash Component Drift from Ideal (%)" column. Null for XTS. */
@@ -290,8 +293,8 @@ export async function buildClientRegistry(
         isXts: true,
         accountValue,
         cash: null,
-        cashPct: null,
         cashComponentValue: null,
+        cashComponentPct: null,
         cashOnlyPct: null,
         cashDriftPct: null,
         cashComponentDriftPct: null,
@@ -316,14 +319,16 @@ export async function buildClientRegistry(
     const consolidatedSummary: ConsolidatedSummary = summary;
     const excessCashResult = computeConsolidatedExcessCash(consolidatedSummary, ratioConfig.equityPct);
 
-    const cashPct = accountValue ? (excessCashResult.currentCash / accountValue) * 100 : 0;
+    // (Cash + Liquidcase) / AV -- NOT cash alone (see cashOnlyPct below), and
+    // NOT the same as alerts.ts's own "cash_pct" metric (which is cash alone).
+    const cashComponentPct = accountValue ? (excessCashResult.currentCash / accountValue) * 100 : 0;
     const holdingsPct = accountValue ? (excessCashResult.holdingsValue / accountValue) * 100 : 0;
     const excessCashPct = accountValue ? (excessCashResult.excessCash / accountValue) * 100 : 0;
 
     const cashOnlyPct = accountValue ? (summary.cash / accountValue) * 100 : 0;
     const cashDriftPct = cashOnlyPct - ratioConfig.cashPct * 100;
     const holdingsDriftPct = holdingsPct - excessCashResult.idealHoldingsPct;
-    const cashComponentDriftPct = cashPct - excessCashResult.idealCashPct;
+    const cashComponentDriftPct = cashComponentPct - excessCashResult.idealCashPct;
 
     // Drawdown % reads the For Profit Tag, not the exposure tag used
     // everywhere else in this file -- matches Python's dedicated
@@ -373,8 +378,8 @@ export async function buildClientRegistry(
       isXts: false,
       accountValue,
       cash: summary.cash,
-      cashPct,
       cashComponentValue: excessCashResult.currentCash,
+      cashComponentPct,
       cashOnlyPct,
       cashDriftPct,
       cashComponentDriftPct,
