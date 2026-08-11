@@ -26,9 +26,11 @@
  *    that mandate's own AccountSummary + its resolved equityPct (same ratio
  *    System Breakup's Equity Book uses) -- NOT the no-prefix "whole client"
  *    rollup computeAccountSummaryCombined uses; this is a per-mandate row.
- *  - Current Drawdown %: mastersheet.ts's getDrawdown(), read off the same
- *    account-value tag row (confirmed via read-only DB spot-check that
- *    `drawdown` varies per system_tag, not one value per qcode/date).
+ *  - Current Drawdown %: mastersheet.ts's getDrawdown(), read off the For
+ *    Profit Tag row (profit_tag_suffix), NOT the exposure tag used
+ *    everywhere else in this file -- matches Python's dedicated
+ *    drawdown_lookup_report.py and this app's own internal-utils.ts. See the
+ *    fetch site below for the full rationale.
  *  - Alert Status: alerts.ts's buildAlertRows(), grouped by qcode, worst-of.
  *  - Debt-Equity-Hybrid Ratio: debt-equity.ts's computeDebtEquityForStrategy().
  *
@@ -233,8 +235,12 @@ export async function buildClientRegistry(
   // Summary Banner intentionally cover EVERY active mandate (see SummaryBanner's
   // field docs) -- matches app/lib/internal-utils.ts's computePortfolioSummary(),
   // which never excludes XTS either.
+  const referenceDate = asOfDate ?? new Date();
   const allActiveMandates = (await prisma.client_strategy_configs.findMany({
-    where: { OR: [{ effective_to: null }, { effective_to: { gte: new Date() } }] },
+    where: {
+      effective_from: { lte: referenceDate },
+      OR: [{ effective_to: null }, { effective_to: { gte: referenceDate } }],
+    },
     select: {
       qcode: true,
       account_name: true,

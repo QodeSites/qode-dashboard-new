@@ -332,8 +332,13 @@ export async function buildMarginRequirements(
   niftyLtpOverride?: number,
   globalOverrides?: { niftyLotSize?: number; avgPricePerQty?: number },
 ): Promise<MarginRequirementsResult | null> {
+  const referenceDate = asOfDate ?? new Date();
   const mandates = await prisma.client_strategy_configs.findMany({
-    where: { qcode, OR: [{ effective_to: null }, { effective_to: { gte: new Date() } }] },
+    where: {
+      qcode,
+      effective_from: { lte: referenceDate },
+      OR: [{ effective_to: null }, { effective_to: { gte: referenceDate } }],
+    },
     select: {
       qcode: true,
       account_name: true,

@@ -54,10 +54,28 @@ interface ActiveMandate {
   non_cash_collateral_pct_warning: unknown;
 }
 
-/** Currently-active, non-XTS mandates from client_strategy_configs. */
-async function loadActiveMandates(): Promise<ActiveMandate[]> {
+/**
+ * Clients excluded from cash alerts by explicit request, not derivable from
+ * exposure_tag_suffix like XTS mandates are -- Akash's direction 2026-08-11.
+ * Hardcoded (not a DB column) per instruction to keep this request-scoped
+ * fix out of the schema.
+ */
+const CASH_ALERT_EXCLUDED_QCODES = new Set<string>([
+  "QAC00127", // Priyanka Mittle
+]);
+
+/**
+ * Currently-active, non-XTS mandates from client_strategy_configs, as of
+ * `referenceDate` (defaults to now). Checks both effective_from and
+ * effective_to so a mandate that starts in the future -- or an asOfDate that
+ * falls before a mandate's start -- doesn't get pulled in.
+ */
+async function loadActiveMandates(referenceDate: Date = new Date()): Promise<ActiveMandate[]> {
   const rows = await prisma.client_strategy_configs.findMany({
-    where: { OR: [{ effective_to: null }, { effective_to: { gte: new Date() } }] },
+    where: {
+      effective_from: { lte: referenceDate },
+      OR: [{ effective_to: null }, { effective_to: { gte: referenceDate } }],
+    },
     select: {
       qcode: true,
       account_name: true,
@@ -73,7 +91,7 @@ async function loadActiveMandates(): Promise<ActiveMandate[]> {
     },
     orderBy: [{ account_name: "asc" }, { strategy: "asc" }],
   });
-  return rows.filter((r) => !isXtsMandate(r.exposure_tag_suffix));
+  return rows.filter((r) => !isXtsMandate(r.exposure_tag_suffix) && !CASH_ALERT_EXCLUDED_QCODES.has(r.qcode));
 }
 
 function pct(part: number, whole: number): number | null {
@@ -90,7 +108,7 @@ function pct(part: number, whole: number): number | null {
  *   managed_accounts_analysis Excels -- see loadMastersheet(). Remove once done.
  */
 export async function buildAlertRows(overrides?: StrategyOverrides, asOfDate?: Date): Promise<AlertRow[]> {
-  const mandates = await loadActiveMandates();
+  const mandates = await loadActiveMandates(asOfDate ?? new Date());
 
   const strategyNames = Array.from(new Set(mandates.map((m) => m.strategy)));
   const defaults = await prisma.strategy_defaults.findMany({
