@@ -72,8 +72,8 @@ export interface SystemBreakupScope {
  * Build Equity Book + Derivative Book for one active strategy.
  *
  * @param hasEquitySplit - true when the resolved config has gold_pct set
- *   (client override OR strategy_defaults fallback). Same gate as Krish's
- *   `has_equity_split = split.gold_pct != null` (internal-utils.ts:2153).
+ *   (client override OR strategy_defaults fallback). Same gate as
+ *   internal-utils.ts:2153's `has_equity_split = split.gold_pct != null`.
  * @param ratios - equityPct/cashPct/goldPct/momentumPct/lowvolPct resolved
  *   by the caller (lib/cash-margin/config.ts's resolveRatioConfig, from
  *   client_strategy_configs ?? strategy_defaults ?? POST-body override).

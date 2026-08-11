@@ -56,9 +56,8 @@ interface ActiveMandate {
 
 /**
  * Clients excluded from cash alerts by explicit request, not derivable from
- * exposure_tag_suffix like XTS mandates are -- Akash's direction 2026-08-11.
- * Hardcoded (not a DB column) per instruction to keep this request-scoped
- * fix out of the schema.
+ * exposure_tag_suffix like XTS mandates are. Hardcoded rather than a DB
+ * column since this is a one-off exclusion list, not a general config field.
  */
 const CASH_ALERT_EXCLUDED_QCODES = new Set<string>([
   "QAC00127", // Priyanka Mittle

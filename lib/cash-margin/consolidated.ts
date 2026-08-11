@@ -128,8 +128,8 @@ export type CombinedCashStatus = "HEALTHY" | "ACTION_REQUIRED" | "WARNING" | "CR
  *  - "Critical" is a tier with no equivalent anywhere else in this codebase
  * Neither was "fixed" here -- this reproduces the sheet's own formula
  * exactly, on the theory that a faithful port is more useful than a
- * silently "corrected" guess. Revisit if Akash confirms the sheet's
- * ordering is itself a labeling bug.
+ * silently "corrected" guess. Revisit if the sheet's ordering turns out to
+ * be a labeling bug rather than intentional.
  */
 const COMBINED_CASH_STATUS_BANDS = { healthy: 0.17, actionRequired: 0.15, warning: 0.13 } as const;
 

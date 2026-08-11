@@ -9,9 +9,9 @@
  * compute_exposure_share) and margin_config.py (STRATEGY_MARGIN_CONFIG,
  * PUT_PROTECTION_STRATEGIES, NIFTY_LOT_SIZE, PUT_PROTECTION_AVG_PRICE_PER_QTY).
  *
- * Deliberate divergences from Python (confirmed with Akash -- see
+ * Deliberate divergences from Python -- see
  * docs/page2-cell-by-cell-calculations.md Part B and
- * docs/assumptions-and-changes-from-krish-logic.md):
+ * docs/assumptions-and-changes-from-krish-logic.md:
  *  - long_opt_pct / psar_multiplier / psar_leverage / drawdown_margin_pct
  *    come from client_strategy_configs ?? strategy_defaults (DB-driven),
  *    not Python's hardcoded STRATEGY_MARGIN_CONFIG / CLIENT_OVERRIDES dicts.
@@ -29,17 +29,16 @@
  *    out to be a signed delta-like figure, not ATM * lot size -- it flips
  *    sign day to day for every qcode. Dropped in favor of niftyLtp, which is
  *    the real Python input this table was standing in for.)
- *  - NIFTY_LOT_SIZE and PUT_PROTECTION_AVG_PRICE_PER_QTY both now come from
- *    global_config (Akash added both rows 2026-07-29 --
- *    lib/cash-margin/global-config.ts's getNiftyLotSize()/
- *    getPutProtectionAvgPricePerQty()), no longer hardcoded TS literals.
+ *  - NIFTY_LOT_SIZE and PUT_PROTECTION_AVG_PRICE_PER_QTY both come from
+ *    global_config (lib/cash-margin/global-config.ts's getNiftyLotSize()/
+ *    getPutProtectionAvgPricePerQty()), not hardcoded TS literals.
  *    Algebraically NIFTY_LOT_SIZE still cancels out of putProtectionCash
  *    (contractValue already has a niftyLotSize factor), but it's read fresh
  *    per request for Python/DB parity. See
  *    docs/assumptions-and-changes-from-krish-logic.md §14b.
- *  - Available Cash comes from cm_margin_collateral.live_balance * exposure
- *    share, NOT the mastersheet "cash" residual Python uses -- confirmed
- *    against the pasted target table (D2 in the plan doc).
+ *  - Available Cash uses the mastersheet "cash" residual (compute_account_summary),
+ *    matching Python's own formula -- see computeRequiredCash below for the
+ *    exposure-share handling relative to cc/ncc.
  *  - Combined is a straight sum of each active strategy's Required line
  *    items and (already exposure-split) Available figures -- Python has no
  *    Combined view for Margin Requirements at all.
@@ -235,12 +234,12 @@ function computeRequiredLines(
     };
   } else {
     // Placeholder row so every strategy (incl. QYE++, which has no Put
-    // Protection config) shows a Put Protection line instead of omitting it
-    // -- Akash's direction 2026-08-10. Cash is a flat 0, not null: this
-    // strategy genuinely has zero Put Protection requirement, as opposed to
-    // "unavailable" (contractValue being null when niftyLtp isn't supplied,
-    // which stays its own separate case for strategies that DO have the
-    // config). Adds nothing to `required.cash`/Combined's Put Protection sum.
+    // Protection config) shows a Put Protection line instead of omitting it.
+    // Cash is a flat 0, not null: this strategy genuinely has zero Put
+    // Protection requirement, as opposed to "unavailable" (contractValue
+    // being null when niftyLtp isn't supplied, which stays its own separate
+    // case for strategies that DO have the config). Adds nothing to
+    // `required.cash`/Combined's Put Protection sum.
     lines.push({ system: "Put Protection", cashComponent: null, nonCashComponent: null, cash: 0 });
   }
 
