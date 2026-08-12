@@ -17,17 +17,27 @@ export const dynamic = "force-dynamic";
 
 const ICODE_PATTERN = /^QUS[0-9]+$/i;
 
-// Satidham (New, QUS00081) has no investment-summary report of its own —
-// it's linked to the old Satidham account (QUS0010) via "Scheme QAW++
-// QUS00081", so its report lookup uses QUS0010's file instead.
-const REPORT_ICODE_ALIAS: Record<string, string> = {
-  QUS00081: "QUS0010",
-};
+// ASSUMPTION (Akash, 2026-08-12): QUS0010 (Satidham-old) does not show an
+// Investment Summary at all for now. The real generated file on disk is
+// `Satidham_Industries_Invst_Summary_QUS00081.xlsx` — there is no QUS0010-
+// suffixed file (confirmed against data/reports/ and data/reports_backup/)
+// — and it's unresolved whether that report's underlying qcode (QAC00046,
+// same as QUS0010 per CLAUDE.md) is meant to represent QUS0010, QUS00081
+// (its own qcode is QAC00066 per CLAUDE.md), or both. Rather than guess
+// which identity that file belongs to, QUS0010 is deliberately excluded
+// here so it falls through to the Postgres-native branch below, which
+// already throws UnsupportedClientError for it (EXCLUDED_ICODES in
+// app/lib/investment-summary/index.ts) — same "Report not found"/
+// `exists: false` outcome as before, just for a documented reason instead
+// of a broken alias. QUS00081 now looks up its own file directly (no
+// alias needed, since the real file already matches its own icode).
+// Revisit once the QUS0010/QUS00081/Satidham report-identity question is
+// actually resolved — see doc 05.
 
-// Sarla & Satidham stay on the legacy Excel pipeline — explicitly out of
-// scope for the Postgres-native calculator (CLAUDE.md, docs/investment-summary-migration/04).
-// QUS00081 is included because it's aliased to QUS0010's report above.
-const LEGACY_XLSX_ICODES = new Set(["QUS0007", "QUS0010", "QUS00081"]);
+// Sarla stays on the legacy Excel pipeline — explicitly out of scope for
+// the Postgres-native calculator (CLAUDE.md, docs/investment-summary-migration/04).
+// QUS00081 also stays here (it has a real file of its own); QUS0010 does not.
+const LEGACY_XLSX_ICODES = new Set(["QUS0007", "QUS00081"]);
 
 // Admins review from reports_staging (falling back to live); clients see live.
 async function findReportByIcode(
@@ -88,11 +98,10 @@ export async function GET(req: NextRequest) {
       return new NextResponse("Invalid or missing icode", { status: 400 });
     }
 
-    const reportIcode = REPORT_ICODE_ALIAS[icode] ?? icode;
     const dirs = reportsDirsForAccess(isAdmin);
 
     if (LEGACY_XLSX_ICODES.has(icode)) {
-      const found = await findReportByIcode(reportIcode, dirs);
+      const found = await findReportByIcode(icode, dirs);
 
       // Data presence check — file must exist AND have a non-zero investment total
       if (searchParams.get("exists") === "true") {
@@ -126,7 +135,7 @@ export async function GET(req: NextRequest) {
       }
 
       const data = parseInvestmentXlsx(fileBuffer);
-      const strategyPdfAvailability = await findStrategyPdfs(reportIcode, dirs);
+      const strategyPdfAvailability = await findStrategyPdfs(icode, dirs);
 
       return NextResponse.json(
         { ...data, strategyPdfAvailability },
@@ -162,7 +171,7 @@ export async function GET(req: NextRequest) {
       throw err;
     }
 
-    const strategyPdfAvailability = await findStrategyPdfs(reportIcode, dirs);
+    const strategyPdfAvailability = await findStrategyPdfs(icode, dirs);
 
     return NextResponse.json(
       { ...data, strategyPdfAvailability },
