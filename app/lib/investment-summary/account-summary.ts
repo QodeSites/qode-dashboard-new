@@ -123,17 +123,27 @@ export async function calcHoldingsBifurcation(
 
   const holdingsTotal = Array.from(groups.values()).reduce((sum, v) => sum + v, 0);
 
+  // Percentages are of account_value, matching the real Python source
+  // (calculations.py's calc_holdings_bifurcation: `pct(val) = val /
+  // account_value * 100`, applied to both the breakdown rows and
+  // cash_liquid_case below) — NOT of holdingsTotal, which an earlier,
+  // pre-real-source reading of this module incorrectly assumed.
+  const accountValue = accountSummary.accountValue;
+  const pct = (v: number) => (accountValue === 0 ? 0 : (v / accountValue) * 100);
+
   const breakdown: HoldingsBreakdownEntry[] = Array.from(groups.entries()).map(([type, amount]) => ({
     type,
     amount,
-    pct: holdingsTotal === 0 ? 0 : (amount / holdingsTotal) * 100,
+    pct: pct(amount),
   }));
 
-  // Per the migration-plan task spec, percentages in this function's return
-  // value are relative to holdingsTotal (not accountValue) — matching the
-  // breakdown entries' pct above.
-  const cashLiquidCase = accountSummary.liquidCase;
-  const cashLiquidCasePct = holdingsTotal === 0 ? 0 : (cashLiquidCase / holdingsTotal) * 100;
+  // cash (short-fall/excess) + liquid-case funds, combined — matches
+  // Python's `cash_liquid = account_summary['cash'] + account_summary['liquid_case']`.
+  // Appended as its own "Cash & Liquid Case" row by report_builder.py in
+  // the real pipeline (not part of `breakdown`) — see toBifurcationRows()
+  // in strategy-summaries.ts for the TS equivalent of that append step.
+  const cashLiquidCase = accountSummary.cash + accountSummary.liquidCase;
+  const cashLiquidCasePct = pct(cashLiquidCase);
 
   const reconDiff = holdingsTotal - accountSummary.holdings;
 

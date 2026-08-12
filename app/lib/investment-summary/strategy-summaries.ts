@@ -104,8 +104,42 @@ function toAccountSummaryRows(a: accountSummary.AccountSummary): AccountSummaryR
   ];
 }
 
+// Standard categories every Holdings Bifurcation table should show, in
+// this fixed order, even when a client has zero in that category — the
+// removed legacy .xlsx parser (parse-investment-pdf.ts's
+// STANDARD_BIFURCATION_TYPES, deleted 2026-08-12) padded these the same
+// way; real Python's `combined.groupby("Debt/Equity")` silently drops
+// empty categories from the raw breakdown, so this padding has always
+// been a display-layer responsibility, not something Python's output
+// data itself guarantees. Restored here so a client with e.g. no Debt or
+// Hybrid holdings still shows "Debt — 0.00 —" rather than omitting the row.
+const STANDARD_BIFURCATION_TYPES = ["Equity", "Debt", "Hybrid"];
+
 function toBifurcationRows(b: accountSummary.HoldingsBifurcation): HoldingsBifurcationRow[] {
-  return b.breakdown.map((entry) => ({ type: entry.type, amount: entry.amount, percent: entry.pct }));
+  const byType = new Map(b.breakdown.map((entry) => [entry.type, entry]));
+
+  const standardRows: HoldingsBifurcationRow[] = STANDARD_BIFURCATION_TYPES.map((type) => {
+    const entry = byType.get(type);
+    return { type, amount: entry?.amount ?? 0, percent: entry?.pct ?? 0 };
+  });
+
+  // Any category that isn't one of the standard 3 (e.g. "Unclassified")
+  // is kept, appended after the standard rows in its original order.
+  const extraRows: HoldingsBifurcationRow[] = b.breakdown
+    .filter((entry) => !STANDARD_BIFURCATION_TYPES.includes(entry.type))
+    .map((entry) => ({ type: entry.type, amount: entry.amount, percent: entry.pct }));
+
+  // report_builder.py appends a "Cash & Liquid Case" row after the
+  // Debt/Equity breakdown rows (using data["cash_liquid_case"] /
+  // data["cash_liquid_case_pct"], computed separately in
+  // account-summary.ts's calcHoldingsBifurcation) — this was previously
+  // dropped entirely since only b.breakdown was mapped, which is why the
+  // "Cash & Liquid" category never appeared in the API response at all.
+  return [
+    ...standardRows,
+    ...extraRows,
+    { type: "Cash & Liquid Case", amount: b.cashLiquidCase, percent: b.cashLiquidCasePct },
+  ];
 }
 
 /** Full summary for ONE active strategy. */

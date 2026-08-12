@@ -83,7 +83,41 @@ export async function computeInvestmentSummary(
 
   const qcode = allStrategyRows[0].qcode;
   const clientName = allStrategyRows[0].clientName;
-  const activeStrategies = allStrategyRows.filter((r) => r.status === "Active").map((r) => r.strategy);
+
+  // Doc 05: real Python's report_builder.py names inactive-strategy sheets
+  // `f"Cash Inv {short} (Inactive)"` etc, and app/investment-summary/page.tsx
+  // (isInactiveStrategy / displayStrategyName) expects that exact " (Inactive)"
+  // suffix on entries in `strategies` — it's how the frontend both renders
+  // the "(Inactive)" badge on the Scheme dropdown AND decides which strategy
+  // is selected, so `perStrategy` must be keyed with the same suffixed
+  // string for inactive rows or `data.perStrategy[selectedStrategy]` misses.
+  // Previously `strategies` only listed Active rows, so inactive strategies
+  // (e.g. Dinesh Goel's QTF+) never appeared as a selectable scheme at all,
+  // even though calcPerStrategySummaries() already computed real data for
+  // them.
+  const strategies = allStrategyRows.map((r) =>
+    r.status === "Active" ? r.strategy : `${r.strategy} (Inactive)`,
+  );
+
+  // Port of main.py/report_builder.py's `_default_strategy`: real Python
+  // relabels blank-strategy holdings/transaction rows to the client's one
+  // strategy name, but ONLY when the client has ever had exactly one
+  // strategy (one currently-active strategy, no other stint, active or
+  // inactive, in its history) — `not multi_strategy and
+  // len(strategy_names) == 1` where multi_strategy = 2+ active strategies.
+  // Ambiguous cases (e.g. Ashok Jogani HUF: QAW+ inactive -> QAW++ active,
+  // 1 active but 2 distinct names ever) get no fallback — Python doesn't
+  // guess which historical strategy a blank row belongs to. Without this,
+  // single-strategy clients' blank-strategy rows (e.g. Sarla's 3
+  // historical MF transactions predating strategy tagging) stay blank and
+  // get silently dropped by the frontend's `QYE_STRATEGIES`-based filter,
+  // which only matches exact strategy names.
+  const activeStrategyNames = allStrategyRows.filter((r) => r.status === "Active").map((r) => r.strategy);
+  const distinctStrategyNamesEver = new Set(allStrategyRows.map((r) => r.strategy));
+  const defaultStrategy =
+    activeStrategyNames.length === 1 && distinctStrategyNamesEver.size === 1
+      ? activeStrategyNames[0]
+      : "";
 
   const eqExcludeIds = await identifyTransitionWashTrades(qcode, allStrategyRows);
 
@@ -97,8 +131,11 @@ export async function computeInvestmentSummary(
   ]);
 
   const perStrategy: Record<string, StrategyInvestmentData> = {};
-  for (const [strategy, summary] of Object.entries(perStrategyRaw)) {
-    perStrategy[strategy] = {
+  for (const row of allStrategyRows) {
+    const summary = perStrategyRaw[row.strategy];
+    if (!summary) continue;
+    const key = row.status === "Active" ? row.strategy : `${row.strategy} (Inactive)`;
+    perStrategy[key] = {
       amountInvested: summary.amountInvested,
       overviewCashSummary: summary.overviewCashSummary,
       cashInvestmentSummary: summary.cashInvestmentSummary,
@@ -128,14 +165,14 @@ export async function computeInvestmentSummary(
     name: t.symbol,
     capitalFlow: t.capitalFlow,
     date: t.date,
-    strategy: t.strategy ?? "",
+    strategy: t.strategy?.trim() || defaultStrategy,
     amount: t.amount,
   }));
   const mfTransactions = mfTransactionsRaw.map((t) => ({
     name: t.symbol,
     capitalFlow: t.capitalFlow,
     date: t.date,
-    strategy: t.strategy ?? "",
+    strategy: t.strategy?.trim() || defaultStrategy,
     amount: t.amount,
   }));
 
@@ -148,11 +185,35 @@ export async function computeInvestmentSummary(
       amount: row.amount,
     }));
 
-  const profitRedeployment = profitRedeploymentRows.map((row) => ({
-    strategy: row.strategy,
+  // Port of report_builder.py's write_profit_redeployment: active rows
+  // first (each labeled "Scheme {strategy}", fixed note text), then — only
+  // if any inactive rows exist — an "Inactive Strategies" header row
+  // (isHeader: true, matched by app/investment-summary/page.tsx's
+  // withSectionTotals()/section-splitting logic), then the inactive rows
+  // (same labeling), then a "Total Profits" row (isTotal: true). Previously
+  // this just mapped profitRedeploymentRows 1:1 in Master_Config.csv's
+  // row order (active/inactive interleaved, no "Scheme " prefix, no header
+  // row, no total row) — silently broke the frontend's Active/Inactive
+  // section split and per-strategy total computation for any client with
+  // an inactive strategy (e.g. Dinesh Goel's QTF+).
+  const activeProfitRows = profitRedeploymentRows.filter((r) => r.status === "Active");
+  const inactiveProfitRows = profitRedeploymentRows.filter((r) => r.status !== "Active");
+  const toRow = (row: (typeof profitRedeploymentRows)[number]) => ({
+    strategy: `Scheme ${row.strategy}`,
     profits: row.profits,
-    note: row.status === "Inactive" ? "Inactive" : "",
-  }));
+    note: "Profits have been redeployed within the portfolio.",
+  });
+  const totalProfits = profitRedeploymentRows.reduce((sum, r) => sum + r.profits, 0);
+  const profitRedeployment = [
+    ...activeProfitRows.map(toRow),
+    ...(inactiveProfitRows.length > 0
+      ? [
+          { strategy: "Inactive Strategies", profits: 0, note: "", isHeader: true },
+          ...inactiveProfitRows.map(toRow),
+        ]
+      : []),
+    { strategy: "Total Profits", profits: totalProfits, note: "", isTotal: true },
+  ];
 
   const now = new Date();
 
@@ -175,14 +236,14 @@ export async function computeInvestmentSummary(
       type: h.debtEquity ?? "",
       broker: h.broker ?? "",
       exchange: h.exchange ?? "",
-      strategy: h.strategy ?? "",
+      strategy: h.strategy?.trim() || defaultStrategy,
       amount: h.valueAsOfToday ?? 0,
     })),
     currentMfHoldings: mfHoldings.map((h) => ({
       name: h.symbol ?? "",
       type: h.debtEquity ?? "",
       broker: h.broker ?? "",
-      strategy: h.strategy ?? "",
+      strategy: h.strategy?.trim() || defaultStrategy,
       amount: h.valueAsOfToday ?? 0,
     })),
     // Historical/realized holdings confirmed dead & unused (doc 03) — not ported.
@@ -193,7 +254,7 @@ export async function computeInvestmentSummary(
     cashTransactions,
     mfTransactions,
 
-    strategies: activeStrategies,
+    strategies,
     perStrategy,
   };
 }
