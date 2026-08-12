@@ -2441,8 +2441,8 @@ function computeBalancedQye(
 
   const sleeves = [
     buildWithdrawalSleeve(
-      "Mutual Funds",
-      row.mutual_funds,
+      "Holdings",
+      row.holdings,
       newHoldings,
       newAccountValue,
       "sell_buy",
@@ -2551,8 +2551,8 @@ function computeHoldingsFrozenQye(
 
   const sleeves = [
     buildWithdrawalSleeve(
-      "Mutual Funds",
-      row.mutual_funds,
+      "Holdings",
+      row.holdings,
       row.holdings,
       newAccountValue,
       "sell_buy",
@@ -2638,8 +2638,8 @@ function computeCashFrozenQye(
 
   const sleeves = [
     buildWithdrawalSleeve(
-      "Mutual Funds",
-      row.mutual_funds,
+      "Holdings",
+      row.holdings,
       newHoldings,
       newAccountValue,
       "sell_buy",
@@ -3247,7 +3247,7 @@ async function computeQyeDeploy(
   );
 
   const holdingsSleeve: DeploySleeve = {
-    particular: "Mutual Funds",
+    particular: "Holdings",
     target_pct: equity_pct,
     target_value: round(holdingsValue, 2)!,
     actual_value: round(holdingsValue, 2)!, // no rounding involved for this sleeve — no LTP/quantity constraint
@@ -3515,11 +3515,11 @@ function computeGapSplitQye(
   amountToAdd: number,
 ): { new_account_value: number; sleeves: GapDeploymentSleeve[] } {
   const holdingsSleeve: GapDeploymentSleeve = {
-    particular: "Mutual Funds",
-    current_value: round(row.mutual_funds, 2)!,
+    particular: "Holdings",
+    current_value: round(row.holdings, 2)!,
     addition_target: round(amountToAdd, 2)!,
     addition_actual: round(amountToAdd, 2)!,
-    new_value: round(row.mutual_funds + amountToAdd, 2)!,
+    new_value: round(row.holdings + amountToAdd, 2)!,
     ltp: null,
     quantity: null,
   };
@@ -3676,11 +3676,11 @@ async function computeExcessCashSplitQye(
   const ltps = await fetchLtps([ETF_SYMBOLS.liquidcase]);
 
   const holdingsSleeve: GapDeploymentSleeve = {
-    particular: "Mutual Funds",
-    current_value: round(row.mutual_funds, 2)!,
+    particular: "Holdings",
+    current_value: round(row.holdings, 2)!,
     addition_target: round(amountDeployed, 2)!,
     addition_actual: round(amountDeployed, 2)!,
-    new_value: round(row.mutual_funds + amountDeployed, 2)!,
+    new_value: round(row.holdings + amountDeployed, 2)!,
     ltp: null,
     quantity: null,
   };
@@ -3851,11 +3851,11 @@ async function computeSpecificDeploymentQye(
     derivBookAmount * (targets.cash_pct / (targets.lc_pct + targets.cash_pct));
 
   const holdingsSleeve: GapDeploymentSleeve = {
-    particular: "Mutual Funds",
-    current_value: round(row.mutual_funds, 2)!,
+    particular: "Holdings",
+    current_value: round(row.holdings, 2)!,
     addition_target: round(eqBookAmount, 2)!,
     addition_actual: round(eqBookAmount, 2)!,
-    new_value: round(row.mutual_funds + eqBookAmount, 2)!,
+    new_value: round(row.holdings + eqBookAmount, 2)!,
     ltp: null,
     quantity: null,
   };
@@ -3980,6 +3980,8 @@ export interface AdditionalHoldingsRequiredResult {
   undeployed_stock_value: number | null;
   stock_deployed: number | null;
   remaining_gap_after_stock: number | null;
+  partial_new_account_value: number | null;
+  partial_sleeves: GapDeploymentSleeve[] | null;
 }
 
 export interface SpecificDeploymentResult {
@@ -4099,6 +4101,8 @@ async function computeRealClientDeploy(
       undeployed_stock_value: null,
       stock_deployed: null,
       remaining_gap_after_stock: null,
+      partial_new_account_value: null,
+      partial_sleeves: null,
     };
   } else {
     // only Scenario 5's fields clamp at 0; the split below shows the real signed reduction
@@ -4110,6 +4114,7 @@ async function computeRealClientDeploy(
     );
     const stockDeployed = gap <= 0 ? 0 : Math.min(undeployedStockValue, gap);
     const remainingGap = gap - stockDeployed;
+    const partialSplit = computeGapSplitQye(pnlRow, stockDeployed);
     additional_holdings_required = {
       gap: round(gap, 2)!,
       ratio_type: null,
@@ -4118,6 +4123,8 @@ async function computeRealClientDeploy(
       undeployed_stock_value: round(undeployedStockValue, 2)!,
       stock_deployed: round(stockDeployed, 2)!,
       remaining_gap_after_stock: round(remainingGap, 2)!,
+      partial_new_account_value: partialSplit.new_account_value,
+      partial_sleeves: partialSplit.sleeves,
     };
   }
 
