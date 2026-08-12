@@ -40,7 +40,17 @@ function buildCandidates(
   if (strategyPrefix) {
     candidates.push(`${strategyPrefix}${baseTag}`);
     for (const alias of aliases) candidates.push(`${strategyPrefix}${alias}`);
-    if (allowUnprefixedFallback) {
+    // Python's resolve_tag_alias (calculations.py:126-143) only ever adds the
+    // unprefixed fallback when the tag being resolved is itself one of
+    // KNOWN_TAG_ALIASES' canonical names (its `prefix` detection is derived
+    // from `base_tag.endswith(canonical)`, which is only true for
+    // Liquidbees/Mutual Funds) — every other tag (ZTP, Equity Stock Holdings,
+    // Bond, Liquidcase, Misc PnL...) never gets an unprefixed fallback at
+    // all, regardless of allowUnprefixedFallback. `aliases.length > 0` here
+    // is the exact TS equivalent of that gate, since baseTag is already
+    // separated from strategyPrefix (unlike Python's single concatenated
+    // string) — `baseTag in KNOWN_TAG_ALIASES` is the same condition.
+    if (allowUnprefixedFallback && aliases.length > 0) {
       candidates.push(baseTag);
       for (const alias of aliases) candidates.push(alias);
     }
@@ -111,6 +121,32 @@ export async function resolveTagAlias(
 ): Promise<ResolvedTag> {
   const { tag, candidatesTried, matchedNonZero } = await resolve(qcode, baseTag, "latestPortfolioValue", opts);
   return { tag, candidatesTried, matchedNonZero };
+}
+
+/**
+ * Port of main.py's `_check_missing_tags` (~line 98-108): for a client's
+ * qcode, which of system_tags.yaml's BASE (unprefixed) tag values have NO
+ * rows at all in the Mastersheet — "bond_stock_holdings" and "liquidbees"
+ * are exempt (main.py's `OPTIONAL_TAGS`), since plenty of real clients
+ * legitimately never hold bonds or Liquidbees. Returns the missing tag
+ * VALUES (e.g. "Bond Stock Holdings"), not the base_tags.ts keys, matching
+ * Python's return shape (`missing.append(tag_val)`).
+ */
+const OPTIONAL_TAG_KEYS: (keyof BaseSystemTags)[] = ["bondStockHoldings", "liquidbees"];
+
+export async function checkMissingSystemTags(
+  qcode: string,
+  baseTags: BaseSystemTags,
+  asOfDate?: Date,
+): Promise<string[]> {
+  const existingTags = await mastersheet.getDistinctTags(qcode, asOfDate);
+  const missing: string[] = [];
+  for (const key of Object.keys(baseTags) as (keyof BaseSystemTags)[]) {
+    if (OPTIONAL_TAG_KEYS.includes(key)) continue;
+    const tagValue = baseTags[key];
+    if (!existingTags.has(tagValue)) missing.push(tagValue);
+  }
+  return missing;
 }
 
 /** Convenience: resolve every base tag in system_tags.yaml at once for a given strategy prefix. */

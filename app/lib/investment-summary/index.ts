@@ -22,13 +22,15 @@
  * post-hoc confirmation pass rather than a gate. If a fresh report later
  * surfaces a material mismatch, re-add "QUS0007" here.
  */
-import { getClientConfig } from "./config";
+import { getClientConfig, getBaseTags } from "./config";
 import { identifyTransitionWashTrades, isFullCashStrategy } from "./tradebook";
 import { calcPerStrategySummaries, calcCombinedSummary } from "./strategy-summaries";
 import { calcProfitRedeployment } from "./profit-redeployment";
 import { getCurrentEquityHoldings, getCurrentMfHoldings } from "./holdings";
 import { calcEquityTransactions, calcMfTransactions } from "./tradebook";
 import { loadCashTransactions } from "./cash-inputs";
+import { checkMissingSystemTags } from "./tags";
+import { calcValidationSummary } from "./validation";
 import type { MultiStrategyInvestmentData, StrategyInvestmentData } from "./types";
 
 /** Out of scope per doc 04 — Satidham-old (QUS0010) stays on app/lib/sarla-utils.ts permanently (doc 05 Q14 — its qcode has zero rows in every Postgres table the calculator reads). */
@@ -121,14 +123,16 @@ export async function computeInvestmentSummary(
 
   const eqExcludeIds = await identifyTransitionWashTrades(qcode, allStrategyRows);
 
-  const [perStrategyRaw, combined, profitRedeploymentRows, eqHoldings, mfHoldings, cashTxns] = await Promise.all([
-    calcPerStrategySummaries(qcode, clientName, allStrategyRows, eqExcludeIds, asOfDate),
-    calcCombinedSummary(qcode, clientName, allStrategyRows, eqExcludeIds, asOfDate),
-    calcProfitRedeployment(qcode, allStrategyRows, asOfDate),
-    getCurrentEquityHoldings(qcode, undefined, asOfDate),
-    getCurrentMfHoldings(qcode, undefined, asOfDate),
-    loadCashTransactions(),
-  ]);
+  const [perStrategyRaw, combined, profitRedeploymentRows, eqHoldings, mfHoldings, cashTxns, missingSystemTags] =
+    await Promise.all([
+      calcPerStrategySummaries(qcode, clientName, allStrategyRows, eqExcludeIds, asOfDate),
+      calcCombinedSummary(qcode, clientName, allStrategyRows, eqExcludeIds, asOfDate),
+      calcProfitRedeployment(qcode, allStrategyRows, asOfDate),
+      getCurrentEquityHoldings(qcode, undefined, asOfDate),
+      getCurrentMfHoldings(qcode, undefined, asOfDate),
+      loadCashTransactions(),
+      getBaseTags().then((baseTags) => checkMissingSystemTags(qcode, baseTags, asOfDate)),
+    ]);
 
   const perStrategy: Record<string, StrategyInvestmentData> = {};
   for (const row of allStrategyRows) {
@@ -217,12 +221,24 @@ export async function computeInvestmentSummary(
 
   const now = new Date();
 
+  // Port of main.py's validation step (calc_validation_summary), run against
+  // the COMBINED summary — matches Python's `validation_overview`/
+  // `validation_inv`/`validation_acct` always being the combined/single-
+  // strategy view, never a per-strategy one (main.py ~333-335, ~377-379).
+  // `missingInputFiles` stays permanently empty — that check tracks failed
+  // Excel-sheet downloads from the old file-fetching pipeline
+  // (server_drive_fetcher.py), a step that doesn't exist in this
+  // Postgres-native path at all. `missingSystemTags` is real (checkMissingSystemTags,
+  // ported from main.py's _check_missing_tags).
+  const validationChecks = calcValidationSummary(combined, [], missingSystemTags);
+
   return {
     clientName,
     generatedDate: now.toISOString().slice(0, 10),
     dataAsOfDate: (asOfDate ?? now).toISOString().slice(0, 10),
 
     amountInvested: combined.amountInvested,
+    validationChecks,
     overviewCashSummary: combined.overviewCashSummary,
     currentAccountSummary: combined.currentAccountSummary,
     holdingsBifurcation: combined.holdingsBifurcation,

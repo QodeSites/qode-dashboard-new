@@ -21,6 +21,19 @@ export interface InvestmentSummaryData {
   // Investment Summary sheet
   amountInvested: { holdings: number; cash: number; total: number };
 
+  // 5 reconciliation checks (port of calc_validation_summary, doc 02) —
+  // optional since only the Postgres-native calculator populates it.
+  // "Missing Input Files" always PASSes: that check tracks failed Excel-
+  // sheet downloads from the old file-fetching pipeline, a step that
+  // doesn't exist in this Postgres-native path. "Missing System Tags" is
+  // real (see index.ts's checkMissingSystemTags / tags.ts).
+  validationChecks?: Array<{
+    checkName: string;
+    value: number;
+    status: "PASS" | "FAIL";
+    remarks: string;
+  }>;
+
   // Overview Cash Summary sheet (may be absent)
   overviewCashSummary: {
     rows: Array<{ label: string; amount: number }>;

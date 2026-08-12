@@ -320,6 +320,39 @@ function writeCashTransactionsSheet(
   autoColWidths(ws);
 }
 
+/**
+ * Port of report_builder.py's write_validation_summary (~line 426-444) —
+ * always the last sheet before optional debug sheets (build_workbook
+ * ~653-654). FAIL rows get red bold Status text, matching Python's
+ * `Font(name="Arial", color="FF0000", bold=True, size=10)`.
+ */
+function writeValidationSummarySheet(
+  ws: ExcelJS.Worksheet,
+  checks: NonNullable<MultiStrategyInvestmentData["validationChecks"]>,
+  clientName: string,
+  dataAsOfDate: string | null,
+): void {
+  titleRow(ws, `Validation Summary — ${clientName}`, 4);
+  ["Check Name", "Value", "Status", "Remarks"].forEach((h, i) =>
+    headerCell(ws.getRow(2).getCell(i + 1), h),
+  );
+  checks.forEach((chk, i) => {
+    const r = 3 + i;
+    bodyCell(ws.getRow(r).getCell(1), chk.checkName);
+    bodyCell(ws.getRow(r).getCell(2), String(chk.value));
+    const statusCell = ws.getRow(r).getCell(3);
+    bodyCell(statusCell, chk.status);
+    if (chk.status === "FAIL") {
+      statusCell.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFF0000" } };
+    }
+    bodyCell(ws.getRow(r).getCell(4), chk.remarks ?? "");
+  });
+  if (dataAsOfDate) {
+    ws.getRow(3 + checks.length + 1).getCell(1).value = `Data as of: ${dataAsOfDate}`;
+  }
+  autoColWidths(ws);
+}
+
 // ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
@@ -435,6 +468,13 @@ export function buildInvestmentSummaryWorkbook(data: MultiStrategyInvestmentData
   writeTransactionsSheet(addSheet("MF Transactions"), "MF Transactions", data.mfTransactions);
   writeTransactionsSheet(addSheet("Equity Transactions"), "Equity Transactions", data.equityTransactions);
   writeCashTransactionsSheet(addSheet("Cash Transactions"), data.cashTransactions);
+
+  writeValidationSummarySheet(
+    addSheet("Validation Summary"),
+    data.validationChecks ?? [],
+    data.clientName,
+    data.dataAsOfDate,
+  );
 
   return wb;
 }

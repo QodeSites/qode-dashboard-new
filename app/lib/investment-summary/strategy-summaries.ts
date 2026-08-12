@@ -1,11 +1,10 @@
 /**
  * Port of calculations.py's calc_per_strategy_summaries / calc_combined_summaries
- * / calc_investment_summary (doc 02, doc 04 "strategy-summaries.ts") — the
- * assembly layer that composes account-summary.ts, overview-cash.ts,
- * tradebook.ts, and cash-inputs.ts into one strategy's (or the combined
- * "Total Portfolio"'s) full numbers.
+ * / calc_investment_summary (doc 04 "strategy-summaries.ts") — the assembly
+ * layer that composes account-summary.ts, overview-cash.ts, tradebook.ts,
+ * and cash-inputs.ts into one strategy's (or the combined "Total
+ * Portfolio"'s) full numbers.
  *
- * Per doc 02:
  *  - Active strategies get the FULL set (account summary, overview cash,
  *    cash/holdings investment summary) — calc_per_strategy_summaries runs
  *    with `strategyPrefix = "${strategy} "`, `allowUnprefixedFallback: false`.
@@ -16,21 +15,54 @@
  *    UNPREFIXED tags (no strategyPrefix), overview cash summary sums
  *    per-active-strategy fields additively.
  *
- * COMBINED OVERVIEW-CASH NOTE (relates to doc 05 Q11): summing each
- * per-active-strategy `OverviewCashSummary` naively would double-count
- * `inactiveRealised` once per active strategy for clients with 2+
- * simultaneously active strategies (rare but real, e.g. Ashwin Agarwal:
- * QYE+++QAW++ both active). This module sums `adjustmentItems` and
- * `totalUnrealised` additively across active strategies (each strategy's
- * own contribution), but adds `inactiveRealised` exactly ONCE regardless of
- * how many active strategies exist — the only construction that avoids
- * double-counting no matter how doc 05 Q11 is ultimately resolved.
+ * OVERVIEW-CASH SCOPE (confirmed 2026-08-13 against main.py ~line 248-335,
+ * calculations.py ~line 546-873 directly, superseding an earlier "client-wide
+ * always" reading that only happened to be correct for single-active-strategy
+ * clients): Python actually branches on how many strategies are
+ * CONCURRENTLY ACTIVE for this client —
+ *  - Exactly 1 active strategy (main.py's `not multi_strategy` branch): the
+ *    ONE overview-cash call is scoped client-wide — adjustment items summed
+ *    over [active strategy] + every inactive NON-full-cash strategy, and
+ *    inactiveRealised summed over EVERY inactive row (full-cash or not).
+ *  - 2+ active strategies (main.py's multi-strategy branch): EACH active
+ *    strategy's own per-strategy sheet is scoped to ONLY that strategy's own
+ *    name (no cross-strategy leakage) with inactiveRealised = 0; the
+ *    inactive-strategy realised profit is instead added exactly ONCE at the
+ *    combined level (calculations.py's calc_combined_summaries, ~line
+ *    822-828), on top of the (already correctly narrow-scoped) sum of each
+ *    active strategy's own totalRealised.
+ * `overviewCashScope()` below picks the right scope per call; overview-cash.ts
+ * itself just sums whatever it's given (see its header comment).
  */
 import * as accountSummary from "./account-summary";
 import * as overviewCash from "./overview-cash";
 import * as tradebook from "./tradebook";
 import * as cashInputs from "./cash-inputs";
+import * as mastersheet from "./mastersheet";
 import type { ClientStrategyConfigRow } from "./types";
+
+/**
+ * Picks the overview-cash scope for `row` given the client's full strategy
+ * history — see this file's header comment for the exact Python semantics.
+ */
+function overviewCashScope(
+  row: ClientStrategyConfigRow,
+  allStrategyRows: ClientStrategyConfigRow[],
+): { adjustmentStrategyNames: string[]; inactiveRealisedRows: ClientStrategyConfigRow[] } {
+  const activeRows = allStrategyRows.filter((r) => r.status === "Active");
+  const inactiveRows = allStrategyRows.filter((r) => r.status === "Inactive");
+  const isMultiActive = activeRows.length >= 2;
+
+  if (isMultiActive) {
+    return { adjustmentStrategyNames: [row.strategy], inactiveRealisedRows: [] };
+  }
+
+  const inactiveNonFullCashRows = inactiveRows.filter((r) => !tradebook.isFullCashStrategy(r.strategy));
+  return {
+    adjustmentStrategyNames: [row.strategy, ...inactiveNonFullCashRows.map((r) => r.strategy)],
+    inactiveRealisedRows: inactiveRows,
+  };
+}
 
 export interface AmountInvested {
   holdings: number;
@@ -144,28 +176,62 @@ function toBifurcationRows(b: accountSummary.HoldingsBifurcation): HoldingsBifur
 
 /** Full summary for ONE active strategy. */
 async function calcActiveStrategySummary(ctx: StrategyContext): Promise<StrategySummary> {
-  const opts = { strategyPrefix: `${ctx.row.strategy} `, allowUnprefixedFallback: false, asOfDate: ctx.asOfDate };
   const fullCash = tradebook.isFullCashStrategy(ctx.row.strategy);
+  const isMultiActive = ctx.allStrategyRows.filter((r) => r.status === "Active").length >= 2;
 
+  // Every field below branches the same way, matching main.py's two real
+  // shapes (confirmed 2026-08-13 by reading main.py ~248-335 directly):
+  //  - Multi-active (2+ concurrently active strategies, main.py's `else`
+  //    branch / calc_per_strategy_summaries, calculations.py ~728-744):
+  //    strategy-FILTERED cash/holdings, strategy-PREFIXED account summary,
+  //    strategy-specific full_cash flag.
+  //  - Single-active (main.py's `not multi_strategy` branch, ~287-296): this
+  //    one strategy's sheet doubles as the client's only sheet, so
+  //    everything is read UNFILTERED/UNPREFIXED — cash_inv has no strategy
+  //    filter (only exclude_internal=True), holdings_inv has no strategy
+  //    filter and never passes full_cash (so it defaults False even if this
+  //    lone active strategy happens to be full-cash — matches
+  //    calc_holdings_investment_summary's own default, calculations.py:340),
+  //    and account_summary has no strategy_prefix (defaults to "", fully
+  //    unprefixed, with allow_unprefixed_fallback defaulting True).
   const [cashInv, eqPurchaseSold, holdingsInv, acctSummary] = await Promise.all([
-    cashInputs.calcCashInvestmentSummary(ctx.clientName, ctx.row.strategy, false),
-    cashInputs.calcEquityPurchaseSold(ctx.clientName, ctx.row.strategy),
-    tradebook.calcHoldingsInvestmentSummary(ctx.qcode, ctx.clientName, ctx.row.strategy, fullCash, ctx.eqExcludeIds, ctx.asOfDate),
-    accountSummary.calcCurrentAccountSummary(ctx.qcode, opts),
+    isMultiActive
+      ? cashInputs.calcCashInvestmentSummary(ctx.clientName, ctx.row.strategy, false)
+      : cashInputs.calcCashInvestmentSummary(ctx.clientName, undefined, true),
+    isMultiActive
+      ? cashInputs.calcEquityPurchaseSold(ctx.clientName, ctx.row.strategy)
+      : cashInputs.calcEquityPurchaseSold(ctx.clientName, undefined),
+    isMultiActive
+      ? tradebook.calcHoldingsInvestmentSummary(ctx.qcode, ctx.clientName, ctx.row.strategy, fullCash, ctx.eqExcludeIds, ctx.asOfDate)
+      : tradebook.calcHoldingsInvestmentSummary(ctx.qcode, ctx.clientName, undefined, false, ctx.eqExcludeIds, ctx.asOfDate),
+    isMultiActive
+      ? accountSummary.calcCurrentAccountSummary(ctx.qcode, {
+          strategyPrefix: `${ctx.row.strategy} `,
+          allowUnprefixedFallback: false,
+          asOfDate: ctx.asOfDate,
+        })
+      : accountSummary.calcCurrentAccountSummary(ctx.qcode, { asOfDate: ctx.asOfDate }),
   ]);
 
+  const scope = overviewCashScope(ctx.row, ctx.allStrategyRows);
   const overview = await overviewCash.calcOverviewCashSummary(
     ctx.qcode,
     ctx.row,
-    ctx.allStrategyRows,
+    scope.adjustmentStrategyNames,
+    scope.inactiveRealisedRows,
+    isMultiActive,
     cashInv.netCashBalance,
     eqPurchaseSold,
     { asOfDate: ctx.asOfDate },
   );
 
+  // Same branch as above: single-active clients read bifurcation unfiltered
+  // (main.py:296, calc_holdings_bifurcation(mf_unrealized, eq_unrealized,
+  // account_summary) — no strategy arg), multi-active clients filter by
+  // strategy (calculations.py:745).
   const bifurcation = await accountSummary.calcHoldingsBifurcation(
     ctx.qcode,
-    { strategy: ctx.row.strategy, asOfDate: ctx.asOfDate },
+    isMultiActive ? { strategy: ctx.row.strategy, asOfDate: ctx.asOfDate } : { asOfDate: ctx.asOfDate },
     acctSummary,
   );
 
@@ -259,63 +325,86 @@ export async function calcCombinedSummary(
   // dropped rows whose strategy tag doesn't match ANY config row (e.g.
   // Sarla's pre-strategy-tagging blank-strategy historical MF rows).
   //
-  // `fullCash` is INTENTIONALLY hardcoded false here, NOT
-  // `all(is_full_cash_strategy(r) for r in active strategies)` like the
-  // real Python source reads literally. Tried the literal reading first —
-  // it regressed Ashok Jogani HUF (QAC00110, active strategy QAW++, a
-  // full-cash name) from an exact real-report match (₹33,096,851.11) to
-  // zero. That real report's non-zero holdings prove the CURRENTLY-LIVE
-  // pipeline does not zero a combined view whose only active strategy
-  // happens to be full-cash — the doc 04 Phase 2 bug #2 fix (2026-08-11,
-  // also confirmed against this same client) already established this via
-  // real data before this session ever read the Python source directly.
-  // Real output takes precedence over a literal source-code reading when
-  // they conflict — the source may reflect a newer pipeline version than
-  // the report was generated with (same staleness pattern found for
-  // Sarla's report this same session). Revisit if a FRESH Ashok Jogani HUF
-  // report ever shows zero holdings — that would mean the literal
-  // full_cash reading is actually correct and this hardcode is wrong.
+  // RESOLVED 2026-08-13 (was previously hardcoded false unconditionally —
+  // see git history for that reasoning): the literal Python read
+  // `all(is_full_cash_strategy(r) for r in active strategies)` is genuinely
+  // only correct for the MULTI-active branch (calc_combined_summaries,
+  // calculations.py ~799-803). Ashok Jogani HUF (QAC00110), the client that
+  // regressed when this was first tried literally, is a SINGLE-active
+  // client (QAW+ inactive -> QAW++ active) — Python's single-active branch
+  // (main.py ~288-290) never passes full_cash at all, so it defaults False
+  // unconditionally regardless of the active strategy's own type. Applying
+  // the multi-active formula to a single-active client was the actual bug,
+  // not the formula itself. Now that isMultiActive is threaded through this
+  // whole file (see calcActiveStrategySummary), both branches can be
+  // correct at once: single-active clients keep the always-false default
+  // that matches Ashok Jogani HUF's real report, and genuinely multi-active
+  // clients (2+ concurrently active strategies) get the literal
+  // all-full-cash formula, matching calc_combined_summaries exactly.
+  const isMultiActive = activeRows.length >= 2;
+  const allFullCash = isMultiActive && activeRows.every((r) => tradebook.isFullCashStrategy(r.strategy));
   const holdingsInv = await tradebook.calcHoldingsInvestmentSummary(
     qcode,
     clientName,
     undefined,
-    false,
+    allFullCash,
     eqExcludeIds,
     asOfDate,
   );
 
-  // IMPORTANT: overviewCash.calcOverviewCashSummary's `adjustmentItems` and
-  // `inactiveRealised` fields are already CLIENT-WIDE sums (they depend only
-  // on `allStrategyRows`, not on which single `activeRow` was passed in —
-  // see overview-cash.ts's `qualifyingRows`/`inactiveRows` construction).
-  // Calling it once per active strategy and summing those two fields again
-  // here would multiply-count them by the number of active strategies. Only
-  // `totalUnrealised` (uses `activeRow.forProfitTag`) is genuinely
-  // strategy-specific and safe to sum additively. So: take
-  // adjustmentItems/inactiveRealised from the first call only, sum
-  // totalUnrealised across every active strategy's own call.
+  // Each active strategy is called with its own OWN-STRATEGY-ONLY overview-
+  // cash scope (overviewCashScope — see this file's header comment), exactly
+  // matching how Python computes each per-strategy sheet. Their totalRealised
+  // values (each already correctly scoped, no cross-strategy leakage) are
+  // summed directly; inactive-strategy realised profit is folded in exactly
+  // ONCE afterward for multi-active clients (never per-call, which would
+  // multiply-count it by the number of active strategies) — matches
+  // calc_combined_summaries' separate `inactive_realised` loop
+  // (calculations.py ~822-828). For a single-active-strategy client, that
+  // inactive-realised profit is already folded into the one overview call's
+  // own totalRealised via overviewCashScope's inactiveRealisedRows (matching
+  // main.py's `not multi_strategy` branch), so it must NOT be added again.
+  const inactiveRows = allStrategyRows.filter((r) => r.status === "Inactive");
+
   let adjustmentItems = 0;
   let totalUnrealised = 0;
-  let inactiveRealised = 0;
+  let sumOfPerStrategyTotalRealised = 0;
   let sumOfPerStrategyZerodhaCash = 0;
-  for (let i = 0; i < activeRows.length; i++) {
+  for (const row of activeRows) {
+    const scope = overviewCashScope(row, allStrategyRows);
+    // Multi-active: each strategy's OWN eq_purchase_sold (Python's
+    // per-strategy calc_eq_purchase_sold(misc_df, strategy=strat)).
+    // Single-active: the same unfiltered value already fetched above
+    // (Python's calc_eq_purchase_sold(misc_df), no strategy filter, for the
+    // lone "combined_data" sheet — main.py ~line 297).
+    const strategyEqPurchaseSold = isMultiActive
+      ? await cashInputs.calcEquityPurchaseSold(clientName, row.strategy)
+      : eqPurchaseSold;
+
     const overview = await overviewCash.calcOverviewCashSummary(
       qcode,
-      activeRows[i],
-      allStrategyRows,
+      row,
+      scope.adjustmentStrategyNames,
+      scope.inactiveRealisedRows,
+      isMultiActive,
       0, // cashInvestment folded in once below, not per-strategy here
-      0, // eqPurchaseSold folded in once below, not per-strategy here
+      strategyEqPurchaseSold,
       { asOfDate },
     );
     totalUnrealised += overview.totalUnrealised;
     sumOfPerStrategyZerodhaCash += overview.currentZerodhaCash;
-    if (i === 0) {
-      adjustmentItems = overview.adjustmentItems;
-      inactiveRealised = overview.inactiveRealised;
-    }
+    sumOfPerStrategyTotalRealised += overview.totalRealised;
+    adjustmentItems += overview.adjustmentItems;
   }
 
-  const totalRealised = adjustmentItems + eqPurchaseSold + inactiveRealised;
+  let inactiveRealised = 0;
+  if (isMultiActive) {
+    inactiveRealised = (
+      await Promise.all(inactiveRows.map((row) => mastersheet.sumPnl(qcode, row.forProfitTag, asOfDate)))
+    ).reduce((sum, v) => sum + v, 0);
+  }
+
+  const totalRealised = sumOfPerStrategyTotalRealised + inactiveRealised;
   const totalProfits = totalRealised + totalUnrealised;
   const totalCashGenerated = totalProfits + cashInv.netCashBalance;
 
