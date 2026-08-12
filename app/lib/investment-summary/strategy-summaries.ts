@@ -297,6 +297,7 @@ export async function calcCombinedSummary(
   let adjustmentItems = 0;
   let totalUnrealised = 0;
   let inactiveRealised = 0;
+  let sumOfPerStrategyZerodhaCash = 0;
   for (let i = 0; i < activeRows.length; i++) {
     const overview = await overviewCash.calcOverviewCashSummary(
       qcode,
@@ -307,6 +308,7 @@ export async function calcCombinedSummary(
       { asOfDate },
     );
     totalUnrealised += overview.totalUnrealised;
+    sumOfPerStrategyZerodhaCash += overview.currentZerodhaCash;
     if (i === 0) {
       adjustmentItems = overview.adjustmentItems;
       inactiveRealised = overview.inactiveRealised;
@@ -316,7 +318,20 @@ export async function calcCombinedSummary(
   const totalRealised = adjustmentItems + eqPurchaseSold + inactiveRealised;
   const totalProfits = totalRealised + totalUnrealised;
   const totalCashGenerated = totalProfits + cashInv.netCashBalance;
-  const currentZerodhaCash = acctSummary.accountValue;
+
+  // Port of calc_combined_summaries' zerodha-cash branch (calculations.py):
+  // for an all-non-full-cash (pure QYE) client, use the aggregate unprefixed
+  // ztp - esh - mf - bond (= acctSummary.accountValue - acctSummary.holdings,
+  // since acctSummary was computed with no strategy prefix above). Any
+  // full-cash strategy in the mix (or all full-cash) instead sums each
+  // active strategy's OWN current_value_of_cash_in_zerodha — using the raw
+  // unprefixed accountValue unconditionally (the previous bug here) over-
+  // counts a QYE client's Zerodha Cash by exactly its Equity+MF+Bond
+  // holdings, since it skips that subtraction entirely.
+  const allNonFullCash = activeRows.length > 0 && activeRows.every((r) => !tradebook.isFullCashStrategy(r.strategy));
+  const currentZerodhaCash = allNonFullCash
+    ? acctSummary.accountValue - acctSummary.holdings
+    : sumOfPerStrategyZerodhaCash;
   const check = currentZerodhaCash - totalCashGenerated;
 
   const combinedOverview: overviewCash.OverviewCashSummary = {

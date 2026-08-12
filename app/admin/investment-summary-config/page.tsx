@@ -54,8 +54,8 @@ export default function InvestmentSummaryConfigPage() {
   type DownloadState = "idle" | "loading" | "done" | "error";
   const [dlState, setDlState] = useState<DownloadState>("idle");
   const [dlError, setDlError] = useState("");
-  const [valState, setValState] = useState<DownloadState>("idle");
-  const [valError, setValError] = useState("");
+  const [cvState, setCvState] = useState<DownloadState>("idle");
+  const [cvError, setCvError] = useState("");
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/");
@@ -198,13 +198,13 @@ export default function InvestmentSummaryConfigPage() {
       setDlError,
     );
 
-  const handleValidationDownload = () =>
+  const handleCashVerificationDownload = () =>
     downloadFrom(
-      "/api/admin/investment-summary/validation-download",
-      "cash_validation",
+      "/api/admin/investment-summary/cash-verification-download",
+      "cash_verification",
       "xlsx",
-      setValState,
-      setValError,
+      setCvState,
+      setCvError,
     );
 
   if (status === "loading" || status === "unauthenticated") return null;
@@ -392,34 +392,35 @@ export default function InvestmentSummaryConfigPage() {
             </Button>
 
             <Button
-              onClick={handleValidationDownload}
-              disabled={valState === "loading" || noneSelected}
+              onClick={handleCashVerificationDownload}
+              disabled={cvState === "loading" || noneSelected}
               variant="outline"
               className="h-9 gap-1.5 text-sm disabled:opacity-60"
             >
-              {valState === "loading" ? (
+              {cvState === "loading" ? (
                 <><Loader2 className="h-4 w-4 animate-spin" /> Generating…</>
               ) : (
-                <><Download className="h-4 w-4" /> Cash Validation (consolidated)</>
+                <><Download className="h-4 w-4" /> Cash Verification (day-by-day)</>
               )}
             </Button>
           </div>
 
-          {valState === "done" && (
+          {cvState === "done" && (
             <div className="flex items-center gap-3 text-sm text-logo-green bg-green-50 border border-green-200 rounded-xl px-4 py-3">
               <CheckCircle2 className="h-4 w-4 shrink-0" />
-              Cash validation download complete — saved to your downloads folder.
+              Cash verification download complete — saved to your downloads folder.
             </div>
           )}
-          {valState === "error" && (
+          {cvState === "error" && (
             <div className="flex items-start gap-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-              <span><strong>Failed:</strong> {valError}</span>
+              <span><strong>Failed:</strong> {cvError}</span>
             </div>
           )}
+
           <p className="text-xs text-card-text-secondary">
-            Cash Validation is a single consolidated Excel — one row per selected client with
-            the cash reconciliation check, investment total, and current Zerodha value.
+            Cash Verification is a day-by-day audit across every strategy a client has ever
+            held (Summary / Issues / All Details sheets).
           </p>
         </section>
       </div>
