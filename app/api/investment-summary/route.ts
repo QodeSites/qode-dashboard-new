@@ -17,27 +17,28 @@ export const dynamic = "force-dynamic";
 
 const ICODE_PATTERN = /^QUS[0-9]+$/i;
 
-// ASSUMPTION (Akash, 2026-08-12): QUS0010 (Satidham-old) does not show an
-// Investment Summary at all for now. The real generated file on disk is
-// `Satidham_Industries_Invst_Summary_QUS00081.xlsx` — there is no QUS0010-
-// suffixed file (confirmed against data/reports/ and data/reports_backup/)
-// — and it's unresolved whether that report's underlying qcode (QAC00046,
-// same as QUS0010 per CLAUDE.md) is meant to represent QUS0010, QUS00081
-// (its own qcode is QAC00066 per CLAUDE.md), or both. Rather than guess
-// which identity that file belongs to, QUS0010 is deliberately excluded
-// here so it falls through to the Postgres-native branch below, which
-// already throws UnsupportedClientError for it (EXCLUDED_ICODES in
-// app/lib/investment-summary/index.ts) — same "Report not found"/
-// `exists: false` outcome as before, just for a documented reason instead
-// of a broken alias. QUS00081 now looks up its own file directly (no
-// alias needed, since the real file already matches its own icode).
-// Revisit once the QUS0010/QUS00081/Satidham report-identity question is
-// actually resolved — see doc 05.
-
-// Sarla stays on the legacy Excel pipeline — explicitly out of scope for
-// the Postgres-native calculator (CLAUDE.md, docs/investment-summary-migration/04).
-// QUS00081 also stays here (it has a real file of its own); QUS0010 does not.
-const LEGACY_XLSX_ICODES = new Set(["QUS0007", "QUS00081"]);
+// Doc 05 Q13/Q14 (RESOLVED 2026-08-12): QUS0010 (Satidham-old, QAC00046) has
+// zero rows in every Postgres table the new calculator reads (tradebook,
+// holdings, bifurcated mastersheet) — only a legacy plain `master_sheet`
+// NAV time series exists, which is why sarla-utils.ts can show some numbers
+// for it but the new calculator can't compute holdings/transactions at all.
+// QUS00081 (Satidham-new, QAC00066) is the opposite: fully populated in
+// every table the calculator needs (297 equity tradebook rows, 33,911
+// bifurcated mastersheet rows, etc.) — confirmed the real trading account.
+// Akash's call (2026-08-12): migrate QUS00081 to the Postgres-native
+// calculator (config/Master_Config.csv now has real rows for it, mirroring
+// QUS0010's strategy timeline but retargeted to QAC00066). QUS0010 stays
+// excluded — shows no Investment Summary — until/unless that qcode ever
+// gets real tradebook/holdings data synced.
+//
+// Sarla (QUS0007, QAC00041) cut over 2026-08-12 (doc 05 Q14): its single
+// Master_Config.csv row (QYE+) already matched the real WSL
+// Strategy_Config.csv exactly, and both required system tags have full,
+// current data (591 rows each through 2026-08-10). Cut over on that
+// evidence rather than waiting on a fresh ground-truth report — Akash's
+// explicit call to treat the diff as a post-hoc confirmation pass, not a
+// gate. Nothing left in this set for now.
+const LEGACY_XLSX_ICODES = new Set<string>([]);
 
 // Admins review from reports_staging (falling back to live); clients see live.
 async function findReportByIcode(

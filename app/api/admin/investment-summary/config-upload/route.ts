@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10MB
 
 /**
- * The three hand-maintained CSVs the Postgres-native calculator
+ * The hand-maintained CSVs the Postgres-native calculator
  * (app/lib/investment-summary/) reads from INVESTMENT_SUMMARY_CONFIG_DIR.
  * Deliberately a separate whitelist from sync-utils.ts's FILE_RULES — that
  * one has entries with the same filenames (cash_transactions.csv,
@@ -38,6 +38,9 @@ const CALC_CONFIG_FILE_RULES: Record<string, { requiredColumns: string[] }> = {
   },
   "miscellaneous.csv": {
     requiredColumns: ["Client Name", "Date", "Amount", "Type", "Strategy", "Description"],
+  },
+  "historical_mf_transactions.csv": {
+    requiredColumns: ["Client Name", "Fund Name", "Trade Type", "Date", "Strategy", "Amount"],
   },
 };
 

@@ -12,6 +12,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import type { ClientStrategyConfigRow } from "./types";
+import { loadHistoricalMfTransactions, type HistoricalMfRow } from "./historical-mf";
 
 /** One row of calc_eq_transactions/calc_mf_transactions output (doc 02). */
 export interface TransactionRow {
@@ -45,6 +46,26 @@ function isLiquidSubCategory(subCategory: string | null): boolean {
   if (!subCategory) return false;
   const normalized = subCategory.toLowerCase();
   return normalized === "liquidcase" || normalized === "liquidbees";
+}
+
+/**
+ * Historical MF rows apply the same strategy/asOfDate filters as an
+ * ordinary DB query would — Python merges them into mf_tradebook BEFORE
+ * any strategy filtering happens, so a historical row only shows up in a
+ * per-strategy call if its own `Strategy` column matches (blank for all of
+ * today's rows, so they currently only surface in the combined/unfiltered
+ * view — same as a DB row with a null strategy would).
+ */
+function filterHistoricalMf(
+  rows: HistoricalMfRow[],
+  strategy: string | undefined,
+  asOfDate: Date | undefined,
+): HistoricalMfRow[] {
+  return rows.filter((r) => {
+    if (strategy && r.strategy !== strategy) return false;
+    if (asOfDate && r.date > asOfDate) return false;
+    return true;
+  });
 }
 
 /**
@@ -150,6 +171,7 @@ export async function identifyTransitionWashTrades(
  */
 export async function calcHoldingsInvestmentSummary(
   qcode: string,
+  clientName: string,
   strategy: string | undefined,
   fullCash: boolean,
   eqExcludeIds: Set<string>,
@@ -159,7 +181,7 @@ export async function calcHoldingsInvestmentSummary(
     return { totalHoldingsAdded: 0, totalHoldingsWithdrawn: 0, netHoldingBalance: 0 };
   }
 
-  const [eqRows, mfRows] = await Promise.all([
+  const [eqRows, mfRows, historicalMfRows] = await Promise.all([
     prisma.equity_holdings_tradebook.findMany({
       where: {
         qcode,
@@ -189,6 +211,7 @@ export async function calcHoldingsInvestmentSummary(
         strategy: true,
       },
     }),
+    loadHistoricalMfTransactions(clientName),
   ]);
 
   let totalHoldingsAdded = 0;
@@ -206,7 +229,8 @@ export async function calcHoldingsInvestmentSummary(
     }
   }
 
-  for (const row of mfRows) {
+  const allMfRows = [...mfRows, ...filterHistoricalMf(historicalMfRows, strategy, asOfDate)];
+  for (const row of allMfRows) {
     if (isLiquidSubCategory(row.sub_category)) continue;
 
     const amount = toNumber(row.quantity) * toNumber(row.price);
@@ -310,27 +334,31 @@ export async function calcEquityTransactions(
  */
 export async function calcMfTransactions(
   qcode: string,
+  clientName: string,
   strategy: string | undefined,
   asOfDate?: Date,
 ): Promise<TransactionRow[]> {
-  const rows = await prisma.mutual_funds_tradebook.findMany({
-    where: {
-      qcode,
-      ...(strategy ? { strategy } : {}),
-      ...(asOfDate ? { date: dateFilter(asOfDate) } : {}),
-    },
-    select: {
-      date: true,
-      trade_type: true,
-      symbol: true,
-      quantity: true,
-      price: true,
-      strategy: true,
-    },
-    orderBy: { date: "asc" },
-  });
+  const [rows, historicalMfRows] = await Promise.all([
+    prisma.mutual_funds_tradebook.findMany({
+      where: {
+        qcode,
+        ...(strategy ? { strategy } : {}),
+        ...(asOfDate ? { date: dateFilter(asOfDate) } : {}),
+      },
+      select: {
+        date: true,
+        trade_type: true,
+        symbol: true,
+        quantity: true,
+        price: true,
+        strategy: true,
+      },
+      orderBy: { date: "asc" },
+    }),
+    loadHistoricalMfTransactions(clientName),
+  ]);
 
-  const grouped = groupFills(rows);
+  const grouped = groupFills([...rows, ...filterHistoricalMf(historicalMfRows, strategy, asOfDate)]);
 
   const result: TransactionRow[] = [];
   for (const g of grouped) {

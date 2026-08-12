@@ -116,7 +116,7 @@ async function calcActiveStrategySummary(ctx: StrategyContext): Promise<Strategy
   const [cashInv, eqPurchaseSold, holdingsInv, acctSummary] = await Promise.all([
     cashInputs.calcCashInvestmentSummary(ctx.clientName, ctx.row.strategy, false),
     cashInputs.calcEquityPurchaseSold(ctx.clientName, ctx.row.strategy),
-    tradebook.calcHoldingsInvestmentSummary(ctx.qcode, ctx.row.strategy, fullCash, ctx.eqExcludeIds, ctx.asOfDate),
+    tradebook.calcHoldingsInvestmentSummary(ctx.qcode, ctx.clientName, ctx.row.strategy, fullCash, ctx.eqExcludeIds, ctx.asOfDate),
     accountSummary.calcCurrentAccountSummary(ctx.qcode, opts),
   ]);
 
@@ -158,7 +158,7 @@ async function calcInactiveStrategySummary(ctx: StrategyContext): Promise<Strate
 
   const [cashInv, holdingsInv] = await Promise.all([
     cashInputs.calcCashInvestmentSummary(ctx.clientName, ctx.row.strategy, false),
-    tradebook.calcHoldingsInvestmentSummary(ctx.qcode, ctx.row.strategy, fullCash, ctx.eqExcludeIds, ctx.asOfDate),
+    tradebook.calcHoldingsInvestmentSummary(ctx.qcode, ctx.clientName, ctx.row.strategy, fullCash, ctx.eqExcludeIds, ctx.asOfDate),
   ]);
 
   return {
@@ -217,24 +217,38 @@ export async function calcCombinedSummary(
     accountSummary.calcCurrentAccountSummary(qcode, { asOfDate }),
   ]);
 
-  // NOTE: unlike the per-strategy view, the combined "Total Portfolio" view
-  // does NOT apply the full-cash-strategy zero rule to holdings — confirmed
-  // against real report data (Ashok Jogani HUF, Ashwin Agarwal): the
-  // combined Holdings total includes each full-cash strategy's real
-  // tradebook activity, only the per-strategy sheet zeroes it out. Passing
-  // `fullCash=false` unconditionally here reproduces that.
-  let totalHoldingsAdded = 0;
-  let totalHoldingsWithdrawn = 0;
-  for (const row of allStrategyRows) {
-    const h = await tradebook.calcHoldingsInvestmentSummary(qcode, row.strategy, false, eqExcludeIds, asOfDate);
-    totalHoldingsAdded += h.totalHoldingsAdded;
-    totalHoldingsWithdrawn += h.totalHoldingsWithdrawn;
-  }
-  const holdingsInv = {
-    totalHoldingsAdded,
-    totalHoldingsWithdrawn,
-    netHoldingBalance: totalHoldingsAdded + totalHoldingsWithdrawn,
-  };
+  // Structural fix (2026-08-12, doc 05 Q14): ONE unfiltered call
+  // (`strategy=undefined`), not a sum of per-strategy calls — matches
+  // calc_combined_summaries's real Python shape (a single
+  // calc_holdings_investment_summary(..., strategy=None, ...) call) and
+  // fixes a genuine bug: the previous per-row-loop-and-sum silently
+  // dropped rows whose strategy tag doesn't match ANY config row (e.g.
+  // Sarla's pre-strategy-tagging blank-strategy historical MF rows).
+  //
+  // `fullCash` is INTENTIONALLY hardcoded false here, NOT
+  // `all(is_full_cash_strategy(r) for r in active strategies)` like the
+  // real Python source reads literally. Tried the literal reading first —
+  // it regressed Ashok Jogani HUF (QAC00110, active strategy QAW++, a
+  // full-cash name) from an exact real-report match (₹33,096,851.11) to
+  // zero. That real report's non-zero holdings prove the CURRENTLY-LIVE
+  // pipeline does not zero a combined view whose only active strategy
+  // happens to be full-cash — the doc 04 Phase 2 bug #2 fix (2026-08-11,
+  // also confirmed against this same client) already established this via
+  // real data before this session ever read the Python source directly.
+  // Real output takes precedence over a literal source-code reading when
+  // they conflict — the source may reflect a newer pipeline version than
+  // the report was generated with (same staleness pattern found for
+  // Sarla's report this same session). Revisit if a FRESH Ashok Jogani HUF
+  // report ever shows zero holdings — that would mean the literal
+  // full_cash reading is actually correct and this hardcode is wrong.
+  const holdingsInv = await tradebook.calcHoldingsInvestmentSummary(
+    qcode,
+    clientName,
+    undefined,
+    false,
+    eqExcludeIds,
+    asOfDate,
+  );
 
   // IMPORTANT: overviewCash.calcOverviewCashSummary's `adjustmentItems` and
   // `inactiveRealised` fields are already CLIENT-WIDE sums (they depend only

@@ -5,10 +5,21 @@
  * `MultiStrategyInvestmentData` shape today's `parseInvestmentXlsx()`
  * returns from an `.xlsx` buffer, but computed directly from Postgres.
  *
- * Sarla and Satidham (icodes QUS0007, QUS0010) are explicitly OUT OF SCOPE
- * — they stay on the existing app/lib/sarla-utils.ts path (doc 04, Akash's
- * 2026-08-11 decision). computeInvestmentSummary throws for these icodes
- * rather than silently producing wrong numbers.
+ * Satidham-old (QUS0010) is explicitly OUT OF SCOPE — it stays on the
+ * existing app/lib/sarla-utils.ts path. computeInvestmentSummary throws for
+ * this icode rather than silently producing wrong numbers.
+ *
+ * Sarla (QUS0007) was cut over 2026-08-12 (doc 05 Q14) on the strength of:
+ * config/Master_Config.csv's existing QYE+ row for QAC00041 matching the
+ * real WSL Strategy_Config.csv exactly, full/current data in every table
+ * the calculator reads (QYE+ Total Portfolio Value / QYE+ Zerodha Total
+ * Portfolio both have 591 rows through 2026-08-10), and the calculator
+ * logic having already been validated against Sarla-shaped data (the
+ * historical-MF port and the fullCash/combined-summary fix were both
+ * verified using Sarla's own rows). No fresh ground-truth .xlsx was
+ * diffed at cutover time — Akash's explicit call to treat that diff as a
+ * post-hoc confirmation pass rather than a gate. If a fresh report later
+ * surfaces a material mismatch, re-add "QUS0007" here.
  */
 import { getClientConfig } from "./config";
 import { identifyTransitionWashTrades, isFullCashStrategy } from "./tradebook";
@@ -19,8 +30,8 @@ import { calcEquityTransactions, calcMfTransactions } from "./tradebook";
 import { loadCashTransactions } from "./cash-inputs";
 import type { MultiStrategyInvestmentData, StrategyInvestmentData } from "./types";
 
-/** Out of scope per doc 04 — these stay on app/lib/sarla-utils.ts. */
-const EXCLUDED_ICODES = new Set(["QUS0007", "QUS0010"]);
+/** Out of scope per doc 04 — Satidham-old (QUS0010) stays on app/lib/sarla-utils.ts permanently (doc 05 Q14 — its qcode has zero rows in every Postgres table the calculator reads). */
+const EXCLUDED_ICODES = new Set(["QUS0010"]);
 
 export class UnsupportedClientError extends Error {
   constructor(icode: string) {
@@ -96,26 +107,30 @@ export async function computeInvestmentSummary(
     };
   }
 
-  // Equity/MF transactions, one call per strategy the client has held
-  // (each row keeps its own historical strategy value — doc 02), then
-  // flattened. Full-cash strategies still produce real transaction rows
-  // here (unlike calcHoldingsInvestmentSummary's all-zero short-circuit) —
-  // doc 02 doesn't describe a full-cash exclusion for the transaction
-  // tables themselves, only for the holdings-added/withdrawn totals.
-  const equityTransactionsNested = await Promise.all(
-    allStrategyRows.map((row) => calcEquityTransactions(qcode, row.strategy, eqExcludeIds, asOfDate)),
-  );
-  const mfTransactionsNested = await Promise.all(
-    allStrategyRows.map((row) => calcMfTransactions(qcode, row.strategy, asOfDate)),
-  );
-  const equityTransactions = equityTransactionsNested.flat().map((t) => ({
+  // Equity/MF transactions — ONE unfiltered call each, matching the real
+  // Python source exactly (main.py: `calc_mf_transactions(mf_tradebook, ...)`
+  // / `calc_eq_transactions(eq_tradebook, ...)`, called once on the whole
+  // tradebook, not per-strategy). Each row keeps its own historical
+  // strategy value regardless (doc 02). Previously looped per config row
+  // and flattened, which silently dropped rows whose own strategy tag
+  // doesn't match ANY config row — confirmed via Sarla's pre-strategy-
+  // tagging historical MF rows (blank strategy) never surfacing. Full-cash
+  // strategies still produce real transaction rows here (unlike
+  // calcHoldingsInvestmentSummary's all-zero short-circuit) — doc 02
+  // doesn't describe a full-cash exclusion for the transaction tables
+  // themselves, only for the holdings-added/withdrawn totals.
+  const [equityTransactionsRaw, mfTransactionsRaw] = await Promise.all([
+    calcEquityTransactions(qcode, undefined, eqExcludeIds, asOfDate),
+    calcMfTransactions(qcode, clientName, undefined, asOfDate),
+  ]);
+  const equityTransactions = equityTransactionsRaw.map((t) => ({
     name: t.symbol,
     capitalFlow: t.capitalFlow,
     date: t.date,
     strategy: t.strategy ?? "",
     amount: t.amount,
   }));
-  const mfTransactions = mfTransactionsNested.flat().map((t) => ({
+  const mfTransactions = mfTransactionsRaw.map((t) => ({
     name: t.symbol,
     capitalFlow: t.capitalFlow,
     date: t.date,
