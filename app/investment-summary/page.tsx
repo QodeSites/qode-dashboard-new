@@ -897,20 +897,14 @@ export default function InvestmentSummaryPage() {
     }
   }, [status, router]);
 
-  const icode =
-    (
-      session?.user as
-        | {
-            icode?: string;
-            impersonating?: { icode?: string };
-            accessType?: string;
-          }
-        | undefined
-    )?.accessType === "admin"
-      ? ((session?.user as { impersonating?: { icode?: string } })
-          ?.impersonating?.icode ??
-        (session?.user as { icode?: string })?.icode)
-      : (session?.user as { icode?: string })?.icode;
+  const isAdmin =
+    (session?.user as { accessType?: string } | undefined)?.accessType === "admin";
+
+  const icode = isAdmin
+    ? ((session?.user as { impersonating?: { icode?: string } })
+        ?.impersonating?.icode ??
+      (session?.user as { icode?: string })?.icode)
+    : (session?.user as { icode?: string })?.icode;
 
   const isSarla = icode === SARLA_ICODE;
   const isSatidham = icode === SATIDHAM_ICODE || icode === SATIDHAM_NEW_ICODE;
@@ -1132,6 +1126,32 @@ export default function InvestmentSummaryPage() {
       .finally(() => setDownloading(false));
   };
 
+  // Admin-only: full .xlsx workbook generated live from Postgres, matching
+  // the real Python pipeline's sheet layout (app/lib/investment-summary/
+  // xlsx-export.ts) — not the client-facing PDF's single-page summary.
+  const [downloadingXlsx, setDownloadingXlsx] = useState(false);
+  const handleDownloadXlsx = async () => {
+    if (!icode) return;
+    setDownloadingXlsx(true);
+    try {
+      const res = await fetch(`/api/admin/investment-summary/download?icode=${icode}`);
+      if (!res.ok) throw new Error(`Download failed (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      a.download = match?.[1] ?? `${icode}_Invst_Summary.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setDownloadingXlsx(false);
+    }
+  };
+
   if (status === "loading" || loading || liveAllocationLoading) {
     return (
       <DashboardLayout>
@@ -1215,6 +1235,17 @@ export default function InvestmentSummaryPage() {
                   <Download className="h-4 w-4 mr-2" />
                   PDF
                 </Button>
+                {isAdmin && (
+                  <Button
+                    onClick={handleDownloadXlsx}
+                    disabled={downloadingXlsx}
+                    className="h-11 px-4 text-sm font-medium"
+                    variant="outline"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Excel
+                  </Button>
+                )}
               </div>
               {data.dataAsOfDate && (
                 <div className="text-right">
