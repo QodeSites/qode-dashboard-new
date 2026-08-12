@@ -1,6 +1,6 @@
 /**
  * Shared types for the Postgres-native Investment Summary calculator.
- * See docs/investment-summary-migration/04-migration-plan.md for the module map.
+ * See docs/investment-summary-migration/ARCHITECTURE.md for the module map.
  *
  * MultiStrategyInvestmentData etc. stay defined in parse-investment-pdf.ts
  * (today's xlsx parser) — re-exported here so every new module imports from

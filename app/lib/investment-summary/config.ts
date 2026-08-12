@@ -1,6 +1,6 @@
 /**
  * Loads config/Master_Config.csv and config/system_tags.yaml.
- * See docs/investment-summary-migration/04-migration-plan.md ("config.ts").
+ * See docs/investment-summary-migration/ARCHITECTURE.md ("config.ts").
  *
  * File-based, no DB access. No new dependencies: CSV parsing reuses
  * `exceljs` (already a project dependency) rather than adding csv-parse;

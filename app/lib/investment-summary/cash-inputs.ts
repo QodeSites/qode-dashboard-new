@@ -1,9 +1,8 @@
 /**
  * Loads config/cash_transactions.csv and config/miscellaneous.csv, file-based
  * (no DB access). Mirrors config.ts's CSV-loading + in-memory-cache pattern.
- * See docs/investment-summary-migration/02-python-pipeline.md
- * (`calc_cash_investment_summary`, `calc_eq_purchase_sold`) and
- * docs/investment-summary-migration/04-migration-plan.md ("cash-inputs.ts").
+ * Ports of `calc_cash_investment_summary`/`calc_eq_purchase_sold` — see
+ * docs/investment-summary-migration/ARCHITECTURE.md ("cash-inputs.ts").
  *
  * Keyed off `clientName` (a hand-maintained display name, e.g. "Ashwin
  * Agarwal"), not icode/qcode — these CSVs are human-maintained, unlike the

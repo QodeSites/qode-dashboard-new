@@ -39,7 +39,7 @@ const EXCLUDED_ICODES = new Set(["QUS0010"]);
 export class UnsupportedClientError extends Error {
   constructor(icode: string) {
     super(
-      `computeInvestmentSummary is not supported for icode ${icode} — this client is handled by app/lib/sarla-utils.ts instead (see docs/investment-summary-migration/04-migration-plan.md).`,
+      `computeInvestmentSummary is not supported for icode ${icode} — this client is handled by app/lib/sarla-utils.ts instead (see docs/investment-summary-migration/ARCHITECTURE.md).`,
     );
     this.name = "UnsupportedClientError";
   }
