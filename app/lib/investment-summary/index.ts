@@ -1,9 +1,10 @@
 /**
  * Entry point for the Postgres-native Investment Summary calculator (doc 04
- * "index.ts") — the only module `app/api/investment-summary/route.ts` needs
- * to import once Phase 3 cuts over. Produces the exact same
- * `MultiStrategyInvestmentData` shape today's `parseInvestmentXlsx()`
- * returns from an `.xlsx` buffer, but computed directly from Postgres.
+ * "index.ts") — the only module `app/api/investment-summary/route.ts`
+ * imports. Produces the `MultiStrategyInvestmentData` shape defined in
+ * app/lib/parse-investment-pdf.ts (originally the legacy `.xlsx` parser's
+ * output shape, kept as the shared type home after that parser was
+ * removed 2026-08-12), computed directly from Postgres.
  *
  * Satidham-old (QUS0010) is explicitly OUT OF SCOPE — it stays on the
  * existing app/lib/sarla-utils.ts path. computeInvestmentSummary throws for
