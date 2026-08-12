@@ -1,20 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { AdminHeader } from "@/components/admin/AdminHeader";
 import { Button } from "@/components/ui/button";
-import {
-  AlertCircle,
-  CheckCircle2,
-  Download,
-  FileUp,
-  Loader2,
-  RefreshCw,
-  Rocket,
-  Upload,
-} from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, RefreshCw, Rocket } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -39,19 +31,6 @@ interface ValidationRow {
   investment_total: string;
   zerodha_value: string;
   status: string;
-}
-
-interface FileInfo {
-  filename: string;
-  destination: "config" | "inputs";
-  exists: boolean;
-  modifiedAt: string | null;
-}
-
-interface CalcConfigFileInfo {
-  filename: string;
-  exists: boolean;
-  modifiedAt: string | null;
 }
 
 interface StagingInfo {
@@ -102,18 +81,10 @@ export default function InvestmentSyncPage() {
   const [lastGenerate, setLastGenerate] = useState<SyncJob | null>(null);
   const [staging, setStaging] = useState<StagingInfo | null>(null);
   const [history, setHistory] = useState<SyncJob[]>([]);
-  const [files, setFiles] = useState<FileInfo[]>([]);
-  const [calcConfigFiles, setCalcConfigFiles] = useState<CalcConfigFileInfo[]>([]);
   const [reportDate, setReportDate] = useState(todayStr());
   const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  const [calcBanner, setCalcBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [calcBusy, setCalcBusy] = useState(false);
   const [, forceTick] = useState(0);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const pendingFileRef = useRef<string | null>(null);
-  const calcFileInputRef = useRef<HTMLInputElement | null>(null);
-  const pendingCalcFileRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/");
@@ -123,25 +94,13 @@ export default function InvestmentSyncPage() {
 
   const refresh = useCallback(async () => {
     try {
-      const [statusRes, filesRes, calcFilesRes] = await Promise.all([
-        fetch("/api/admin/sync/status"),
-        fetch("/api/admin/sync/upload"),
-        fetch("/api/admin/investment-summary/config-upload"),
-      ]);
+      const statusRes = await fetch("/api/admin/sync/status");
       if (statusRes.ok) {
         const d = await statusRes.json();
         setCurrent(d.current);
         setLastGenerate(d.lastGenerate);
         setStaging(d.staging ?? null);
         setHistory(d.history ?? []);
-      }
-      if (filesRes.ok) {
-        const d = await filesRes.json();
-        setFiles(d.files ?? []);
-      }
-      if (calcFilesRes.ok) {
-        const d = await calcFilesRes.json();
-        setCalcConfigFiles(d.files ?? []);
       }
     } catch {
       /* transient network error — next poll retries */
@@ -206,84 +165,6 @@ export default function InvestmentSyncPage() {
     }
   }
 
-  function pickFile(filename: string) {
-    pendingFileRef.current = filename;
-    fileInputRef.current?.click();
-  }
-
-  async function handleFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
-    const chosen = e.target.files?.[0];
-    const expected = pendingFileRef.current;
-    e.target.value = ""; // allow re-choosing the same file
-    if (!chosen || !expected) return;
-
-    if (chosen.name !== expected) {
-      setBanner({
-        kind: "err",
-        text: `Expected '${expected}' but you selected '${chosen.name}'. Rename the file or pick the matching one.`,
-      });
-      return;
-    }
-
-    setBanner(null);
-    setBusy(true);
-    try {
-      const fd = new FormData();
-      fd.append("file", chosen);
-      const res = await fetch("/api/admin/sync/upload", { method: "POST", body: fd });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.details ?? d.error ?? `Server returned ${res.status}`);
-      setBanner({
-        kind: "ok",
-        text: `${expected} uploaded${d.backedUpTo ? ` (previous version backed up)` : ""}`,
-      });
-      await refresh();
-    } catch (err) {
-      setBanner({ kind: "err", text: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function pickCalcFile(filename: string) {
-    pendingCalcFileRef.current = filename;
-    calcFileInputRef.current?.click();
-  }
-
-  async function handleCalcFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
-    const chosen = e.target.files?.[0];
-    const expected = pendingCalcFileRef.current;
-    e.target.value = "";
-    if (!chosen || !expected) return;
-
-    if (chosen.name !== expected) {
-      setCalcBanner({
-        kind: "err",
-        text: `Expected '${expected}' but you selected '${chosen.name}'. Rename the file or pick the matching one.`,
-      });
-      return;
-    }
-
-    setCalcBanner(null);
-    setCalcBusy(true);
-    try {
-      const fd = new FormData();
-      fd.append("file", chosen);
-      const res = await fetch("/api/admin/investment-summary/config-upload", {
-        method: "POST",
-        body: fd,
-      });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.details ?? d.error ?? `Server returned ${res.status}`);
-      setCalcBanner({ kind: "ok", text: `${expected} uploaded — takes effect on the next request, no publish needed` });
-      await refresh();
-    } catch (err) {
-      setCalcBanner({ kind: "err", text: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setCalcBusy(false);
-    }
-  }
-
   // -------------------------------------------------------------------------
   // Derived state
   // -------------------------------------------------------------------------
@@ -302,9 +183,6 @@ export default function InvestmentSyncPage() {
     ? (lastGenerate!.result_json as ValidationRow[])
     : [];
 
-  const configFiles = files.filter((f) => f.destination === "config");
-  const inputFiles = files.filter((f) => f.destination === "inputs");
-
   if (status === "loading" || status === "unauthenticated") return null;
 
   // -------------------------------------------------------------------------
@@ -314,28 +192,19 @@ export default function InvestmentSyncPage() {
   return (
     <div className="min-h-screen bg-primary-bg">
       <AdminHeader />
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".csv,.yaml,.xlsx"
-        className="hidden"
-        onChange={handleFileChosen}
-      />
-      <input
-        ref={calcFileInputRef}
-        type="file"
-        accept=".csv"
-        className="hidden"
-        onChange={handleCalcFileChosen}
-      />
-
       <div className="max-w-4xl mx-auto px-4 py-10 space-y-8">
         <div className="text-center space-y-2">
           <h1 className="text-2xl font-bold text-card-text font-heading">
             Investment Summary Sync
           </h1>
           <p className="text-sm text-card-text-secondary">
-            Upload weekly input sheets, generate &amp; validate reports, then push them live.
+            Generate &amp; validate the legacy PDF reports, then push them live.
+          </p>
+          <p className="text-xs text-card-text-secondary">
+            Looking to update the calculator&apos;s config CSVs?{" "}
+            <Link href="/admin/investment-summary-config" className="text-logo-green underline">
+              Investment Summary Config →
+            </Link>
           </p>
         </div>
 
@@ -363,135 +232,13 @@ export default function InvestmentSyncPage() {
             <span>
               <strong>{current.job_type === "generate" ? "Generation" : "Publish"}</strong>{" "}
               running for {duration(current.started_at, null)} — started by{" "}
-              {current.triggered_by} at {fmtDateTime(current.started_at)}. Uploads and new
+              {current.triggered_by} at {fmtDateTime(current.started_at)}. New
               runs are locked.
             </span>
           </div>
         )}
 
-        {/* ── 1. Files ─────────────────────────────────────────────── */}
-        <section className="bg-white/60 border border-card-text-secondary/20 rounded-2xl p-6 space-y-4">
-          <div className="flex items-center gap-2">
-            <FileUp className="h-5 w-5 text-logo-green" />
-            <h2 className="text-lg font-semibold text-card-text">
-              Config &amp; Input Sheets
-            </h2>
-          </div>
-
-          {[
-            { label: "Config Files", list: configFiles },
-            { label: "Input Files (weekly)", list: inputFiles },
-          ].map(({ label, list }) => (
-            <div key={label} className="space-y-1.5">
-              <p className="text-xs font-medium uppercase tracking-wide text-card-text-secondary">
-                {label}
-              </p>
-              {list.map((f) => (
-                <div
-                  key={f.filename}
-                  className="flex items-center justify-between gap-2 py-1.5 px-3 rounded-lg bg-white/70 border border-card-text-secondary/10"
-                >
-                  <div className="min-w-0">
-                    <span className="text-sm text-card-text font-mono">{f.filename}</span>
-                    <span className="ml-3 text-xs text-card-text-secondary">
-                      {f.exists ? `Last updated: ${fmtDateTime(f.modifiedAt)}` : "Not on server yet"}
-                    </span>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-1.5 text-xs"
-                      disabled={!f.exists}
-                      onClick={() =>
-                        window.open(
-                          `/api/admin/sync/download?file=${encodeURIComponent(f.filename)}`,
-                          "_blank",
-                        )
-                      }
-                    >
-                      <Download className="h-3.5 w-3.5" /> Download
-                    </Button>
-                    <Button
-                      size="sm"
-                      className="h-8 gap-1.5 text-xs bg-logo-green text-button-text hover:bg-logo-green/90 disabled:opacity-60"
-                      disabled={isRunning || busy}
-                      onClick={() => pickFile(f.filename)}
-                    >
-                      <Upload className="h-3.5 w-3.5" /> Upload
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ))}
-
-          {isRunning && (
-            <p className="text-xs text-amber-700">
-              Uploads are disabled while a job is running.
-            </p>
-          )}
-        </section>
-
-        {/* ── 1b. Postgres calculator config (separate system) ────── */}
-        <section className="bg-white/60 border border-card-text-secondary/20 rounded-2xl p-6 space-y-4">
-          <div className="flex items-center gap-2">
-            <FileUp className="h-5 w-5 text-logo-green" />
-            <h2 className="text-lg font-semibold text-card-text">
-              Postgres Calculator Config
-            </h2>
-          </div>
-          <p className="text-xs text-card-text-secondary -mt-2">
-            Feeds the new Postgres-native investment summary calculator directly —
-            unrelated to the Excel pipeline above, even where filenames match. No
-            generate/publish step: an upload here takes effect on the very next
-            request (admins always see it live; clients see it once the next
-            publish happens).
-          </p>
-
-          <div className="space-y-1.5">
-            {calcConfigFiles.map((f) => (
-              <div
-                key={f.filename}
-                className="flex items-center justify-between gap-2 py-1.5 px-3 rounded-lg bg-white/70 border border-card-text-secondary/10"
-              >
-                <div className="min-w-0">
-                  <span className="text-sm text-card-text font-mono">{f.filename}</span>
-                  <span className="ml-3 text-xs text-card-text-secondary">
-                    {f.exists ? `Last updated: ${fmtDateTime(f.modifiedAt)}` : "Not on server yet"}
-                  </span>
-                </div>
-                <Button
-                  size="sm"
-                  className="h-8 gap-1.5 text-xs bg-logo-green text-button-text hover:bg-logo-green/90 disabled:opacity-60 shrink-0"
-                  disabled={calcBusy}
-                  onClick={() => pickCalcFile(f.filename)}
-                >
-                  <Upload className="h-3.5 w-3.5" /> Upload
-                </Button>
-              </div>
-            ))}
-          </div>
-
-          {calcBanner && (
-            <div
-              className={`flex items-start gap-3 text-sm rounded-xl px-4 py-3 border ${
-                calcBanner.kind === "ok"
-                  ? "text-logo-green bg-green-50 border-green-200"
-                  : "text-red-700 bg-red-50 border-red-200"
-              }`}
-            >
-              {calcBanner.kind === "ok" ? (
-                <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
-              ) : (
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-              )}
-              <span>{calcBanner.text}</span>
-            </div>
-          )}
-        </section>
-
-        {/* ── 2. Generate & Validate ───────────────────────────────── */}
+        {/* ── 1. Generate & Validate ───────────────────────────────── */}
         <section className="bg-white/60 border border-card-text-secondary/20 rounded-2xl p-6 space-y-4">
           <div className="flex items-center gap-2">
             <RefreshCw className="h-5 w-5 text-logo-green" />
@@ -627,7 +374,7 @@ export default function InvestmentSyncPage() {
           </div>
         </section>
 
-        {/* ── 3. History ───────────────────────────────────────────── */}
+        {/* ── 2. History ───────────────────────────────────────────── */}
         <section className="bg-white/60 border border-card-text-secondary/20 rounded-2xl p-6 space-y-3">
           <h2 className="text-lg font-semibold text-card-text">Job History</h2>
           {history.length === 0 ? (

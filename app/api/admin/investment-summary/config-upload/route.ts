@@ -13,11 +13,14 @@ const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10MB
 /**
  * The hand-maintained CSVs the Postgres-native calculator
  * (app/lib/investment-summary/) reads from INVESTMENT_SUMMARY_CONFIG_DIR.
- * Deliberately a separate whitelist from sync-utils.ts's FILE_RULES — that
- * one has entries with the same filenames (cash_transactions.csv,
- * miscellaneous.csv) but they point at the legacy Python pipeline's INPUTS_
- * UPLOAD_DIR, an entirely different directory. Mixing the two would let an
- * upload silently land in the wrong system.
+ * This is a fully separate system from the legacy Python pipeline's own
+ * config files (clients.csv, system_tags.yaml, Strategy_Config.csv,
+ * Managed_Accounts_Config.xlsx, plus its own copies of
+ * cash_transactions.csv/miscellaneous.csv) — that legacy admin upload UI
+ * and its backing routes were removed entirely 2026-08-12 (doc 04/05),
+ * since every client's numbers now read live from this calculator. Even
+ * where filenames match (cash_transactions.csv, miscellaneous.csv), these
+ * are different files in a different directory — never merge the two.
  */
 const CALC_CONFIG_FILE_RULES: Record<string, { requiredColumns: string[] }> = {
   "Master_Config.csv": {
