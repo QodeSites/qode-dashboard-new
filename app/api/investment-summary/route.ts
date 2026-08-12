@@ -6,7 +6,6 @@ import { promises as fs } from "fs";
 import path from "path";
 import { parseInvestmentXlsx } from "@/app/lib/parse-investment-pdf";
 import { reportsDirsForAccess } from "@/app/lib/sync-utils";
-import { prisma } from "@/lib/prisma";
 import {
   computeInvestmentSummary,
   UnsupportedClientError,
@@ -29,27 +28,6 @@ const REPORT_ICODE_ALIAS: Record<string, string> = {
 // scope for the Postgres-native calculator (CLAUDE.md, docs/investment-summary-migration/04).
 // QUS00081 is included because it's aliased to QUS0010's report above.
 const LEGACY_XLSX_ICODES = new Set(["QUS0007", "QUS0010", "QUS00081"]);
-
-/**
- * Doc 05 Q7 (decided 2026-08-11): admins always compute as-of today (live
- * preview, no staging dir needed). Clients see the most recently published
- * snapshot — the report_date of the latest successful `sync_jobs` "publish"
- * row. If nothing has been published yet under this scheme, fall back to
- * live so clients aren't broken on day one.
- */
-async function resolveAsOfDate(isAdmin: boolean): Promise<Date | undefined> {
-  if (isAdmin) return undefined;
-
-  const lastPublish = await prisma.sync_jobs.findFirst({
-    where: { job_type: "publish", status: "success" },
-    orderBy: { started_at: "desc" },
-    select: { report_date: true },
-  });
-  if (!lastPublish?.report_date) return undefined;
-
-  const parsed = new Date(lastPublish.report_date);
-  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
-}
 
 // Admins review from reports_staging (falling back to live); clients see live.
 async function findReportByIcode(
@@ -156,12 +134,15 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Postgres-native calculator (Phase 3 cutover — doc 04)
-    const asOfDate = await resolveAsOfDate(isAdmin);
-
+    // Postgres-native calculator (Phase 3 cutover — doc 04). Always live —
+    // admins and clients read the same computed-from-Postgres numbers, no
+    // separate "as of" snapshot (see doc 04's Phase 3 section: with no
+    // versioning on the hand-maintained config CSVs, a review/publish gate
+    // wouldn't prevent a bad upload from reaching clients, only delay it —
+    // dropped 2026-08-12).
     if (searchParams.get("exists") === "true") {
       try {
-        const data = await computeInvestmentSummary(icode, asOfDate);
+        const data = await computeInvestmentSummary(icode);
         return NextResponse.json({ exists: data.amountInvested.total !== 0 });
       } catch (err) {
         if (err instanceof UnsupportedClientError || err instanceof ClientNotFoundError) {
@@ -173,7 +154,7 @@ export async function GET(req: NextRequest) {
 
     let data;
     try {
-      data = await computeInvestmentSummary(icode, asOfDate);
+      data = await computeInvestmentSummary(icode);
     } catch (err) {
       if (err instanceof UnsupportedClientError || err instanceof ClientNotFoundError) {
         return NextResponse.json({ error: "Report not found" }, { status: 404 });

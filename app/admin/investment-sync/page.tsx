@@ -48,6 +48,12 @@ interface FileInfo {
   modifiedAt: string | null;
 }
 
+interface CalcConfigFileInfo {
+  filename: string;
+  exists: boolean;
+  modifiedAt: string | null;
+}
+
 interface StagingInfo {
   fileCount: number;
   manifest: {
@@ -97,12 +103,17 @@ export default function InvestmentSyncPage() {
   const [staging, setStaging] = useState<StagingInfo | null>(null);
   const [history, setHistory] = useState<SyncJob[]>([]);
   const [files, setFiles] = useState<FileInfo[]>([]);
+  const [calcConfigFiles, setCalcConfigFiles] = useState<CalcConfigFileInfo[]>([]);
   const [reportDate, setReportDate] = useState(todayStr());
   const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [calcBanner, setCalcBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [calcBusy, setCalcBusy] = useState(false);
   const [, forceTick] = useState(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pendingFileRef = useRef<string | null>(null);
+  const calcFileInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingCalcFileRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/");
@@ -112,9 +123,10 @@ export default function InvestmentSyncPage() {
 
   const refresh = useCallback(async () => {
     try {
-      const [statusRes, filesRes] = await Promise.all([
+      const [statusRes, filesRes, calcFilesRes] = await Promise.all([
         fetch("/api/admin/sync/status"),
         fetch("/api/admin/sync/upload"),
+        fetch("/api/admin/investment-summary/config-upload"),
       ]);
       if (statusRes.ok) {
         const d = await statusRes.json();
@@ -126,6 +138,10 @@ export default function InvestmentSyncPage() {
       if (filesRes.ok) {
         const d = await filesRes.json();
         setFiles(d.files ?? []);
+      }
+      if (calcFilesRes.ok) {
+        const d = await calcFilesRes.json();
+        setCalcConfigFiles(d.files ?? []);
       }
     } catch {
       /* transient network error — next poll retries */
@@ -229,6 +245,45 @@ export default function InvestmentSyncPage() {
     }
   }
 
+  function pickCalcFile(filename: string) {
+    pendingCalcFileRef.current = filename;
+    calcFileInputRef.current?.click();
+  }
+
+  async function handleCalcFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
+    const chosen = e.target.files?.[0];
+    const expected = pendingCalcFileRef.current;
+    e.target.value = "";
+    if (!chosen || !expected) return;
+
+    if (chosen.name !== expected) {
+      setCalcBanner({
+        kind: "err",
+        text: `Expected '${expected}' but you selected '${chosen.name}'. Rename the file or pick the matching one.`,
+      });
+      return;
+    }
+
+    setCalcBanner(null);
+    setCalcBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", chosen);
+      const res = await fetch("/api/admin/investment-summary/config-upload", {
+        method: "POST",
+        body: fd,
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.details ?? d.error ?? `Server returned ${res.status}`);
+      setCalcBanner({ kind: "ok", text: `${expected} uploaded — takes effect on the next request, no publish needed` });
+      await refresh();
+    } catch (err) {
+      setCalcBanner({ kind: "err", text: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setCalcBusy(false);
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Derived state
   // -------------------------------------------------------------------------
@@ -265,6 +320,13 @@ export default function InvestmentSyncPage() {
         accept=".csv,.yaml,.xlsx"
         className="hidden"
         onChange={handleFileChosen}
+      />
+      <input
+        ref={calcFileInputRef}
+        type="file"
+        accept=".csv"
+        className="hidden"
+        onChange={handleCalcFileChosen}
       />
 
       <div className="max-w-4xl mx-auto px-4 py-10 space-y-8">
@@ -368,6 +430,64 @@ export default function InvestmentSyncPage() {
             <p className="text-xs text-amber-700">
               Uploads are disabled while a job is running.
             </p>
+          )}
+        </section>
+
+        {/* ── 1b. Postgres calculator config (separate system) ────── */}
+        <section className="bg-white/60 border border-card-text-secondary/20 rounded-2xl p-6 space-y-4">
+          <div className="flex items-center gap-2">
+            <FileUp className="h-5 w-5 text-logo-green" />
+            <h2 className="text-lg font-semibold text-card-text">
+              Postgres Calculator Config
+            </h2>
+          </div>
+          <p className="text-xs text-card-text-secondary -mt-2">
+            Feeds the new Postgres-native investment summary calculator directly —
+            unrelated to the Excel pipeline above, even where filenames match. No
+            generate/publish step: an upload here takes effect on the very next
+            request (admins always see it live; clients see it once the next
+            publish happens).
+          </p>
+
+          <div className="space-y-1.5">
+            {calcConfigFiles.map((f) => (
+              <div
+                key={f.filename}
+                className="flex items-center justify-between gap-2 py-1.5 px-3 rounded-lg bg-white/70 border border-card-text-secondary/10"
+              >
+                <div className="min-w-0">
+                  <span className="text-sm text-card-text font-mono">{f.filename}</span>
+                  <span className="ml-3 text-xs text-card-text-secondary">
+                    {f.exists ? `Last updated: ${fmtDateTime(f.modifiedAt)}` : "Not on server yet"}
+                  </span>
+                </div>
+                <Button
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs bg-logo-green text-button-text hover:bg-logo-green/90 disabled:opacity-60 shrink-0"
+                  disabled={calcBusy}
+                  onClick={() => pickCalcFile(f.filename)}
+                >
+                  <Upload className="h-3.5 w-3.5" /> Upload
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          {calcBanner && (
+            <div
+              className={`flex items-start gap-3 text-sm rounded-xl px-4 py-3 border ${
+                calcBanner.kind === "ok"
+                  ? "text-logo-green bg-green-50 border-green-200"
+                  : "text-red-700 bg-red-50 border-red-200"
+              }`}
+            >
+              {calcBanner.kind === "ok" ? (
+                <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+              ) : (
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              )}
+              <span>{calcBanner.text}</span>
+            </div>
           )}
         </section>
 

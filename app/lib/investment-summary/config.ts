@@ -32,9 +32,6 @@ const MASTER_CONFIG_COLUMNS = {
   forExposureTag: "For Exposure Tag",
 } as const;
 
-let cachedRows: ClientStrategyConfigRow[] | null = null;
-let cachedBaseTags: BaseSystemTags | null = null;
-
 function ddmmyyyyToIso(value: string): string {
   const [d, m, y] = value.trim().split("-");
   return `${y}-${m}-${d}`;
@@ -69,12 +66,10 @@ async function readCsvRows(filePath: string): Promise<Record<string, string>[]> 
 }
 
 async function loadMasterConfig(): Promise<ClientStrategyConfigRow[]> {
-  if (cachedRows) return cachedRows;
-
   const filePath = path.join(INVESTMENT_SUMMARY_CONFIG_DIR, MASTER_CONFIG_FILENAME);
   const records = await readCsvRows(filePath);
 
-  cachedRows = records
+  return records
     .filter((row) => row[MASTER_CONFIG_COLUMNS.clientName])
     .map((row) => ({
       icode: row[MASTER_CONFIG_COLUMNS.icode],
@@ -89,8 +84,6 @@ async function loadMasterConfig(): Promise<ClientStrategyConfigRow[]> {
       forProfitTag: row[MASTER_CONFIG_COLUMNS.forProfitTag],
       forExposureTag: row[MASTER_CONFIG_COLUMNS.forExposureTag] || null,
     }));
-
-  return cachedRows;
 }
 
 /** All strategy rows (active + inactive) for a given client icode. */
@@ -129,13 +122,11 @@ function parseFlatYaml(text: string): Record<string, string> {
 }
 
 export async function getBaseTags(): Promise<BaseSystemTags> {
-  if (cachedBaseTags) return cachedBaseTags;
-
   const filePath = path.join(INVESTMENT_SUMMARY_CONFIG_DIR, SYSTEM_TAGS_FILENAME);
   const raw = await fs.readFile(filePath, "utf-8");
   const parsed = parseFlatYaml(raw);
 
-  cachedBaseTags = {
+  return {
     zerodhaTotalPortfolio: parsed.zerodha_total_portfolio,
     equityStockHoldings: parsed.equity_stock_holdings,
     mutualFunds: parsed.mutual_funds,
@@ -147,12 +138,4 @@ export async function getBaseTags(): Promise<BaseSystemTags> {
     miscellaneousPnl: parsed.miscellaneous_pnl,
     totalPortfolioValue: parsed.total_portfolio_value,
   };
-
-  return cachedBaseTags;
-}
-
-/** Test-only: clear the in-memory cache between fixture loads. */
-export function __resetConfigCache() {
-  cachedRows = null;
-  cachedBaseTags = null;
 }

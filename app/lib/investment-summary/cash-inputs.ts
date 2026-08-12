@@ -61,9 +61,6 @@ export interface CashInvestmentSummary {
   netCashBalance: number;
 }
 
-let cachedCashTransactions: CashTransactionRow[] | null = null;
-let cachedMiscellaneous: MiscellaneousRow[] | null = null;
-
 function ddmmyyyyToIso(value: string): string {
   const [d, m, y] = value.trim().split("-");
   return `${y}-${m}-${d}`;
@@ -102,14 +99,12 @@ async function readCsvRows(filePath: string): Promise<Record<string, string>[]> 
   return rows;
 }
 
-/** Loads and caches config/cash_transactions.csv. */
+/** Loads config/cash_transactions.csv fresh on every call (no caching — admin uploads should take effect immediately). */
 export async function loadCashTransactions(): Promise<CashTransactionRow[]> {
-  if (cachedCashTransactions) return cachedCashTransactions;
-
   const filePath = path.join(INVESTMENT_SUMMARY_CONFIG_DIR, CASH_TRANSACTIONS_FILENAME);
   const records = await readCsvRows(filePath);
 
-  cachedCashTransactions = records
+  return records
     .filter((row) => row[CASH_TRANSACTIONS_COLUMNS.clientName])
     .map((row) => ({
       clientName: row[CASH_TRANSACTIONS_COLUMNS.clientName],
@@ -118,18 +113,14 @@ export async function loadCashTransactions(): Promise<CashTransactionRow[]> {
       type: row[CASH_TRANSACTIONS_COLUMNS.type],
       strategy: row[CASH_TRANSACTIONS_COLUMNS.strategy],
     }));
-
-  return cachedCashTransactions;
 }
 
-/** Loads and caches config/miscellaneous.csv. */
+/** Loads config/miscellaneous.csv fresh on every call (no caching — admin uploads should take effect immediately). */
 export async function loadMiscellaneous(): Promise<MiscellaneousRow[]> {
-  if (cachedMiscellaneous) return cachedMiscellaneous;
-
   const filePath = path.join(INVESTMENT_SUMMARY_CONFIG_DIR, MISCELLANEOUS_FILENAME);
   const records = await readCsvRows(filePath);
 
-  cachedMiscellaneous = records
+  return records
     .filter((row) => row[MISCELLANEOUS_COLUMNS.clientName])
     .map((row) => ({
       clientName: row[MISCELLANEOUS_COLUMNS.clientName],
@@ -139,8 +130,6 @@ export async function loadMiscellaneous(): Promise<MiscellaneousRow[]> {
       strategy: row[MISCELLANEOUS_COLUMNS.strategy],
       description: row[MISCELLANEOUS_COLUMNS.description],
     }));
-
-  return cachedMiscellaneous;
 }
 
 /**
@@ -196,10 +185,4 @@ export async function calcEquityPurchaseSold(
       return row.type === EQUITY_PURCHASE_AND_SOLD_TYPE;
     })
     .reduce((sum, row) => sum + row.amount, 0);
-}
-
-/** Test-only: clear the in-memory cache between fixture loads. */
-export function __resetCashInputsCache() {
-  cachedCashTransactions = null;
-  cachedMiscellaneous = null;
 }
