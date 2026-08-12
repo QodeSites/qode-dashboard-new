@@ -2115,12 +2115,7 @@ function buildCashMarginSnapshot(
     const has_equity_split = split.gold_pct != null;
 
     const holdings = has_equity_split
-      ? gold +
-        momentum +
-        lowvol +
-        equity_stock_holdings +
-        bond_stock_holdings +
-        mutual_funds
+      ? gold + momentum + lowvol
       : mutual_funds + equity_stock_holdings + bond_stock_holdings;
 
     const liquidcase =
