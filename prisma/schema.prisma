@@ -548,41 +548,54 @@ model password_reset_tokens {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model payment_transactions {
-  id                 Int       @id @default(autoincrement())
-  order_id           String    @unique @db.VarChar(255)
-  client_id          String    @db.VarChar(255)
-  nuvama_code        String    @db.VarChar(50)
-  client_name        String    @db.VarChar(255)
-  amount             Decimal   @db.Decimal(10, 2)
-  currency           String?   @default("INR") @db.VarChar(3)
-  payment_type       String    @db.VarChar(20)
-  payment_status     String?   @default("CREATED") @db.VarChar(50)
-  payment_session_id String?   @db.VarChar(255)
-  cf_order_id        String?   @db.VarChar(255)
-  cf_subscription_id String?   @db.VarChar(255)
-  account_number     String?   @db.VarChar(50)
-  ifsc_code          String?   @db.VarChar(20)
-  frequency          String?   @db.VarChar(20)
-  start_date         DateTime? @db.Date
-  end_date           DateTime? @db.Date
-  total_installments Int?
-  next_charge_date   DateTime? @db.Date
-  created_at         DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime? @default(now()) @db.Timestamptz(6)
-  canceled_at        DateTime? @db.Timestamptz(6)
-  is_new_strategy    Boolean?  @default(false)
-  strategy_type      String?   @db.VarChar(10)
-  cf_payment_id      String?   @db.VarChar
-  payment_time       DateTime? @db.Timestamptz(6)
-  bank_reference     String?   @db.VarChar
-  payment_method     Json?
-  payment_message    String?
-  auth_id            String?   @db.VarChar
-  settlement_amount  Decimal?  @db.Decimal
-  transfer_utr       String?   @db.VarChar
-  settled_at         DateTime? @db.Timestamptz(6)
-  deployed_at        DateTime? @db.Timestamptz(6)
-  investment_status  String    @default("PENDING_PAYMENT") @db.VarChar
+  id                        Int       @id @default(autoincrement())
+  order_id                  String    @unique @db.VarChar(255)
+  client_id                 String    @db.VarChar(255)
+  nuvama_code               String    @db.VarChar(50)
+  client_name               String    @db.VarChar(255)
+  amount                    Decimal   @db.Decimal(10, 2)
+  currency                  String?   @default("INR") @db.VarChar(3)
+  payment_type              String    @db.VarChar(20)
+  payment_status            String?   @default("CREATED") @db.VarChar(50)
+  payment_session_id        String?   @db.VarChar(255)
+  cf_order_id               String?   @db.VarChar(255)
+  cf_subscription_id        String?   @db.VarChar(255)
+  account_number            String?   @db.VarChar(50)
+  ifsc_code                 String?   @db.VarChar(20)
+  frequency                 String?   @db.VarChar(20)
+  start_date                DateTime? @db.Date
+  end_date                  DateTime? @db.Date
+  total_installments        Int?
+  next_charge_date          DateTime? @db.Date
+  created_at                DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime? @default(now()) @db.Timestamptz(6)
+  canceled_at               DateTime? @db.Timestamptz(6)
+  is_new_strategy           Boolean?  @default(false)
+  strategy_type             String?   @db.VarChar(10)
+  cf_payment_id             String?   @db.VarChar
+  payment_time              DateTime? @db.Timestamptz(6)
+  bank_reference            String?   @db.VarChar
+  payment_method            Json?
+  payment_message           String?
+  auth_id                   String?   @db.VarChar
+  settlement_amount         Decimal?  @db.Decimal
+  transfer_utr              String?   @db.VarChar
+  settled_at                DateTime? @db.Timestamptz(6)
+  deployed_at               DateTime? @db.Timestamptz(6)
+  investment_status         String    @default("PENDING_PAYMENT") @db.VarChar
+  gateway                   String    @default("cashfree") @db.VarChar(20)
+  razorpay_order_id         String?   @db.VarChar(255)
+  razorpay_payment_id       String?   @db.VarChar(255)
+  razorpay_subscription_id  String?   @db.VarChar(255)
+  razorpay_signature        String?   @db.VarChar(255)
+  payer_verification_status String?   @db.VarChar(30)
+  payer_account_last4       String?   @db.VarChar(8)
+  payer_ifsc                String?   @db.VarChar(20)
+  payer_account_holder      String?   @db.VarChar(255)
+  payer_verification_note   String?
+  payer_verified_at         DateTime? @db.Timestamptz(6)
+  payer_override_by         String?   @db.VarChar(255)
+  payer_override_at         DateTime? @db.Timestamptz(6)
 
   @@index([client_id, payment_status], map: "idx_client_status")
   @@index([created_at], map: "idx_created_at")
@@ -590,6 +603,8 @@ model payment_transactions {
   @@index([investment_status], map: "idx_pt_investment_status")
   @@index([nuvama_code], map: "idx_pt_nuvama_code")
   @@index([payment_status], map: "idx_pt_payment_status")
+  @@index([gateway], map: "idx_pt_gateway")
+  @@index([gateway, investment_status], map: "idx_pt_gateway_investment_status")
   @@schema("public")
 }
 
@@ -656,6 +671,16 @@ model pms_clients_master {
   intermediary_fee_percentage Decimal?  @default(0.00) @db.Decimal(5, 2)
   billgroup                   String?   @db.VarChar(100)
   maturity_date               DateTime? @db.Date
+  web_login_count             Int       @default(0)
+  app_login_count             Int       @default(0)
+  last_web_login_at           DateTime? @db.Timestamptz(6)
+  last_app_login_at           DateTime? @db.Timestamptz(6)
+  first_web_login_at          DateTime? @db.Timestamptz(6)
+  first_app_login_at          DateTime? @db.Timestamptz(6)
+  ios_login_count             Int       @default(0)
+  android_login_count         Int       @default(0)
+  last_ios_login_at           DateTime? @db.Timestamptz(6)
+  last_android_login_at       DateTime? @db.Timestamptz(6)
 
   @@ignore
   @@schema("public")
@@ -1026,29 +1051,34 @@ model quarterly_pnl {
 }
 
 model sip_charges {
-  id                 Int       @id @default(autoincrement())
-  subscription_id    String    @db.VarChar(255)
-  cf_subscription_id String?   @db.VarChar(255)
-  nuvama_code        String    @db.VarChar(50)
-  client_id          String    @db.VarChar(255)
-  installment_number Int?
-  charge_amount      Decimal   @db.Decimal(10, 2)
-  currency           String    @default("INR") @db.VarChar(3)
-  charge_status      String    @db.VarChar(50)
-  cf_payment_id      String?   @db.VarChar(255)
-  payment_time       DateTime? @db.Timestamptz(6)
-  charge_date        DateTime? @db.Date
-  bank_reference     String?   @db.VarChar(255)
-  payment_method     Json?
-  failure_reason     String?
-  retry_count        Int       @default(0)
-  created_at         DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime  @default(now()) @db.Timestamptz(6)
+  id                       Int       @id @default(autoincrement())
+  subscription_id          String    @db.VarChar(255)
+  cf_subscription_id       String?   @db.VarChar(255)
+  nuvama_code              String    @db.VarChar(50)
+  client_id                String    @db.VarChar(255)
+  installment_number       Int?
+  charge_amount            Decimal   @db.Decimal(10, 2)
+  currency                 String    @default("INR") @db.VarChar(3)
+  charge_status            String    @db.VarChar(50)
+  cf_payment_id            String?   @db.VarChar(255)
+  payment_time             DateTime? @db.Timestamptz(6)
+  charge_date              DateTime? @db.Date
+  bank_reference           String?   @db.VarChar(255)
+  payment_method           Json?
+  failure_reason           String?
+  retry_count              Int       @default(0)
+  created_at               DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime  @default(now()) @db.Timestamptz(6)
+  gateway                  String    @default("cashfree") @db.VarChar(20)
+  razorpay_payment_id      String?   @db.VarChar(255)
+  razorpay_subscription_id String?   @db.VarChar(255)
+  razorpay_invoice_id      String?   @db.VarChar(255)
 
   @@index([charge_date], map: "idx_sip_charges_charge_date")
   @@index([charge_status], map: "idx_sip_charges_charge_status")
   @@index([nuvama_code], map: "idx_sip_charges_nuvama_code")
   @@index([subscription_id], map: "idx_sip_charges_subscription_id")
+  @@index([gateway], map: "idx_sip_charges_gateway")
   @@schema("public")
 }
 
@@ -1069,10 +1099,12 @@ model yearly_performance {
 
 model dashboard_visibility {
   id                Int      @id @default(autoincrement())
-  icode             String   @unique @db.VarChar(20)
+  icode             String   @db.VarChar(20)
+  page              String   @default("dashboard") @db.VarChar(50)
   dashboard_visible Boolean  @default(true)
   updated_at        DateTime @default(now()) @db.Timestamp(6)
 
+  @@unique([icode, page])
   @@schema("public")
 }
 
@@ -1124,30 +1156,41 @@ model bifurcated_mutual_fund_holding_sheet_test {
 }
 
 model client_strategy_configs {
-  id                  Int       @id @default(autoincrement())
-  qcode               String    @db.VarChar(20)
-  account_name        String    @db.VarChar(255)
-  strategy            String    @db.VarChar(50)
-  effective_from      DateTime  @db.Date
-  effective_to        DateTime? @db.Date
-  profit_tag_suffix   String    @db.VarChar(100)
-  exposure_tag_suffix String    @db.VarChar(100)
-  equity_pct          Decimal?  @db.Decimal(5, 4)
-  debt_pct            Decimal?  @db.Decimal(5, 4)
-  lc_pct              Decimal?  @db.Decimal(5, 4)
-  cash_pct            Decimal?  @db.Decimal(5, 4)
-  gold_pct            Decimal?  @db.Decimal(5, 4)
-  momentum_pct        Decimal?  @db.Decimal(5, 4)
-  lowvol_pct          Decimal?  @db.Decimal(5, 4)
-  derivative_pct      Decimal?  @db.Decimal(5, 4)
-  psar_leverage       Decimal?  @db.Decimal(5, 2)
-  psar_multiplier     Decimal?  @db.Decimal(5, 2)
-  drawdown_margin_pct Decimal?  @db.Decimal(5, 4)
-  long_opt_pct        Decimal?  @db.Decimal(5, 4)
-  updated_by          String?   @db.VarChar(100)
-  created_at          DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime  @updatedAt @db.Timestamptz(6)
-  accounts            accounts  @relation(fields: [qcode], references: [qcode])
+  id                              Int       @id @default(autoincrement())
+  qcode                           String    @db.VarChar(20)
+  account_name                    String    @db.VarChar(255)
+  strategy                        String    @db.VarChar(50)
+  effective_from                  DateTime  @db.Date
+  effective_to                    DateTime? @db.Date
+  profit_tag_suffix               String    @db.VarChar(100)
+  exposure_tag_suffix             String    @db.VarChar(100)
+  equity_pct                      Decimal?  @db.Decimal(5, 4)
+  debt_pct                        Decimal?  @db.Decimal(5, 4)
+  lc_pct                          Decimal?  @db.Decimal(5, 4)
+  cash_pct                        Decimal?  @db.Decimal(5, 4)
+  gold_pct                        Decimal?  @db.Decimal(5, 4)
+  momentum_pct                    Decimal?  @db.Decimal(5, 4)
+  lowvol_pct                      Decimal?  @db.Decimal(5, 4)
+  derivative_pct                  Decimal?  @db.Decimal(5, 4)
+  psar_leverage                   Decimal?  @db.Decimal(5, 2)
+  psar_multiplier                 Decimal?  @db.Decimal(5, 2)
+  drawdown_margin_pct             Decimal?  @db.Decimal(5, 4)
+  long_opt_pct                    Decimal?  @db.Decimal(5, 4)
+  updated_by                      String?   @db.VarChar(100)
+  created_at                      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at                      DateTime  @updatedAt @db.Timestamptz(6)
+  gold_model_pct                  Decimal?  @db.Decimal(5, 4)
+  momentum_model_pct              Decimal?  @db.Decimal(5, 4)
+  lowvol_model_pct                Decimal?  @db.Decimal(5, 4)
+  cash_pct_healthy                Decimal?  @db.Decimal(5, 4)
+  cash_pct_warning                Decimal?  @db.Decimal(5, 4)
+  cash_pct_upside                 Decimal?  @db.Decimal(5, 4)
+  liquidcase_pct_gate             Decimal?  @db.Decimal(5, 4)
+  cash_collateral_pct_healthy     Decimal?  @db.Decimal(5, 4)
+  cash_collateral_pct_warning     Decimal?  @db.Decimal(5, 4)
+  non_cash_collateral_pct_healthy Decimal?  @db.Decimal(5, 4)
+  non_cash_collateral_pct_warning Decimal?  @db.Decimal(5, 4)
+  accounts                        accounts  @relation(fields: [qcode], references: [qcode])
 
   @@unique([qcode, strategy, effective_from])
   @@index([qcode])
@@ -1156,21 +1199,32 @@ model client_strategy_configs {
 }
 
 model strategy_defaults {
-  strategy_name       String   @id @db.VarChar(50)
-  equity_pct          Decimal  @db.Decimal(5, 4)
-  debt_pct            Decimal  @db.Decimal(5, 4)
-  lc_pct              Decimal  @db.Decimal(5, 4)
-  cash_pct            Decimal  @db.Decimal(5, 4)
-  gold_pct            Decimal? @db.Decimal(5, 4)
-  momentum_pct        Decimal? @db.Decimal(5, 4)
-  lowvol_pct          Decimal? @db.Decimal(5, 4)
-  derivative_pct      Decimal  @db.Decimal(5, 4)
-  psar_leverage       Decimal  @db.Decimal(5, 2)
-  psar_multiplier     Decimal  @db.Decimal(5, 2)
-  drawdown_margin_pct Decimal  @db.Decimal(5, 4)
-  long_opt_pct        Decimal  @db.Decimal(5, 4)
-  updated_by          String?  @db.VarChar(100)
-  updated_at          DateTime @updatedAt @db.Timestamptz(6)
+  strategy_name                   String   @id @db.VarChar(50)
+  equity_pct                      Decimal  @db.Decimal(5, 4)
+  debt_pct                        Decimal  @db.Decimal(5, 4)
+  lc_pct                          Decimal  @db.Decimal(5, 4)
+  cash_pct                        Decimal  @db.Decimal(5, 4)
+  gold_pct                        Decimal? @db.Decimal(5, 4)
+  momentum_pct                    Decimal? @db.Decimal(5, 4)
+  lowvol_pct                      Decimal? @db.Decimal(5, 4)
+  derivative_pct                  Decimal  @db.Decimal(5, 4)
+  psar_leverage                   Decimal  @db.Decimal(5, 2)
+  psar_multiplier                 Decimal  @db.Decimal(5, 2)
+  drawdown_margin_pct             Decimal  @db.Decimal(5, 4)
+  long_opt_pct                    Decimal  @db.Decimal(5, 4)
+  updated_by                      String?  @db.VarChar(100)
+  updated_at                      DateTime @updatedAt @db.Timestamptz(6)
+  gold_model_pct                  Decimal? @db.Decimal(5, 4)
+  momentum_model_pct              Decimal? @db.Decimal(5, 4)
+  lowvol_model_pct                Decimal? @db.Decimal(5, 4)
+  cash_pct_healthy                Decimal? @db.Decimal(5, 4)
+  cash_pct_warning                Decimal? @db.Decimal(5, 4)
+  cash_pct_upside                 Decimal? @db.Decimal(5, 4)
+  liquidcase_pct_gate             Decimal? @db.Decimal(5, 4)
+  cash_collateral_pct_healthy     Decimal? @db.Decimal(5, 4)
+  cash_collateral_pct_warning     Decimal? @db.Decimal(5, 4)
+  non_cash_collateral_pct_healthy Decimal? @db.Decimal(5, 4)
+  non_cash_collateral_pct_warning Decimal? @db.Decimal(5, 4)
 
   @@schema("public")
 }
@@ -1200,5 +1254,197 @@ model sync_jobs {
 
   @@index([started_at(sort: Desc)])
   @@index([status])
+  @@schema("public")
+}
+
+model cm_contract_value {
+  id             BigInt   @id @default(autoincrement())
+  qcode          String   @db.VarChar(20)
+  date           DateTime @db.Date
+  contract_value Decimal? @db.Decimal(20, 4)
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([qcode, date], map: "idx_cm_contract_value_qcode_date")
+  @@schema("public")
+}
+
+model cm_margin_collateral {
+  id                  BigInt   @id @default(autoincrement())
+  qcode               String   @db.VarChar(20)
+  date                DateTime @db.Date
+  broker              String?  @db.VarChar(20)
+  cash_collateral     Decimal? @db.Decimal(20, 4)
+  non_cash_collateral Decimal? @db.Decimal(20, 4)
+  live_balance        Decimal? @db.Decimal(20, 4)
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+  opening_balance     Decimal? @db.Decimal(20, 4)
+
+  @@index([qcode, date], map: "idx_cm_margin_collateral_qcode_date")
+  @@schema("public")
+}
+
+model console_equity_holdings {
+  id                  BigInt   @id @default(autoincrement())
+  qcode               String   @db.VarChar(20)
+  date                DateTime @db.Date
+  symbol              String   @db.VarChar(50)
+  exchange            String?  @db.VarChar(20)
+  isin                String?  @db.VarChar(20)
+  quantity            Decimal? @db.Decimal(20, 4)
+  collateral_quantity Decimal? @db.Decimal(20, 4)
+  average_price       Decimal? @db.Decimal(20, 4)
+  last_price          Decimal? @db.Decimal(20, 4)
+  pnl                 Decimal? @db.Decimal(20, 4)
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([qcode, date], map: "idx_console_equity_holdings_qcode_date")
+  @@schema("public")
+}
+
+model console_mf_holdings {
+  id               BigInt   @id @default(autoincrement())
+  qcode            String   @db.VarChar(20)
+  date             DateTime @db.Date
+  isin             String   @db.VarChar(20)
+  fund_name        String?  @db.VarChar(200)
+  folio            String?  @db.VarChar(50)
+  quantity         Decimal? @db.Decimal(20, 4)
+  pledged_quantity Decimal? @db.Decimal(20, 4)
+  average_price    Decimal? @db.Decimal(20, 4)
+  last_price       Decimal? @db.Decimal(20, 4)
+  pnl              Decimal? @db.Decimal(20, 4)
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([qcode, date], map: "idx_console_mf_holdings_qcode_date")
+  @@schema("public")
+}
+
+model distributor_invoice_issued {
+  id                Int       @id @default(autoincrement())
+  distributor_email String    @db.VarChar(255)
+  invoice_number    String    @db.VarChar(64)
+  invoice_date      DateTime  @db.Date
+  period_label      String    @db.VarChar(64)
+  period_start      DateTime? @db.Date
+  period_end        DateTime? @db.Date
+  amount_before_tax Decimal   @db.Decimal(14, 2)
+  tax_amount        Decimal   @default(0) @db.Decimal(14, 2)
+  total_amount      Decimal   @db.Decimal(14, 2)
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@unique([distributor_email, invoice_number], map: "distributor_invoice_number_unique")
+  @@index([distributor_email, invoice_date(sort: Desc)], map: "idx_distributor_invoice_issued_email")
+  @@schema("public")
+}
+
+model distributor_invoice_profile {
+  distributor_email   String   @id @db.VarChar(255)
+  legal_name          String   @db.VarChar(255)
+  gstin               String?  @db.VarChar(15)
+  pan                 String?  @db.VarChar(10)
+  address_line1       String   @db.VarChar(255)
+  address_line2       String?  @db.VarChar(255)
+  city                String?  @db.VarChar(120)
+  state               String?  @db.VarChar(120)
+  state_code          String?  @db.VarChar(2)
+  pincode             String?  @db.VarChar(10)
+  bank_account_name   String?  @db.VarChar(255)
+  bank_account_number String?  @db.VarChar(34)
+  bank_ifsc           String?  @db.VarChar(11)
+  bank_name           String?  @db.VarChar(160)
+  invoice_prefix      String?  @db.VarChar(24)
+  last_invoice_number Int      @default(0)
+  notes               String?
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("public")
+}
+
+model equity_holdings_tradebook {
+  id              BigInt   @id @default(autoincrement())
+  qcode           String   @db.VarChar(20)
+  mastersheet_tag String?  @db.VarChar(100)
+  date            DateTime @db.Date
+  trade_type      String   @db.VarChar(10)
+  symbol          String   @db.VarChar(50)
+  exchange        String?  @db.VarChar(20)
+  quantity        Decimal? @db.Decimal(20, 4)
+  price           Decimal? @db.Decimal(20, 4)
+  broker          String?  @db.VarChar(20)
+  debt_equity     String?  @db.VarChar(20)
+  collateral      String?  @db.VarChar(20)
+  sub_category    String?  @db.VarChar(50)
+  strategy        String   @db.VarChar(20)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([qcode, strategy], map: "idx_equity_tradebook_qcode_strategy")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model login_events {
+  id          BigInt   @id @default(autoincrement())
+  email       String
+  platform    String
+  occurred_at DateTime @default(now()) @db.Timestamptz(6)
+  os          String?
+
+  @@index([email], map: "idx_login_events_email")
+  @@index([platform, occurred_at(sort: Desc)], map: "idx_login_events_platform_ts")
+  @@schema("public")
+}
+
+model mutual_funds_tradebook {
+  id              BigInt   @id @default(autoincrement())
+  qcode           String   @db.VarChar(20)
+  mastersheet_tag String?  @db.VarChar(100)
+  date            DateTime @db.Date
+  trade_type      String   @db.VarChar(10)
+  symbol          String   @db.VarChar(200)
+  isin            String?  @db.VarChar(20)
+  quantity        Decimal? @db.Decimal(20, 4)
+  price           Decimal? @db.Decimal(20, 4)
+  broker          String?  @db.VarChar(20)
+  debt_equity     String?  @db.VarChar(20)
+  collateral      String?  @db.VarChar(20)
+  sub_category    String?  @db.VarChar(50)
+  strategy        String   @db.VarChar(20)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([qcode, strategy], map: "idx_mf_tradebook_qcode_strategy")
+  @@schema("public")
+}
+
+model razorpay_plans {
+  id               Int      @id @default(autoincrement())
+  razorpay_plan_id String   @unique @db.VarChar(255)
+  amount_paise     BigInt
+  period           String   @db.VarChar(20)
+  interval_count   Int
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([amount_paise, period, interval_count], map: "uq_razorpay_plan_shape")
+  @@schema("public")
+}
+
+model webhook_events {
+  id            Int       @id @default(autoincrement())
+  gateway       String    @db.VarChar(20)
+  event_id      String    @db.VarChar(255)
+  event_type    String    @db.VarChar(100)
+  reference_id  String?   @db.VarChar(255)
+  payload       Json?
+  status        String    @default("RECEIVED") @db.VarChar(20)
+  error_message String?
+  attempt_count Int       @default(1)
+  received_at   DateTime  @default(now()) @db.Timestamptz(6)
+  processed_at  DateTime? @db.Timestamptz(6)
+
+  @@unique([gateway, event_id], map: "uq_webhook_event")
+  @@index([received_at], map: "idx_webhook_events_received")
+  @@index([reference_id], map: "idx_webhook_events_reference")
+  @@index([status], map: "idx_webhook_events_status")
+  @@index([event_type], map: "idx_webhook_events_type")
   @@schema("public")
 }

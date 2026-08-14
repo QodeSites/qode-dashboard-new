@@ -32,7 +32,7 @@ export default function QuarterlyFeesPage() {
   // Loading state
   if (status === "loading") {
     return (
-      <DashboardLayout>
+      <DashboardLayout page="quarterly-fees">
         <div className="flex items-center justify-center h-screen">
           <div className="text-card-text-secondary">Loading...</div>
         </div>
@@ -43,7 +43,7 @@ export default function QuarterlyFeesPage() {
   // Error state
   if (error || !session?.user) {
     return (
-      <DashboardLayout>
+      <DashboardLayout page="quarterly-fees">
         <div className="p-6 text-center bg-red-100 rounded-lg text-red-600 dark:bg-red-900/10 dark:text-red-400">
           {error || "Failed to load user data"}
         </div>
@@ -330,7 +330,7 @@ export default function QuarterlyFeesPage() {
   };
 
   return (
-    <DashboardLayout>
+    <DashboardLayout page="quarterly-fees">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex justify-between items-start">
