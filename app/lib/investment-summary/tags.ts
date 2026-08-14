@@ -67,7 +67,6 @@ type Metric = "pnl" | "latestPortfolioValue";
 interface ResolveOptions {
   strategyPrefix?: string;
   allowUnprefixedFallback?: boolean;
-  asOfDate?: Date;
 }
 
 async function resolve(
@@ -77,24 +76,35 @@ async function resolve(
   opts: ResolveOptions,
 ): Promise<ResolvedTag & { value: number }> {
   const candidates = buildCandidates(baseTag, opts.strategyPrefix ?? "", opts.allowUnprefixedFallback ?? true);
-  const existingTags = await mastersheet.getDistinctTags(qcode, opts.asOfDate);
+  const existingTags = await mastersheet.getDistinctTags(qcode);
 
-  const evaluated: { tag: string; value: number }[] = [];
+  // Python's resolve_tag_alias (calculations.py:145-153) decides which
+  // candidate "has real data" using BOTH PnL and Portfolio Value together
+  // (`(PnL != 0).any() or (Portfolio Value != 0).any()`) — independent of
+  // which single metric THIS call ultimately needs. A candidate with e.g.
+  // zero lifetime PnL but a real nonzero current Portfolio Value still
+  // counts as real data and wins; evaluating only the requested metric
+  // would wrongly skip past it. Confirmed 2026-08-14 against literal
+  // source — this was missing from the initial TS port.
+  const evaluated: { tag: string; pnl: number; portfolioValue: number }[] = [];
   for (const candidate of candidates) {
     if (!existingTags.has(candidate)) continue;
-    const value =
-      metric === "pnl"
-        ? await mastersheet.sumPnl(qcode, candidate, opts.asOfDate)
-        : (await mastersheet.getLatest(qcode, candidate, opts.asOfDate))?.value ?? 0;
-    evaluated.push({ tag: candidate, value });
+    const [pnl, latest] = await Promise.all([
+      mastersheet.sumPnl(qcode, candidate),
+      mastersheet.getLatest(qcode, candidate),
+    ]);
+    const portfolioValue = latest?.value ?? 0;
+    evaluated.push({ tag: candidate, pnl, portfolioValue });
+    if (pnl !== 0 || portfolioValue !== 0) {
+      const value = metric === "pnl" ? pnl : portfolioValue;
+      return { tag: candidate, value, candidatesTried: candidates, matchedNonZero: true };
+    }
   }
 
-  const nonZero = evaluated.find((e) => e.value !== 0);
-  if (nonZero) {
-    return { tag: nonZero.tag, value: nonZero.value, candidatesTried: candidates, matchedNonZero: true };
-  }
   if (evaluated.length > 0) {
-    return { tag: evaluated[0].tag, value: evaluated[0].value, candidatesTried: candidates, matchedNonZero: false };
+    const first = evaluated[0];
+    const value = metric === "pnl" ? first.pnl : first.portfolioValue;
+    return { tag: first.tag, value, candidatesTried: candidates, matchedNonZero: false };
   }
   return { tag: candidates[0], value: 0, candidatesTried: candidates, matchedNonZero: false };
 }
@@ -134,12 +144,8 @@ export async function resolveTagAlias(
  */
 const OPTIONAL_TAG_KEYS: (keyof BaseSystemTags)[] = ["bondStockHoldings", "liquidbees"];
 
-export async function checkMissingSystemTags(
-  qcode: string,
-  baseTags: BaseSystemTags,
-  asOfDate?: Date,
-): Promise<string[]> {
-  const existingTags = await mastersheet.getDistinctTags(qcode, asOfDate);
+export async function checkMissingSystemTags(qcode: string, baseTags: BaseSystemTags): Promise<string[]> {
+  const existingTags = await mastersheet.getDistinctTags(qcode);
   const missing: string[] = [];
   for (const key of Object.keys(baseTags) as (keyof BaseSystemTags)[]) {
     if (OPTIONAL_TAG_KEYS.includes(key)) continue;

@@ -99,6 +99,7 @@ export async function GET(req: NextRequest) {
         "Content-Type": "application/zip",
         "Content-Disposition": `attachment; filename="investment_summary_${label}_${date}.zip"`,
         "X-Files-Generated": String(totalFiles),
+        "Cache-Control": "no-store",
       },
     });
   } catch (err) {

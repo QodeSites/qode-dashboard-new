@@ -37,12 +37,11 @@ export interface ProfitRedeploymentRow {
 export async function calcProfitRedeployment(
   qcode: string,
   strategyRows: ClientStrategyConfigRow[],
-  asOfDate?: Date,
 ): Promise<ProfitRedeploymentRow[]> {
   return Promise.all(
     strategyRows.map(async (row) => ({
       strategy: row.strategy,
-      profits: await sumPnl(qcode, row.forProfitTag, asOfDate),
+      profits: await sumPnl(qcode, row.forProfitTag),
       status: row.status,
     })),
   );

@@ -5,14 +5,8 @@
  * read-only only (findMany — no writes, see CLAUDE.md DB safety rules).
  *
  * Both tables store one row per symbol per snapshot date. "Current holdings"
- * means the rows at the latest snapshot date for that qcode (max `date`/
- * `as_of_date` <= asOfDate if given, else the overall max) — same two-query
+ * means the rows at the latest snapshot date for that qcode — same two-query
  * pattern as mastersheet.ts's getLatest, extended to return multiple rows.
- *
- * Every read accepts an optional `asOfDate` cutoff so the Phase 3
- * staging/preview design (doc 04) — admins see live/today, clients see the
- * latest published date — can reuse these functions unchanged; omit it to
- * read the latest data as of now.
  *
  * Historical/realized holdings (calc_eq_realized_holdings/
  * calc_mf_realized_holdings) are NOT ported here — confirmed dead/unused
@@ -32,26 +26,31 @@ function toNumberFromBigInt(value: bigint | null): number | null {
   return value === null ? null : Number(value);
 }
 
-function dateFilter(asOfDate?: Date) {
-  return asOfDate ? { lte: asOfDate } : undefined;
-}
-
 /**
  * Current equity holdings for a qcode — Python's calc_eq_holdings.
  * Excludes rows whose `sub_category` is liquidcase/liquidbees
  * (case-insensitive), optionally filters to a single `strategy`, sorted by
  * symbol ascending.
+ *
+ * `excludeLiquidbees` (default true) exists ONLY for calcHoldingsBifurcation
+ * (account-summary.ts): Python's calc_holdings_bifurcation
+ * (calculations.py:468-539) receives the SAME eq_unrealized/mf_unrealized
+ * objects as calc_eq_holdings (main.py:148-166,296,419-420) — calc_eq_holdings
+ * filters a local COPY, leaving the original untouched — and applies its own
+ * filter that excludes ONLY liquidcase (calculations.py:491), never
+ * liquidbees. So real Python DOES let equity Liquidbees rows flow into the
+ * bifurcation breakdown; only "Current Equity Holdings" (calc_eq_holdings
+ * itself) excludes them. Confirmed 2026-08-14 against literal source — the
+ * TS port previously shared one liquidbees-excluding fetch for both, so
+ * equity Liquidbees could never appear in Holdings Bifurcation at all.
  */
 export async function getCurrentEquityHoldings(
   qcode: string,
   strategy?: string,
-  asOfDate?: Date,
+  excludeLiquidbees = true,
 ): Promise<HoldingRow[]> {
   const latest = await prisma.bifurcated_equity_holding_test.findFirst({
-    where: {
-      qcode,
-      ...(asOfDate ? { date: dateFilter(asOfDate) } : {}),
-    },
+    where: { qcode },
     orderBy: { date: "desc" },
     select: { date: true },
   });
@@ -80,8 +79,12 @@ export async function getCurrentEquityHoldings(
     },
   });
 
+  const excluded = excludeLiquidbees
+    ? EQUITY_EXCLUDED_SUB_CATEGORIES
+    : new Set(["liquidcase"]);
+
   return rows
-    .filter((r) => !r.sub_category || !EQUITY_EXCLUDED_SUB_CATEGORIES.has(r.sub_category.toLowerCase()))
+    .filter((r) => !r.sub_category || !excluded.has(r.sub_category.toLowerCase()))
     .map((r) => ({
       symbol: r.symbol,
       quantity: toNumberFromBigInt(r.quantity),
@@ -104,16 +107,9 @@ export async function getCurrentEquityHoldings(
  * doc 02). Optionally filters to a single `strategy`, sorted by symbol
  * ascending. Note: this table's date column is `as_of_date`, not `date`.
  */
-export async function getCurrentMfHoldings(
-  qcode: string,
-  strategy?: string,
-  asOfDate?: Date,
-): Promise<HoldingRow[]> {
+export async function getCurrentMfHoldings(qcode: string, strategy?: string): Promise<HoldingRow[]> {
   const latest = await prisma.bifurcated_mutual_fund_holding_sheet_test.findFirst({
-    where: {
-      qcode,
-      ...(asOfDate ? { as_of_date: dateFilter(asOfDate) } : {}),
-    },
+    where: { qcode },
     orderBy: { as_of_date: "desc" },
     select: { as_of_date: true },
   });

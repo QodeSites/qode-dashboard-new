@@ -106,7 +106,6 @@ interface StrategyContext {
   row: ClientStrategyConfigRow;
   allStrategyRows: ClientStrategyConfigRow[];
   eqExcludeIds: Set<string>;
-  asOfDate?: Date;
 }
 
 function toOverviewCashView(summary: overviewCash.OverviewCashSummary): OverviewCashSummaryView {
@@ -202,15 +201,14 @@ async function calcActiveStrategySummary(ctx: StrategyContext): Promise<Strategy
       ? cashInputs.calcEquityPurchaseSold(ctx.clientName, ctx.row.strategy)
       : cashInputs.calcEquityPurchaseSold(ctx.clientName, undefined),
     isMultiActive
-      ? tradebook.calcHoldingsInvestmentSummary(ctx.qcode, ctx.clientName, ctx.row.strategy, fullCash, ctx.eqExcludeIds, ctx.asOfDate)
-      : tradebook.calcHoldingsInvestmentSummary(ctx.qcode, ctx.clientName, undefined, false, ctx.eqExcludeIds, ctx.asOfDate),
+      ? tradebook.calcHoldingsInvestmentSummary(ctx.qcode, ctx.clientName, ctx.row.strategy, fullCash, ctx.eqExcludeIds)
+      : tradebook.calcHoldingsInvestmentSummary(ctx.qcode, ctx.clientName, undefined, false, ctx.eqExcludeIds),
     isMultiActive
       ? accountSummary.calcCurrentAccountSummary(ctx.qcode, {
           strategyPrefix: `${ctx.row.strategy} `,
           allowUnprefixedFallback: false,
-          asOfDate: ctx.asOfDate,
         })
-      : accountSummary.calcCurrentAccountSummary(ctx.qcode, { asOfDate: ctx.asOfDate }),
+      : accountSummary.calcCurrentAccountSummary(ctx.qcode, {}),
   ]);
 
   const scope = overviewCashScope(ctx.row, ctx.allStrategyRows);
@@ -222,7 +220,6 @@ async function calcActiveStrategySummary(ctx: StrategyContext): Promise<Strategy
     isMultiActive,
     cashInv.netCashBalance,
     eqPurchaseSold,
-    { asOfDate: ctx.asOfDate },
   );
 
   // Same branch as above: single-active clients read bifurcation unfiltered
@@ -231,7 +228,7 @@ async function calcActiveStrategySummary(ctx: StrategyContext): Promise<Strategy
   // strategy (calculations.py:745).
   const bifurcation = await accountSummary.calcHoldingsBifurcation(
     ctx.qcode,
-    isMultiActive ? { strategy: ctx.row.strategy, asOfDate: ctx.asOfDate } : { asOfDate: ctx.asOfDate },
+    isMultiActive ? { strategy: ctx.row.strategy } : {},
     acctSummary,
   );
 
@@ -258,7 +255,7 @@ async function calcInactiveStrategySummary(ctx: StrategyContext): Promise<Strate
 
   const [cashInv, holdingsInv] = await Promise.all([
     cashInputs.calcCashInvestmentSummary(ctx.clientName, ctx.row.strategy, false),
-    tradebook.calcHoldingsInvestmentSummary(ctx.qcode, ctx.clientName, ctx.row.strategy, fullCash, ctx.eqExcludeIds, ctx.asOfDate),
+    tradebook.calcHoldingsInvestmentSummary(ctx.qcode, ctx.clientName, ctx.row.strategy, fullCash, ctx.eqExcludeIds),
   ]);
 
   return {
@@ -280,12 +277,11 @@ export async function calcPerStrategySummaries(
   clientName: string,
   allStrategyRows: ClientStrategyConfigRow[],
   eqExcludeIds: Set<string>,
-  asOfDate?: Date,
 ): Promise<Record<string, StrategySummary>> {
   const result: Record<string, StrategySummary> = {};
 
   for (const row of allStrategyRows) {
-    const ctx: StrategyContext = { qcode, clientName, row, allStrategyRows, eqExcludeIds, asOfDate };
+    const ctx: StrategyContext = { qcode, clientName, row, allStrategyRows, eqExcludeIds };
     result[row.strategy] =
       row.status === "Active" ? await calcActiveStrategySummary(ctx) : await calcInactiveStrategySummary(ctx);
   }
@@ -307,14 +303,13 @@ export async function calcCombinedSummary(
   clientName: string,
   allStrategyRows: ClientStrategyConfigRow[],
   eqExcludeIds: Set<string>,
-  asOfDate?: Date,
 ): Promise<StrategySummary> {
   const activeRows = allStrategyRows.filter((r) => r.status === "Active");
 
   const [cashInv, eqPurchaseSold, acctSummary] = await Promise.all([
     cashInputs.calcCashInvestmentSummary(clientName, undefined, true),
     cashInputs.calcEquityPurchaseSold(clientName, undefined),
-    accountSummary.calcCurrentAccountSummary(qcode, { asOfDate }),
+    accountSummary.calcCurrentAccountSummary(qcode, {}),
   ]);
 
   // Structural fix (2026-08-12, doc 05 Q14): ONE unfiltered call
@@ -343,14 +338,7 @@ export async function calcCombinedSummary(
   // all-full-cash formula, matching calc_combined_summaries exactly.
   const isMultiActive = activeRows.length >= 2;
   const allFullCash = isMultiActive && activeRows.every((r) => tradebook.isFullCashStrategy(r.strategy));
-  const holdingsInv = await tradebook.calcHoldingsInvestmentSummary(
-    qcode,
-    clientName,
-    undefined,
-    allFullCash,
-    eqExcludeIds,
-    asOfDate,
-  );
+  const holdingsInv = await tradebook.calcHoldingsInvestmentSummary(qcode, clientName, undefined, allFullCash, eqExcludeIds);
 
   // Each active strategy is called with its own OWN-STRATEGY-ONLY overview-
   // cash scope (overviewCashScope — see this file's header comment), exactly
@@ -389,7 +377,6 @@ export async function calcCombinedSummary(
       isMultiActive,
       0, // cashInvestment folded in once below, not per-strategy here
       strategyEqPurchaseSold,
-      { asOfDate },
     );
     totalUnrealised += overview.totalUnrealised;
     sumOfPerStrategyZerodhaCash += overview.currentZerodhaCash;
@@ -400,7 +387,7 @@ export async function calcCombinedSummary(
   let inactiveRealised = 0;
   if (isMultiActive) {
     inactiveRealised = (
-      await Promise.all(inactiveRows.map((row) => mastersheet.sumPnl(qcode, row.forProfitTag, asOfDate)))
+      await Promise.all(inactiveRows.map((row) => mastersheet.sumPnl(qcode, row.forProfitTag)))
     ).reduce((sum, v) => sum + v, 0);
   }
 
@@ -436,7 +423,7 @@ export async function calcCombinedSummary(
     check,
   };
 
-  const bifurcation = await accountSummary.calcHoldingsBifurcation(qcode, { asOfDate }, acctSummary);
+  const bifurcation = await accountSummary.calcHoldingsBifurcation(qcode, {}, acctSummary);
 
   return {
     amountInvested: {

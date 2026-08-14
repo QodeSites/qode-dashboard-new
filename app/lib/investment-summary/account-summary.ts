@@ -40,7 +40,6 @@ export interface HoldingsBifurcation {
 interface ResolveOpts {
   strategyPrefix?: string;
   allowUnprefixedFallback?: boolean;
-  asOfDate?: Date;
 }
 
 /**
@@ -89,26 +88,33 @@ export async function calcCurrentAccountSummary(
 }
 
 /**
- * Port of calc_holdings_bifurcation(mf_unrealized, eq_unrealized, account_summary, strategy).
+ * Port of calc_holdings_bifurcation(mf_unrealized, eq_unrealized, account_summary, strategy)
+ * (calculations.py:468-539).
  *
- * Doc 02 explicitly says the exclusion here is `Sub Category == liquidcase`
- * only — NOT liquidbees — unlike holdings.ts's own equity-holdings exclusion
- * list (which drops both). Read literally: liquidbees is presumably meant
- * to show up as its own "Unclassified"/whatever-debt_equity-says line item
- * in this breakdown rather than being dropped, so this function does its
- * own liquidcase-only filter on top of what holdings.ts already returned
- * (holdings.ts's equity query already dropped liquidcase+liquidbees rows
- * for equity; mf holdings were never filtered, so liquidbees MF rows, if
- * any, flow through here untouched, matching the doc's narrower exclusion).
+ * The exclusion here is `Sub Category == liquidcase` ONLY — NOT liquidbees.
+ * Confirmed 2026-08-14 against literal source: Python's calc_holdings_bifurcation
+ * receives the SAME eq_unrealized/mf_unrealized objects as calc_eq_holdings
+ * (main.py), which filters a local copy and leaves the original (passed
+ * here) untouched — so real Liquidbees equity rows DO flow into this
+ * breakdown and land under their own Debt/Equity category (or
+ * "Unclassified"). Only "Current Equity Holdings" (calc_eq_holdings itself,
+ * getCurrentEquityHoldings's default) excludes Liquidbees. That's why this
+ * function calls getCurrentEquityHoldings with excludeLiquidbees=false —
+ * this liquidcase-only filter below is the sole exclusion Python applies
+ * at this stage.
  */
 export async function calcHoldingsBifurcation(
   qcode: string,
-  opts: { strategy?: string; asOfDate?: Date } = {},
+  opts: { strategy?: string } = {},
   accountSummary: AccountSummary,
 ): Promise<HoldingsBifurcation> {
   const [eqHoldings, mfHoldings] = await Promise.all([
-    holdings.getCurrentEquityHoldings(qcode, opts.strategy, opts.asOfDate),
-    holdings.getCurrentMfHoldings(qcode, opts.strategy, opts.asOfDate),
+    // excludeLiquidbees=false: matches Python exactly — see holdings.ts's
+    // getCurrentEquityHoldings doc comment. This function's own liquidcase-
+    // only filter below (line ~115) is the sole exclusion here, same as
+    // calc_holdings_bifurcation's own filter in calculations.py:491.
+    holdings.getCurrentEquityHoldings(qcode, opts.strategy, false),
+    holdings.getCurrentMfHoldings(qcode, opts.strategy),
   ]);
 
   const combined: HoldingRow[] = [...eqHoldings, ...mfHoldings].filter(

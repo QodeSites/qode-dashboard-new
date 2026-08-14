@@ -63,17 +63,8 @@ function toStrategyView(summary: Awaited<ReturnType<typeof calcCombinedSummary>>
   };
 }
 
-/**
- * Computes the full Investment Summary for one client, straight from
- * Postgres. `asOfDate` supports the Phase 3 staging/preview design (doc
- * 04): admins pass today's date (or omit it), clients get the latest
- * published `sync_jobs` report_date — that resolution happens in
- * route.ts, not here; this function just takes whatever cutoff it's given.
- */
-export async function computeInvestmentSummary(
-  icode: string,
-  asOfDate?: Date,
-): Promise<MultiStrategyInvestmentData> {
+/** Computes the full Investment Summary for one client, straight from Postgres. */
+export async function computeInvestmentSummary(icode: string): Promise<MultiStrategyInvestmentData> {
   if (EXCLUDED_ICODES.has(icode)) {
     throw new UnsupportedClientError(icode);
   }
@@ -125,13 +116,13 @@ export async function computeInvestmentSummary(
 
   const [perStrategyRaw, combined, profitRedeploymentRows, eqHoldings, mfHoldings, cashTxns, missingSystemTags] =
     await Promise.all([
-      calcPerStrategySummaries(qcode, clientName, allStrategyRows, eqExcludeIds, asOfDate),
-      calcCombinedSummary(qcode, clientName, allStrategyRows, eqExcludeIds, asOfDate),
-      calcProfitRedeployment(qcode, allStrategyRows, asOfDate),
-      getCurrentEquityHoldings(qcode, undefined, asOfDate),
-      getCurrentMfHoldings(qcode, undefined, asOfDate),
+      calcPerStrategySummaries(qcode, clientName, allStrategyRows, eqExcludeIds),
+      calcCombinedSummary(qcode, clientName, allStrategyRows, eqExcludeIds),
+      calcProfitRedeployment(qcode, allStrategyRows),
+      getCurrentEquityHoldings(qcode, undefined),
+      getCurrentMfHoldings(qcode, undefined),
       loadCashTransactions(),
-      getBaseTags().then((baseTags) => checkMissingSystemTags(qcode, baseTags, asOfDate)),
+      getBaseTags().then((baseTags) => checkMissingSystemTags(qcode, baseTags)),
     ]);
 
   const perStrategy: Record<string, StrategyInvestmentData> = {};
@@ -162,8 +153,8 @@ export async function computeInvestmentSummary(
   // doesn't describe a full-cash exclusion for the transaction tables
   // themselves, only for the holdings-added/withdrawn totals.
   const [equityTransactionsRaw, mfTransactionsRaw] = await Promise.all([
-    calcEquityTransactions(qcode, undefined, eqExcludeIds, asOfDate),
-    calcMfTransactions(qcode, clientName, undefined, asOfDate),
+    calcEquityTransactions(qcode, undefined, eqExcludeIds),
+    calcMfTransactions(qcode, clientName, undefined),
   ]);
   const equityTransactions = equityTransactionsRaw.map((t) => ({
     name: t.symbol,
@@ -235,7 +226,7 @@ export async function computeInvestmentSummary(
   return {
     clientName,
     generatedDate: now.toISOString().slice(0, 10),
-    dataAsOfDate: (asOfDate ?? now).toISOString().slice(0, 10),
+    dataAsOfDate: now.toISOString().slice(0, 10),
 
     amountInvested: combined.amountInvested,
     validationChecks,

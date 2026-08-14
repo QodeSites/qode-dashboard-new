@@ -412,7 +412,7 @@ export function buildSummaryTable(allResults: VerificationRow[]): SummaryRow[] {
   const summary = new Map<string, SummaryRow>();
 
   for (const r of allResults) {
-    const key = `${r.client} ${r.strategy}`;
+    const key = `${r.client}|||${r.strategy}`;
     let s = summary.get(key);
     if (!s) {
       s = {

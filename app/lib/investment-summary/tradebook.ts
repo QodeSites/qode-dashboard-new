@@ -5,10 +5,6 @@
  * `calc_holdings_investment_summary`, `calc_eq_transactions`,
  * `calc_mf_transactions`, and `is_full_cash_strategy` (doc 02). Read-only
  * (findMany only — no writes, see CLAUDE.md DB safety rules).
- *
- * Every read accepts an optional `asOfDate` cutoff (`date <= asOfDate`),
- * matching the pattern in mastersheet.ts, so Phase 3's staging/preview
- * design can reuse these functions unchanged.
  */
 import { prisma } from "@/lib/prisma";
 import type { ClientStrategyConfigRow } from "./types";
@@ -25,10 +21,6 @@ export interface TransactionRow {
 
 function toNumber(value: { toNumber(): number } | null): number {
   return value === null ? 0 : value.toNumber();
-}
-
-function dateFilter(asOfDate?: Date) {
-  return asOfDate ? { lte: asOfDate } : undefined;
 }
 
 const FULL_CASH_STRATEGIES = new Set(["QAW+", "QAW++", "QTF+", "QTF++"]);
@@ -49,39 +41,42 @@ function isLiquidSubCategory(subCategory: string | null): boolean {
 }
 
 /**
- * Historical MF rows apply the same strategy/asOfDate filters as an
- * ordinary DB query would — Python merges them into mf_tradebook BEFORE
- * any strategy filtering happens, so a historical row only shows up in a
- * per-strategy call if its own `Strategy` column matches (blank for all of
- * today's rows, so they currently only surface in the combined/unfiltered
- * view — same as a DB row with a null strategy would).
+ * Historical MF rows apply the same strategy filter as an ordinary DB query
+ * would — Python merges them into mf_tradebook BEFORE any strategy
+ * filtering happens, so a historical row only shows up in a per-strategy
+ * call if its own `Strategy` column matches (blank for all of today's rows,
+ * so they currently only surface in the combined/unfiltered view — same as
+ * a DB row with a null strategy would).
  */
-function filterHistoricalMf(
-  rows: HistoricalMfRow[],
-  strategy: string | undefined,
-  asOfDate: Date | undefined,
-): HistoricalMfRow[] {
-  return rows.filter((r) => {
-    if (strategy && r.strategy !== strategy) return false;
-    if (asOfDate && r.date > asOfDate) return false;
-    return true;
-  });
+function filterHistoricalMf(rows: HistoricalMfRow[], strategy: string | undefined): HistoricalMfRow[] {
+  return rows.filter((r) => !strategy || r.strategy === strategy);
 }
 
 /**
- * Port of identify_transition_wash_trades (doc 02). For each strategy
- * transition boundary in the client's Master_Config history (one row's
- * effectiveTo immediately followed by another row's effectiveFrom), finds
- * same-symbol Sell trades on the old strategy's effectiveTo date whose
- * amount (quantity * price) is offset — within `tolerance` — by same-symbol
- * Buy trades on the new strategy's effectiveFrom date. These are bookkeeping
- * artifacts from the transition (stock re-tagged between strategies), not
- * real trades.
+ * Port of identify_transition_wash_trades (calculations.py:207-320). For
+ * each strategy transition boundary in the client's Master_Config history
+ * (one row's effectiveTo immediately followed by another row's
+ * effectiveFrom), finds same-symbol Sell trades on the old strategy's
+ * effectiveTo date whose amount (quantity * price) is offset — within
+ * `tolerance` — by same-symbol Buy trades on the new strategy's
+ * effectiveFrom date. These are bookkeeping artifacts from the transition
+ * (stock re-tagged between strategies), not real trades.
+ *
+ * Guard against false positives (calculations.py:281-301, confirmed
+ * 2026-08-14 against literal source): a symbol only qualifies as a clean
+ * transition cap-out/cap-in if it moves in ONE direction only on each
+ * boundary date. If the same symbol ALSO has a counter-trade that same day
+ * (e.g. a same-day buy+sell wash unrelated to the strategy transition —
+ * Python's own regression comment names Vikram Trading Company's
+ * FEDERALBNK, bought AND sold on the closing date), that's a different kind
+ * of wash trade and must not be mistaken for a transition artifact just
+ * because some other day's amount happens to coincide. This guard was
+ * missing from the initial TS port — added here to match source exactly.
  *
  * Returns a Set of excluded row ids, stringified from
  * equity_holdings_tradebook's own `id` primary key (e.g. "12345"), since
  * this is the equity table's natural unique row identifier. Only equity is
- * considered — doc 02 does not describe an MF-side wash-trade function.
+ * considered — Python does not describe an MF-side wash-trade function.
  */
 export async function identifyTransitionWashTrades(
   qcode: string,
@@ -125,23 +120,36 @@ export async function identifyTransitionWashTrades(
   const toDateKey = (d: Date) => d.toISOString().slice(0, 10);
 
   for (const boundary of boundaries) {
-    const sells = allTrades.filter(
-      (t) => toDateKey(t.date) === boundary.oldDate && t.trade_type === "Sell",
+    const dayClose = allTrades.filter((t) => toDateKey(t.date) === boundary.oldDate);
+    const dayOpen = allTrades.filter((t) => toDateKey(t.date) === boundary.newDate);
+
+    const sells = dayClose.filter((t) => t.trade_type === "Sell");
+    const buys = dayOpen.filter((t) => t.trade_type === "Buy");
+    if (sells.length === 0 || buys.length === 0) continue;
+
+    const closeSymbolsWithBuy = new Set(
+      dayClose.filter((t) => t.trade_type === "Buy").map((t) => t.symbol.trim()),
     );
-    const buys = allTrades.filter(
-      (t) => toDateKey(t.date) === boundary.newDate && t.trade_type === "Buy",
+    const openSymbolsWithSell = new Set(
+      dayOpen.filter((t) => t.trade_type === "Sell").map((t) => t.symbol.trim()),
     );
 
+    const usedOpen = new Set<string>();
     for (const sell of sells) {
-      const sellAmount = toNumber(sell.quantity) * toNumber(sell.price);
+      const symbol = sell.symbol.trim();
+      if (closeSymbolsWithBuy.has(symbol) || openSymbolsWithSell.has(symbol)) continue;
+
+      const sellAmount = Math.abs(toNumber(sell.quantity) * toNumber(sell.price));
       const match = buys.find((buy) => {
-        if (buy.symbol !== sell.symbol) return false;
-        const buyAmount = toNumber(buy.quantity) * toNumber(buy.price);
-        return Math.abs(sellAmount - buyAmount) <= tolerance;
+        if (usedOpen.has(String(buy.id))) return false;
+        if (buy.symbol.trim() !== symbol) return false;
+        const buyAmount = Math.abs(toNumber(buy.quantity) * toNumber(buy.price));
+        return Math.abs(sellAmount - buyAmount) < tolerance;
       });
       if (match) {
         excluded.add(String(sell.id));
         excluded.add(String(match.id));
+        usedOpen.add(String(match.id));
       }
     }
   }
@@ -150,21 +158,29 @@ export async function identifyTransitionWashTrades(
 }
 
 /**
- * Port of calc_holdings_investment_summary (doc 02). All-zero for full-cash
- * strategies (caller determines fullCash via isFullCashStrategy). Otherwise
- * sums Amount = quantity * price across both tradebooks, excluding
- * wash-trade rows (equity only, via eqExcludeIds) and liquidcase/liquidbees
- * sub-category rows, but keeping blank/empty `strategy` rows.
+ * Port of calc_holdings_investment_summary (calculations.py:336-414).
+ * All-zero for full-cash strategies (caller determines fullCash via
+ * isFullCashStrategy). Otherwise sums Amount = quantity * price across both
+ * tradebooks, excluding wash-trade rows (equity only, via eqExcludeIds) and
+ * liquidcase/liquidbees sub-category rows.
  *
- * NOTE: doc 02 also describes a row-level "full-cash-strategy rows"
- * exclusion independent of the `fullCash` param. Removed — confirmed
- * against real report data (Ashok Jogani HUF QUS00124, exact rupee match)
- * that this over-excludes: the combined ("Total Portfolio") view calls
- * this with `fullCash=false` and DOES include full-cash-strategy-tagged
- * rows in its total, so a hidden per-row veto based on the row's own
- * `strategy` tag was zeroing out real holdings the real pipeline counts.
- * The single `fullCash` parameter (checked once, by the caller) is the
- * only full-cash exclusion now.
+ * Row-level full-cash exclusion (calculations.py:388-397, restored
+ * 2026-08-14 to match literal source exactly): independent of the caller's
+ * `fullCash` param, any row whose OWN `strategy` tag is itself a full-cash
+ * strategy name (QAW+/QAW++/QTF+/QTF++) is excluded — those trades were
+ * made by Qode on the client's behalf, not a real client-driven holdings
+ * transfer, so they must not count toward Holdings Added/Withdrawn even
+ * when the caller (e.g. a single-active client's unfiltered call) didn't
+ * already know to zero the whole thing via `fullCash`. Blank/empty
+ * `strategy` rows are always kept (pre-strategy-tagging legacy data).
+ *
+ * KNOWN OPEN CONTRADICTION: this was previously removed after finding it
+ * zeroes Ashok Jogani HUF's holdings (QAC00110, single-active QAW++, nearly
+ * all tradebook rows tagged QAW+/QAW++) while his real generated .xlsx
+ * report shows a large non-zero figure. That conflict is NOT resolved by
+ * restoring this filter — it is re-introduced. Re-verify against his real
+ * report after this change; if it still shows non-zero holdings, this
+ * filter (or the report) needs another look before shipping.
  *
  * Sign convention matches calc_eq_transactions/calc_mf_transactions (doc
  * 02 line 138-142): sells are negated, so totalHoldingsWithdrawn is <= 0.
@@ -175,7 +191,6 @@ export async function calcHoldingsInvestmentSummary(
   strategy: string | undefined,
   fullCash: boolean,
   eqExcludeIds: Set<string>,
-  asOfDate?: Date,
 ): Promise<{ totalHoldingsAdded: number; totalHoldingsWithdrawn: number; netHoldingBalance: number }> {
   if (fullCash) {
     return { totalHoldingsAdded: 0, totalHoldingsWithdrawn: 0, netHoldingBalance: 0 };
@@ -186,7 +201,6 @@ export async function calcHoldingsInvestmentSummary(
       where: {
         qcode,
         ...(strategy ? { strategy } : {}),
-        ...(asOfDate ? { date: dateFilter(asOfDate) } : {}),
       },
       select: {
         id: true,
@@ -201,7 +215,6 @@ export async function calcHoldingsInvestmentSummary(
       where: {
         qcode,
         ...(strategy ? { strategy } : {}),
-        ...(asOfDate ? { date: dateFilter(asOfDate) } : {}),
       },
       select: {
         trade_type: true,
@@ -220,6 +233,7 @@ export async function calcHoldingsInvestmentSummary(
   for (const row of eqRows) {
     if (eqExcludeIds.has(String(row.id))) continue;
     if (isLiquidSubCategory(row.sub_category)) continue;
+    if (row.strategy && isFullCashStrategy(row.strategy.trim())) continue;
 
     const amount = toNumber(row.quantity) * toNumber(row.price);
     if (row.trade_type === "Buy") {
@@ -229,9 +243,10 @@ export async function calcHoldingsInvestmentSummary(
     }
   }
 
-  const allMfRows = [...mfRows, ...filterHistoricalMf(historicalMfRows, strategy, asOfDate)];
+  const allMfRows = [...mfRows, ...filterHistoricalMf(historicalMfRows, strategy)];
   for (const row of allMfRows) {
     if (isLiquidSubCategory(row.sub_category)) continue;
+    if (row.strategy && isFullCashStrategy(row.strategy.trim())) continue;
 
     const amount = toNumber(row.quantity) * toNumber(row.price);
     if (row.trade_type === "Buy") {
@@ -288,13 +303,11 @@ export async function calcEquityTransactions(
   qcode: string,
   strategy: string | undefined,
   eqExcludeIds: Set<string>,
-  asOfDate?: Date,
 ): Promise<TransactionRow[]> {
   const rows = await prisma.equity_holdings_tradebook.findMany({
     where: {
       qcode,
       ...(strategy ? { strategy } : {}),
-      ...(asOfDate ? { date: dateFilter(asOfDate) } : {}),
     },
     select: {
       id: true,
@@ -336,14 +349,12 @@ export async function calcMfTransactions(
   qcode: string,
   clientName: string,
   strategy: string | undefined,
-  asOfDate?: Date,
 ): Promise<TransactionRow[]> {
   const [rows, historicalMfRows] = await Promise.all([
     prisma.mutual_funds_tradebook.findMany({
       where: {
         qcode,
         ...(strategy ? { strategy } : {}),
-        ...(asOfDate ? { date: dateFilter(asOfDate) } : {}),
       },
       select: {
         date: true,
@@ -358,7 +369,7 @@ export async function calcMfTransactions(
     loadHistoricalMfTransactions(clientName),
   ]);
 
-  const grouped = groupFills([...rows, ...filterHistoricalMf(historicalMfRows, strategy, asOfDate)]);
+  const grouped = groupFills([...rows, ...filterHistoricalMf(historicalMfRows, strategy)]);
 
   const result: TransactionRow[] = [];
   for (const g of grouped) {

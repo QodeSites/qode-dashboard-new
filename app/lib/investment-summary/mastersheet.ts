@@ -3,11 +3,6 @@
  * touches this table directly (doc 04 "mastersheet.ts"). Confirmed source
  * for Investment Summary's Mastersheet data (doc 03), read-only only
  * (findMany/aggregate/findFirst — no writes, see CLAUDE.md DB safety rules).
- *
- * Every read accepts an optional `asOfDate` cutoff (`date <= asOfDate`) so
- * the Phase 3 staging/preview design (doc 04) — admins see live/today,
- * clients see the latest published date — can reuse these functions
- * unchanged; omit it to read all history up to now.
  */
 import { prisma } from "@/lib/prisma";
 import type { MasterSheetRow } from "./types";
@@ -16,21 +11,12 @@ function toNumber(value: { toNumber(): number } | null): number | null {
   return value === null ? null : value.toNumber();
 }
 
-function dateFilter(asOfDate?: Date) {
-  return asOfDate ? { lte: asOfDate } : undefined;
-}
-
-/** Raw rows for a qcode, optionally narrowed to specific system_tag values and/or an as-of cutoff. */
-export async function getMastersheetRows(
-  qcode: string,
-  tags?: string[],
-  asOfDate?: Date,
-): Promise<MasterSheetRow[]> {
+/** Raw rows for a qcode, optionally narrowed to specific system_tag values. */
+export async function getMastersheetRows(qcode: string, tags?: string[]): Promise<MasterSheetRow[]> {
   const rows = await prisma.bifurcated_master_sheet_test.findMany({
     where: {
       qcode,
       ...(tags && tags.length > 0 ? { system_tag: { in: tags } } : {}),
-      ...(asOfDate ? { date: dateFilter(asOfDate) } : {}),
     },
     orderBy: { date: "asc" },
     select: {
@@ -60,13 +46,9 @@ export async function getMastersheetRows(
  * sums across ALL dates for that tag, not a snapshot). Returns 0 if the tag
  * has no rows (matches Python's DataFrame-sum-of-empty-selection behavior).
  */
-export async function sumPnl(qcode: string, systemTag: string, asOfDate?: Date): Promise<number> {
+export async function sumPnl(qcode: string, systemTag: string): Promise<number> {
   const result = await prisma.bifurcated_master_sheet_test.aggregate({
-    where: {
-      qcode,
-      system_tag: systemTag,
-      ...(asOfDate ? { date: dateFilter(asOfDate) } : {}),
-    },
+    where: { qcode, system_tag: systemTag },
     _sum: { pnl: true },
   });
   return result._sum.pnl?.toNumber() ?? 0;
@@ -81,14 +63,9 @@ export async function sumPnl(qcode: string, systemTag: string, asOfDate?: Date):
 export async function getLatest(
   qcode: string,
   systemTag: string,
-  asOfDate?: Date,
 ): Promise<{ date: Date; value: number } | null> {
   const row = await prisma.bifurcated_master_sheet_test.findFirst({
-    where: {
-      qcode,
-      system_tag: systemTag,
-      ...(asOfDate ? { date: dateFilter(asOfDate) } : {}),
-    },
+    where: { qcode, system_tag: systemTag },
     orderBy: { date: "desc" },
     select: { date: true, portfolio_value: true },
   });
@@ -97,12 +74,9 @@ export async function getLatest(
 }
 
 /** All distinct system_tag values present for a qcode — used by tags.ts to check candidate existence without a full row fetch. */
-export async function getDistinctTags(qcode: string, asOfDate?: Date): Promise<Set<string>> {
+export async function getDistinctTags(qcode: string): Promise<Set<string>> {
   const rows = await prisma.bifurcated_master_sheet_test.findMany({
-    where: {
-      qcode,
-      ...(asOfDate ? { date: dateFilter(asOfDate) } : {}),
-    },
+    where: { qcode },
     distinct: ["system_tag"],
     select: { system_tag: true },
   });

@@ -56,25 +56,26 @@ export interface OverviewCashSummary {
   check: number;
 }
 
-interface Opts {
-  asOfDate?: Date;
-}
-
 /**
  * Sums the 5 "adjustment item" base tags (liquidcase, liquidbees,
  * miscellaneous_pnl, equity_other_debits_credits, equity_holdings_tax) for
- * ONE strategy prefix, via tags.ts (alias-aware, allowUnprefixedFallback:
- * false — per-strategy lookups on a multi-strategy client must not silently
- * fall back to an unprefixed tag, doc 02).
+ * ONE strategy prefix, via tags.ts (alias-aware). `isMultiActive` gates
+ * allowUnprefixedFallback the same way as the ztp/esh/mf/bond/liq/lb lookups
+ * below (see calcOverviewCashSummary's header comment) — multi-active
+ * clients must not fall back to an unprefixed tag (would leak another
+ * strategy's numbers), but single-active clients default to allowing it,
+ * matching main.py's single-active call site which passes no
+ * strategy_prefix at all. Missed when the isMultiActive fix first landed;
+ * confirmed 2026-08-14 this helper was hardcoding false unconditionally.
  */
 async function sumAdjustmentItemsForStrategy(
   qcode: string,
   strategyName: string,
   baseTags: Awaited<ReturnType<typeof getBaseTags>>,
-  asOfDate?: Date,
+  isMultiActive: boolean,
 ): Promise<number> {
   const prefix = `${strategyName} `;
-  const opts = { strategyPrefix: prefix, allowUnprefixedFallback: false, asOfDate };
+  const opts = { strategyPrefix: prefix, allowUnprefixedFallback: !isMultiActive };
 
   const [liquidcase, liquidbees, miscPnl, eqOther, eqTax] = await Promise.all([
     tags.sumPnl(qcode, baseTags.liquidcaseStockHoldings, opts),
@@ -117,35 +118,32 @@ export async function calcOverviewCashSummary(
   isMultiActive: boolean,
   cashInvestment: number,
   eqPurchaseSold: number,
-  opts: Opts = {},
 ): Promise<OverviewCashSummary> {
   const baseTags = await getBaseTags();
   const fullCashActive = isFullCashStrategy(activeRow.strategy);
 
   const adjustmentItems = (
     await Promise.all(
-      adjustmentStrategyNames.map((name) => sumAdjustmentItemsForStrategy(qcode, name, baseTags, opts.asOfDate)),
+      adjustmentStrategyNames.map((name) => sumAdjustmentItemsForStrategy(qcode, name, baseTags, isMultiActive)),
     )
   ).reduce((sum, v) => sum + v, 0);
 
   const inactiveRealised = (
-    await Promise.all(
-      inactiveRealisedRows.map((row) => mastersheet.sumPnl(qcode, row.forProfitTag, opts.asOfDate)),
-    )
+    await Promise.all(inactiveRealisedRows.map((row) => mastersheet.sumPnl(qcode, row.forProfitTag)))
   ).reduce((sum, v) => sum + v, 0);
 
   const totalRealised = fullCashActive
     ? inactiveRealised
     : adjustmentItems + eqPurchaseSold + inactiveRealised;
 
-  const totalUnrealised = await mastersheet.sumPnl(qcode, activeRow.forProfitTag, opts.asOfDate);
+  const totalUnrealised = await mastersheet.sumPnl(qcode, activeRow.forProfitTag);
 
   const totalProfits = totalRealised + totalUnrealised;
   const totalCashGenerated = totalProfits + cashInvestment;
 
   const activeOpts = isMultiActive
-    ? { strategyPrefix: `${activeRow.strategy} `, allowUnprefixedFallback: false, asOfDate: opts.asOfDate }
-    : { asOfDate: opts.asOfDate };
+    ? { strategyPrefix: `${activeRow.strategy} `, allowUnprefixedFallback: false }
+    : {};
   const ztp = await tags.getLatestPortfolioValue(qcode, baseTags.zerodhaTotalPortfolio, activeOpts);
 
   let currentZerodhaCash: number;
