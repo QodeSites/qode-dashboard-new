@@ -50,6 +50,15 @@ const SATIDHAM_EFFECTIVE_QCODE = "QAC00066";
 // aum-utils.ts, which reads Scheme B / Scheme QAW++ for these two).
 const SARLA_SCHEME = "Scheme B";
 const SATIDHAM_SCHEME = "Scheme QAW++";
+// Satidham's Zoho number is QAW++ + QYE++ combined (both live in the same
+// QAC00066 account, just tracked under separate bifurcated tags).
+const SATIDHAM_SCHEME_QYE = "Scheme QYE++";
+
+// Bifurcated clients whose Zoho snapshot should read a specific scheme
+// instead of the default "Total Portfolio" aggregate.
+const BIFURCATED_SCHEME_OVERRIDE: Record<string, string> = {
+  QAC00110: "Scheme QAW++", // Ashok Jogani HUF — divided account, use QAW++
+};
 
 interface Values {
   currentAum: number;
@@ -77,10 +86,12 @@ async function fromBifurcatedEngine(qcode: string): Promise<Values> {
     { data: { amountDeposited: string; currentExposure: string } }
   >;
 
-  // Multi-scheme clients: "Total Portfolio" is the aggregate the dashboard
-  // headlines. Single-strategy clients: exactly one scheme key.
-  const key =
-    "Total Portfolio" in results
+  // Per-qcode override takes priority, then "Total Portfolio" aggregate,
+  // then the sole scheme key (single-strategy clients).
+  const override = BIFURCATED_SCHEME_OVERRIDE[qcode];
+  const key = override && override in results
+    ? override
+    : "Total Portfolio" in results
       ? "Total Portfolio"
       : Object.keys(results)[0];
   const data = results[key]?.data;
@@ -106,10 +117,23 @@ async function fromSarlaApi(qcode: string): Promise<Values> {
     { data: { amountDeposited: string; currentExposure: string } }
   >;
 
-  const scheme = qcode === SATIDHAM_QCODE ? SATIDHAM_SCHEME : SARLA_SCHEME;
-  const data = results[scheme]?.data;
+  if (qcode === SATIDHAM_QCODE) {
+    const qaw = results[SATIDHAM_SCHEME]?.data;
+    if (!qaw) {
+      throw new Error(`Scheme "${SATIDHAM_SCHEME}" missing in sarla-api response`);
+    }
+    const qye = results[SATIDHAM_SCHEME_QYE]?.data;
+
+    return {
+      currentAum: num(qaw.currentExposure) + num(qye?.currentExposure),
+      investedAmount: num(qaw.amountDeposited) + num(qye?.amountDeposited),
+      source: "sarla_satidham",
+    };
+  }
+
+  const data = results[SARLA_SCHEME]?.data;
   if (!data) {
-    throw new Error(`Scheme "${scheme}" missing in sarla-api response`);
+    throw new Error(`Scheme "${SARLA_SCHEME}" missing in sarla-api response`);
   }
 
   return {

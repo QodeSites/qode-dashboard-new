@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { getEffectiveIcode } from "./admin-utils";
+import { getEffectiveIcodeChecked } from "./admin-utils";
 import { prisma } from "@/lib/prisma";
 import {
   findByQcode,
@@ -25,7 +25,7 @@ export async function authorizeBifurcatedRequest(
       response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
     };
   }
-  const effectiveIcode = getEffectiveIcode(session);
+  const effectiveIcode = await getEffectiveIcodeChecked(session);
   if (!effectiveIcode) {
     return {
       ok: false,
@@ -79,7 +79,7 @@ export async function authorizeHoldingsRequest(
       response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
     };
   }
-  const effectiveIcode = getEffectiveIcode(session);
+  const effectiveIcode = await getEffectiveIcodeChecked(session);
   if (!effectiveIcode) {
     return {
       ok: false,

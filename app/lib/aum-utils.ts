@@ -11,7 +11,7 @@ export const MANAGED_ACCOUNTS_LIST: string[] = [
   "QAC00042",
   "QAC00046",
   "QAC00041",
-  "QAC00065",
+  // "QAC00065",
   // "QAC00055",
   "QAC00056",
   "QAC00064",
@@ -40,7 +40,7 @@ export const MANAGED_ACCOUNTS_LIST: string[] = [
   "QAC00110",
   "QAC00111",
   "QAC00112",
-  "QAC00115",
+  // "QAC00115",
   "QAC00073",
   "QAC00093",
   "QAC00116",
@@ -49,6 +49,9 @@ export const MANAGED_ACCOUNTS_LIST: string[] = [
   "QAC00119",
   "QAC00120",
   "QAC00121",
+  "QAC00123",
+  "QAC00124",
+  "QAC00127",
 ];
 
 const different_cases: Record<string, string> = {
@@ -76,7 +79,7 @@ const different_cases: Record<string, string> = {
    "QAC00110": "Zerodha Total Portfolio",
    "QAC00111": "Zerodha Total Portfolio",
    "QAC00112": "Zerodha Total Portfolio",
-   "QAC00115": "Total Portfolio Exposure",
+  //  "QAC00115": "Total Portfolio Exposure",
    "QAC00073": "Total Portfolio Exposure",
    "QAC00093": "Total Portfolio Exposure",
    "QAC00116": "Zerodha Total Portfolio",
@@ -85,6 +88,9 @@ const different_cases: Record<string, string> = {
    "QAC00119": "Zerodha Total Portfolio",
    "QAC00120": "Zerodha Total Portfolio",
    "QAC00121": "Zerodha Total Portfolio",
+   "QAC00123": "Zerodha Total Portfolio",
+   "QAC00124": "Zerodha Total Portfolio",
+   "QAC00127": "Zerodha Total Portfolio",
   };
 /** 🔹 Resolve correct system_tag for NORMAL accounts only */
 export function getSystemTagForManagedAccountAUM(account: {
@@ -225,21 +231,28 @@ if (tagMap.length > 0) {
     }
 
     // ✅ Satidham
-    const satidham = await PortfolioApi.getLatestExposure(
+    const satidham_qaw_pp = await PortfolioApi.getLatestExposure(
       "QAC00046",
       "Scheme QAW++"
     );
-    if (satidham) {
+
+    const satidham_qye_pp = await PortfolioApi.getLatestExposure(
+      "QAC00046",
+      "Scheme QYE++"
+    );
+
+
+    if (satidham_qaw_pp && satidham_qye_pp) {
       specialUpdates.push(
         prisma.account_aum.upsert({
           where: { qcode: "QAC00046" },
           update: {
-            aum: satidham.portfolioValue,
+            aum: satidham_qaw_pp.portfolioValue + satidham_qye_pp.portfolioValue,
             aum_updated_at: now,
           },
           create: {
             qcode: "QAC00046",
-            aum: satidham.portfolioValue,
+            aum: satidham_qaw_pp.portfolioValue + satidham_qye_pp.portfolioValue,
             aum_updated_at: now,
           },
         })

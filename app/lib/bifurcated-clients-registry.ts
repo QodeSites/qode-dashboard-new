@@ -41,6 +41,9 @@ import { HARSH_MEHTA_CONFIG } from "./clients/harsh_mehta_single";
 import { MONICA_MEHTA_CONFIG } from "./clients/monica_mehta_single";
 import { SANJAY_MEHTA_CONFIG } from "./clients/sanjay_mehta_single";
 import { DIAMANTAIRE_EXPORTS_PVT_LTD_CONFIG } from "./clients/dxp_single";
+import { NAGARJUN_TEXTILES_INDIA_CONFIG } from "./clients/nagarjun";
+import { CHANDANMAL_JAIN_CONFIG } from "./clients/chandanmal_single";
+import { PRIYANKA_MITTLE_CONFIG } from "./clients/priyanka_mittle_single";
 
 // Single source of truth for clients whose data lives in
 // bifurcated_master_sheet_test. Add a new entry here when onboarding a new
@@ -412,7 +415,6 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     config: DIAMANTAIRE_EXPORTS_PVT_LTD_CONFIG,
     frozenData: EMPTY_FROZEN_DATA,
     hasNavBasedTotalPortfolio: true,
-    renderMode: "single",
     broker: "zerodha",
   },
   {
@@ -433,6 +435,38 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     frozenData: EMPTY_FROZEN_DATA,
     hasNavBasedTotalPortfolio: true,
     renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00137",
+    qcode: "QAC00123",
+    displayName: "Nagarjun Textiles India",
+    config: NAGARJUN_TEXTILES_INDIA_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    broker: "radiance",
+  },
+  {
+    icode: "QUS00138",
+    qcode: "QAC00124",
+    displayName: "Chandanmal Jain",
+    config: CHANDANMAL_JAIN_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00142",
+    qcode: "QAC00127",
+    displayName: "Priyanka Mittle",
+    config: PRIYANKA_MITTLE_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    // Per the data team's spec. NOTE: accounts.broker for QAC00127 currently
+    // reads "radiance" in the DB, which contradicts both the spec and the
+    // Zerodha-flavored system tags — worth confirming with the data team.
     broker: "zerodha",
   },
 ];

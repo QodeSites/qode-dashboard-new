@@ -41,6 +41,7 @@ interface ExcelReportInput {
   strategyName: string;
   isTotalPortfolio: boolean;
   hasNavBasedTotalPortfolio?: boolean;
+  pmsBlendedTP?: boolean;
   isActive: boolean;
   sessionUserName: string;
   dataAsOfDate?: string | null;
@@ -83,6 +84,7 @@ export function generateExcelReport(input: ExcelReportInput): void {
     strategyName,
     isTotalPortfolio,
     hasNavBasedTotalPortfolio = false,
+    pmsBlendedTP = false,
     isActive,
     sessionUserName,
     dataAsOfDate,
@@ -94,7 +96,8 @@ export function generateExcelReport(input: ExcelReportInput): void {
     quarterlyPnl,
   } = input;
 
-  const includeFullSections = !isTotalPortfolio || hasNavBasedTotalPortfolio;
+  const includeFullSections = !isTotalPortfolio || (hasNavBasedTotalPortfolio && !pmsBlendedTP);
+  const includeMonthly = includeFullSections || pmsBlendedTP;
 
   try {
     const nameForFile = accountInfo?.accountName || strategyName;
@@ -229,9 +232,9 @@ export function generateExcelReport(input: ExcelReportInput): void {
     }
 
     // ========================================================================
-    // 4. Monthly PnL Section (rendered only when includeFullSections)
+    // 4. Monthly PnL Section (rendered only when includeMonthly)
     // ========================================================================
-    if (includeFullSections && monthlyPnl && Object.keys(monthlyPnl).length > 0) {
+    if (includeMonthly && monthlyPnl && Object.keys(monthlyPnl).length > 0) {
       headerRows.push(wsData.length);
       wsData.push(["", "Monthly P&L"]);
       subHeaderRows.push(wsData.length);

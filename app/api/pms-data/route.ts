@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { getPmsData } from "@/app/lib/pms-utils";
-import { getEffectiveIcode } from "@/app/lib/admin-utils";
+import { getEffectiveIcodeChecked } from "@/app/lib/admin-utils";
 
 export async function GET(request: Request) {
   try {
     // Authenticate user
     const session = await getServerSession(authOptions);
-    const icode = getEffectiveIcode(session);
+    const icode = await getEffectiveIcodeChecked(session);
     if (!icode) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

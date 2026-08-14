@@ -25,4 +25,9 @@ export const ASHOK_JOGANI_HUF_CONFIG = defineBifurcatedClient({
       inactive: true,
     },
   },
+  pms: [
+    { schemeName: "Scheme PMS QAW", accountCode: "QAW00158" },
+    { schemeName: "Scheme PMS QGF", accountCode: "QGF00157" },
+    { schemeName: "Scheme PMS QTF", accountCode: "QTF00161" },
+  ],
 });

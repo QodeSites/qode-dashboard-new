@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Decimal } from "@prisma/client/runtime/library";
 import { EMPTY_FROZEN_DATA } from "./bifurcated-portfolio-data";
+import { getPmsAccountSeries } from "./pms-bridge";
+import { buildCombinedHistorical, type BlendComponent } from "./pms-blend";
 // Re-export types and builder from the cycle-free builder module so callers
 // that import from bifurcated-portfolio-utils keep working unchanged.
 export type {
@@ -17,7 +19,7 @@ import type {
 
 // ==================== Interfaces ====================
 
-interface CashFlow {
+export interface CashFlow {
   date: string;
   amount: number;
   dividend: number;
@@ -68,7 +70,7 @@ interface Metadata {
     startDate: string | null;
     endDate: string | null;
   };
-  inceptionDate: string;
+  inceptionDate: string | null;
   dataAsOfDate: string;
   strategyName: string;
   isActive: boolean;
@@ -100,6 +102,67 @@ import { ASHWIN_CONFIG } from "./clients/ashwin";
 
 // ==================== Engine ====================
 
+export function computeTrailingReturnsFromCurve(
+  normalizedData: { date: string; nav: number }[],
+  sinceInceptionBase: number,
+  drawdownMetrics: { mdd: number; currentDD: number }
+): Record<string, number | null | string> {
+  const emptyReturns = {
+    "5d": null, "10d": null, "15d": null, "1m": null, "3m": null,
+    "6m": null, "1y": null, "2y": null, "5y": null, sinceInception: null,
+    MDD: drawdownMetrics.mdd, currentDD: drawdownMetrics.currentDD,
+  };
+  if (normalizedData.length === 0) return emptyReturns;
+
+  const lastEntry = normalizedData[normalizedData.length - 1];
+  const lastNav = lastEntry.nav;
+  const currentDate = lastEntry.date;
+  const oldestDate = normalizedData[0].date;
+  const dataRangeDays =
+    (new Date(currentDate).getTime() - new Date(oldestDate).getTime()) /
+    (1000 * 60 * 60 * 24);
+
+  const periods: Record<string, number | null> = {
+    "5d": 5, "10d": 10, "15d": 15, "1m": 30, "3m": 90,
+    "6m": 180, "1y": 365, "2y": 730, "5y": 1825, sinceInception: null,
+  };
+
+  const returns: Record<string, number | null | string> = {};
+  for (const [period, targetCount] of Object.entries(periods)) {
+    if (period === "sinceInception") {
+      const firstNav = sinceInceptionBase;
+      if (!firstNav) returns[period] = null;
+      else if (dataRangeDays > 365)
+        returns[period] = (Math.pow(lastNav / firstNav, 365 / dataRangeDays) - 1) * 100;
+      else returns[period] = (lastNav / firstNav - 1) * 100;
+      continue;
+    }
+    const requiredDays = targetCount as number;
+    if (requiredDays > dataRangeDays) { returns[period] = null; continue; }
+    const targetDate = new Date(currentDate);
+    targetDate.setDate(targetDate.getDate() - requiredDays);
+    if (targetDate < new Date(oldestDate)) { returns[period] = null; continue; }
+    const targetTime = targetDate.getTime();
+    let candidate: { date: string; nav: number } | null = null;
+    for (const dp of normalizedData) {
+      if (new Date(dp.date).getTime() <= targetTime) candidate = dp; else break;
+    }
+    if (!candidate) {
+      for (const dp of normalizedData) {
+        if (new Date(dp.date).getTime() >= targetTime) { candidate = dp; break; }
+      }
+    }
+    if (!candidate) { returns[period] = null; continue; }
+    const daysDiff = Math.abs(new Date(candidate.date).getTime() - targetTime) / (1000 * 60 * 60 * 24);
+    const maxAllowedDiff = requiredDays <= 30 ? 7 : 30;
+    if (daysDiff > maxAllowedDiff) { returns[period] = null; continue; }
+    returns[period] = (lastNav / candidate.nav - 1) * 100;
+  }
+  returns["MDD"] = drawdownMetrics.mdd;
+  returns["currentDD"] = drawdownMetrics.currentDD;
+  return returns;
+}
+
 class BifurcatedPortfolioEngine {
   private config: ClientConfig;
   private frozenData: FrozenSchemeData;
@@ -117,6 +180,11 @@ class BifurcatedPortfolioEngine {
   // Whether old+new schemes share the same DB NAV tag (single query covers both periods)
   private get sharedNavTag(): boolean {
     return this.config.oldSchemeNavTag === this.config.navSystemTag;
+  }
+
+  // True when this client has at least one PMS scheme blended in.
+  private get hasPms(): boolean {
+    return (this.config.pmsSchemes?.length ?? 0) > 0;
   }
 
   // Redirects master_sheet reads to bifurcated_master_sheet_test when the client
@@ -482,6 +550,57 @@ class BifurcatedPortfolioEngine {
     }));
   }
 
+  // Cash In/Out TABLE source (display only). Deliberately separate from
+  // getCashFlows so it does NOT affect Amount Invested — getAmountDeposited
+  // still derives from getCashFlows. Reads the broker's base/strategy
+  // "total portfolio" cash tag from the bifurcated master sheet:
+  //   Total Portfolio -> the broker BASE tag ("Zerodha Total Portfolio", or
+  //                      "Total Portfolio Exposure" for Radiance). NOTE:
+  //                      config.depositSystemTag is the FIRST scheme's prefixed
+  //                      exposure (e.g. "QAW++ Zerodha Total Portfolio"), so we
+  //                      strip the strategy prefix via the known base suffix to
+  //                      get the account-level series.
+  //   a specific scheme -> that scheme's depositTag (e.g. "QAW++ Zerodha Total
+  //                        Portfolio"), from the scheme's inception onwards.
+  private async getCashFlowTableEntries(
+    qcode: string,
+    scheme: string
+  ): Promise<CashFlow[]> {
+    const isTotal = scheme === "Total Portfolio";
+    const schemeTags = isTotal ? null : this.getSchemeTagsAndDate(scheme);
+    // Broker-level base cash tags. depositSystemTag is a prefixed scheme exposure
+    // ("<strategy> <base>"); for Total Portfolio we read its base suffix.
+    const BASE_CASH_TAGS = [
+      "Zerodha Total Portfolio",
+      "Total Portfolio Exposure",
+      "Total Portfolio Value",
+    ];
+    const tag = isTotal
+      ? BASE_CASH_TAGS.find((b) => this.config.depositSystemTag.endsWith(b)) ??
+        this.config.depositSystemTag
+      : schemeTags!.depositTag;
+
+    const data = await this.msTable.findMany({
+      where: {
+        qcode,
+        system_tag: tag,
+        ...(schemeTags ? { date: { gte: schemeTags.startDate } } : {}),
+        AND: [
+          { capital_in_out: { not: null } },
+          { capital_in_out: { not: new Decimal(0) } },
+        ],
+      },
+      select: { date: true, capital_in_out: true },
+      orderBy: { date: "asc" },
+    });
+
+    return data.map((entry: any) => ({
+      date: this.normalizeDate(entry.date),
+      amount: entry.capital_in_out?.toNumber() || 0,
+      dividend: 0,
+    }));
+  }
+
   private async getTotalProfit(
     qcode: string,
     scheme: string
@@ -659,6 +778,15 @@ class BifurcatedPortfolioEngine {
     }
 
     const historicalData = await this.getHistoricalData(qcode, scheme);
+    if (historicalData.length === 0) return 0;
+
+    // Single-row fresh schemes: use prev_nav as baseline (day-1 return).
+    if (historicalData.length === 1 && this.isFreshActiveScheme(scheme)) {
+      const initialNav = historicalData[0].prevNav ?? 100;
+      const finalNav = historicalData[0].nav;
+      return (finalNav / initialNav - 1) * 100;
+    }
+
     if (historicalData.length < 2) return 0;
 
     const originalFirstNav = historicalData[0].nav;
@@ -742,118 +870,15 @@ class BifurcatedPortfolioEngine {
       : (historicalData || []).map((entry) => ({ date: this.normalizeDate(entry.date), nav: entry.nav }))
           .filter((entry) => entry.date)
           .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    const emptyReturns = {
-      "5d": null,
-      "10d": null,
-      "15d": null,
-      "1m": null,
-      "3m": null,
-      "6m": null,
-      "1y": null,
-      "2y": null,
-      "5y": null,
-      sinceInception: null,
-      MDD: drawdownMetrics.mdd,
-      currentDD: drawdownMetrics.currentDD,
-    };
-
-    if (normalizedData.length === 0) return emptyReturns;
-
-    const lastEntry = normalizedData[normalizedData.length - 1];
-    const lastNav = lastEntry.nav;
-    const currentDate = lastEntry.date;
-    const oldestDate = normalizedData[0].date;
-    const dataRangeDays =
-      (new Date(currentDate).getTime() - new Date(oldestDate).getTime()) /
-      (1000 * 60 * 60 * 24);
-
-    const periods: Record<string, number | null> = {
-      "5d": 5,
-      "10d": 10,
-      "15d": 15,
-      "1m": 30,
-      "3m": 90,
-      "6m": 180,
-      "1y": 365,
-      "2y": 730,
-      "5y": 1825,
-      sinceInception: null,
-    };
-
-    const returns: Record<string, number | null | string> = {};
-
-    for (const [period, targetCount] of Object.entries(periods)) {
-      if (period === "sinceInception") {
-        // For shared-tag new scheme, use prevNav (previous day's close) as
-        // the base. For everything else, use 100 (scheme starts at NAV 100).
-        const firstNav =
-          scheme === this.config.newSchemeName && this.sharedNavTag
-            ? (historicalData?.[0]?.prevNav ?? normalizedData[0].nav)
-            : 100;
-        if (!firstNav) {
-          returns[period] = null;
-        } else if (dataRangeDays > 365) {
-          // Use CAGR for sinceInception when > 1 year, matching old flow
-          returns[period] = (Math.pow(lastNav / firstNav, 365 / dataRangeDays) - 1) * 100;
-        } else {
-          returns[period] = (lastNav / firstNav - 1) * 100;
-        }
-        continue;
-      }
-
-      const requiredDays = targetCount as number;
-      if (requiredDays > dataRangeDays) {
-        returns[period] = null;
-        continue;
-      }
-
-      const targetDate = new Date(currentDate);
-      targetDate.setDate(targetDate.getDate() - requiredDays);
-
-      if (targetDate < new Date(oldestDate)) {
-        returns[period] = null;
-        continue;
-      }
-
-      const targetTime = targetDate.getTime();
-      let candidate: { date: string; nav: number } | null = null;
-
-      for (const dataPoint of normalizedData) {
-        const dataTime = new Date(dataPoint.date).getTime();
-        if (dataTime <= targetTime) candidate = dataPoint;
-        else break;
-      }
-
-      if (!candidate) {
-        for (const dataPoint of normalizedData) {
-          const dataTime = new Date(dataPoint.date).getTime();
-          if (dataTime >= targetTime) {
-            candidate = dataPoint;
-            break;
-          }
-        }
-      }
-
-      if (!candidate) {
-        returns[period] = null;
-        continue;
-      }
-
-      const candidateTime = new Date(candidate.date).getTime();
-      const daysDiff =
-        Math.abs(candidateTime - targetTime) / (1000 * 60 * 60 * 24);
-      const maxAllowedDiff = requiredDays <= 30 ? 7 : 30;
-      if (daysDiff > maxAllowedDiff) {
-        returns[period] = null;
-        continue;
-      }
-
-      returns[period] = (lastNav / candidate.nav - 1) * 100;
-    }
-
-    returns["MDD"] = drawdownMetrics.mdd;
-    returns["currentDD"] = drawdownMetrics.currentDD;
-    return returns;
+    const sinceInceptionBase =
+      scheme === this.config.newSchemeName && this.sharedNavTag
+        ? (historicalData?.[0]?.prevNav ?? normalizedData[0]?.nav ?? 100)
+        : 100;
+    return computeTrailingReturnsFromCurve(
+      normalizedData,
+      sinceInceptionBase,
+      drawdownMetrics
+    );
   }
 
   private async calculateMonthlyPnL(
@@ -1237,6 +1262,238 @@ class BifurcatedPortfolioEngine {
     return quarterlyPnl;
   }
 
+  // ==================== PMS Scheme Builder ====================
+
+  private async buildPmsSchemeData(
+    accountCode: string,
+    scheme: string,
+    isActive: boolean
+  ): Promise<PortfolioResponse> {
+    const series = await getPmsAccountSeries(accountCode);
+
+    if (series.daily.length === 0) {
+      // Defensive empty render — should not happen for Ashok's live accounts.
+      const empty: PortfolioData = {
+        amountDeposited: "0.00", currentExposure: "0.00", return: "0.00",
+        totalProfit: "0.00",
+        trailingReturns: { MDD: 0, currentDD: 0, sinceInception: null } as any,
+        drawdown: "0.00", maxDrawdown: "0.00", equityCurve: [],
+        drawdownCurve: [], quarterlyPnl: {}, monthlyPnl: {},
+        cashFlows: [], strategyName: scheme,
+      };
+      return {
+        data: empty,
+        metadata: {
+          icode: scheme, accountCount: 1,
+          lastUpdated: new Date().toISOString(),
+          filtersApplied: { accountType: null, broker: null, startDate: null, endDate: null },
+          inceptionDate: null, dataAsOfDate: new Date().toISOString().split("T")[0],
+          strategyName: scheme, isActive,
+        },
+      };
+    }
+
+    // Rebase unit NAV (base ~10) to display base 100.
+    const navBase = series.daily[0].nav || 1;
+    const factor = 100 / navBase;
+    const historicalData = series.daily.map((d, i) => ({
+      date: new Date(d.date),
+      nav: d.nav * factor,
+      prevNav: i === 0 ? 100 : series.daily[i - 1].nav * factor,
+      drawdown: 0,
+      pnl: d.pnl,
+      capitalInOut: d.cashIn,
+    }));
+
+    const equityCurve = historicalData.map((d) => ({
+      date: this.normalizeDate(d.date),
+      nav: d.nav,
+    }));
+    const drawdownMetrics = this.calculateDrawdownMetrics(equityCurve);
+
+    const firstNav = equityCurve[0].nav;   // == 100 after rebasing
+    const lastNav = equityCurve[equityCurve.length - 1].nav;
+    const days =
+      (historicalData[historicalData.length - 1].date.getTime() -
+        historicalData[0].date.getTime()) / (1000 * 60 * 60 * 24);
+    const ret =
+      days < 365
+        ? (lastNav / firstNav - 1) * 100
+        : (Math.pow(lastNav / firstNav, 365 / days) - 1) * 100;
+
+    const trailingReturns = computeTrailingReturnsFromCurve(
+      equityCurve, 100, drawdownMetrics
+    );
+    const monthlyPnl = this.computeMonthlyPnLFromHistoricalData(historicalData, true);
+    // Quarterly: use the pure helper identified in Step 2.
+    const quarterlyPnl = this.computeQuarterlyPnLFromHistoricalData(historicalData, true);
+
+    const data: PortfolioData = {
+      amountDeposited: series.deposited.toFixed(2),
+      currentExposure: series.currentValue.toFixed(2),
+      return: ret.toFixed(2),
+      totalProfit: series.totalProfit.toFixed(2),
+      trailingReturns,
+      drawdown: drawdownMetrics.currentDD.toFixed(2),
+      maxDrawdown: drawdownMetrics.mdd.toFixed(2),
+      equityCurve,
+      drawdownCurve: drawdownMetrics.ddCurve.map((d) => ({ date: d.date, drawdown: d.value })),
+      quarterlyPnl,
+      monthlyPnl,
+      cashFlows: series.cashFlows,
+      strategyName: scheme,
+    };
+
+    return {
+      data,
+      metadata: {
+        icode: scheme, accountCount: 1,
+        lastUpdated: new Date().toISOString(),
+        filtersApplied: { accountType: null, broker: null, startDate: null, endDate: null },
+        inceptionDate: equityCurve[0].date,
+        dataAsOfDate: this.normalizeDate(historicalData[historicalData.length - 1].date),
+        strategyName: scheme, isActive,
+      },
+    };
+  }
+
+  // ==================== PMS Blended Total Portfolio Builder ====================
+
+  private async buildPmsBlendedTotalPortfolio(
+    qcode: string
+  ): Promise<PortfolioResponse> {
+    // --- Zerodha component: daily value (QAW++ PV + QAW+ PV) + Qode nav curve.
+    const qawPlusPlus = "QAW++ Zerodha Total Portfolio";
+    const qawPlus = "QAW+ Zerodha Total Portfolio";
+    const [ppRows, pRows, qodeRows] = await Promise.all([
+      this.msTable.findMany({
+        where: { qcode, system_tag: qawPlusPlus },
+        select: { date: true, portfolio_value: true, capital_in_out: true, pnl: true },
+        orderBy: { date: "asc" },
+      }),
+      this.msTable.findMany({
+        where: { qcode, system_tag: qawPlus },
+        select: { date: true, portfolio_value: true, capital_in_out: true, pnl: true },
+        orderBy: { date: "asc" },
+      }),
+      this.msTable.findMany({
+        where: { qcode, system_tag: this.config.qodeTotalPortfolioTag, nav: { not: null } },
+        select: { date: true, nav: true },
+        orderBy: { date: "asc" },
+      }),
+    ]);
+
+    const byDate = (rows: any[]) => {
+      const m = new Map<string, any>();
+      for (const r of rows) m.set(this.normalizeDate(r.date), r);
+      return m;
+    };
+    const ppMap = byDate(ppRows), pMap = byDate(pRows), qodeMap = byDate(qodeRows);
+    const zerodhaDates = Array.from(qodeMap.keys()).sort();
+    const zerodhaDaily = zerodhaDates.map((date) => {
+      const pp = ppMap.get(date), p = pMap.get(date);
+      return {
+        date,
+        value: (Number(pp?.portfolio_value) || 0) + (Number(p?.portfolio_value) || 0),
+        nav: Number(qodeMap.get(date)?.nav) || 0,
+        pnl: (Number(pp?.pnl) || 0) + (Number(p?.pnl) || 0),
+        cashIn: (Number(pp?.capital_in_out) || 0) + (Number(p?.capital_in_out) || 0),
+      };
+    });
+
+    // --- PMS components.
+    const pmsSeries = await Promise.all(
+      (this.config.pmsSchemes ?? []).map((s) => getPmsAccountSeries(s.accountCode))
+    );
+    const components: BlendComponent[] = [
+      { daily: zerodhaDaily },
+      ...pmsSeries.map((s) => ({
+        daily: s.daily.map((d) => ({
+          date: d.date, value: d.value, nav: d.nav, pnl: d.pnl, cashIn: d.cashIn,
+        })),
+      })),
+    ];
+
+    const historicalData = buildCombinedHistorical(components);
+
+    // --- Reuse engine calc helpers on the combined curve.
+    const equityCurve = historicalData.map((d) => ({
+      date: this.normalizeDate(d.date), nav: d.nav,
+    }));
+    const drawdownMetrics = this.calculateDrawdownMetrics(equityCurve);
+    const trailingReturns = computeTrailingReturnsFromCurve(equityCurve, 100, drawdownMetrics);
+    const monthlyPnl = this.computeMonthlyPnLFromHistoricalData(historicalData, false);
+    const quarterlyPnl = this.computeQuarterlyPnLFromHistoricalData(historicalData, false);
+
+    const firstNav = equityCurve.length ? equityCurve[0].nav : 100;
+    const lastNav = equityCurve.length ? equityCurve[equityCurve.length - 1].nav : 100;
+    const days = historicalData.length >= 2
+      ? (historicalData[historicalData.length - 1].date.getTime() - historicalData[0].date.getTime()) / (1000 * 60 * 60 * 24)
+      : 0;
+    const ret = days < 365
+      ? (lastNav / firstNav - 1) * 100
+      : (Math.pow(lastNav / firstNav, 365 / days) - 1) * 100;
+
+    // --- Cards (additive): Zerodha + all PMS.
+    const zerodhaCurrent =
+      (Number(ppRows.at(-1)?.portfolio_value) || 0) +
+      (Number(pRows.at(-1)?.portfolio_value) || 0);
+    const currentValue = zerodhaCurrent + pmsSeries.reduce((s, x) => s + x.currentValue, 0);
+    const totalProfit =
+      historicalData.reduce((s, d) => s + d.pnl, 0); // Σ component pnl == Qode pnl + Σ PMS pnl
+    // Sum of REAL net cashflows across every component (Zerodha QAW++/QAW+ +
+    // the 3 PMS accounts). This is the economically correct "Amount Invested"
+    // and satisfies the money identity: currentValue = amountDeposited +
+    // totalProfit. It therefore does NOT equal the sum of the displayed
+    // per-scheme amountDeposited cards — inactive schemes (Scheme QAW+) show ₹0
+    // via displayAmountInvestedAsZero while their real (net-negative wind-down)
+    // flows are still counted here, matching the generic engine's existing
+    // Total Portfolio behavior (it, too, counts inactive schemes' real flows
+    // under the hood).
+    const deposited =
+      historicalData.reduce((s, d) => s + d.capitalInOut, 0);
+    // Displayed cash In/Out TABLE only — deliberately separate from `deposited`
+    // (Amount Invested) above, which stays derived from the blended capitalInOut.
+    // Source the Zerodha portion from the account-level base "Zerodha Total
+    // Portfolio" tag via getCashFlowTableEntries (the same reader non-PMS
+    // bifurcated clients use), merged with each PMS account's own cash flows.
+    // Totals are unchanged (base == Σ strategy tags); this shows the clean
+    // account-level Zerodha entry instead of the internal QAW+→QAW++ roll-over.
+    const zerodhaTableFlows = await this.getCashFlowTableEntries(qcode, "Total Portfolio");
+    const pmsTableFlows = pmsSeries.flatMap((s) => s.cashFlows);
+    const cashFlows = [...zerodhaTableFlows, ...pmsTableFlows].sort((a, b) =>
+      a.date.localeCompare(b.date)
+    );
+
+    const data: PortfolioData = {
+      amountDeposited: deposited.toFixed(2),
+      currentExposure: currentValue.toFixed(2),
+      return: ret.toFixed(2),
+      totalProfit: totalProfit.toFixed(2),
+      trailingReturns,
+      drawdown: drawdownMetrics.currentDD.toFixed(2),
+      maxDrawdown: drawdownMetrics.mdd.toFixed(2),
+      equityCurve,
+      drawdownCurve: drawdownMetrics.ddCurve.map((d) => ({ date: d.date, drawdown: d.value })),
+      quarterlyPnl, monthlyPnl, cashFlows,
+      strategyName: "Total Portfolio",
+    };
+
+    return {
+      data,
+      metadata: {
+        icode: "Total Portfolio", accountCount: 1,
+        lastUpdated: new Date().toISOString(),
+        filtersApplied: { accountType: null, broker: null, startDate: null, endDate: null },
+        inceptionDate: equityCurve.length ? equityCurve[0].date : null,
+        dataAsOfDate: historicalData.length
+          ? this.normalizeDate(historicalData[historicalData.length - 1].date)
+          : new Date().toISOString().split("T")[0],
+        strategyName: "Total Portfolio", isActive: true,
+      },
+    };
+  }
+
   // ==================== Main GET Handler ====================
 
   public async handleGET(request: Request): Promise<NextResponse> {
@@ -1254,6 +1511,20 @@ class BifurcatedPortfolioEngine {
       for (const scheme of schemes) {
         const portfolioNames = this.getPortfolioNames(scheme);
 
+        if (portfolioNames.pmsAccountCode) {
+          results[scheme] = await this.buildPmsSchemeData(
+            portfolioNames.pmsAccountCode,
+            scheme,
+            portfolioNames.isActive
+          );
+          continue;
+        }
+
+        if (scheme === "Total Portfolio" && this.hasPms) {
+          results[scheme] = await this.buildPmsBlendedTotalPortfolio(qcode);
+          continue;
+        }
+
         if (scheme === this.config.oldSchemeName) {
           results[scheme] = {
             data: this.frozenData.data,
@@ -1270,7 +1541,7 @@ class BifurcatedPortfolioEngine {
         const totalProfit = await this.getTotalProfit(qcode, scheme);
         const returns = await this.calculatePortfolioReturns(qcode, scheme);
         const historicalData = await this.getHistoricalData(qcode, scheme);
-        const cashFlows = await this.getCashFlows(qcode, scheme);
+        const cashFlows = await this.getCashFlowTableEntries(qcode, scheme);
 
         const rawEquityCurve = historicalData.map((d) => ({
           date: this.normalizeDate(d.date),

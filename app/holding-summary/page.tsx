@@ -515,9 +515,19 @@ const HoldingsSummaryPage = () => {
     const [selectedStrategy, setSelectedStrategy] = useState<string>("ALL");
 
 
-    const isSarla = session?.user?.icode === "QUS0007";
-    const isSatidham = session?.user?.icode === "QUS0010";
-    const bifurcatedClient = findByIcode(session?.user?.icode ?? "");
+    // Admin/partner impersonation: an admin/partner session carries no `icode`
+    // of its own — the client being viewed lives in `impersonating`. Resolving
+    // identity from `session.user.icode` alone made every impersonated view
+    // fall through to the generic accounts branch (mirrors dashboard/page.tsx).
+    const canImpersonate =
+        session?.user?.accessType === "admin" || session?.user?.accessType === "partner";
+    const effectiveIcode = canImpersonate && session?.user?.impersonating
+        ? session.user.impersonating.icode
+        : session?.user?.icode;
+
+    const isSarla = effectiveIcode === "QUS0007";
+    const isSatidham = effectiveIcode === "QUS0010";
+    const bifurcatedClient = findByIcode(effectiveIcode ?? "");
 
     useEffect(() => {
         if (status === "unauthenticated") {
@@ -1985,7 +1995,7 @@ ${commonStyles}
 
     if (status === "loading" || isLoading) {
         return (
-            <DashboardLayout>
+            <DashboardLayout page="holding-summary">
                 <div className="flex items-center justify-center h-64">
                     <div className="text-lg text-card-text">Loading holdings data...</div>
                 </div>
@@ -1995,7 +2005,7 @@ ${commonStyles}
 
     if (error || !session?.user) {
         return (
-            <DashboardLayout>
+            <DashboardLayout page="holding-summary">
                 <div className="p-6 text-center bg-red-100 rounded-lg text-red-600">
                     {error || "Failed to load user data"}
                 </div>
@@ -2038,7 +2048,7 @@ ${commonStyles}
     })();
 
     return (
-        <DashboardLayout>
+        <DashboardLayout page="holding-summary">
             <div className="space-y-6">
                 <div className="flex justify-between items-start">
                     <div className="space-y-2">

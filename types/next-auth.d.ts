@@ -1,11 +1,20 @@
 import "next-auth";
 import "next-auth/jwt";
 
+type AccessType = "admin" | "internal" | "distributor" | "partner" | "client";
+
+interface Impersonation {
+  icode: string;
+  name: string;
+  email: string;
+}
+
 declare module "next-auth" {
   interface User {
     icode?: string;
-    accessType?: "admin" | "internal" | "distributor" | "client";
+    accessType?: AccessType;
     internalUserId?: string;
+    partnerId?: string;
   }
 
   interface Session {
@@ -14,9 +23,10 @@ declare module "next-auth" {
       email?: string | null;
       image?: string | null;
       icode?: string;
-      accessType?: "admin" | "internal" | "distributor" | "client";
+      accessType?: AccessType;
       internalUserId?: string;
-      impersonating?: string | null;
+      partnerId?: string;
+      impersonating?: Impersonation | null;
     };
   }
 }
@@ -24,8 +34,9 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     icode?: string;
-    accessType?: "admin" | "internal" | "distributor" | "client";
+    accessType?: AccessType;
     internalUserId?: string;
-    impersonating?: string | null;
+    partnerId?: string;
+    impersonating?: Impersonation | null;
   }
 }
