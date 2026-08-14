@@ -1,18 +1,19 @@
 /**
- * Loads config/cash_transactions.csv and config/miscellaneous.csv, file-based
- * (no DB access). Mirrors config.ts's CSV-loading + in-memory-cache pattern.
- * Ports of `calc_cash_investment_summary`/`calc_eq_purchase_sold` — see
- * docs/investment-summary-migration/ARCHITECTURE.md ("cash-inputs.ts").
+ * Loads cash_transactions.csv and miscellaneous.csv from Postgres (see
+ * config.ts's readCurrentConfigFile). Mirrors config.ts's CSV-loading
+ * pattern. Ports of `calc_cash_investment_summary`/`calc_eq_purchase_sold`
+ * — see docs/investment-summary-migration/ARCHITECTURE.md
+ * ("cash-inputs.ts") and docs/investment-summary-config-db-migration-plan.md.
  *
  * Keyed off `clientName` (a hand-maintained display name, e.g. "Ashwin
  * Agarwal"), not icode/qcode — these CSVs are human-maintained, unlike the
- * Postgres tables. Callers must map icode -> clientName themselves (e.g. via
- * config.ts's getClientConfig()/getAllClientConfigs(), which expose
- * `clientName`).
+ * Postgres data tables. Callers must map icode -> clientName themselves
+ * (e.g. via config.ts's getClientConfig()/getAllClientConfigs(), which
+ * expose `clientName`).
  */
-import path from "path";
 import ExcelJS from "exceljs";
-import { INVESTMENT_SUMMARY_CONFIG_DIR } from "./config";
+import { Readable } from "stream";
+import { readCurrentConfigFile } from "./config";
 
 const CASH_TRANSACTIONS_FILENAME = "cash_transactions.csv";
 const MISCELLANEOUS_FILENAME = "miscellaneous.csv";
@@ -70,13 +71,13 @@ function toNumber(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-async function readCsvRows(filePath: string): Promise<Record<string, string>[]> {
+async function readCsvRows(content: string): Promise<Record<string, string>[]> {
   const workbook = new ExcelJS.Workbook();
   // dateFormats: [] disables exceljs's auto date-detection — without it,
   // DD-MM-YYYY cells like "08-04-2026" get silently parsed into JS Date
   // objects for some rows but not others, corrupting ddmmyyyyToIso() below.
   // Every column here should stay a raw string; date/number parsing is explicit.
-  const worksheet = await workbook.csv.readFile(filePath, { dateFormats: [] });
+  const worksheet = await workbook.csv.read(Readable.from(content), { dateFormats: [] });
 
   const headerRow = worksheet.getRow(1);
   const headers: string[] = [];
@@ -98,10 +99,10 @@ async function readCsvRows(filePath: string): Promise<Record<string, string>[]> 
   return rows;
 }
 
-/** Loads config/cash_transactions.csv fresh on every call (no caching — admin uploads should take effect immediately). */
+/** Loads cash_transactions.csv fresh on every call (no caching — admin uploads should take effect immediately). */
 export async function loadCashTransactions(): Promise<CashTransactionRow[]> {
-  const filePath = path.join(INVESTMENT_SUMMARY_CONFIG_DIR, CASH_TRANSACTIONS_FILENAME);
-  const records = await readCsvRows(filePath);
+  const content = await readCurrentConfigFile(CASH_TRANSACTIONS_FILENAME);
+  const records = await readCsvRows(content);
 
   return records
     .filter((row) => row[CASH_TRANSACTIONS_COLUMNS.clientName])
@@ -114,10 +115,10 @@ export async function loadCashTransactions(): Promise<CashTransactionRow[]> {
     }));
 }
 
-/** Loads config/miscellaneous.csv fresh on every call (no caching — admin uploads should take effect immediately). */
+/** Loads miscellaneous.csv fresh on every call (no caching — admin uploads should take effect immediately). */
 export async function loadMiscellaneous(): Promise<MiscellaneousRow[]> {
-  const filePath = path.join(INVESTMENT_SUMMARY_CONFIG_DIR, MISCELLANEOUS_FILENAME);
-  const records = await readCsvRows(filePath);
+  const content = await readCurrentConfigFile(MISCELLANEOUS_FILENAME);
+  const records = await readCsvRows(content);
 
   return records
     .filter((row) => row[MISCELLANEOUS_COLUMNS.clientName])

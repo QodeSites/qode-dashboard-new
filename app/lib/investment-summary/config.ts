@@ -1,16 +1,20 @@
 /**
- * Loads config/Master_Config.csv and config/system_tags.yaml.
- * See docs/investment-summary-migration/ARCHITECTURE.md ("config.ts").
+ * Loads Master_Config.csv (from Postgres — see readCurrentConfigFile below)
+ * and config/system_tags.yaml (still a plain repo file, out of scope for
+ * the DB migration). See docs/investment-summary-migration/ARCHITECTURE.md
+ * ("config.ts") and docs/investment-summary-config-db-migration-plan.md.
  *
- * File-based, no DB access. No new dependencies: CSV parsing reuses
- * `exceljs` (already a project dependency) rather than adding csv-parse;
- * system_tags.yaml is a flat `key: "value"` file (confirmed in doc 02), so
- * it's parsed with the same minimal line-parser approach already used by
- * `validateFlatYaml` in sync-utils.ts, rather than adding js-yaml.
+ * CSV parsing reuses `exceljs` (already a project dependency) rather than
+ * adding csv-parse; system_tags.yaml is a flat `key: "value"` file
+ * (confirmed in doc 02), so it's parsed with the same minimal line-parser
+ * approach already used by `validateFlatYaml` in sync-utils.ts, rather than
+ * adding js-yaml.
  */
 import path from "path";
 import ExcelJS from "exceljs";
+import { Readable } from "stream";
 import { promises as fs } from "fs";
+import { prisma } from "@/lib/prisma";
 import type { BaseSystemTags, ClientStrategyConfigRow } from "./types";
 
 export const INVESTMENT_SUMMARY_CONFIG_DIR =
@@ -19,6 +23,26 @@ export const INVESTMENT_SUMMARY_CONFIG_DIR =
 
 const MASTER_CONFIG_FILENAME = "Master_Config.csv";
 const SYSTEM_TAGS_FILENAME = "system_tags.yaml";
+
+/**
+ * Fetches the current (latest-uploaded) content of an admin-uploaded config
+ * file from Postgres. "Current" = the row with the latest uploadedAt for
+ * that filename — every upload is an INSERT, never an UPDATE, so this also
+ * gives free version history (see investment_summary_config_files in
+ * schema.prisma). Throws if the file has never been uploaded, matching the
+ * old fs.readFile behavior of failing loudly rather than silently
+ * defaulting to empty.
+ */
+export async function readCurrentConfigFile(filename: string): Promise<string> {
+  const row = await prisma.investment_summary_config_files.findFirst({
+    where: { filename },
+    orderBy: { uploadedAt: "desc" },
+  });
+  if (!row) {
+    throw new Error(`${filename} has never been uploaded`);
+  }
+  return row.content;
+}
 
 const MASTER_CONFIG_COLUMNS = {
   icode: "icode",
@@ -37,13 +61,13 @@ function ddmmyyyyToIso(value: string): string {
   return `${y}-${m}-${d}`;
 }
 
-async function readCsvRows(filePath: string): Promise<Record<string, string>[]> {
+async function readCsvRows(content: string): Promise<Record<string, string>[]> {
   const workbook = new ExcelJS.Workbook();
   // dateFormats: [] disables exceljs's auto date-detection — without it,
   // DD-MM-YYYY cells like "08-04-2026" get silently parsed into JS Date
   // objects for some rows but not others, corrupting ddmmyyyyToIso() below.
   // Every column here should stay a raw string; date parsing is explicit.
-  const worksheet = await workbook.csv.readFile(filePath, { dateFormats: [] });
+  const worksheet = await workbook.csv.read(Readable.from(content), { dateFormats: [] });
 
   const headerRow = worksheet.getRow(1);
   const headers: string[] = [];
@@ -66,8 +90,8 @@ async function readCsvRows(filePath: string): Promise<Record<string, string>[]> 
 }
 
 async function loadMasterConfig(): Promise<ClientStrategyConfigRow[]> {
-  const filePath = path.join(INVESTMENT_SUMMARY_CONFIG_DIR, MASTER_CONFIG_FILENAME);
-  const records = await readCsvRows(filePath);
+  const content = await readCurrentConfigFile(MASTER_CONFIG_FILENAME);
+  const records = await readCsvRows(content);
 
   return records
     .filter((row) => row[MASTER_CONFIG_COLUMNS.clientName])

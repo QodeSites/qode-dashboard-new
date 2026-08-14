@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
 import { requireAdmin } from "@/app/lib/admin-utils";
-import { INVESTMENT_SUMMARY_CONFIG_DIR } from "@/app/lib/investment-summary/config";
+import { readCurrentConfigFile } from "@/app/lib/investment-summary/config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,9 +29,9 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    let buffer: Buffer;
+    let content: string;
     try {
-      buffer = await fs.readFile(path.join(INVESTMENT_SUMMARY_CONFIG_DIR, filename));
+      content = await readCurrentConfigFile(filename);
     } catch {
       return NextResponse.json(
         { error: `${filename} does not exist on the server yet` },
@@ -41,7 +39,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    return new NextResponse(new Uint8Array(buffer), {
+    return new NextResponse(new Uint8Array(Buffer.from(content, "utf-8")), {
       status: 200,
       headers: {
         "Content-Type": "text/csv",

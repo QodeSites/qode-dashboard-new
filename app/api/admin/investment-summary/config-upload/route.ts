@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
 import * as XLSX from "xlsx";
 import { requireAdmin } from "@/app/lib/admin-utils";
-import { INVESTMENT_SUMMARY_CONFIG_DIR } from "@/app/lib/investment-summary/config";
+import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -101,7 +99,7 @@ function validateCsv(buffer: Buffer, requiredColumns: string[]): { valid: boolea
 
 export async function POST(req: NextRequest) {
   try {
-    const { error } = await requireAdmin();
+    const { error, session } = await requireAdmin();
     if (error) return error;
 
     const formData = await req.formData();
@@ -140,10 +138,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    await fs.mkdir(INVESTMENT_SUMMARY_CONFIG_DIR, { recursive: true });
-    await fs.writeFile(path.join(INVESTMENT_SUMMARY_CONFIG_DIR, filename), buffer);
+    const row = await prisma.investment_summary_config_files.create({
+      data: {
+        filename,
+        content: buffer.toString("utf-8"),
+        uploadedBy: session?.user?.email || session?.user?.icode || "unknown",
+      },
+    });
 
-    return NextResponse.json({ filename, uploadedAt: new Date().toISOString() });
+    return NextResponse.json({ filename, uploadedAt: row.uploadedAt.toISOString() });
   } catch (err) {
     console.error("investment-summary/config-upload error:", err);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
@@ -156,17 +159,16 @@ export async function GET() {
     const { error } = await requireAdmin();
     if (error) return error;
 
-    const files = await Promise.all(
-      Object.keys(CALC_CONFIG_FILE_RULES).map(async (filename) => {
-        const full = path.join(INVESTMENT_SUMMARY_CONFIG_DIR, filename);
-        try {
-          const st = await fs.stat(full);
-          return { filename, exists: true, modifiedAt: st.mtime };
-        } catch {
-          return { filename, exists: false, modifiedAt: null };
-        }
-      }),
-    );
+    const latest = await prisma.investment_summary_config_files.groupBy({
+      by: ["filename"],
+      _max: { uploadedAt: true },
+    });
+    const latestByFilename = new Map(latest.map((row) => [row.filename, row._max.uploadedAt]));
+
+    const files = Object.keys(CALC_CONFIG_FILE_RULES).map((filename) => {
+      const modifiedAt = latestByFilename.get(filename) ?? null;
+      return { filename, exists: modifiedAt !== null, modifiedAt };
+    });
 
     return NextResponse.json(
       { files },

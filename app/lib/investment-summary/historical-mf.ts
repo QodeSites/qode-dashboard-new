@@ -1,12 +1,13 @@
 /**
- * Loads config/historical_mf_transactions.csv — manually-maintained,
- * pre-Server-Drive MF transaction history for old/legacy accounts (e.g.
- * Sarla Performance Fibers) whose earliest MF trades predate the Server
- * Drive Tradebook and were recorded independently. Ported from the real,
- * currently-deployed pipeline's `data_loader.load_historical_mf_transactions`
- * / `main.py`'s merge step (confirmed against /opt/investment-summary on
- * 2026-08-12 — the Desktop dev checkout of this pipeline was stale and
- * didn't have this feature yet; the live WSL source did).
+ * Loads historical_mf_transactions.csv from Postgres (see config.ts's
+ * readCurrentConfigFile) — manually-maintained, pre-Server-Drive MF
+ * transaction history for old/legacy accounts (e.g. Sarla Performance
+ * Fibers) whose earliest MF trades predate the Server Drive Tradebook and
+ * were recorded independently. Ported from the real, currently-deployed
+ * pipeline's `data_loader.load_historical_mf_transactions` / `main.py`'s
+ * merge step (confirmed against /opt/investment-summary on 2026-08-12 —
+ * the Desktop dev checkout of this pipeline was stale and didn't have this
+ * feature yet; the live WSL source did).
  *
  * Python concatenates these rows onto the freshly-fetched MF Tradebook
  * BEFORE any calculation runs, so they flow through calc_mf_transactions
@@ -16,14 +17,14 @@
  * (calcMfTransactions, calcHoldingsInvestmentSummary), not by adding a
  * third parallel code path.
  *
- * No caching (matches config.ts/cash-inputs.ts as of the 2026-08-12 upload
- * feature) — every call re-reads the file so an admin upload takes effect
- * immediately. Returns an empty array if the file is absent — a safe
- * no-op for every client without an entry, same as Python.
+ * No caching — every call re-fetches fresh from Postgres so an admin
+ * upload takes effect immediately. Returns an empty array if the file has
+ * never been uploaded — a safe no-op for every client without an entry,
+ * same as Python's absent-file behavior.
  */
-import path from "path";
 import ExcelJS from "exceljs";
-import { INVESTMENT_SUMMARY_CONFIG_DIR } from "./config";
+import { Readable } from "stream";
+import { readCurrentConfigFile } from "./config";
 
 const HISTORICAL_MF_FILENAME = "historical_mf_transactions.csv";
 
@@ -59,13 +60,13 @@ function decimalLike(value: number): { toNumber(): number } {
   return { toNumber: () => value };
 }
 
-async function readCsvRows(filePath: string): Promise<Record<string, string>[]> {
+async function readCsvRows(content: string): Promise<Record<string, string>[]> {
   const workbook = new ExcelJS.Workbook();
   // dateFormats: [] — same reasoning as config.ts/cash-inputs.ts: without
   // it, exceljs's auto date-detection silently corrupts some rows but not
   // others. This file's dates are YYYY-MM-DD (unlike the DD-MM-YYYY used
   // elsewhere in config/) — parsed explicitly below via `new Date(...)`.
-  const worksheet = await workbook.csv.readFile(filePath, { dateFormats: [] });
+  const worksheet = await workbook.csv.read(Readable.from(content), { dateFormats: [] });
 
   const headerRow = worksheet.getRow(1);
   const headers: string[] = [];
@@ -87,15 +88,14 @@ async function readCsvRows(filePath: string): Promise<Record<string, string>[]> 
   return rows;
 }
 
-/** Loads config/historical_mf_transactions.csv fresh on every call, filtered to one client. */
+/** Loads historical_mf_transactions.csv fresh on every call, filtered to one client. */
 export async function loadHistoricalMfTransactions(clientName: string): Promise<HistoricalMfRow[]> {
-  const filePath = path.join(INVESTMENT_SUMMARY_CONFIG_DIR, HISTORICAL_MF_FILENAME);
-
   let records: Record<string, string>[];
   try {
-    records = await readCsvRows(filePath);
+    const content = await readCurrentConfigFile(HISTORICAL_MF_FILENAME);
+    records = await readCsvRows(content);
   } catch {
-    return []; // file absent — safe no-op, matches Python's behavior
+    return []; // never uploaded — safe no-op, matches Python's absent-file behavior
   }
 
   return records
