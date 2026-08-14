@@ -346,7 +346,7 @@ const PersonalDetailsPage = () => {
   // Handle authentication states
   if (status === 'loading') {
     return (
-      <DashboardLayout>
+      <DashboardLayout page="personal-details">
         <div className="sm:p-2 space-y-6">
           <div className="flex justify-center items-center h-40">
             <div className="text-center">
@@ -361,7 +361,7 @@ const PersonalDetailsPage = () => {
 
   if (status === 'unauthenticated') {
     return (
-      <DashboardLayout>
+      <DashboardLayout page="personal-details">
         <div className="sm:p-2 space-y-6">
           <div className="flex justify-center items-center h-40">
             <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0  w-full mx-4">
@@ -385,7 +385,7 @@ const PersonalDetailsPage = () => {
 
   if (loading) {
     return (
-      <DashboardLayout>
+      <DashboardLayout page="personal-details">
         <div className="sm:p-2 space-y-6">
           <div className="flex justify-center items-center h-40">
             <div className="text-center">
@@ -400,7 +400,7 @@ const PersonalDetailsPage = () => {
 
   if (error) {
     return (
-      <DashboardLayout>
+      <DashboardLayout page="personal-details">
         <div className="sm:p-2 space-y-6">
           <div className="flex justify-center items-center h-40">
             <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0  w-full mx-4">
@@ -427,7 +427,7 @@ const PersonalDetailsPage = () => {
 
   if (!clientData) {
     return (
-      <DashboardLayout>
+      <DashboardLayout page="personal-details">
         <div className="sm:p-2 space-y-6">
           <div className="flex justify-center items-center h-40">
             <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0  w-full mx-4">
@@ -455,7 +455,7 @@ const PersonalDetailsPage = () => {
         />
         <meta name="author" content="Qode" />
       </Head>
-      <DashboardLayout>
+      <DashboardLayout page="personal-details">
         <div className="space-y-6">
           {/* Header */}
           <div className="space-y-2">
