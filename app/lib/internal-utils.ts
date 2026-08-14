@@ -2115,12 +2115,7 @@ function buildCashMarginSnapshot(
     const has_equity_split = split.gold_pct != null;
 
     const holdings = has_equity_split
-      ? gold +
-        momentum +
-        lowvol +
-        equity_stock_holdings +
-        bond_stock_holdings +
-        mutual_funds
+      ? gold + momentum + lowvol
       : mutual_funds + equity_stock_holdings + bond_stock_holdings;
 
     const liquidcase =
@@ -2441,7 +2436,7 @@ function computeBalancedQye(
 
   const sleeves = [
     buildWithdrawalSleeve(
-      "Mutual Funds",
+      "Holdings",
       row.holdings,
       newHoldings,
       newAccountValue,
@@ -2551,7 +2546,7 @@ function computeHoldingsFrozenQye(
 
   const sleeves = [
     buildWithdrawalSleeve(
-      "Mutual Funds",
+      "Holdings",
       row.holdings,
       row.holdings,
       newAccountValue,
@@ -2638,7 +2633,7 @@ function computeCashFrozenQye(
 
   const sleeves = [
     buildWithdrawalSleeve(
-      "Mutual Funds",
+      "Holdings",
       row.holdings,
       newHoldings,
       newAccountValue,
@@ -3247,7 +3242,7 @@ async function computeQyeDeploy(
   );
 
   const holdingsSleeve: DeploySleeve = {
-    particular: "Mutual Funds",
+    particular: "Holdings",
     target_pct: equity_pct,
     target_value: round(holdingsValue, 2)!,
     actual_value: round(holdingsValue, 2)!, // no rounding involved for this sleeve — no LTP/quantity constraint
@@ -3515,7 +3510,7 @@ function computeGapSplitQye(
   amountToAdd: number,
 ): { new_account_value: number; sleeves: GapDeploymentSleeve[] } {
   const holdingsSleeve: GapDeploymentSleeve = {
-    particular: "Mutual Funds",
+    particular: "Holdings",
     current_value: round(row.holdings, 2)!,
     addition_target: round(amountToAdd, 2)!,
     addition_actual: round(amountToAdd, 2)!,
@@ -3676,7 +3671,7 @@ async function computeExcessCashSplitQye(
   const ltps = await fetchLtps([ETF_SYMBOLS.liquidcase]);
 
   const holdingsSleeve: GapDeploymentSleeve = {
-    particular: "Mutual Funds",
+    particular: "Holdings",
     current_value: round(row.holdings, 2)!,
     addition_target: round(amountDeployed, 2)!,
     addition_actual: round(amountDeployed, 2)!,
@@ -3851,7 +3846,7 @@ async function computeSpecificDeploymentQye(
     derivBookAmount * (targets.cash_pct / (targets.lc_pct + targets.cash_pct));
 
   const holdingsSleeve: GapDeploymentSleeve = {
-    particular: "Mutual Funds",
+    particular: "Holdings",
     current_value: round(row.holdings, 2)!,
     addition_target: round(eqBookAmount, 2)!,
     addition_actual: round(eqBookAmount, 2)!,
