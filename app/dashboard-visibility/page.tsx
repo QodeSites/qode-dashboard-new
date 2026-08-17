@@ -8,6 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { SelectionCheckbox } from "@/components/dashboard-visibility/selection-checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -24,12 +32,20 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { ArrowLeftIcon } from "@heroicons/react/24/outline";
+import { PAGE_KEYS, PAGE_LABELS, type PageKey } from "@/app/lib/page-visibility";
 
 interface Client {
   icode: string;
   name: string;
   email: string;
 }
+
+// { [icode]: { [page]: visible } }
+type VisibilityMap = Record<string, Partial<Record<PageKey, boolean>>>;
+
+type PendingAction =
+  | { scope: "single"; icode: string; page: PageKey; visible: boolean }
+  | { scope: "bulk"; icodes: string[]; page: PageKey; visible: boolean };
 
 export default function DashboardVisibilityPage() {
   const { data: session, status } = useSession();
@@ -41,10 +57,13 @@ export default function DashboardVisibilityPage() {
   const [entrySubmitting, setEntrySubmitting] = useState(false);
 
   const [clients, setClients] = useState<Client[]>([]);
-  const [visibilityMap, setVisibilityMap] = useState<Record<string, boolean>>({});
+  const [visibilityMap, setVisibilityMap] = useState<VisibilityMap>({});
   const [isLoading, setIsLoading] = useState(false);
 
-  const [pendingToggle, setPendingToggle] = useState<{ icode: string; visible: boolean } | null>(null);
+  const [selectedIcodes, setSelectedIcodes] = useState<Set<string>>(new Set());
+  const [bulkPage, setBulkPage] = useState<PageKey>(PAGE_KEYS[0]);
+
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [actionPassword, setActionPassword] = useState("");
   const [actionError, setActionError] = useState("");
   const [actionSubmitting, setActionSubmitting] = useState(false);
@@ -109,25 +128,46 @@ export default function DashboardVisibilityPage() {
     setEntrySubmitting(false);
   };
 
-  const handleToggleVisibility = (icode: string, visible: boolean) => {
-    setPendingToggle({ icode, visible });
+  const handleToggleVisibility = (icode: string, page: PageKey, visible: boolean) => {
+    setPendingAction({ scope: "single", icode, page, visible });
     setActionPassword("");
     setActionError("");
   };
 
-  const handleConfirmVisibility = async () => {
-    if (!pendingToggle) return;
+  const handleBulkApply = (visible: boolean) => {
+    if (selectedIcodes.size === 0) return;
+    setPendingAction({ scope: "bulk", icodes: Array.from(selectedIcodes), page: bulkPage, visible });
+    setActionPassword("");
+    setActionError("");
+  };
+
+  const toggleSelectAll = (checked: boolean) => {
+    setSelectedIcodes(checked ? new Set(clients.map((c) => c.icode)) : new Set());
+  };
+
+  const toggleSelectOne = (icode: string, checked: boolean) => {
+    setSelectedIcodes((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(icode);
+      else next.delete(icode);
+      return next;
+    });
+  };
+
+  const handleConfirmAction = async () => {
+    if (!pendingAction) return;
     setActionSubmitting(true);
     setActionError("");
 
-    const { icode, visible } = pendingToggle;
+    const { page, visible } = pendingAction;
+    const icodes = pendingAction.scope === "single" ? [pendingAction.icode] : pendingAction.icodes;
 
     try {
       const res = await fetch("/api/admin/dashboard-visibility", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ icode, dashboard_visible: visible, password: actionPassword }),
+        body: JSON.stringify({ icodes, page, dashboard_visible: visible, password: actionPassword }),
       });
       if (!res.ok) {
         if (res.status === 403) {
@@ -138,8 +178,15 @@ export default function DashboardVisibilityPage() {
         setActionSubmitting(false);
         return;
       }
-      setVisibilityMap((prev) => ({ ...prev, [icode]: visible }));
-      setPendingToggle(null);
+      setVisibilityMap((prev) => {
+        const next = { ...prev };
+        for (const icode of icodes) {
+          next[icode] = { ...next[icode], [page]: visible };
+        }
+        return next;
+      });
+      if (pendingAction.scope === "bulk") setSelectedIcodes(new Set());
+      setPendingAction(null);
     } catch {
       setActionError("Something went wrong");
     }
@@ -157,6 +204,9 @@ export default function DashboardVisibilityPage() {
   if (session?.user?.accessType !== "admin") {
     return null;
   }
+
+  const allSelected = clients.length > 0 && selectedIcodes.size === clients.length;
+  const someSelected = selectedIcodes.size > 0 && !allSelected;
 
   return (
     <div className="min-h-screen bg-primary-bg px-6 py-6 space-y-6">
@@ -221,64 +271,154 @@ export default function DashboardVisibilityPage() {
       </Dialog>
 
       {unlocked && (
-        <div className="border rounded-lg overflow-hidden bg-white/50">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="text-card-text-secondary">Loading clients...</div>
+        <>
+          {/* Bulk action bar — appears once at least one client is selected */}
+          {selectedIcodes.size > 0 && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-logo-green/20 bg-white/70 px-4 py-3">
+              <span className="text-sm font-medium text-card-text">
+                {selectedIcodes.size} selected
+              </span>
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-card-text-secondary">Page</Label>
+                <Select value={bulkPage} onValueChange={(v) => setBulkPage(v as PageKey)}>
+                  <SelectTrigger className="h-8 w-44 border-logo-green/20 bg-white text-card-text text-sm font-normal">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white text-card-text">
+                    {PAGE_KEYS.map((page) => (
+                      <SelectItem key={page} value={page}>
+                        {PAGE_LABELS[page]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => handleBulkApply(true)}
+                className="bg-logo-green text-button-text hover:bg-logo-green/90"
+              >
+                Show
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleBulkApply(false)}
+                className="border-logo-green/20 text-card-text hover:bg-logo-green/5"
+              >
+                Hide
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSelectedIcodes(new Set())}
+                className="text-card-text-secondary hover:text-logo-green ml-auto"
+              >
+                Clear selection
+              </Button>
             </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Client</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>ICode</TableHead>
-                  <TableHead className="text-center">Dashboard Access</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {clients.map((client) => (
-                  <TableRow key={client.icode}>
-                    <TableCell className="font-medium text-card-text">
-                      {client.name}
-                    </TableCell>
-                    <TableCell className="text-card-text-secondary text-sm">
-                      {client.email}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-xs">
-                        {client.icode}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <span className={`text-xs font-medium ${(visibilityMap[client.icode] ?? true) ? "text-logo-green" : "text-card-text-secondary"}`}>
-                          {(visibilityMap[client.icode] ?? true) ? "On" : "Off"}
-                        </span>
-                        <Switch
-                          checked={visibilityMap[client.icode] ?? true}
-                          onCheckedChange={(checked) => handleToggleVisibility(client.icode, checked)}
-                          className="data-[state=checked]:bg-logo-green data-[state=unchecked]:bg-card-text-secondary/30"
-                        />
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
           )}
-        </div>
+
+          <div className="border rounded-lg overflow-x-auto bg-white/50">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="text-card-text-secondary">Loading clients...</div>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-10">
+                      <SelectionCheckbox
+                        checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                        onCheckedChange={(checked) => toggleSelectAll(checked === true)}
+                        aria-label="Select all clients"
+                      />
+                    </TableHead>
+                    <TableHead>Client</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>ICode</TableHead>
+                    {PAGE_KEYS.map((page) => (
+                      <TableHead key={page} className="text-center whitespace-nowrap">
+                        {PAGE_LABELS[page]}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {clients.map((client) => (
+                    <TableRow
+                      key={client.icode}
+                      data-state={selectedIcodes.has(client.icode) ? "selected" : undefined}
+                      className="data-[state=selected]:bg-logo-green/10"
+                    >
+                      <TableCell>
+                        <SelectionCheckbox
+                          checked={selectedIcodes.has(client.icode)}
+                          onCheckedChange={(checked) => toggleSelectOne(client.icode, checked === true)}
+                          aria-label={`Select ${client.name}`}
+                        />
+                      </TableCell>
+                      <TableCell className="font-medium text-card-text">
+                        {client.name}
+                      </TableCell>
+                      <TableCell className="text-card-text-secondary text-sm">
+                        {client.email}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {client.icode}
+                        </Badge>
+                      </TableCell>
+                      {PAGE_KEYS.map((page) => {
+                        const visible = visibilityMap[client.icode]?.[page] ?? true;
+                        return (
+                          <TableCell key={page} className="text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <span className={`text-xs font-medium ${visible ? "text-logo-green" : "text-card-text-secondary"}`}>
+                                {visible ? "On" : "Off"}
+                              </span>
+                              <Switch
+                                checked={visible}
+                                onCheckedChange={(checked) => handleToggleVisibility(client.icode, page, checked)}
+                                className="data-[state=checked]:bg-logo-green data-[state=unchecked]:bg-card-text-secondary/30"
+                              />
+                            </div>
+                          </TableCell>
+                        );
+                      })}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+        </>
       )}
 
-      {/* Per-action confirm password modal */}
-      <Dialog open={pendingToggle !== null} onOpenChange={(open) => { if (!open) setPendingToggle(null); }}>
+      {/* Confirm password modal — shared by per-row toggles and bulk apply */}
+      <Dialog open={pendingAction !== null} onOpenChange={(open) => { if (!open) setPendingAction(null); }}>
         <DialogContent className="sm:max-w-sm border-logo-green/20 bg-primary-bg">
           <DialogHeader>
             <DialogTitle className="text-card-text font-heading text-xl">Confirm Visibility Change</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-card-text-secondary">
-              Enter the password to {pendingToggle?.visible ? "enable" : "disable"} dashboard visibility for <span className="font-semibold text-card-text">{pendingToggle?.icode}</span>.
+              {pendingAction && (
+                pendingAction.scope === "single" ? (
+                  <>
+                    Enter the password to {pendingAction.visible ? "enable" : "disable"}{" "}
+                    {PAGE_LABELS[pendingAction.page]} visibility for{" "}
+                    <span className="font-semibold text-card-text">{pendingAction.icode}</span>.
+                  </>
+                ) : (
+                  <>
+                    Enter the password to {pendingAction.visible ? "enable" : "disable"}{" "}
+                    {PAGE_LABELS[pendingAction.page]} visibility for{" "}
+                    <span className="font-semibold text-card-text">{pendingAction.icodes.length} selected clients</span>.
+                  </>
+                )
+              )}
             </p>
             <div className="space-y-1.5">
               <Label htmlFor="action-password" className="text-card-text text-xs font-medium">Password</Label>
@@ -287,7 +427,7 @@ export default function DashboardVisibilityPage() {
                 type="password"
                 value={actionPassword}
                 onChange={(e) => { setActionPassword(e.target.value); setActionError(""); }}
-                onKeyDown={(e) => { if (e.key === "Enter" && actionPassword) handleConfirmVisibility(); }}
+                onKeyDown={(e) => { if (e.key === "Enter" && actionPassword) handleConfirmAction(); }}
                 placeholder="Enter password"
                 className="border-logo-green/20 bg-white focus-visible:ring-logo-green/30"
                 autoFocus
@@ -298,11 +438,11 @@ export default function DashboardVisibilityPage() {
             </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setPendingToggle(null)} disabled={actionSubmitting} className="border-logo-green/20 text-card-text hover:bg-logo-green/5">
+            <Button variant="outline" onClick={() => setPendingAction(null)} disabled={actionSubmitting} className="border-logo-green/20 text-card-text hover:bg-logo-green/5">
               Cancel
             </Button>
             <Button
-              onClick={handleConfirmVisibility}
+              onClick={handleConfirmAction}
               disabled={actionSubmitting || !actionPassword}
               className="bg-logo-green text-button-text hover:bg-logo-green/90"
             >
