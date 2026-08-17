@@ -73,12 +73,47 @@ export async function getLatest(
   return { date: row.date, value: toNumber(row.portfolio_value) ?? 0 };
 }
 
+// tags.ts's resolve() calls getDistinctTags() on EVERY tag lookup (no
+// memoization at the call site) — a single computeInvestmentSummary() run
+// fires this 30-40+ times for one client, each a fresh full-table distinct
+// scan pulling its own Prisma pool connection. Under any concurrency
+// (another tab, the admin download-all batch iterating many clients) that
+// exhausts a 17-connection pool well within its 10s acquire timeout
+// (P2024). A plain TTL cache isn't enough on its own: callers fire these
+// resolve() calls concurrently (Promise.all in strategy-summaries.ts /
+// account-summary.ts / overview-cash.ts), so on a COLD cache every call in
+// that burst sees a miss at the same instant and fires its own query before
+// any of them finishes and populates the cache (thundering herd) — this is
+// what caused "fails once, then works" behavior even after the TTL cache
+// was added. Caching the in-flight PROMISE (not just the resolved value)
+// collapses concurrent callers for the same qcode onto one query.
+const DISTINCT_TAGS_CACHE_TTL_MS = 30_000;
+const distinctTagsCache = new Map<string, { tags: Set<string>; expiresAt: number }>();
+const distinctTagsInFlight = new Map<string, Promise<Set<string>>>();
+
 /** All distinct system_tag values present for a qcode — used by tags.ts to check candidate existence without a full row fetch. */
 export async function getDistinctTags(qcode: string): Promise<Set<string>> {
-  const rows = await prisma.bifurcated_master_sheet_test.findMany({
-    where: { qcode },
-    distinct: ["system_tag"],
-    select: { system_tag: true },
-  });
-  return new Set(rows.map((r) => r.system_tag));
+  const cached = distinctTagsCache.get(qcode);
+  if (cached && cached.expiresAt > Date.now()) return cached.tags;
+
+  const inFlight = distinctTagsInFlight.get(qcode);
+  if (inFlight) return inFlight;
+
+  const promise = (async () => {
+    try {
+      const rows = await prisma.bifurcated_master_sheet_test.findMany({
+        where: { qcode },
+        distinct: ["system_tag"],
+        select: { system_tag: true },
+      });
+      const tags = new Set(rows.map((r) => r.system_tag));
+      distinctTagsCache.set(qcode, { tags, expiresAt: Date.now() + DISTINCT_TAGS_CACHE_TTL_MS });
+      return tags;
+    } finally {
+      distinctTagsInFlight.delete(qcode);
+    }
+  })();
+
+  distinctTagsInFlight.set(qcode, promise);
+  return promise;
 }

@@ -10,25 +10,13 @@ import type {
   MultiStrategyInvestmentData,
   StrategyInvestmentData,
 } from "@/app/lib/parse-investment-pdf";
-
-export interface LiveAllocationRow {
-  label: string;
-  hybrid: number;
-  debt: number;
-  equity: number;
-  cash: number;
-  total: number;
-}
-
-export interface LiveAllocation {
-  currentAllocation: LiveAllocationRow[];
-  currentAccountAllocation: {
-    label: string;
-    amount: number;
-    percent: number;
-    isTotal?: boolean;
-  }[];
-}
+// Source of truth (and the buildLiveAllocation() constructor) now lives in
+// app/lib/investment-summary/live-allocation.ts, shared with the server-side
+// Excel export so both surfaces build this table identically. Imported for
+// local use below AND re-exported for backward compatibility, since page.tsx
+// still imports these types from this module.
+import type { LiveAllocation } from "@/app/lib/investment-summary/live-allocation";
+export type { LiveAllocationRow, LiveAllocation } from "@/app/lib/investment-summary/live-allocation";
 
 interface PrintReportParams {
   data: MultiStrategyInvestmentData;

@@ -8,6 +8,7 @@ import {
   ClientNotFoundError,
 } from "@/app/lib/investment-summary";
 import { buildInvestmentSummaryWorkbook } from "@/app/lib/investment-summary/xlsx-export";
+import { getLiveAllocationForIcode } from "@/app/lib/investment-summary/live-allocation-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,7 +70,8 @@ export async function GET(req: NextRequest) {
       if (data.amountInvested.total === 0) continue;
 
       try {
-        const wb = buildInvestmentSummaryWorkbook(data);
+        const liveAllocation = await getLiveAllocationForIcode(icode, data);
+        const wb = buildInvestmentSummaryWorkbook(data, liveAllocation);
         const buffer = await wb.xlsx.writeBuffer();
         const safeName = clientName.replace(/[/\\?%*:|"<>]/g, "_");
         zip.file(`${safeName}_Invst_Summary_${icode}.xlsx`, buffer);

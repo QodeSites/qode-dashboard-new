@@ -18,6 +18,7 @@ import type {
   MultiStrategyInvestmentData,
   StrategyInvestmentData,
 } from "@/app/lib/parse-investment-pdf";
+import type { LiveAllocation } from "./live-allocation";
 
 const COLOR_TITLE = "FF004C2F";
 const COLOR_HEADER = "FFD9C12E";
@@ -353,11 +354,57 @@ function writeValidationSummarySheet(
   autoColWidths(ws);
 }
 
+/**
+ * Live PMS overlay sheet — same two tables print-report.ts renders in the
+ * on-screen PDF (Current Account Allocation, Current Allocation), built from
+ * the shared buildLiveAllocation() so the numbers match exactly. Only
+ * written for clients download-all.ts resolves a LiveAllocation for
+ * (currently Sarla) — the calculator's own sheets never see PMS data.
+ */
+function writeLiveAllocationSheet(ws: ExcelJS.Worksheet, liveAllocation: LiveAllocation): void {
+  titleRow(ws, "Current Account Allocation", 3);
+  headerCell(ws.getRow(2).getCell(1), "Particulars");
+  headerCell(ws.getRow(2).getCell(2), "Amount", "right");
+  headerCell(ws.getRow(2).getCell(3), "%", "right");
+  let r = 3;
+  for (const row of liveAllocation.currentAccountAllocation) {
+    const writeRow = row.isTotal ? totalCell : bodyCell;
+    writeRow(ws.getRow(r).getCell(1), row.label, "left");
+    writeRow(ws.getRow(r).getCell(2), row.amount, "right");
+    writeRow(ws.getRow(r).getCell(3), row.percent / 100, "right");
+    ws.getRow(r).getCell(3).numFmt = "0.00%";
+    r++;
+  }
+
+  r += 2;
+  const allocationHeaderRow = r - 1;
+  titleRow(ws, "Current Allocation", 6, allocationHeaderRow);
+  const allocHeaders = ["Scheme", "Hybrid", "Debt", "Equity", "Cash + Liquidcase", "Total"];
+  allocHeaders.forEach((h, i) =>
+    headerCell(ws.getRow(allocationHeaderRow + 1).getCell(i + 1), h, i === 0 ? "left" : "right"),
+  );
+  r = allocationHeaderRow + 2;
+  for (const row of liveAllocation.currentAllocation) {
+    const writeRow = row.label === "Grand total" ? totalCell : bodyCell;
+    writeRow(ws.getRow(r).getCell(1), row.label, "left");
+    writeRow(ws.getRow(r).getCell(2), row.hybrid, "right");
+    writeRow(ws.getRow(r).getCell(3), row.debt, "right");
+    writeRow(ws.getRow(r).getCell(4), row.equity, "right");
+    writeRow(ws.getRow(r).getCell(5), row.cash, "right");
+    writeRow(ws.getRow(r).getCell(6), row.total, "right");
+    r++;
+  }
+  autoColWidths(ws);
+}
+
 // ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
 
-export function buildInvestmentSummaryWorkbook(data: MultiStrategyInvestmentData): ExcelJS.Workbook {
+export function buildInvestmentSummaryWorkbook(
+  data: MultiStrategyInvestmentData,
+  liveAllocation: LiveAllocation | null = null,
+): ExcelJS.Workbook {
   const wb = new ExcelJS.Workbook();
   wb.creator = "Qode";
   wb.created = new Date();
@@ -475,6 +522,10 @@ export function buildInvestmentSummaryWorkbook(data: MultiStrategyInvestmentData
     data.clientName,
     data.dataAsOfDate,
   );
+
+  if (liveAllocation) {
+    writeLiveAllocationSheet(addSheet("Current Allocation"), liveAllocation);
+  }
 
   return wb;
 }

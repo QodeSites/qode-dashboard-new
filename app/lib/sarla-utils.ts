@@ -568,6 +568,22 @@ export class PortfolioApi {
       latestData,
     };
   }
+
+  /**
+   * Narrow public entry point for "just give me PMS current exposure + total
+   * profit for this qcode's Scheme PMS QAW" — used by callers that don't need
+   * the full per-scheme GET payload (investment-summary's live PMS overlay,
+   * both the /api/sarla-api/pms-summary route for the frontend and the
+   * server-side Excel export). Single getPMSData() call, same underlying
+   * data/logic as getLatestExposure/getTotalProfit's own "Scheme PMS QAW"
+   * branches — never call those two separately for this purpose, that would
+   * hit getPMSData() twice for the same data.
+   */
+  public static async getPmsSummary(qcode: string): Promise<{ currentExposure: number; totalProfit: number }> {
+    const pms = await this.getPMSData(qcode);
+    return { currentExposure: pms.currentExposure, totalProfit: pms.totalProfit };
+  }
+
   private static SARLA_HARDCODED_DATA: Record<string, PortfolioData & { metadata: Metadata }> = {
     "Scheme A": {
       data: {

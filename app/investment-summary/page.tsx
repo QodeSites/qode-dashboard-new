@@ -24,7 +24,8 @@ import {
 } from "@/components/ui/select";
 import { Download, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown, Loader2 } from "lucide-react";
 import type { MultiStrategyInvestmentData } from "@/app/lib/parse-investment-pdf";
-import { printInvestmentSummaryReport, type LiveAllocation, type LiveAllocationRow } from "./print-report";
+import { printInvestmentSummaryReport, type LiveAllocation } from "./print-report";
+import { buildLiveAllocation } from "@/app/lib/investment-summary/live-allocation";
 import { withProfitRedeploymentOverrides, withSectionTotals } from "./profit-redeployment-overrides";
 import { Badge } from "@/components/ui/badge";
 
@@ -935,10 +936,14 @@ export default function InvestmentSummaryPage() {
       return;
     }
 
-    const qcode = isSarla ? "QAC00041" : "QAC00046";
-    const accountCode = isSarla ? "AC5" : "AC8";
+    // Sarla uses the lightweight PMS-only route (one query, no unused
+    // per-scheme computation); Satidham stays on the full /api/sarla-api
+    // route for now — same response shape either way, only the URL differs.
+    const fetchUrl = isSarla
+      ? "/api/sarla-api/pms-summary?qcode=QAC00041"
+      : "/api/sarla-api?qcode=QAC00046&accountCode=AC8";
 
-    fetch(`/api/sarla-api?qcode=${qcode}&accountCode=${accountCode}`, { cache: "no-store" })
+    fetch(fetchUrl, { cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) return;
         const json: Record<string, SarlaSchemeResponse> = await res.json();
@@ -956,46 +961,7 @@ export default function InvestmentSummaryPage() {
   // the report already says, PMS is appended as a full-cash row.
   const liveAllocation = useMemo<LiveAllocation | null>(() => {
     if (pmsAum === null || !data) return null;
-
-    const bucket = (frag: string) =>
-      data.holdingsBifurcation.find((r) => r.type.toLowerCase().includes(frag))?.amount ?? 0;
-
-    const zerodhaRow: LiveAllocationRow = {
-      label: "Zerodha",
-      hybrid: bucket("hybrid"),
-      debt: bucket("debt"),
-      equity: bucket("equity"),
-      cash: bucket("cash"),
-      total: 0,
-    };
-    zerodhaRow.total = zerodhaRow.hybrid + zerodhaRow.debt + zerodhaRow.equity + zerodhaRow.cash;
-
-    const pmsRow: LiveAllocationRow = {
-      label: "PMS",
-      hybrid: 0,
-      debt: 0,
-      equity: 0,
-      cash: pmsAum,
-      total: pmsAum,
-    };
-    const grandTotalRow: LiveAllocationRow = {
-      label: "Grand total",
-      hybrid: zerodhaRow.hybrid + pmsRow.hybrid,
-      debt: zerodhaRow.debt + pmsRow.debt,
-      equity: zerodhaRow.equity + pmsRow.equity,
-      cash: zerodhaRow.cash + pmsRow.cash,
-      total: zerodhaRow.total + pmsRow.total,
-    };
-
-    const combined = zerodhaRow.total + pmsAum;
-    return {
-      currentAllocation: [zerodhaRow, pmsRow, grandTotalRow],
-      currentAccountAllocation: [
-        { label: "Zerodha", amount: zerodhaRow.total, percent: combined > 0 ? (zerodhaRow.total / combined) * 100 : 0 },
-        { label: "PMS", amount: pmsAum, percent: combined > 0 ? (pmsAum / combined) * 100 : 0 },
-        { label: "Account Value", amount: combined, percent: 100, isTotal: true },
-      ],
-    };
+    return buildLiveAllocation(data, pmsAum);
   }, [pmsAum, data]);
 
   useEffect(() => {
