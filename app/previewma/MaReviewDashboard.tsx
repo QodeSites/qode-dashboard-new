@@ -92,7 +92,7 @@ export function MaReviewDashboard() {
 
   const [clientCount, setClientCount] = useState<number | null>(null);
 
-  const topTabsForBar = TOP_TABS.map((t) => ({
+  const topTabsForBar = TOP_TABS?.map((t) => ({
     key: t.key,
     label: t.label,
     icon: TOP_TAB_ICONS[t.icon],
