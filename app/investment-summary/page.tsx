@@ -1052,10 +1052,32 @@ export default function InvestmentSummaryPage() {
       }
       return withSectionTotals(withProfitRedeploymentOverrides(icode, base));
     }
-    return data.profitRedeployment.filter((row) => {
-      if (row.isHeader) return false;
+    // Rows are always labeled "Scheme {strategy}" with no "(Inactive)"
+    // marker (index.ts's toRow), but selectedStrategy carries that suffix
+    // for an inactive dropdown pick (e.g. "QYE++ (Inactive)") — comparing
+    // the raw strategy name against the suffixed selection always failed,
+    // hiding the table entirely whenever an inactive strategy was selected
+    // (same class of bug as the portfolio tab's inactive-strategy handling).
+    // displayStrategyName/isInactiveStrategy strip+detect that suffix the
+    // same way activeTransactions above already does.
+    //
+    // Satidham additionally has TWO rows sharing the identical name
+    // ("Scheme QYE++" both active and inactive — her strategy was
+    // deactivated then reactivated under the same name), so a name-only
+    // match would return both regardless of which one was selected; the
+    // "Inactive Strategies" header row's position disambiguates which side
+    // of that boundary each row falls on.
+    const wantsInactive = isInactiveStrategy(selectedStrategy);
+    const target = displayStrategyName(selectedStrategy);
+    const inactiveHeaderIdx = data.profitRedeployment.findIndex(
+      (r) => r.isHeader && r.strategy.toLowerCase().includes("inactive"),
+    );
+    return data.profitRedeployment.filter((row, idx) => {
+      if (row.isHeader || row.isTotal) return false;
       const norm = row.strategy.replace(/^Scheme\s+/i, "");
-      return norm === selectedStrategy;
+      if (norm !== target) return false;
+      const rowIsInactive = inactiveHeaderIdx !== -1 && idx > inactiveHeaderIdx;
+      return rowIsInactive === wantsInactive;
     });
   }, [data, selectedStrategy, icode, isSarla, isSatidham, pmsProfits]);
 

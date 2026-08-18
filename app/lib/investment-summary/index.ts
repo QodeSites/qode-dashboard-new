@@ -6,10 +6,6 @@
  * output shape, kept as the shared type home after that parser was
  * removed 2026-08-12), computed directly from Postgres.
  *
- * Satidham-old (QUS0010) is explicitly OUT OF SCOPE — it stays on the
- * existing app/lib/sarla-utils.ts path. computeInvestmentSummary throws for
- * this icode rather than silently producing wrong numbers.
- *
  * Sarla (QUS0007) was cut over 2026-08-12 (doc 05 Q14) on the strength of:
  * config/Master_Config.csv's existing QYE+ row for QAC00041 matching the
  * real WSL Strategy_Config.csv exactly, full/current data in every table
@@ -21,6 +17,31 @@
  * diffed at cutover time — Akash's explicit call to treat that diff as a
  * post-hoc confirmation pass rather than a gate. If a fresh report later
  * surfaces a material mismatch, re-add "QUS0007" here.
+ *
+ * Satidham-old (QUS0010) was cut over 2026-08-18. Her own qcode (QAC00046,
+ * from Master_Config.csv) has zero rows in every Postgres table this
+ * calculator reads — all her real live data lives under a DIFFERENT qcode
+ * (QAC00066, confirmed against app/lib/sarla-utils.ts's own
+ * SCHEME_QCODE_OVERRIDE) and a separate PMS custodian code (QAW00041).
+ * SATIDHAM_LIVE_QCODE below redirects every qcode-keyed call for her to
+ * QAC00066 — safe for holdings/tradebook/account-summary/amountInvested
+ * (all either clientName-keyed, latest-value-only, or individually-dated
+ * transaction rows, none of which have a date-range issue), but NOT safe
+ * for raw system_tag pnl SUMS: QAC00066's "QYE++ ..." tags run continuously
+ * from her first QYE++ stint (2025-11-28) through her second (reactivated
+ * 2026-07-24), and summing them unfiltered double-counts the first stint's
+ * profit. That affects exactly two things, both overridden below rather
+ * than trusting the generic engine's unfiltered sums: overviewCashSummary
+ * (replaced outright by satidham-overview-cash.ts, which applies the
+ * correct date floor) and the two QYE++ rows of profitRedeploymentRows
+ * (patched below using the same date-scoped sumPnlSince).
+ *
+ * Known remaining gap: calcPerStrategySummaries' own per-strategy
+ * overviewCashSummary for her "QYE++"/"QYE++ (Inactive)" perStrategy
+ * dropdown entries still uses the generic (unfiltered, double-counting)
+ * calculation — only the combined view is corrected. Flagged, not fixed,
+ * pending a decision on whether the per-strategy dropdown needs the same
+ * treatment.
  */
 import { getClientConfig, getBaseTags } from "./config";
 import { identifyTransitionWashTrades, isFullCashStrategy } from "./tradebook";
@@ -32,10 +53,19 @@ import { loadCashTransactions } from "./cash-inputs";
 import { checkMissingSystemTags } from "./tags";
 import { calcValidationSummary } from "./validation";
 import { applySarlaPmsOverlay } from "./sarla-pms-overlay";
+import { applyAshokPmsOverlay } from "./ashok-pms-overlay";
+import {
+  computeSatidhamOverviewCashSummary,
+  computeQyeOldOverviewCashSummaryView,
+  SATIDHAM_ICODE,
+  SATIDHAM_LIVE_QCODE,
+  QYE_REINCEPTION_DATE,
+  prevDay,
+  sumPnlSince,
+} from "./satidham-overview-cash";
 import type { MultiStrategyInvestmentData, StrategyInvestmentData } from "./types";
 
-/** Out of scope per doc 04 — Satidham-old (QUS0010) stays on app/lib/sarla-utils.ts permanently (doc 05 Q14 — its qcode has zero rows in every Postgres table the calculator reads). */
-const EXCLUDED_ICODES = new Set(["QUS0010"]);
+const EXCLUDED_ICODES = new Set<string>([]);
 
 export class UnsupportedClientError extends Error {
   constructor(icode: string) {
@@ -75,7 +105,11 @@ export async function computeInvestmentSummary(icode: string): Promise<MultiStra
     throw new ClientNotFoundError(icode);
   }
 
-  const qcode = allStrategyRows[0].qcode;
+  // Satidham-old's Master_Config.csv qcode (QAC00046) has zero live data —
+  // redirect every qcode-keyed call below to QAC00066 instead. See this
+  // file's header comment for exactly which computations that is/isn't
+  // safe for, and where the unsafe ones are patched separately.
+  const qcode = icode === SATIDHAM_ICODE ? SATIDHAM_LIVE_QCODE : allStrategyRows[0].qcode;
   const clientName = allStrategyRows[0].clientName;
 
   // Doc 05: real Python's report_builder.py names inactive-strategy sheets
@@ -115,7 +149,7 @@ export async function computeInvestmentSummary(icode: string): Promise<MultiStra
 
   const eqExcludeIds = await identifyTransitionWashTrades(qcode, allStrategyRows);
 
-  const [perStrategyRaw, combined, profitRedeploymentRows, eqHoldings, mfHoldings, cashTxns, missingSystemTags] =
+  const [perStrategyRaw, combined, profitRedeploymentRowsRaw, eqHoldings, mfHoldings, cashTxns, missingSystemTags] =
     await Promise.all([
       calcPerStrategySummaries(qcode, clientName, allStrategyRows, eqExcludeIds),
       calcCombinedSummary(qcode, clientName, allStrategyRows, eqExcludeIds),
@@ -125,6 +159,30 @@ export async function computeInvestmentSummary(icode: string): Promise<MultiStra
       loadCashTransactions(),
       getBaseTags().then((baseTags) => checkMissingSystemTags(qcode, baseTags)),
     ]);
+
+  // calcProfitRedeployment sums each Master_Config.csv row's forProfitTag
+  // with no date bound (see this file's header comment) — wrong for
+  // Satidham's two "QYE++" rows specifically, since QAC00066's "QYE++ ..."
+  // tags run continuously across both her stints under the identical tag
+  // name. Patch both rows with date-scoped sums: the OLD (inactive) row
+  // gets everything strictly before the reinception floor, the NEW (active)
+  // row gets everything on/after it — together covering the same full
+  // history the unpatched sum did, just split correctly between the two
+  // stints instead of both showing the same double-counted total.
+  const profitRedeploymentRows =
+    icode === SATIDHAM_ICODE
+      ? await Promise.all(
+          profitRedeploymentRowsRaw.map(async (row) => {
+            if (row.strategy !== "QYE++") return row;
+            const floor = prevDay(QYE_REINCEPTION_DATE);
+            const profits =
+              row.status === "Active"
+                ? await sumPnlSince(qcode, "QYE++ Total Portfolio Value", floor)
+                : await sumPnlSince(qcode, "QYE++ Total Portfolio Value", new Date("2000-01-01"), floor);
+            return { ...row, profits };
+          }),
+        )
+      : profitRedeploymentRowsRaw;
 
   const perStrategy: Record<string, StrategyInvestmentData> = {};
   for (const row of allStrategyRows) {
@@ -138,6 +196,19 @@ export async function computeInvestmentSummary(icode: string): Promise<MultiStra
       holdingsInvestmentSummary: summary.holdingsInvestmentSummary,
       currentAccountSummary: summary.currentAccountSummary,
       holdingsBifurcation: summary.holdingsBifurcation,
+    };
+  }
+
+  // Satidham-only exception (2026-08-18, explicit request): give QYE++'s
+  // OLD/inactive stint its own standalone Overview Cash Summary + Check,
+  // even though calcInactiveStrategySummary always sets this to null for
+  // every inactive strategy (strategy-summaries.ts:267, by design — matches
+  // Python's real behaviour, only active strategies get a per-strategy
+  // Check). Every other client's inactive strategies are untouched.
+  if (icode === SATIDHAM_ICODE && perStrategy["QYE++ (Inactive)"]) {
+    perStrategy["QYE++ (Inactive)"] = {
+      ...perStrategy["QYE++ (Inactive)"],
+      overviewCashSummary: await computeQyeOldOverviewCashSummaryView(),
     };
   }
 
@@ -222,10 +293,26 @@ export async function computeInvestmentSummary(icode: string): Promise<MultiStra
   // (server_drive_fetcher.py), a step that doesn't exist in this
   // Postgres-native path at all. `missingSystemTags` is real (checkMissingSystemTags,
   // ported from main.py's _check_missing_tags).
-  const validationChecks = calcValidationSummary(combined, [], missingSystemTags);
-  const overviewCashSummary = combined.overviewCashSummary
-    ? await applySarlaPmsOverlay(icode, combined.overviewCashSummary)
-    : combined.overviewCashSummary;
+  //
+  // overviewCashSummary is computed BEFORE validation (not after, as
+  // originally written) specifically so validation's "Cash Reconciliation"
+  // check runs against the CORRECTED summary, not combined's raw one —
+  // for Sarla/Satidham, combined.overviewCashSummary is the generic engine's
+  // unpatched result (missing the PMS/manual-adjustment/date-floor fixes
+  // those two overlays apply), so validating against it would report a
+  // wildly wrong "Off by ₹X" figure alongside the correct one displayed in
+  // the report itself. Confirmed 2026-08-18: for Satidham this was the
+  // difference between validation reporting ₹7,88,681 (matches the real
+  // Check) vs ₹6,82,31,894.81 (the unpatched generic value, off by exactly
+  // the double-counted QYE++ old-stint profit + the internal-transfer
+  // inflation this file's other two overlays exist to fix).
+  const overviewCashSummary =
+    icode === SATIDHAM_ICODE
+      ? await computeSatidhamOverviewCashSummary(icode)
+      : combined.overviewCashSummary
+        ? await applyAshokPmsOverlay(icode, await applySarlaPmsOverlay(icode, combined.overviewCashSummary))
+        : combined.overviewCashSummary;
+  const validationChecks = calcValidationSummary({ ...combined, overviewCashSummary }, [], missingSystemTags);
 
   return {
     clientName,

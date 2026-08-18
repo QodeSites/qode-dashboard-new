@@ -469,12 +469,21 @@ export function buildInvestmentSummaryWorkbook(
     writeCurrentAccountSummary(addSheet("Current Account Summary"), data, "");
   }
 
-  // Inactive strategy sheets — Cash Inv / Holdings Inv only, no Overview
-  // Cash / Account Summary (nothing current to reconcile), per doc 02.
+  // Inactive strategy sheets — Cash Inv / Holdings Inv only by default (no
+  // Overview Cash / Account Summary, nothing current to reconcile, per doc
+  // 02). If a caller has explicitly populated overviewCashSummary for an
+  // inactive strategy anyway (index.ts does this for Satidham's QYE++
+  // (Inactive) only, 2026-08-18 — a deliberate one-off exception), write
+  // that sheet too. Every other client's inactive strategies keep
+  // overviewCashSummary: null (calcInactiveStrategySummary's default), so
+  // this branch is a no-op for them.
   for (const strat of inactiveStrategies) {
     const sd = data.perStrategy[`${strat} (Inactive)`];
     if (!sd) continue;
     const label = `${strat} (Inactive)`;
+    if (sd.overviewCashSummary) {
+      writeOverviewCashSummary(addSheet(`Overview Cash ${shortStrat(strat)} (Inactive)`), sd, label);
+    }
     writeCashInvestmentSummary(addSheet(`Cash Inv ${shortStrat(strat)} (Inactive)`), sd, label);
     writeHoldingsInvestmentSummary(addSheet(`Holdings Inv ${shortStrat(strat)} (Inactive)`), sd, label);
   }
