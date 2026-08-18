@@ -31,6 +31,7 @@ import { calcEquityTransactions, calcMfTransactions } from "./tradebook";
 import { loadCashTransactions } from "./cash-inputs";
 import { checkMissingSystemTags } from "./tags";
 import { calcValidationSummary } from "./validation";
+import { applySarlaPmsOverlay } from "./sarla-pms-overlay";
 import type { MultiStrategyInvestmentData, StrategyInvestmentData } from "./types";
 
 /** Out of scope per doc 04 — Satidham-old (QUS0010) stays on app/lib/sarla-utils.ts permanently (doc 05 Q14 — its qcode has zero rows in every Postgres table the calculator reads). */
@@ -222,6 +223,9 @@ export async function computeInvestmentSummary(icode: string): Promise<MultiStra
   // Postgres-native path at all. `missingSystemTags` is real (checkMissingSystemTags,
   // ported from main.py's _check_missing_tags).
   const validationChecks = calcValidationSummary(combined, [], missingSystemTags);
+  const overviewCashSummary = combined.overviewCashSummary
+    ? await applySarlaPmsOverlay(icode, combined.overviewCashSummary)
+    : combined.overviewCashSummary;
 
   return {
     clientName,
@@ -230,7 +234,7 @@ export async function computeInvestmentSummary(icode: string): Promise<MultiStra
 
     amountInvested: combined.amountInvested,
     validationChecks,
-    overviewCashSummary: combined.overviewCashSummary,
+    overviewCashSummary,
     currentAccountSummary: combined.currentAccountSummary,
     holdingsBifurcation: combined.holdingsBifurcation,
     cashInvestmentSummary: combined.cashInvestmentSummary,
