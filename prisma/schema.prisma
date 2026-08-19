@@ -1229,6 +1229,59 @@ model strategy_defaults {
   @@schema("public")
 }
 
+// ── Dynamic Configuration Hierarchy — additive, see dynamic-config-hierarchy-plan.md ──
+// Old *_pct columns above stay untouched until Phase 5 of that plan.
+// ratio_type is String, not a Postgres enum, matching every other
+// categorical column in this schema (global_config.data_type, etc.) --
+// validated by a TS union type in code, so a new value is a code change,
+// not a migration. See internal-utils.ts's `ratioType: "current" | "ideal"
+// | "model"` for the existing pattern this follows.
+
+model config_catalog {
+  config_key String  @id @db.VarChar(50)
+  parent_key String? @db.VarChar(50)
+  label      String  @db.VarChar(100)
+  tag_suffix String? @db.VarChar(100)
+  symbol     String? @db.VarChar(30)
+
+  parent   config_catalog?  @relation("CatalogTree", fields: [parent_key], references: [config_key])
+  children config_catalog[] @relation("CatalogTree")
+
+  @@index([parent_key])
+  @@schema("public")
+}
+
+model strategy_config_defaults {
+  id            Int      @id @default(autoincrement())
+  strategy_name String   @db.VarChar(50)
+  config_key    String   @db.VarChar(50)
+  ratio_type    String   @db.VarChar(10) // "ideal" | "model" | "value"
+  value         Decimal? @db.Decimal(9, 4)
+  as_of_date    DateTime @db.Date
+  updated_by    String?  @db.VarChar(100)
+  updated_at    DateTime @updatedAt @db.Timestamptz(6)
+
+  @@unique([strategy_name, config_key, ratio_type, as_of_date], name: "strategy_config_unique", map: "uq_strategy_config_defaults")
+  @@index([strategy_name, config_key, ratio_type, as_of_date])
+  @@schema("public")
+}
+
+model client_config_values {
+  id         Int      @id @default(autoincrement())
+  qcode      String   @db.VarChar(20)
+  strategy   String   @db.VarChar(50)
+  config_key String   @db.VarChar(50)
+  ratio_type String   @db.VarChar(10) // "ideal" | "model" | "value"
+  value      Decimal? @db.Decimal(9, 4)
+  as_of_date DateTime @db.Date
+  updated_by String?  @db.VarChar(100)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  @@unique([qcode, strategy, config_key, ratio_type, as_of_date], name: "client_config_unique", map: "uq_client_config_values")
+  @@index([qcode, strategy, config_key, ratio_type, as_of_date])
+  @@schema("public")
+}
+
 model global_config {
   key        String   @id @db.VarChar(100)
   value      String   @db.VarChar(500)
