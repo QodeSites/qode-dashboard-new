@@ -5,8 +5,8 @@ import dummyData from "./dummyAlert.json";
 
 // ─── Types matching the real API response ─────────────────────────────────
 
-export type Severity = "Healthy" | "Warning" | "Action Required";
-type RawSeverity = "HEALTHY" | "WARNING" | "ACTION_REQUIRED";
+export type Severity =  "Warning" | "Action Required"|"Unavailable";
+type RawSeverity =  "WARNING" | "ACTION_REQUIRED"|"UNAVAILABLE" ;
 
 export interface AlertApiRow {
   client: string;
@@ -46,7 +46,7 @@ export interface ThresholdRefRow {
 function mapSeverity(s: RawSeverity): Severity {
   if (s === "WARNING") return "Warning";
   if (s === "ACTION_REQUIRED") return "Action Required";
-  return "Healthy";
+  return "Unavailable";
 }
 
 function deriveAlert(row: AlertApiRow): DerivedAlert {
@@ -71,13 +71,10 @@ export async function fetchAlerts(): Promise<{ alerts: DerivedAlert[]; generated
 export function getAlertSummary(alerts: DerivedAlert[]) {
   const warning = alerts?.filter((a) => a.severity === "Warning").length;
   const actionRequired = alerts?.filter((a) => a.severity === "Action Required").length;
-  const healthy = alerts?.filter((a) => a.severity === "Healthy").length;
-  return { totalOpen: warning + actionRequired, warning, actionRequired, healthy };
+  const unavailable = alerts?.filter((a) => a.severity === "Unavailable").length;
+    return { totalOpen: warning + actionRequired + unavailable, warning, actionRequired, unavailable };
 }
 
-// Builds the "Alert Meaning & Threshold Reference" table directly from live
-// data — one row per unique metric+tier, using whatever thresholds the API
-// actually returned, instead of a hardcoded table that can drift out of sync.
 export function getThresholdReference(alerts: DerivedAlert[]): ThresholdRefRow[] {
   const map = new Map<string, ThresholdRefRow>();
   alerts.forEach((a) => {

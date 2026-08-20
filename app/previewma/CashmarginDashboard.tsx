@@ -17,9 +17,14 @@ interface ClientRow {
   cashPct: number;
   excessCash: number;
   excessCashPct: number;
+  cashDriftPct:number
+  cashComponentValue:number
+  cashComponentPct:number
+  cashComponentDriftPct:number
   excessCashStatus: "Excess Cash Levels" | "Low Cash Levels";
   holdings: number;
   holdingsPct: number;
+  holdingsDriftPct:number
   marginStatus: "Healthy" | "Shortfall";
   currentDrawdownPct: number | null;
   alertStatus: "HEALTHY" | "WARNING" | "ACTION_REQUIRED" | "UPSIDE" | "UNAVAILABLE";
@@ -35,6 +40,7 @@ interface RegistryResponse {
     totalClients: number;
     totalAum: number;
     totalExcessCash: number;
+    totalExcessCashCount:number,
     marginShortfalls: number;
     alertsTriggered: number;
   };
@@ -44,11 +50,9 @@ interface RegistryResponse {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtInr(v: number) {
-  const abs = Math.abs(v);
   const sign = v < 0 ? "-" : "";
-  if (abs >= 1e7) return `${sign}₹${(abs / 1e7).toFixed(2)} Cr`;
-  if (abs >= 1e5) return `${sign}₹${(abs / 1e5).toFixed(2)} L`;
-  return `${sign}₹${Math.round(abs).toLocaleString("en-IN")}`;
+  const abs = Math.abs(v);
+  return `${sign}₹${abs.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 function fmtPct(v: number | null) {
   if (v === null || !isFinite(v)) return "—";
@@ -184,9 +188,8 @@ const grouped = useMemo(() => {
           <div className="flex gap-4 mb-8 flex-wrap">
             <KpiCard label="Total Clients" value={data.summary.totalClients} bg="bg-logo-green" />
             <KpiCard label="Total AUM (₹)" value={fmtInr(data.summary.totalAum)} bg="bg-logo-green" />
-            <KpiCard label="Total Excess Cash" value={fmtInr(data.summary.totalExcessCash)} bg="bg-logo-green" />
+            <KpiCard label="Total Excess Count" value={data.summary.totalExcessCashCount} bg="bg-logo-green" />
             <KpiCard label="Margin Shortfalls" value={data.summary.marginShortfalls} bg="bg-red-700" />
-            <KpiCard label="Alerts Triggered" value={data.summary.alertsTriggered} bg="bg-[#E07B39]" />
           </div>
 
           {/* Action Queue */}
@@ -227,7 +230,7 @@ const grouped = useMemo(() => {
           {/* Client Registry */}
           <div className="bg-white rounded-xl border border-logo-green/10">
             <div className="bg-logo-green rounded-t-xl px-5 py-3">
-              <span className="text-sm font-semibold text-white">Client Registry — All strategy entries</span>
+              <span className="text-sm font-semibold text-white">Client Registry</span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -235,20 +238,24 @@ const grouped = useMemo(() => {
                   <tr className="bg-primary-bg/40 text-card-text-secondary text-xs border-b border-logo-green/10">
                     <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Client</th>
                     <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Strategy</th>
-                    <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Tier</th>
                     <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Account Value</th>
+                    <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Excess Cash</th>
+                    <th className="px-4 py-2.5 text-middle font-medium whitespace-nowrap">Cash Status</th>
                     <th className="px-4 py-2.5 text-middle font-medium whitespace-nowrap">Cash</th>
                     <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Cash %</th>
-                    <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Excess Cash</th>
-                    <th className="px-4 py-2.5 text-middle font-medium whitespace-nowrap">Excess Cash %</th>
-                    <th className="px-4 py-2.5 text-middle font-medium whitespace-nowrap">Cash Status</th>
+                    <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Cash Drift %</th>
+                    <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Cash Component</th>
+                    <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Cash Component %</th>
+
+                    <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Cash Drift Component %</th>
+
                     <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Holdings</th>
                     <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Holdings %</th>
+                    <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Holdings Drift %</th>
+
                     <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Margin</th>
                     <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Current Drawdown</th>
                     <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Debt-Equity-Hybrid</th>
-                    <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Alert</th>
-                    <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -274,38 +281,29 @@ const grouped = useMemo(() => {
             {row.strategy}
           </span>
         </td>
-        <td className="px-4 py-2.5 text-card-text-secondary">{row.tier}</td>
         <td className="px-4 py-2.5 text-right text-card-text whitespace-nowrap">{fmtInr(row.accountValue)}</td>
-        <td className="px-4 py-2.5 text-right text-card-text whitespace-nowrap">{fmtInr(row.cash)}</td>
-        <td className="px-4 py-2.5 text-right text-card-text-secondary">{row.cashPct.toFixed(1)}%</td>
         <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${row.excessCash >= 0 ? "text-green-700 bg-green-50" : "text-red-600 bg-red-50"}`}>
           {fmtInr(row.excessCash)}
         </td>
-        <td className={`px-4 py-2.5 text-right font-semibold ${row.excessCashPct >= 0 ? "text-green-700" : "text-red-600"}`}>
-          {fmtPct(row.excessCashPct)}
-        </td>
         <td className="px-4 py-2.5"><ExcessCashBadge status={row.excessCashStatus} /></td>
-        <td className="px-4 py-2.5 text-right text-card-text whitespace-nowrap">{fmtInr(row.holdings)}</td>
-        <td className="px-4 py-2.5 text-right text-card-text-secondary">{row.holdingsPct.toFixed(1)}%</td>
+        <td className="px-4 py-2.5 text-right text-card-text whitespace-nowrap">{fmtInr(row.cash)}</td>
+        <td className="px-4 py-2.5 text-right text-card-text-secondary">{row.cashOnlyPct?.toFixed(2)}%</td>
+        <td className="px-4 py-2.5 text-right text-card-text-secondary">{row.cashDriftPct?.toFixed(2)}%</td>
+        <td className="px-4 py-2.5 text-right text-card-text-secondary">{fmtInr(row?.cashComponentValue)}</td>
+        <td className="px-4 py-2.5 text-right text-card-text-secondary">{row?.cashComponentPct?.toFixed(2)}%</td>
+
+        <td className="px-4 py-2.5 text-right text-card-text-secondary">{row?.cashComponentDriftPct?.toFixed(2)}%</td>
+
+
+        <td className="px-4 py-2.5 text-right text-card-text whitespace-nowrap">{fmtInr(row?.holdings)}</td>
+        <td className="px-4 py-2.5 text-right text-card-text-secondary">{row.holdingsPct?.toFixed(2)}%</td>
+        <td className="px-4 py-2.5 text-right text-card-text-secondary">{row.holdingsDriftPct?.toFixed(2)}%</td>
+
         <td className="px-4 py-2.5"><MarginBadge status={row.marginStatus} /></td>
         <td className={`px-4 py-2.5 text-right font-semibold ${row.currentDrawdownPct !== null && row.currentDrawdownPct >= 0 ? "text-green-700" : "text-red-600"}`}>
           {fmtPct(row.currentDrawdownPct)}
         </td>
         <td className="px-4 py-2.5 text-card-text-secondary text-xs whitespace-nowrap">{row.debtEquityHybridRatio}</td>
-        <td className="px-4 py-2.5">
-          <span className={`inline-block rounded-md border px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap ${alertBadgeStyles(row.alertStatus)}`}>
-            {row.alertStatus.replace("_", " ")}
-          </span>
-        </td>
-        <td className="px-4 py-2.5">
-          <span className={`text-xs font-medium whitespace-nowrap ${
-            row.action.includes("Deploy") ? "text-green-700" :
-            row.action.includes("Review") ? "text-red-600" :
-            "text-card-text-secondary"
-          }`}>
-            {row.action}
-          </span>
-        </td>
       </tr>
     ));
   })}

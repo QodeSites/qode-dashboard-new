@@ -3,12 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Users, CheckCircle, AlertTriangle, Loader2, Search } from "lucide-react";
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { useSearchParams } from "next/navigation";
 
 interface Props { qcode?: string; clientName?: string; }
-
-// ─── Types (matching the real API response) ────────────────────────────────
 
 interface ClientListEntry { qcode: string; account_name: string; strategy: string; }
 interface SummaryRow { label: string; value: number; pct: number; }
@@ -71,7 +69,6 @@ function fmtPct(v: number | null | undefined) {
   if (v === null || v === undefined || !isFinite(v)) return "—";
   return `${v.toFixed(2)}%`;
 }
-
 function DiffInr({ v }: { v: number }) {
   return <span className={v >= 0 ? "text-green-700 font-semibold" : "text-red-600 font-semibold"}>{fmtInr(v)}</span>;
 }
@@ -93,7 +90,7 @@ function Sidebar() {
           <Users className="h-3.5 w-3.5" />Dashboard
         </Link>
         <div className="flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-xs font-medium bg-white/15 text-white">
-          <Users className="h-3.5 w-3.5" />CLient Dashboard
+          <Users className="h-3.5 w-3.5" />Client Dashboard
         </div>
       </nav>
       <div className="px-4 py-4 border-t border-white/10">
@@ -108,57 +105,47 @@ function Sidebar() {
 function SH({ children }: { children: React.ReactNode }) {
   return (
     <div className="bg-logo-green rounded-t-lg px-4 py-2.5">
-      <span className="text-xs font-bold uppercase tracking-wide text-white">{children}</span>
+      <span className="text-lg font-bold uppercase tracking-wide text-white">{children}</span>
     </div>
   );
 }
 function SubSH({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2 border-l-[3px] border-logo-green pl-3 py-0.5 my-4">
-      <span className="text-xs font-bold uppercase tracking-wide text-logo-green">{children}</span>
+      <span className="text-lg font-bold uppercase tracking-wide text-logo-green">{children}</span>
     </div>
   );
 }
 
-// ─── Fallback client picker (only shown if no qcode prop is passed) ───────────
+// ─── Input params config ──────────────────────────────────────────────────────
 
-function ClientPicker({ onSelect }: { onSelect: (qcode: string) => void }) {
-  const [clients, setClients] = useState<ClientListEntry[]>([]);
-  const [search, setSearch] = useState("");
-  const [open, setOpen] = useState(false);
+const PCT_KEYS = ["longOptPct", "drawdownMarginPct", "lcPct", "cashPct", "equityPct", "derivativePct"];
+const RAW_KEYS = ["psarMultiplier"];
 
+const PARAM_ROWS = [
+  { label: "PSAR Multiplier",     key: "psarMultiplier",    unit: "×" },
+  { label: "Long Options (%)",    key: "longOptPct",        unit: "%" },
+  { label: "Drawdown Margin (%)", key: "drawdownMarginPct", unit: "%" },
+  { label: "Liquid Case (%)",     key: "lcPct",             unit: "%" },
+  { label: "Cash (%)",            key: "cashPct",           unit: "%" },
+  { label: "Equity Book (%)",     key: "equityPct",         unit: "%" },
+  { label: "Derivative Book (%)", key: "derivativePct",     unit: "%" },
+];
 
-  const filtered = clients.filter(
-    (c) => c.account_name.toLowerCase().includes(search.toLowerCase()) || c.qcode.toLowerCase().includes(search.toLowerCase())
-  );
-
-  return (
-    <div className="relative max-w-md">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-card-text-secondary" />
-        <input
-          type="text" value={search} onChange={(e) => setSearch(e.target.value)} onFocus={() => setOpen(true)}
-          placeholder="Search client name or qcode…"
-          className="w-full pl-9 pr-3 py-2.5 text-sm rounded-lg border border-logo-green/20 outline-none focus:border-logo-green/40"
-        />
-      </div>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute z-20 mt-1 w-full max-h-72 overflow-y-auto rounded-lg border border-logo-green/15 bg-white shadow-lg py-1">
-            {filtered.map((c) => (
-              <button key={`${c.qcode}-${c.strategy}`} type="button"
-                onClick={() => { onSelect(c.qcode); setOpen(false); }}
-                className="w-full text-left px-4 py-2 text-sm hover:bg-primary-bg/40 transition-colors">
-                <span className="font-medium text-card-text">{c.account_name}</span>
-                <span className="text-card-text-secondary ml-2 text-xs">{c.qcode} · {c.strategy}</span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
+function initOverrides(tierRef: TierRefRow[]): Record<string, Record<string, string>> {
+  const init: Record<string, Record<string, string>> = {};
+  tierRef.forEach((t) => {
+    init[t.strategy] = {
+      psarMultiplier:    String(t.psarMultiplier),
+      longOptPct:        String(t.longOptPct),
+      drawdownMarginPct: String(t.drawdownMarginPct),
+      lcPct:             String(t.lcPct),
+      cashPct:           String(t.cashPct),
+      equityPct:         String(t.equityPct),
+      derivativePct:     String(t.derivativePct),
+    };
+  });
+  return init;
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -168,11 +155,17 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
   const [topBar, setTopBar] = useState<TopBarResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Inputs state
+  const [inputOverrides, setInputOverrides] = useState<Record<string, Record<string, string>>>({});
+  const [originalInputs, setOriginalInputs] = useState<Record<string, Record<string, string>>>({});
+  const [inputsSaving, setInputsSaving] = useState(false);
+  const [inputsSaved, setInputsSaved] = useState(false);
+
   const searchParams = useSearchParams();
   const qcode = searchParams.get("qcode");
 
-
-  console.log("==========>", qcode)
+  // Fetch page2
   useEffect(() => {
     if (!qcode) return;
     setLoading(true);
@@ -187,6 +180,7 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
       .finally(() => setLoading(false));
   }, [qcode]);
 
+  // Fetch top-bar
   useEffect(() => {
     if (!qcode) return;
     fetch("/api/internal/cash-margin/top-bar", {
@@ -195,8 +189,62 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
     })
       .then((r) => { if (!r.ok) throw new Error(`top-bar failed (${r.status})`); return r.json(); })
       .then((tb: TopBarResponse) => setTopBar(tb))
-      .catch(() => setTopBar(null)); // leave placeholders showing, don't surface an error for this
+      .catch(() => setTopBar(null));
   }, [qcode]);
+
+  // Init input overrides when page2 loads
+  useEffect(() => {
+    if (!page2) return;
+    const init = initOverrides(page2.inputs.tierReference);
+    setInputOverrides(init);
+    setOriginalInputs(JSON.parse(JSON.stringify(init))); // deep copy
+  }, [page2]);
+
+  async function handleApplyInputs() {
+    if (!qcode || !page2) return;
+    setInputsSaving(true);
+    setInputsSaved(false);
+    try {
+      const overrides = page2.inputs.tierReference.map((t) => {
+        const o = inputOverrides[t.strategy] || {};
+        const orig = originalInputs[t.strategy] || {};
+
+        const pct = (k: string): number | undefined => {
+          if (!o[k] || o[k] === orig[k]) return undefined; // empty or unchanged
+          return parseFloat(o[k]) / 100;
+        };
+        const raw = (k: string): number | undefined => {
+          if (!o[k] || o[k] === orig[k]) return undefined;
+          return parseFloat(o[k]);
+        };
+
+        const changed: Record<string, number> = {};
+        PCT_KEYS.forEach((k) => { const v = pct(k); if (v !== undefined) changed[k] = v; });
+        RAW_KEYS.forEach((k) => { const v = raw(k); if (v !== undefined) changed[k] = v; });
+
+        return Object.keys(changed).length > 0 ? { strategy: t.strategy, ...changed } : null;
+      }).filter(Boolean);
+
+      if (overrides.length === 0) {
+        setInputsSaving(false);
+        return;
+      }
+
+      const res = await fetch("/api/internal/cash-margin/page2", {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ qcode, overrides }),
+      });
+      if (!res.ok) throw new Error(`Failed (${res.status})`);
+      const updated: Page2Response = await res.json();
+      setPage2(updated); // refresh with new computed values
+      setInputsSaved(true);
+      setTimeout(() => setInputsSaved(false), 3000);
+    } catch (e: any) {
+      alert(e?.message || "Failed to apply inputs");
+    } finally {
+      setInputsSaving(false);
+    }
+  }
 
   if (loading || !page2 || !topBar) {
     return (
@@ -228,12 +276,11 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
   const summaryCombined = page2.accountSummary.combined;
 
   const combinedPie = [
-    { name: "Holdings", value: (summaryCombined.holdings / summaryCombined.accountValue) * 100, color: "#02422B" },
+    { name: "Holdings",   value: (summaryCombined.holdings   / summaryCombined.accountValue) * 100, color: "#02422B" },
     { name: "Liquidcase", value: (summaryCombined.liquidcase / summaryCombined.accountValue) * 100, color: "#4A9D7A" },
-    { name: "Cash", value: (summaryCombined.cash / summaryCombined.accountValue) * 100, color: "#DABD38" },
+    { name: "Cash",       value: (summaryCombined.cash       / summaryCombined.accountValue) * 100, color: "#DABD38" },
   ];
 
-  // Union of Combined + per-strategy rows for the System Breakup tables.
   const equityRows = [
     ...page2.systemBreakup.combined.equityBook.rows.map((r) => ({ strategy: "Total", ...r })),
     ...strategies.flatMap((s) => page2.systemBreakup.byStrategy[s].equityBook.rows.map((r) => ({ strategy: s, ...r }))),
@@ -251,8 +298,6 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
     return (t.cc ?? 0) + (t.ncc ?? 0) + (t.cash ?? 0);
   }
 
-  const alertColor = topBar.alertStatus === "HEALTHY" ? "text-green-700" : topBar.alertStatus === "CRITICAL" ? "text-red-800" : "text-amber-700";
-
   return (
     <div className="flex min-h-screen bg-primary-bg">
       <Sidebar />
@@ -264,9 +309,7 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
             <Link href="/cash-margin" className="text-card-text-secondary hover:text-logo-green transition-colors">
               <ArrowLeft className="h-4 w-4" />
             </Link>
-            <div>
-              <h1 className="font-serif text-2xl text-logo-green">{page2.accountName || clientName}</h1>
-            </div>
+            <h1 className="font-serif text-2xl text-logo-green">{page2.accountName || clientName}</h1>
           </div>
           <div className="flex items-center gap-4 text-xs text-card-text-secondary ml-7">
             <span>📅 As of {page2.mastersheetDate || "—"}</span>
@@ -278,12 +321,12 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
           {/* ── SECTION 1: Top KPIs ── */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {[
-              { label: "Account Value", v: topBar.kpis.accountValue.value, pct: `${topBar.kpis.accountValue.pct.toFixed(2)}%`, bg: "bg-logo-green" },
-              { label: "Liquidcase", v: topBar.kpis.liquidcase.value, pct: `${topBar.kpis.liquidcase.pct.toFixed(2)}%`, bg: "bg-[#4A9D7A]" },
-              { label: "Holdings", v: topBar.kpis.holdings.value, pct: `${topBar.kpis.holdings.pct.toFixed(2)}%`, bg: "bg-logo-green" },
-              { label: "Cash + Liquidcase", v: topBar.kpis.cashPlusLiquidcase.value, pct: `${topBar.kpis.cashPlusLiquidcase.pct.toFixed(2)}%`, bg: "bg-[#4A9D7A]" },
-              { label: "Excess Cash", v: topBar.kpis.excessCash.value, pct: `${topBar.kpis.excessCash.pct.toFixed(2)}%`, bg: "bg-green-700" },
-              { label: "Alert Status", v: topBar.alertStatus.replace("_", " "), pct: null, bg: "bg-logo-green" },
+              { label: "Account Value",     v: topBar.kpis.accountValue.value,       pct: `${topBar.kpis.accountValue.pct.toFixed(2)}%`,       bg: "bg-logo-green"  },
+              { label: "Liquidcase",        v: topBar.kpis.liquidcase.value,          pct: `${topBar.kpis.liquidcase.pct.toFixed(2)}%`,          bg: "bg-[#4A9D7A]"   },
+              { label: "Holdings",          v: topBar.kpis.holdings.value,            pct: `${topBar.kpis.holdings.pct.toFixed(2)}%`,            bg: "bg-logo-green"  },
+              { label: "Cash + Liquidcase", v: topBar.kpis.cashPlusLiquidcase.value, pct: `${topBar.kpis.cashPlusLiquidcase.pct.toFixed(2)}%`, bg: "bg-[#4A9D7A]"   },
+              { label: "Excess Cash",       v: topBar.kpis.excessCash.value,          pct: null,                                                  bg: "bg-green-700"   },
+              { label: "Alert Status",      v: topBar.alertStatus.replace("_", " "),  pct: null,                                                  bg: "bg-logo-green"  },
             ].map((item) => (
               <div key={item.label} className={`${item.bg} rounded-xl p-4 text-white`}>
                 <div className="text-[10px] font-semibold uppercase tracking-wide text-white/70 mb-1">{item.label}</div>
@@ -304,7 +347,7 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
                   const s = key === "Combined" ? summaryCombined : page2.accountSummary.byStrategy[key];
                   return (
                     <div key={key}>
-                      <div className="text-xs font-bold text-logo-green mb-2">Account Summary : {key}</div>
+                      <div className="text-lg font-bold text-logo-green mb-2">Account Summary : {key}</div>
                       <table className="w-full text-xs">
                         <thead>
                           <tr className="bg-primary-bg/40 text-card-text-secondary">
@@ -315,38 +358,14 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
                         </thead>
                         <tbody>
                           {s.rows.map((r) => {
-                            const isTotal = r.label === "Account Value";
+                            const isTotal    = r.label === "Account Value";
                             const isSubtotal = r.label === "Holdings" || r.label === "Cash + Liquidcase";
-                            const isSubRow = ["Gold", "Low Vol", "Momentum"].includes(r.label);
+                            const isSubRow   = ["Gold", "Low Vol", "Momentum"].includes(r.label);
                             return (
-                              <tr
-                                key={r.label}
-                                className={`border-t border-logo-green/5 ${isTotal ? "bg-primary-bg/40" :
-                                    isSubtotal ? "bg-primary-bg/20 border-y border-logo-green/15" :
-                                      ""
-                                  }`}
-                              >
-                                <td className={`px-2 py-1.5 ${isTotal ? "font-bold text-card-text" :
-                                    isSubtotal ? "font-semibold text-card-text" :
-                                      isSubRow ? "pl-5 italic text-card-text-secondary" :
-                                        "text-card-text-secondary"
-                                  }`}>
-                                  {r.label}
-                                </td>
-                                <td className={`px-2 py-1.5 text-right whitespace-nowrap ${isTotal ? "font-bold text-card-text" :
-                                    isSubtotal ? "font-semibold text-card-text" :
-                                      isSubRow ? "italic text-card-text-secondary" :
-                                        "text-card-text"
-                                  }`}>
-                                  {fmtInr(r.value)}
-                                </td>
-                                <td className={`px-2 py-1.5 text-right ${isTotal ? "font-bold text-card-text" :
-                                    isSubtotal ? "font-semibold text-card-text" :
-                                      isSubRow ? "italic text-card-text-secondary" :
-                                        "text-card-text-secondary"
-                                  }`}>
-                                  {fmtPct(r.pct)}
-                                </td>
+                              <tr key={r.label} className={`border-t border-logo-green/5 ${isTotal ? "bg-primary-bg/40" : isSubtotal ? "bg-primary-bg/20 border-y border-logo-green/15" : ""}`}>
+                                <td className={`px-2 py-1.5 ${isTotal ? "font-bold text-card-text" : isSubtotal ? "font-semibold text-card-text" : isSubRow ? "pl-5 italic text-card-text-secondary" : "text-card-text-secondary"}`}>{r.label}</td>
+                                <td className={`px-2 py-1.5 text-right whitespace-nowrap ${isTotal ? "font-bold text-card-text" : isSubtotal ? "font-semibold text-card-text" : isSubRow ? "italic text-card-text-secondary" : "text-card-text"}`}>{fmtInr(r.value)}</td>
+                                <td className={`px-2 py-1.5 text-right ${isTotal ? "font-bold text-card-text" : isSubtotal ? "font-semibold text-card-text" : isSubRow ? "italic text-card-text-secondary" : "text-card-text-secondary"}`}>{fmtPct(r.pct)}</td>
                               </tr>
                             );
                           })}
@@ -390,15 +409,13 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
             <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-5">
               {["Combined", ...strategies].map((key) => {
                 const mg = key === "Combined" ? page2.marginRequirements.combined : page2.marginRequirements.byStrategy[key];
-                const required = sumTotals(mg.required);
+                const required  = sumTotals(mg.required);
                 const available = sumTotals(mg.available);
-                const excess = available !== null && required !== null ? available - required : null;
+                const excess    = available !== null && required !== null ? available - required : null;
                 return (
                   <div key={key}>
-                    <div className="text-xs font-bold text-logo-green mb-2">{key}</div>
-                    {!mg.marginFetchOk && (
-                      <p className="text-[10px] text-amber-700 mb-1.5">⚠ Margin fetch failed — Available figures unavailable.</p>
-                    )}
+                    <div className="text-lg font-bold text-logo-green mb-2">{key}</div>
+                    {!mg.marginFetchOk && <p className="text-[10px] text-amber-700 mb-1.5">⚠ Margin fetch failed — Available figures unavailable.</p>}
                     <table className="w-full text-xs mb-2">
                       <thead>
                         <tr className="bg-primary-bg/40 text-card-text-secondary">
@@ -437,7 +454,7 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
 
           {/* ── SECTION 4: System Breakup ── */}
           <div className="bg-white rounded-xl border border-logo-green/10 overflow-hidden">
-            <SH>System Breakup — Absolute</SH>
+            <SH>System Breakup : Absolute</SH>
             <div className="p-4 space-y-5">
               <SubSH>Equity Book</SubSH>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -456,7 +473,7 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
                   <tbody>
                     {equityRows.map((row, i) => (
                       <tr key={i} className="border-t border-logo-green/5">
-                        <td className="px-3 py-1.5 text-card-text-secondary text-[10px]">{row.strategy}</td>
+                        <td className="px-3 py-1.5 text-card-text-secondary text-[13px]">{row.strategy}</td>
                         <td className="px-3 py-1.5 text-card-text">{row.label}</td>
                         <td className="px-3 py-1.5 text-right text-card-text-secondary">{row.subPct !== null ? fmtPct(row.subPct) : "—"}</td>
                         <td className="px-3 py-1.5 text-right text-card-text-secondary">{fmtPct(row.systemPct)}</td>
@@ -506,7 +523,7 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
                   <tbody>
                     {derivativeRows.map((row, i) => (
                       <tr key={i} className="border-t border-logo-green/5">
-                        <td className="px-3 py-1.5 text-card-text-secondary text-[10px]">{row.strategy}</td>
+                        <td className="px-3 py-1.5 text-card-text-secondary text-[13px]">{row.strategy}</td>
                         <td className="px-3 py-1.5 text-card-text">{row.label}</td>
                         <td className="px-3 py-1.5 text-right text-card-text-secondary">{row.subPct !== null ? fmtPct(row.subPct) : "—"}</td>
                         <td className="px-3 py-1.5 text-right text-card-text-secondary">{fmtPct(row.systemPct)}</td>
@@ -543,13 +560,13 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
 
           {/* ── SECTION 5: Debt-to-Equity Ratio ── */}
           <div className="bg-white rounded-xl border border-logo-green/10 overflow-hidden">
-            <SH>Debt-to-Equity Ratio</SH>
+            <SH>Debt to Equity Ratio</SH>
             <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-6">
               {["Combined", ...strategies].map((key) => {
                 const dd = key === "Combined" ? page2.debtEquity.combined : page2.debtEquity.byStrategy[key];
                 return (
                   <div key={key}>
-                    <div className="text-xs font-bold text-logo-green mb-2">Debt To Equity Ratio — {key}</div>
+                    <div className="text-lg font-bold text-logo-green mb-2">Debt To Equity Ratio — {key}</div>
                     <table className="w-full text-xs mb-4">
                       <thead>
                         <tr className="bg-primary-bg/40 text-card-text-secondary">
@@ -560,72 +577,30 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
                         </tr>
                       </thead>
                       <tbody>
-                        <tr className="border-t border-logo-green/5">
-                          <td className="px-2 py-1 text-card-text-secondary">Equity Mutual Funds</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtInr(dd.equityMf)}</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">—</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtPct((dd.equityMf / dd.accountValue) * 100)}</td>
-                        </tr>
-                        <tr className="border-t border-logo-green/5">
-                          <td className="px-2 py-1 text-card-text-secondary">Debt Mutual Funds</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtInr(dd.debtMf)}</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">—</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtPct((dd.debtMf / dd.accountValue) * 100)}</td>
-                        </tr>
-                        <tr className="border-t border-logo-green/5">
-                          <td className="px-2 py-1 text-card-text-secondary">Hybrid Mutual Funds</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtInr(dd.hybridMf)}</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">—</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtPct((dd.hybridMf / dd.accountValue) * 100)}</td>
-                        </tr>
-                        <tr className="border-t border-logo-green/10 bg-primary-bg/20">
-                          <td className="px-2 py-1 font-bold text-card-text">Mutual Funds</td>
-                          <td className="px-2 py-1 text-right">—</td>
-                          <td className="px-2 py-1 text-right font-bold text-card-text">{fmtInr(dd.mfTotal)}</td>
-                          <td className="px-2 py-1 text-right font-bold text-card-text">{fmtPct((dd.mfTotal / dd.accountValue) * 100)}</td>
-                        </tr>
-                        <tr className="border-t border-logo-green/5">
-                          <td className="px-2 py-1 text-card-text-secondary">Liquidcase Stock Holdings</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtInr(dd.liquidcase)}</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">—</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtPct((dd.liquidcase / dd.accountValue) * 100)}</td>
-                        </tr>
-                        <tr className="border-t border-logo-green/5">
-                          <td className="px-2 py-1 text-card-text-secondary">Debt Stock Holdings</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtInr(dd.debtStock)}</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">—</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtPct((dd.debtStock / dd.accountValue) * 100)}</td>
-                        </tr>
-                        <tr className="border-t border-logo-green/5">
-                          <td className="px-2 py-1 text-card-text-secondary">Equity Stock Holdings</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtInr(dd.equityStock)}</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">—</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtPct((dd.equityStock / dd.accountValue) * 100)}</td>
-                        </tr>
-                        <tr className="border-t border-logo-green/10 bg-primary-bg/20">
-                          <td className="px-2 py-1 font-bold text-card-text">Stock Holdings</td>
-                          <td className="px-2 py-1 text-right">—</td>
-                          <td className="px-2 py-1 text-right font-bold text-card-text">{fmtInr(dd.stockTotal)}</td>
-                          <td className="px-2 py-1 text-right font-bold text-card-text">{fmtPct((dd.stockTotal / dd.accountValue) * 100)}</td>
-                        </tr>
-                        <tr className="border-t border-logo-green/5">
-                          <td className="px-2 py-1 text-card-text-secondary">Cash</td>
-                          <td className="px-2 py-1 text-right">—</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtInr(dd.cash)}</td>
-                          <td className="px-2 py-1 text-right text-card-text-secondary">{fmtPct((dd.cash / dd.accountValue) * 100)}</td>
-                        </tr>
-                        <tr className="border-t border-logo-green/10 bg-primary-bg/20">
-                          <td className="px-2 py-1 font-bold text-card-text">Account Value</td>
-                          <td className="px-2 py-1 text-right">—</td>
-                          <td className="px-2 py-1 text-right font-bold text-card-text">{fmtInr(dd.accountValue)}</td>
-                          <td className="px-2 py-1 text-right font-bold text-card-text">100.00%</td>
-                        </tr>
+                        {[
+                          { label: "Equity Mutual Funds",       sub: dd.equityMf,   total: null, av: dd.equityMf },
+                          { label: "Debt Mutual Funds",         sub: dd.debtMf,     total: null, av: dd.debtMf },
+                          { label: "Hybrid Mutual Funds",       sub: dd.hybridMf,   total: null, av: dd.hybridMf },
+                          { label: "Mutual Funds",              sub: null,          total: dd.mfTotal, av: dd.mfTotal, bold: true },
+                          { label: "Liquidcase Stock Holdings", sub: dd.liquidcase, total: null, av: dd.liquidcase },
+                          { label: "Debt Stock Holdings",       sub: dd.debtStock,  total: null, av: dd.debtStock },
+                          { label: "Equity Stock Holdings",     sub: dd.equityStock,total: null, av: dd.equityStock },
+                          { label: "Stock Holdings",            sub: null,          total: dd.stockTotal, av: dd.stockTotal, bold: true },
+                          { label: "Cash",                      sub: null,          total: dd.cash, av: dd.cash },
+                          { label: "Account Value",             sub: null,          total: dd.accountValue, av: dd.accountValue, bold: true, pctFixed: "100.00%" },
+                        ].map((row) => (
+                          <tr key={row.label} className={`border-t ${row.bold ? "border-logo-green/10 bg-primary-bg/20" : "border-logo-green/5"}`}>
+                            <td className={`px-2 py-1 ${row.bold ? "font-bold text-card-text" : "text-card-text-secondary"}`}>{row.label}</td>
+                            <td className={`px-2 py-1 text-right ${row.bold ? "text-card-text" : "text-card-text-secondary"}`}>{row.sub !== null && row.sub !== undefined ? fmtInr(row.sub) : "—"}</td>
+                            <td className={`px-2 py-1 text-right ${row.bold ? "font-bold text-card-text" : "text-card-text-secondary"}`}>{row.total !== null && row.total !== undefined ? fmtInr(row.total) : "—"}</td>
+                            <td className={`px-2 py-1 text-right ${row.bold ? "font-bold text-card-text" : "text-card-text-secondary"}`}>{row.pctFixed ?? fmtPct((row.av / dd.accountValue) * 100)}</td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
-
                     <div className="flex items-center gap-4 mb-3">
                       {[
-                        { label: "Debt", value: dd.debtPct, color: "#DABD38" },
+                        { label: "Debt",   value: dd.debtPct,   color: "#DABD38" },
                         { label: "Equity", value: dd.equityPct, color: "#02422B" },
                         { label: "Hybrid", value: dd.hybridPct, color: "#6B7280" },
                       ].map((item) => (
@@ -636,7 +611,7 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
                       ))}
                     </div>
                     <div className="h-4 rounded-full overflow-hidden flex">
-                      <div className="h-full" style={{ width: `${dd.debtPct}%`, background: "#DABD38" }} />
+                      <div className="h-full" style={{ width: `${dd.debtPct}%`,   background: "#DABD38" }} />
                       <div className="h-full" style={{ width: `${dd.equityPct}%`, background: "#02422B" }} />
                     </div>
                   </div>
@@ -645,7 +620,7 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
             </div>
           </div>
 
-          {/* ── SECTION 6: Inputs ── */}
+          {/* ── SECTION 6: Strategy Inputs / Parameters ── */}
           <div className="bg-white rounded-xl border border-logo-green/10 overflow-hidden">
             <SH>Strategy Inputs / Parameters</SH>
             <div className="p-4 overflow-x-auto">
@@ -653,30 +628,63 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
                 <thead>
                   <tr className="bg-primary-bg/40 text-card-text-secondary">
                     <th className="px-3 py-2 text-left font-medium">Parameter</th>
-                    {page2.inputs.tierReference.map((t) => <th key={t.strategy} className="px-3 py-2 text-right font-medium">{t.strategy}</th>)}
+                    <th className="px-3 py-2 text-left font-medium text-[10px] opacity-60">Unit</th>
+                    {page2.inputs.tierReference.map((t) => (
+                      <th key={t.strategy} className="px-3 py-2 text-right font-medium">{t.strategy}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {[
-                    { label: "PSAR Multiplier", key: "psarMultiplier", fmt: (v: number) => `${v}x` },
-                    { label: "Long Options (%)", key: "longOptPct", fmt: fmtPct },
-                    { label: "Drawdown Margin (%)", key: "drawdownMarginPct", fmt: fmtPct },
-                    { label: "Liquid Case (%)", key: "lcPct", fmt: fmtPct },
-                    { label: "Cash (%)", key: "cashPct", fmt: fmtPct },
-                    { label: "Equity Book (%)", key: "equityPct", fmt: fmtPct },
-                    { label: "Derivative Book (%)", key: "derivativePct", fmt: fmtPct },
-                  ].map((param) => (
+                  {PARAM_ROWS.map((param) => (
                     <tr key={param.key} className="border-t border-logo-green/5">
-                      <td className="px-3 py-1.5 text-card-text-secondary">{param.label}</td>
-                      {page2.inputs.tierReference.map((t) => (
-                        <td key={t.strategy} className="px-3 py-1.5 text-right text-card-text">
-                          {param.fmt((t as any)[param.key])}
-                        </td>
-                      ))}
+                      <td className="px-3 py-1.5 text-card-text-secondary whitespace-nowrap">{param.label}</td>
+                      <td className="px-3 py-1.5 text-card-text-secondary/50 text-[10px]">{param.unit}</td>
+                      {page2.inputs.tierReference.map((t) => {
+                        const val = inputOverrides[t.strategy]?.[param.key] ?? "";
+                        const orig = originalInputs[t.strategy]?.[param.key] ?? "";
+                        const isDirty = val !== orig && val !== "";
+                        return (
+                          <td key={t.strategy} className="px-3 py-1.5 text-right">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={val}
+                              onChange={(e) => setInputOverrides((prev) => ({
+                                ...prev,
+                                [t.strategy]: { ...prev[t.strategy], [param.key]: e.target.value },
+                              }))}
+                              className={`w-24 rounded border px-2 py-1 text-xs text-right focus:outline-none transition-colors ${
+                                isDirty
+                                  ? "border-button-text bg-button-text/5 text-card-text"
+                                  : "border-logo-green/20 bg-white text-card-text"
+                              } focus:border-logo-green/40`}
+                              placeholder="—"
+                            />
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))}
                 </tbody>
               </table>
+
+              {/* Apply button */}
+              <div className="flex items-center gap-3 mt-4 pt-4 border-t border-logo-green/10">
+                <button
+                  type="button"
+                  onClick={handleApplyInputs}
+                  disabled={inputsSaving}
+                  className="inline-flex items-center gap-2 rounded-lg bg-logo-green px-5 py-2 text-sm font-medium text-white hover:bg-logo-green/90 transition-colors disabled:opacity-60"
+                >
+                  {inputsSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {inputsSaving ? "Saving…" : "Apply"}
+                </button>
+                {inputsSaved && (
+                  <span className="text-sm text-green-700 font-medium flex items-center gap-1">
+                    <CheckCircle className="h-4 w-4" /> Saved successfully
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 

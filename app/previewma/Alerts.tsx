@@ -14,6 +14,8 @@ function severityStyles(sev: Severity) {
       return { badge: "bg-red-50 text-red-700 border-red-200", row: "bg-red-50/40", icon: AlertOctagon, iconColor: "text-red-600" };
     case "Action Required":
       return { badge: "bg-amber-50 text-amber-700 border-amber-200", row: "bg-amber-50/40", icon: AlertTriangle, iconColor: "text-amber-600" };
+    case "Unavailable":
+      return { badge: "bg-gray-50 text-gray-600 border-gray-200", row: "bg-gray-50/40", icon: AlertTriangle, iconColor: "text-gray-500" };
     default:
       return { badge: "bg-green-50 text-green-700 border-green-200", row: "", icon: CheckCircle2, iconColor: "text-green-600" };
   }
@@ -82,7 +84,6 @@ export default function AlertsPage() {
           </div>
           <div className="flex items-center gap-4 text-xs text-card-text-secondary ml-7">
             {generatedAt && <span>📅 Generated {fmtDate(generatedAt)}</span>}
-            <span>Live data — {alerts.length} metric checks across all clients</span>
           </div>
         </div>
 
@@ -97,7 +98,7 @@ export default function AlertsPage() {
                   { label: "Total Open", value: summary.totalOpen, bg: "bg-logo-green", Icon: Bell },
                   { label: "Warning", value: summary.warning, bg: "bg-red-600", Icon: AlertOctagon },
                   { label: "Action Required", value: summary.actionRequired, bg: "bg-amber-600", Icon: AlertTriangle },
-                  { label: "Healthy", value: summary.healthy, bg: "bg-green-700", Icon: CheckCircle2 },
+                  { label: "Unavailable", value: summary.unavailable, bg: "bg-gray-500", Icon: AlertTriangle },
                 ].map((item) => (
                   <div key={item.label} className={`${item.bg} rounded-xl p-4 text-white overflow-hidden`}>
                     <div className="flex items-center justify-between mb-2">
@@ -111,7 +112,7 @@ export default function AlertsPage() {
 
               {/* ── SECTION 2: Live Alert Table ── */}
               <div className="bg-white rounded-xl border border-logo-green/10 overflow-hidden">
-                <SH>Live Alert Table — Auto-updates from Collateral Inputs + P3 Current State</SH>
+                <SH>Live Alert Table</SH>
                 <div className="p-4">
                   {/* Filters */}
                   <div className="flex flex-wrap items-center gap-3 mb-4">

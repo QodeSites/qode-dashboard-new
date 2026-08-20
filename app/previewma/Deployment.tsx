@@ -155,13 +155,13 @@ function segmentColor(particular: string) {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function inr(n: number | null | undefined, decimals = 2) {
-  if (n === null || n === undefined || !isFinite(n)) return "—";
+  if (n === null || n === undefined || !isFinite(n)) return "";
   const neg = n < 0;
   const num = Math.abs(n).toLocaleString("en-IN", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
   return (neg ? "-₹" : "₹") + num;
 }
 function pct(n: number | null | undefined, decimals = 2) {
-  if (n === null || n === undefined || !isFinite(n)) return "—";
+  if (n === null || n === undefined || !isFinite(n)) return "";
   return (n * 100).toFixed(decimals) + "%";
 }
 function numFromInput(v: string) {
@@ -196,9 +196,8 @@ function FlagPillRow({
       {flags.map((f, i) => (
         <span
           key={i}
-          className={`bg-white border rounded-full px-3.5 py-1.5 text-xs font-semibold ${
-            f.ok ? "border-[#1F7A4D] text-[#1F7A4D]" : "border-[#B99B3D] text-[#8a6d1a]"
-          }`}
+          className={`bg-white border rounded-full px-3.5 py-1.5 text-xs font-semibold ${f.ok ? "border-[#1F7A4D] text-[#1F7A4D]" : "border-[#B99B3D] text-[#8a6d1a]"
+            }`}
         >
           {f.label}
         </span>
@@ -278,35 +277,31 @@ function SleeveGridTable({ sleeves, showTargetColumn = false }: { sleeves: Deplo
       <thead>
         <tr>
           <th className="text-left font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Particulars</th>
-          <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Current</th>
-          {showTargetColumn && (
-            <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Target</th>
-          )}
-          <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>
-            {showTargetColumn ? "Δ Actual" : "Δ Target"}
-          </th>
-          <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>New Value</th>
+          <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Value</th>
+          <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Target Value</th>
+          <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>(%)</th>
           <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>LTP</th>
           <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Qty</th>
         </tr>
       </thead>
       <tbody>
-        {sleeves.map((s, i) => (
-          <tr key={i} className="border-b border-[#EDECE3] last:border-0">
-            <td className="px-3 py-1.5 font-medium">{s.particular}</td>
-            <td className="px-3 py-1.5 text-right">{inr(s.current_value)}</td>
-            {showTargetColumn && <td className="px-3 py-1.5 text-right">{inr(s.addition_target)}</td>}
-            <td className="px-3 py-1.5 text-right"><DeltaText value={s.addition_actual} /></td>
-            <td className="px-3 py-1.5 text-right font-semibold" style={{ background: DV.highlightCyan2 }}>{inr(s.new_value)}</td>
-            <td className="px-3 py-1.5 text-right">{s.ltp !== null ? inr(s.ltp) : "—"}</td>
-            <td className="px-3 py-1.5 text-right">{s.quantity !== null ? s.quantity.toLocaleString("en-IN") : "—"}</td>
-          </tr>
-        ))}
+        {sleeves.map((s, i) => {
+          const pctVal = s.new_value > 0 && s.addition_target > 0 ? s.addition_target / s.new_value : null;
+          return (
+            <tr key={i} className="border-b border-[#EDECE3] last:border-0">
+              <td className="px-3 py-1.5 font-medium">{s.particular}</td>
+              <td className="px-3 py-1.5 text-right">{inr(s.current_value)}</td>
+              <td className="px-3 py-1.5 text-right">{inr(s.addition_target)}</td>
+              <td className="px-3 py-1.5 text-right">{pctVal !== null ? pct(pctVal) : ""}</td>
+              <td className="px-3 py-1.5 text-right">{s.ltp !== null ? inr(s.ltp) : ""}</td>
+              <td className="px-3 py-1.5 text-right">{s.quantity !== null ? s.quantity.toLocaleString("en-IN") : ""}</td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );
 }
-
 // ─── Account Impact visual ──────────────────────────────────────────────────
 
 function AccountImpact({ current, updated }: { current: Record<string, number>; updated: Record<string, number> }) {
@@ -392,9 +387,8 @@ function RadioPair<T extends string>({ options, value, onChange }: { options: { 
       {options.map((o) => (
         <button
           key={o.value} type="button" onClick={() => onChange(o.value)}
-          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-            value === o.value ? "bg-white text-logo-green shadow-sm" : "text-card-text-secondary hover:text-card-text"
-          }`}
+          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${value === o.value ? "bg-white text-logo-green shadow-sm" : "text-card-text-secondary hover:text-card-text"
+            }`}
         >
           {o.label}
         </button>
@@ -485,9 +479,12 @@ function ResultCard({ label, value }: { label: string; value: string }) {
 function NewClientPanel({ clients }: { clients: ClientRecord[] }) {
   const [strategy, setStrategy] = useState("QAW++");
   const isQAW = strategy.startsWith("QAW");
+  const isQYE = strategy.startsWith("QYE");
+  const [qyeInputType, setQyeInputType] = useState<"account_value" | "holdings" | "cash">("account_value");
   const [ratioType, setRatioType] = useState<RatioType>("ideal");
   const [accountValue, setAccountValue] = useState(0);
   const [referenceQcode, setReferenceQcode] = useState<string | null>(null);
+  const [clientName, setClientName] = useState("");
 
   const qawClients = useMemo(
     () => clients.filter((c) => c.strategies.some((s) => isActiveStrategy(s) && s.strategy.startsWith("QAW"))),
@@ -498,63 +495,94 @@ function NewClientPanel({ clients }: { clients: ClientRecord[] }) {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<D0Response | null>(null);
 
-  async function handleSubmit() {
-    if (accountValue <= 0) return;
-    const body: Record<string, unknown> = { strategy, account_value: accountValue };
-    if (isQAW) {
-      body.ratio_type = ratioType;
-      if (ratioType === "current") {
-        if (!referenceQcode) return;
-        body.reference_qcode = referenceQcode;
-      }
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/internal/cash-margin/deployment", {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
-      setResult(await res.json());
-    } catch (e: any) {
-      setError(e?.message || "Failed to compute deployment.");
-      setResult(null);
-    } finally {
-      setLoading(false);
+ async function handleSubmit() {
+  if (accountValue <= 0) return;
+  if (isQAW && ratioType === "current" && !referenceQcode) return;
+
+  const body: Record<string, unknown> = { strategy };
+
+  if (isQYE) {
+    body.input_mode = qyeInputType;
+    body.value = accountValue;
+  } else {
+    // QAW
+    body.account_value = accountValue;
+    body.ratio_type = ratioType;
+    if (ratioType === "current") {
+      body.reference_qcode = referenceQcode;
     }
   }
+
+  setLoading(true);
+  setError(null);
+  try {
+    const res = await fetch("/api/internal/cash-margin/deployment", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`Request failed (${res.status})`);
+    setResult(await res.json());
+  } catch (e: any) {
+    setError(e?.message || "Failed to compute deployment.");
+    setResult(null);
+  } finally {
+    setLoading(false);
+  }
+}
 
   return (
     <>
       <div className="bg-white rounded-xl border border-logo-green/10 overflow-hidden">
         <SH>New Client Deployment</SH>
         <div className="p-5">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
-            <label className="block">
-              <span className="block text-xs font-medium text-card-text-secondary mb-1.5">Strategy</span>
-              <select
-                value={strategy} onChange={(e) => setStrategy(e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-logo-green/20 outline-none focus:border-logo-green/40 bg-white"
-              >
-                {["QAW+", "QAW++", "QYE+", "QYE++"].map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </label>
-            <NumberField label="Account Value" value={accountValue} onChange={setAccountValue} />
-            {isQAW && (
-              <label className="block">
-                <span className="block text-xs font-medium text-card-text-secondary mb-1.5">Ratio Type</span>
-                <select
-                  value={ratioType} onChange={(e) => setRatioType(e.target.value as RatioType)}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-logo-green/20 outline-none focus:border-logo-green/40 bg-white"
-                >
-                  <option value="ideal">Ideal (40/40/20)</option>
-                  <option value="model">Model</option>
-                  <option value="current">Current — copy a real client</option>
-                </select>
-              </label>
-            )}
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+  <label className="block">
+    <span className="block text-xs font-medium text-card-text-secondary mb-1.5">Strategy</span>
+    <select value={strategy} onChange={(e) => setStrategy(e.target.value)}
+      className="w-full px-3 py-2 text-sm rounded-lg border border-logo-green/20 outline-none focus:border-logo-green/40 bg-white">
+      {["QAW+", "QAW++", "QYE+", "QYE++"].map((s) => <option key={s} value={s}>{s}</option>)}
+    </select>
+  </label>
+
+  <label className="block">
+    <span className="block text-xs font-medium text-card-text-secondary mb-1.5">Client Name (for export)</span>
+    <input type="text" value={clientName} onChange={(e) => setClientName(e.target.value)}
+      placeholder="Enter client name…"
+      className="w-full px-3 py-2 text-sm rounded-lg border border-logo-green/20 outline-none focus:border-logo-green/40 bg-white" />
+  </label>
+
+  {isQYE && (
+    <label className="block">
+      <span className="block text-xs font-medium text-card-text-secondary mb-1.5">Input Type</span>
+      <select value={qyeInputType} onChange={(e) => setQyeInputType(e.target.value as "account_value" | "holdings" | "cash")}
+        className="w-full px-3 py-2 text-sm rounded-lg border border-logo-green/20 outline-none focus:border-logo-green/40 bg-white">
+        <option value="account_value">Account Value</option>
+        <option value="holdings">Holdings Value</option>
+        <option value="cash">Cash Value</option>
+      </select>
+    </label>
+  )}
+
+  <NumberField
+    label={isQYE ? (qyeInputType === "account_value" ? "Account Value" : qyeInputType === "holdings" ? "Holdings Value" : "Cash Value") : "Account Value"}
+    value={accountValue}
+    onChange={setAccountValue}
+  />
+
+  {isQAW && (
+    <label className="block">
+      <span className="block text-xs font-medium text-card-text-secondary mb-1.5">Ratio Type</span>
+      <select value={ratioType} onChange={(e) => setRatioType(e.target.value as RatioType)}
+        className="w-full px-3 py-2 text-sm rounded-lg border border-logo-green/20 outline-none focus:border-logo-green/40 bg-white">
+        <option value="ideal">Ideal (40/40/20)</option>
+        <option value="model">Model</option>
+        <option value="current">Current — copy a real client</option>
+      </select>
+    </label>
+  )}
+</div>
 
           {isQAW && ratioType === "current" && (
             <div className="mb-5">
@@ -574,44 +602,47 @@ function NewClientPanel({ clients }: { clients: ClientRecord[] }) {
           {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
         </div>
       </div>
-
-      {result && (
-        <div className="bg-white rounded-xl border border-logo-green/10 overflow-hidden">
-          <SH>Deployment Split — {result.strategy} ({result.ratio_type})</SH>
-          <div className="p-5">
-            <ResultCard label="Account Value" value={inr(result.account_value)} />
-            <div className="overflow-x-auto rounded-lg border border-logo-green/10 mt-4">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-primary-bg/40 text-card-text-secondary">
-                    <th className="px-3 py-2 text-left font-medium">Particular</th>
-                    <th className="px-3 py-2 text-right font-medium">Target %</th>
-                    <th className="px-3 py-2 text-right font-medium">Target Value</th>
-                    <th className="px-3 py-2 text-right font-medium">Actual Value</th>
-                    <th className="px-3 py-2 text-right font-medium">LTP / Qty</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.sleeves.map((s, i) => {
-                    const isHeader = s.particular === "Equity - Stock";
-                    return (
-                      <tr key={i} className={`border-t border-logo-green/5 ${isHeader ? "bg-primary-bg/30 font-semibold" : ""}`}>
-                        <td className={`px-3 py-2 text-card-text whitespace-nowrap ${isHeader ? "font-semibold" : "font-medium"}`}>{s.particular}</td>
-                        <td className="px-3 py-2 text-right text-card-text-secondary whitespace-nowrap">{pct(s.target_pct)}</td>
-                        <td className="px-3 py-2 text-right text-card-text-secondary whitespace-nowrap">{inr(s.target_value)}</td>
-                        <td className="px-3 py-2 text-right text-card-text whitespace-nowrap">{inr(s.actual_value)}</td>
-                        <td className="px-3 py-2 text-right text-card-text-secondary whitespace-nowrap">
-                          {s.ltp !== null ? `${s.ltp.toFixed(2)} × ${s.quantity}` : "—"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
+{result && (
+  <div className="bg-white rounded-xl border border-logo-green/10 overflow-hidden">
+    <SH>Deployment Split — {result.strategy} ({result.ratio_type})</SH>
+    <div className="p-5">
+      <ResultCard label="Account Value" value={inr(result.account_value)} />
+      <div className="overflow-x-auto rounded-lg border border-logo-green/10 mt-4">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="bg-primary-bg/40 text-card-text-secondary">
+              <th className="px-3 py-2 text-left font-medium">Particular</th>
+              <th className="px-3 py-2 text-right font-medium">Target %</th>
+              <th className="px-3 py-2 text-right font-medium">Target Value</th>
+              <th className="px-3 py-2 text-right font-medium">Actual Value</th>
+              <th className="px-3 py-2 text-right font-medium">LTP</th>
+              <th className="px-3 py-2 text-right font-medium">Qty</th>
+            </tr>
+          </thead>
+          <tbody>
+            {result.sleeves.map((s, i) => {
+              const isHeader = s.particular === "Equity - Stock";
+              return (
+                <tr key={i} className={`border-t border-logo-green/5 ${isHeader ? "bg-primary-bg/30 font-semibold" : ""}`}>
+                  <td className={`px-3 py-2 text-card-text whitespace-nowrap ${isHeader ? "font-semibold" : "font-medium"}`}>{s.particular}</td>
+                  <td className="px-3 py-2 text-right text-card-text-secondary whitespace-nowrap">{pct(s.target_pct)}</td>
+                  <td className="px-3 py-2 text-right text-card-text-secondary whitespace-nowrap">{inr(s.target_value)}</td>
+                  <td className="px-3 py-2 text-right text-card-text whitespace-nowrap">{inr(s.actual_value)}</td>
+                  <td className="px-3 py-2 text-right text-card-text-secondary whitespace-nowrap">
+                    {s.ltp !== null ? inr(s.ltp) : ""}
+                  </td>
+                  <td className="px-3 py-2 text-right text-card-text-secondary whitespace-nowrap">
+                    {s.quantity !== null ? s.quantity.toLocaleString("en-IN") : ""}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+)}
     </>
   );
 }
