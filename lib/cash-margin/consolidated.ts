@@ -197,7 +197,7 @@ function buildAccountSummaryRows(
     { label: "Bond Stock Holdings", value: summary.bondStock, pct: pct(summary.bondStock) },
     { label: "Liquidcase", value: summary.liquidcase, pct: pct(summary.liquidcase) },
     { label: "Cash", value: summary.cash, pct: pct(summary.cash) },
-    { label: "Holdings (MF+EQ+Bond)", value: holdings, pct: pct(holdings) },
+    { label: "Holdings", value: holdings, pct: pct(holdings) },
     { label: "Cash + Liquidcase", value: cashPlusLiquidcase, pct: pct(cashPlusLiquidcase) },
   ];
 
