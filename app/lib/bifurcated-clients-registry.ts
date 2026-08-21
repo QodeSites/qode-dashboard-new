@@ -46,6 +46,7 @@ import { CHANDANMAL_JAIN_CONFIG } from "./clients/chandanmal_single";
 import { PRIYANKA_MITTLE_CONFIG } from "./clients/priyanka_mittle_single";
 import { KRISH_COMMODITIES_INDIA_LLP_CONFIG } from "./clients/krish_commodities_single";
 import { VINEET_TIBREWALA_CONFIG } from "./clients/vineet_tibrewala_single";
+import { ANANTROOP_FINANCIAL_ADVISORY_SERVICES_CONFIG } from "./clients/anantroop_single";
 
 // Single source of truth for clients whose data lives in
 // bifurcated_master_sheet_test. Add a new entry here when onboarding a new
@@ -486,6 +487,16 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     qcode: "QAC00131",
     displayName: "Vineet Tibrewala",
     config: VINEET_TIBREWALA_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00148",
+    qcode: "QAC00133",
+    displayName: "Anantroop Financial Advisory Services Private Limited",
+    config: ANANTROOP_FINANCIAL_ADVISORY_SERVICES_CONFIG,
     frozenData: EMPTY_FROZEN_DATA,
     hasNavBasedTotalPortfolio: true,
     renderMode: "single",
