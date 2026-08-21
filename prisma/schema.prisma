@@ -1229,20 +1229,13 @@ model strategy_defaults {
   @@schema("public")
 }
 
-// ── Dynamic Configuration Hierarchy — additive, see dynamic-config-hierarchy-plan.md ──
-// Old *_pct columns above stay untouched until Phase 5 of that plan.
-// ratio_type is String, not a Postgres enum, matching every other
-// categorical column in this schema (global_config.data_type, etc.) --
-// validated by a TS union type in code, so a new value is a code change,
-// not a migration. See internal-utils.ts's `ratioType: "current" | "ideal"
-// | "model"` for the existing pattern this follows.
-
 model config_catalog {
-  config_key String  @id @db.VarChar(50)
-  parent_key String? @db.VarChar(50)
-  label      String  @db.VarChar(100)
-  tag_suffix String? @db.VarChar(100)
-  symbol     String? @db.VarChar(30)
+  config_key     String  @id @db.VarChar(50)
+  parent_key     String? @db.VarChar(50)
+  label          String  @db.VarChar(100)
+  tag_suffix     String? @db.VarChar(100)
+  ltp_symbol     String? @db.VarChar(30)
+  console_symbol String? @db.VarChar(30)
 
   parent   config_catalog?  @relation("CatalogTree", fields: [parent_key], references: [config_key])
   children config_catalog[] @relation("CatalogTree")
