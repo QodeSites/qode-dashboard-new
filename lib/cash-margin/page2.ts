@@ -92,9 +92,14 @@ export async function buildPage2Dashboard(
   niftyLtpOverride?: number,
   globalOverrides?: { niftyLotSize?: number; avgPricePerQty?: number },
 ): Promise<Page2Result | null> {
+  const referenceDate = asOfDate ?? new Date();
   const [mandates, strategyDefaultsList] = await Promise.all([
     prisma.client_strategy_configs.findMany({
-      where: { qcode, OR: [{ effective_to: null }, { effective_to: { gte: new Date() } }] },
+      where: {
+        qcode,
+        effective_from: { lte: referenceDate },
+        OR: [{ effective_to: null }, { effective_to: { gte: referenceDate } }],
+      },
       select: {
         account_name: true,
         strategy: true,

@@ -26,9 +26,11 @@
  *    that mandate's own AccountSummary + its resolved equityPct (same ratio
  *    System Breakup's Equity Book uses) -- NOT the no-prefix "whole client"
  *    rollup computeAccountSummaryCombined uses; this is a per-mandate row.
- *  - Current Drawdown %: mastersheet.ts's getDrawdown(), read off the same
- *    account-value tag row (confirmed via read-only DB spot-check that
- *    `drawdown` varies per system_tag, not one value per qcode/date).
+ *  - Current Drawdown %: mastersheet.ts's getDrawdown(), read off the For
+ *    Profit Tag row (profit_tag_suffix), NOT the exposure tag used
+ *    everywhere else in this file -- matches Python's dedicated
+ *    drawdown_lookup_report.py and this app's own internal-utils.ts. See the
+ *    fetch site below for the full rationale.
  *  - Alert Status: alerts.ts's buildAlertRows(), grouped by qcode, worst-of.
  *  - Debt-Equity-Hybrid Ratio: debt-equity.ts's computeDebtEquityForStrategy().
  *
@@ -59,7 +61,7 @@ export type MarginStatus = "Shortfall" | "Healthy";
  *  threshold band) all read as "Cash Drift Alert". */
 export type CashDriftStatus = "Cash Drift Alert" | "Healthy";
 /** Verbatim labels from SMA_Dashboard_v12.xlsx's "P1 Clients" sheet, column P
- *  (checked 2026-07-30 -- see docs/assumptions-and-changes-from-krish-logic.md §18). */
+ *  (see docs/assumptions-and-changes-from-krish-logic.md §18). */
 export type RegistryAction = "Review Margin & Collateral" | "Deploy - Excess Cash" | "No action required";
 
 /** Worst-of ranking for Severity -- higher is worse. UPSIDE/UNAVAILABLE rank
@@ -233,8 +235,12 @@ export async function buildClientRegistry(
   // Summary Banner intentionally cover EVERY active mandate (see SummaryBanner's
   // field docs) -- matches app/lib/internal-utils.ts's computePortfolioSummary(),
   // which never excludes XTS either.
+  const referenceDate = asOfDate ?? new Date();
   const allActiveMandates = (await prisma.client_strategy_configs.findMany({
-    where: { OR: [{ effective_to: null }, { effective_to: { gte: new Date() } }] },
+    where: {
+      effective_from: { lte: referenceDate },
+      OR: [{ effective_to: null }, { effective_to: { gte: referenceDate } }],
+    },
     select: {
       qcode: true,
       account_name: true,
@@ -347,10 +353,9 @@ export async function buildClientRegistry(
 
     // Margin Status inherits from alerts.ts's own Cash Collateral %/Non-Cash
     // Collateral % severities (the actual Available-vs-Required margin
-    // metrics), NOT a sign-of-Excess-Cash check -- Akash's direction
-    // 2026-08-10, superseding the original plan-doc spec
-    // (docs/page1-client-portfolio-overview-plan.md's `IF(ExcessCash < 0,
-    // 'Shortfall', 'Healthy')`), which conflated Margin Status with Excess
+    // metrics), not a sign-of-Excess-Cash check -- see
+    // docs/page1-client-portfolio-overview-plan.md for why this differs from
+    // the original plan-doc spec, which conflated Margin Status with Excess
     // Cash Status (same trigger, two names). WARNING and ACTION_REQUIRED
     // both read as "Shortfall" here; UNAVAILABLE (margin fetch failed) stays
     // null -- distinct from "Healthy", since we genuinely don't know.
@@ -363,8 +368,7 @@ export async function buildClientRegistry(
 
     // Cash Drift Alert, same pattern: inherits from alerts.ts's cash_pct
     // severity (Cash % vs. its threshold band, including the UPSIDE cap --
-    // drifting too far above target is still a drift). Akash's direction
-    // 2026-08-10.
+    // drifting too far above target is still a drift).
     const cashDriftSeverity = ownStrategyAlerts.find((r) => r.metricKey === "cash_pct")?.severity ?? "UNAVAILABLE";
     const cashDriftStatus: CashDriftStatus | null =
       cashDriftSeverity === "UNAVAILABLE" ? null : cashDriftSeverity === "HEALTHY" ? "Healthy" : "Cash Drift Alert";
@@ -421,7 +425,7 @@ export async function buildClientRegistry(
   // (e.g. both a Margin Shortfall AND a Cash Drift Alert at once). `action`
   // stays the single Excess-Cash-only column (verbatim Excel P1 label, see
   // RegistryAction's doc), but the queue itself surfaces every alert that
-  // needs attention, not just that one column. Akash's direction 2026-08-10.
+  // needs attention, not just that one column.
   const actionQueue: string[] = [];
   for (const r of rows) {
     if (r.action !== null && r.action !== "No action required") {

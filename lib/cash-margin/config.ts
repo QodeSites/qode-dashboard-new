@@ -6,8 +6,8 @@
  * MARGIN_HEALTH_THRESHOLDS in thresholds.ts).
  *
  * All of these already exist as columns on client_strategy_configs +
- * strategy_defaults, already seeded, already read by app/lib/internal-utils.ts
- * (Krish's Withdrawal feature) via the same pair.field ?? toNum(def?.field)
+ * strategy_defaults, already seeded, already read by app/lib/internal-utils.ts's
+ * Withdrawal feature via the same pair.field ?? toNum(def?.field)
  * coalesce -- see docs/thresholds-to-table-and-post-override-plan.md.
  *
  * Resolution order here adds a 3rd layer on top of that same coalesce:

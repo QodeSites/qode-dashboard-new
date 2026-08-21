@@ -5,8 +5,7 @@
  * config per active strategy + Combined, and an isolated Put Protection
  * Calculation block. See docs/cash-margin-client-dashboard-plan.md §2f.
  *
- * A projection, not a new formula, except the two divergences called out
- * below (confirmed with Akash):
+ * A projection, not a new formula, except the divergences called out below:
  *
  *  - Combined PSAR Multiplier/Leverage are shown ONLY when every active
  *    strategy resolves to the exact same value; null otherwise. There's no
@@ -24,10 +23,9 @@
  *    never fed by it. NIFTY_LOT_SIZE and PUT_PROTECTION_AVG_PRICE_PER_QTY,
  *    however, ARE shared with margin-requirements.ts -- both files read the
  *    same global_config rows (lib/cash-margin/global-config.ts's
- *    getNiftyLotSize()/getPutProtectionAvgPricePerQty()), per Akash's
- *    instruction to use one source for both constants in both places. Only
- *    the ATM *value* itself stays separate/isolated -- never the two
- *    constants.
+ *    getNiftyLotSize()/getPutProtectionAvgPricePerQty()) -- one shared
+ *    source for both constants in both places. Only the ATM *value* itself
+ *    stays separate/isolated -- never the two constants.
  *  - "Put Protection (%)" in the tier reference table is NOT a distinct DB
  *    column -- strategy_defaults has no such field. It equals long_opt_pct
  *    for every tier today (see docs/cash-margin-client-dashboard-plan.md
@@ -133,8 +131,13 @@ export async function buildInputsPanel(
   asOfDate?: Date,
   globalOverrides?: { niftyLotSize?: number; avgPricePerQty?: number },
 ): Promise<InputsPanelResult | null> {
+  const referenceDate = asOfDate ?? new Date();
   const mandates = await prisma.client_strategy_configs.findMany({
-    where: { qcode, OR: [{ effective_to: null }, { effective_to: { gte: new Date() } }] },
+    where: {
+      qcode,
+      effective_from: { lte: referenceDate },
+      OR: [{ effective_to: null }, { effective_to: { gte: referenceDate } }],
+    },
     select: {
       qcode: true,
       account_name: true,

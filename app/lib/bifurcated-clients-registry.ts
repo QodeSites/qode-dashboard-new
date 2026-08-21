@@ -44,6 +44,8 @@ import { DIAMANTAIRE_EXPORTS_PVT_LTD_CONFIG } from "./clients/dxp_single";
 import { NAGARJUN_TEXTILES_INDIA_CONFIG } from "./clients/nagarjun";
 import { CHANDANMAL_JAIN_CONFIG } from "./clients/chandanmal_single";
 import { PRIYANKA_MITTLE_CONFIG } from "./clients/priyanka_mittle_single";
+import { KRISH_COMMODITIES_INDIA_LLP_CONFIG } from "./clients/krish_commodities_single";
+import { VINEET_TIBREWALA_CONFIG } from "./clients/vineet_tibrewala_single";
 
 // Single source of truth for clients whose data lives in
 // bifurcated_master_sheet_test. Add a new entry here when onboarding a new
@@ -467,6 +469,26 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     // Per the data team's spec. NOTE: accounts.broker for QAC00127 currently
     // reads "radiance" in the DB, which contradicts both the spec and the
     // Zerodha-flavored system tags — worth confirming with the data team.
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00145",
+    qcode: "QAC00130",
+    displayName: "Krish Commodities India LLP",
+    config: KRISH_COMMODITIES_INDIA_LLP_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "zerodha",
+  },
+  {
+    icode: "QUS00146",
+    qcode: "QAC00131",
+    displayName: "Vineet Tibrewala",
+    config: VINEET_TIBREWALA_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
     broker: "zerodha",
   },
 ];

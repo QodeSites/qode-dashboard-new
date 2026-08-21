@@ -154,9 +154,9 @@ export async function getPartnerBookIcodes(partnerId: number): Promise<string[]>
   return rows.map((r) => r.icode);
 }
 
-export async function checkDashboardVisibility(icode: string): Promise<boolean> {
+export async function checkDashboardVisibility(icode: string, page: string = "dashboard"): Promise<boolean> {
   const row = await prisma.dashboard_visibility.findUnique({
-    where: { icode },
+    where: { icode_page: { icode, page } },
     select: { dashboard_visible: true },
   });
   return row ? row.dashboard_visible : true;

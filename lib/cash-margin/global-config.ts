@@ -1,10 +1,10 @@
 /**
  * lib/cash-margin/global-config.ts
  * Reader for global_config -- a key/value table of client-independent
- * constants (previously just RISK_FREE_RATE). Akash added NIFTY_LOT_SIZE
- * and PUT_PROTECTION_AVG_PRICE_PER_QTY rows (2026-07-29), so neither is a
- * hardcoded TS literal anymore -- both margin-requirements.ts and inputs.ts
- * read them from here now, sharing one source (see
+ * constants (previously just RISK_FREE_RATE, now also NIFTY_LOT_SIZE and
+ * PUT_PROTECTION_AVG_PRICE_PER_QTY). Neither of the latter two is a
+ * hardcoded TS literal -- both margin-requirements.ts and inputs.ts
+ * read them from here, sharing one source (see
  * docs/assumptions-and-changes-from-krish-logic.md §14b).
  *
  * Keys are matched by TRIMMED string, not exact equality: the live
