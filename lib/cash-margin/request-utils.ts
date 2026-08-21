@@ -13,10 +13,10 @@ export interface ParsedCashMarginBody {
   qcode?: string;
   overrides?: StrategyOverrides;
   /**
-   * TEMPORARY -- pins loadMastersheet() to a historical date, for verifying
-   * against frozen managed_accounts_analysis Excels. Remove this field (and
-   * the asOfDate plumbing in mastersheet.ts/margin-requirements.ts/alerts.ts)
-   * once that verification is done; not meant to be a permanent feature.
+   * Pins every read in the response (mandate selection, mastersheet,
+   * holdings, resolved ratios) to a historical date instead of always-latest
+   * -- see mastersheet.ts's loadMastersheet and ratio-resolver.ts's
+   * loadResolvedRatios. Omit for "latest."
    */
   asOfDate?: Date;
   /**
@@ -57,6 +57,43 @@ export async function parseCashMarginBody(
   }
 
   const overrides: StrategyOverrides | undefined = body?.overrides;
+  if (overrides) {
+    for (const [strategy, ov] of Object.entries(overrides)) {
+      const eq = ov?.equityPct;
+      const debt = ov?.debtPct;
+      // equityPct and debtPct must sum to 1 -- Equity Book funds + Derivative
+      // Book (Cash + Liquid Case) funds must exhaust Account Value. Overriding
+      // only one silently leaves the other at its stale DB value (config.ts's
+      // `?? 1 - equityPct` fallback never fires in practice, since debt_pct
+      // already has a stored row for every strategy today -- see QAC00110,
+      // which hit exactly this: equity_pct overridden to 0.65, debt_pct
+      // independently set to 0.35, but back when this read `derivative_pct`
+      // instead of `debt_pct` the two silently disagreed, 0.65+0.3=0.95), so
+      // the two would stop summing to 100% with no error -- reject the
+      // request instead of computing a wrong total.
+      if ((eq !== undefined) !== (debt !== undefined)) {
+        return {
+          error: NextResponse.json(
+            {
+              error: `overrides.${strategy}: equityPct and debtPct must be supplied together -- ` +
+                `providing only one leaves the other at its stale DB value and the two would no longer sum to 100% of Account Value`,
+            },
+            { status: 400 },
+          ),
+        };
+      }
+      if (eq !== undefined && debt !== undefined && Math.abs(eq + debt - 1) > 1e-6) {
+        return {
+          error: NextResponse.json(
+            {
+              error: `overrides.${strategy}: equityPct (${eq}) + debtPct (${debt}) = ${eq + debt}, must equal 1`,
+            },
+            { status: 400 },
+          ),
+        };
+      }
+    }
+  }
 
   let asOfDate: Date | undefined;
   if (body?.asOfDate) {
