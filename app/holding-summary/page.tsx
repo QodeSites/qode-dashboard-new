@@ -1995,7 +1995,7 @@ ${commonStyles}
 
     if (status === "loading" || isLoading) {
         return (
-            <DashboardLayout>
+            <DashboardLayout page="holding-summary">
                 <div className="flex items-center justify-center h-64">
                     <div className="text-lg text-card-text">Loading holdings data...</div>
                 </div>
@@ -2005,7 +2005,7 @@ ${commonStyles}
 
     if (error || !session?.user) {
         return (
-            <DashboardLayout>
+            <DashboardLayout page="holding-summary">
                 <div className="p-6 text-center bg-red-100 rounded-lg text-red-600">
                     {error || "Failed to load user data"}
                 </div>
@@ -2048,7 +2048,7 @@ ${commonStyles}
     })();
 
     return (
-        <DashboardLayout>
+        <DashboardLayout page="holding-summary">
             <div className="space-y-6">
                 <div className="flex justify-between items-start">
                     <div className="space-y-2">

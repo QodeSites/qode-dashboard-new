@@ -2031,13 +2031,14 @@ export interface CashMarginSnapshotRow {
   account_name: string;
   strategy: string;
   account_value: number;
-  gold: number;
-  momentum: number;
-  lowvol: number;
+  equity_groups: EquityGroupSnapshot[]; // dynamic -- whatever's under equity_book today. Empty when has_equity_split is false.
+  equity_book_total: number; // read directly off the "Equity Stock Holdings" tag -- NOT summed from equity_groups' leaves, so it's correct even if a client holds something outside the tracked leaves
+  liquid_group: EquityGroupSnapshot; // Liquidcase/Liquidadd breakdown -- applies unconditionally, both split and non-split strategies
   mutual_funds: number;
-  holdings: number; // gold+momentum+lowvol, or mutual_funds
-  has_equity_split: boolean;
-  liquidcase: number;
+  bond_stock_holdings: number;
+  holdings: number; // equity_book_total + mutual_funds + bond_stock_holdings -- unconditional, each term naturally 0 when absent
+  has_equity_split: boolean; // derived from strategy_config_defaults, computed once per row and cached here -- not a stored column
+  liquidcase: number; // = liquid_group.total, kept as its own field for backward-compatible reads
   cash: number;
   cash_plus_liquidcase: number;
   excess_cash: number;
@@ -2086,42 +2087,399 @@ async function fetchCashMarginContext(qcode: string): Promise<{
   return { pairs, valueMap, splitMap };
 }
 
-function buildCashMarginSnapshot(
+// ── Equity Book / Liquid Component — dynamic, catalog-driven ───────────────
+// Groups (gold/momentum/lowvol under equity_book, liquidcase/liquidadd
+// under liquid_component) are discovered by querying config_catalog, not a
+// hardcoded list. Adding a new leaf (a third Momentum scrip, say) is a
+// catalog row, no code change. A genuinely new top-level group is still a
+// deliberate decision either way (real targets, a real symbol, frontend
+// awareness) — this doesn't try to make that free, only what's underneath
+// a known group.
+
+export interface EquityLeaf {
+  config_key: string;
+  label: string;
+  ltp_symbol: string; // Yahoo Finance ticker, for LTP
+  console_symbol: string; // broker tradingsymbol, matches console_equity_holdings.symbol exactly -- used for the value lookup AND shown as this leaf's particular
+  value: number;
+}
+
+interface EquityGroupDef {
+  config_key: string;
+  label: string;
+  tag_suffix: string | null; // mastersheet aggregate tag, read directly as this group's total
+  leaves: {
+    config_key: string;
+    label: string;
+    ltp_symbol: string;
+    console_symbol: string;
+  }[];
+}
+
+export interface EquityGroupSnapshot {
+  config_key: string;
+  label: string;
+  total: number;
+  leaves: EquityLeaf[];
+}
+
+// resolves ONE group's leaf children by the group's own config_key --
+// shared by resolveEquityGroups() and resolveLiquidGroup(). A group with
+// no children of its own is its own single leaf.
+function resolveGroupFromNodes(
+  groupKey: string,
+  nodes: Awaited<ReturnType<typeof prisma.config_catalog.findMany>>,
+): EquityGroupDef {
+  const group = nodes.find((n) => n.config_key === groupKey)!;
+  const children = nodes.filter(
+    (n) =>
+      n.parent_key === groupKey &&
+      n.ltp_symbol != null &&
+      n.console_symbol != null,
+  );
+  const leaves =
+    children.length > 0
+      ? children.map((c) => ({
+          config_key: c.config_key,
+          label: c.label,
+          ltp_symbol: c.ltp_symbol!,
+          console_symbol: c.console_symbol!,
+        }))
+      : group.ltp_symbol && group.console_symbol
+        ? [
+            {
+              config_key: group.config_key,
+              label: group.label,
+              ltp_symbol: group.ltp_symbol,
+              console_symbol: group.console_symbol,
+            },
+          ]
+        : [];
+  return {
+    config_key: group.config_key,
+    label: group.label,
+    tag_suffix: group.tag_suffix,
+    leaves,
+  };
+}
+
+// discovers equity_book's children by query (parent_key === "equity_book"),
+// not a hardcoded list.
+async function resolveEquityGroups(): Promise<EquityGroupDef[]> {
+  const nodes = await prisma.config_catalog.findMany();
+  const topLevel = nodes.filter((n) => n.parent_key === "equity_book");
+  return topLevel.map((g) => resolveGroupFromNodes(g.config_key, nodes));
+}
+
+// standalone group, not nested under equity_book (it's the Liquid
+// Portion, not part of the equity sleeve). May sit under a purely
+// structural debt_book node for graph-construction purposes elsewhere --
+// this function looks it up directly by config_key regardless of what its
+// own parent_key is, so that's invisible here.
+async function resolveLiquidGroup(): Promise<EquityGroupDef> {
+  const nodes = await prisma.config_catalog.findMany();
+  return resolveGroupFromNodes("liquid_component", nodes);
+}
+
+// derived, not stored. A strategy "has an equity split" precisely when it
+// has at least one active 'ideal' row for an equity_book leaf -- not a
+// column on client_strategy_configs/strategy_defaults, and not a
+// strategy-name check. Checking 'ideal' specifically, not 'model': QTF has
+// real ideal targets but no daily model sync, so model-presence would
+// wrongly say "no split" for a strategy that clearly has one.
+async function resolveHasEquitySplit(
+  strategy: string,
+  asOfDate: Date,
+): Promise<boolean> {
+  const groups = await resolveEquityGroups();
+  const leafKeys = groups.flatMap((g) => g.leaves.map((l) => l.config_key));
+  if (leafKeys.length === 0) return false;
+  const row = await prisma.strategy_config_defaults.findFirst({
+    where: {
+      strategy_name: strategy,
+      config_key: { in: leafKeys },
+      ratio_type: "ideal",
+      as_of_date: { lte: asOfDate },
+    },
+  });
+  return row != null;
+}
+
+// pledged units are real holdings -- quantity alone understates anything
+// collateralized. Reads console_equity_holdings directly -- a real
+// Postgres table, not a CSV file, despite what the design doc calls it.
+async function fetchConsoleHoldingsValue(
+  qcode: string,
+  symbols: string[],
+): Promise<Map<string, number>> {
+  const latest = await prisma.console_equity_holdings.findFirst({
+    where: { qcode },
+    orderBy: { date: "desc" },
+    select: { date: true },
+  });
+  if (!latest) return new Map();
+  const rows = await prisma.console_equity_holdings.findMany({
+    where: { qcode, date: latest.date, symbol: { in: symbols } },
+  });
+  const values = new Map<string, number>();
+  for (const r of rows) {
+    const qty = Number(r.quantity ?? 0) + Number(r.collateral_quantity ?? 0);
+    values.set(r.symbol, qty * Number(r.last_price ?? 0));
+  }
+  return values;
+}
+
+// redistributes a mastersheet-derived total across every leaf, in every
+// group, currently in the given group list -- generic over which groups
+// (Equity Book's gold/momentum/lowvol, or Liquid Component's
+// liquidcase/liquidadd), one console_equity_holdings fetch, called once
+// per snapshot build and reused for every reduction-split within the same
+// call.
+async function resolveGroupSplit(
+  qcode: string,
+  total: number,
+  groups: EquityGroupDef[],
+): Promise<EquityGroupSnapshot[]> {
+  const allLeaves = groups.flatMap((g) => g.leaves);
+  if (allLeaves.length === 0) return [];
+
+  const symbols = allLeaves.map((l) => l.console_symbol);
+  const values = await fetchConsoleHoldingsValue(qcode, symbols);
+  const weights = allLeaves.map((l) => values.get(l.console_symbol) ?? 0);
+  const allocated = allocateWithRounding(total, weights);
+  const valueByKey = new Map<string, number>();
+  allLeaves.forEach((l, i) => valueByKey.set(l.config_key, allocated[i]));
+
+  return groups.map((group) => {
+    const leaves = group.leaves.map((l) => ({
+      config_key: l.config_key,
+      label: l.label,
+      ltp_symbol: l.ltp_symbol,
+      console_symbol: l.console_symbol,
+      value: valueByKey.get(l.config_key) ?? 0,
+    }));
+    return {
+      config_key: group.config_key,
+      label: group.label,
+      total: leaves.reduce((s, l) => s + l.value, 0),
+      leaves,
+    };
+  });
+}
+
+// dynamic ideal/model targets, per equity-book group -- resolved
+// recursively, not by a flat sum. A leaf's stored value is relative to its
+// *direct* parent, not necessarily the group root -- momentum50 stored as
+// 0.5 means "0.5 of Momentum," and Momentum itself is stored as its own
+// equity-book-relative share (e.g. 0.4). Momentum50's true equity-book
+// weight is the product of both: 0.5 x 0.4 = 0.2. Nodes with no stored
+// value (pure structural rollups, e.g. equity_book/liquid_component
+// themselves) contribute a multiplicative 1 and are simply skipped.
+// Client override, then strategy default, then tombstone falls through --
+// same coalesce at every level of the chain, not just the leaf.
+async function resolveEquityGroupTargets(
+  qcode: string,
+  strategy: string,
+  ratioType: "ideal" | "model",
+  groups: EquityGroupDef[],
+  asOfDate: Date,
+): Promise<Record<string, number>> {
+  const allLeafKeys = groups.flatMap((g) => g.leaves.map((l) => l.config_key));
+  if (allLeafKeys.length === 0) return {};
+
+  const nodes = await prisma.config_catalog.findMany();
+  const groupRootKeys = new Set(groups.map((g) => g.config_key));
+
+  // every config_key that could appear between a leaf and its group root,
+  // inclusive of the leaf, exclusive of the root itself
+  const chainKeys = new Set<string>();
+  for (const leafKey of allLeafKeys) {
+    let current: string | null = leafKey;
+    while (current && !groupRootKeys.has(current)) {
+      chainKeys.add(current);
+      const node = nodes.find((n) => n.config_key === current);
+      current = node?.parent_key ?? null;
+    }
+  }
+  const keyArray = Array.from(chainKeys);
+
+  const [clientRows, defaultRows] = await Promise.all([
+    prisma.client_config_values.findMany({
+      where: {
+        qcode,
+        strategy,
+        ratio_type: ratioType,
+        config_key: { in: keyArray },
+        as_of_date: { lte: asOfDate },
+      },
+      orderBy: { as_of_date: "desc" },
+    }),
+    prisma.strategy_config_defaults.findMany({
+      where: {
+        strategy_name: strategy,
+        ratio_type: ratioType,
+        config_key: { in: keyArray },
+        as_of_date: { lte: asOfDate },
+      },
+      orderBy: { as_of_date: "desc" },
+    }),
+  ]);
+  const latestClient = new Map<string, number | null>();
+  for (const r of clientRows) {
+    if (!latestClient.has(r.config_key)) {
+      latestClient.set(r.config_key, r.value != null ? Number(r.value) : null);
+    }
+  }
+  const latestDefault = new Map<string, number>();
+  for (const r of defaultRows) {
+    if (!latestDefault.has(r.config_key) && r.value != null) {
+      latestDefault.set(r.config_key, Number(r.value));
+    }
+  }
+  const ownValue = (key: string): number | null =>
+    latestClient.get(key) ?? latestDefault.get(key) ?? null;
+
+  const trueWeight = (leafKey: string): number => {
+    let weight = 1;
+    let current: string | null = leafKey;
+    while (current && !groupRootKeys.has(current)) {
+      const v = ownValue(current);
+      if (v != null) weight *= v;
+      const node = nodes.find((n) => n.config_key === current);
+      current = node?.parent_key ?? null;
+    }
+    return weight;
+  };
+
+  const groupTotals: Record<string, number> = {};
+  for (const group of groups) {
+    groupTotals[group.config_key] = group.leaves.reduce(
+      (s, l) => s + trueWeight(l.config_key),
+      0,
+    );
+  }
+  return groupTotals;
+}
+
+// splits a change to a group's combined value across its leaves, weighted
+// by their already-resolved current values -- N-way, whatever N is today.
+// Reuses numbers the snapshot already fetched, no second lookup.
+function splitGroupChange(leaves: EquityLeaf[], amount: number): number[] {
+  return allocateWithRounding(
+    amount,
+    leaves.map((l) => l.value),
+  );
+}
+
+// one sleeve per group, always with a nested "instruments" array -- even a
+// single-leaf group (Gold, Low Vol today) gets a one-element array, so the
+// shape is uniform everywhere. The group-level object has no ltp/quantity
+// at all -- there's no single symbol the whole group trades as, so those
+// fields would always be null; they're omitted rather than shown as dead
+// weight. Each instrument's particular is its console tradingsymbol --
+// what's actually typed into a trading terminal, not the display label.
+function buildGroupSleeve(
+  group: { label: string; leaves: EquityLeaf[] },
+  newGroupTotal: number,
+  newAccountValue: number,
+  ltps: Map<string, number>,
+): WithdrawalSleeve {
+  const { leaves } = group;
+  const oldGroupTotal = leaves.reduce((s, l) => s + l.value, 0);
+  const change = oldGroupTotal - newGroupTotal;
+  const shares = splitGroupChange(leaves, change);
+
+  const instruments = leaves.map((leaf, i) =>
+    buildWithdrawalSleeve(
+      leaf.console_symbol,
+      leaf.value,
+      leaf.value - shares[i],
+      newAccountValue,
+      "sell_buy",
+      ltps.get(leaf.ltp_symbol),
+    ),
+  );
+
+  const { ltp, quantity, ...groupSleeve } = buildWithdrawalSleeve(
+    group.label,
+    oldGroupTotal,
+    newGroupTotal,
+    newAccountValue,
+    "sell_buy",
+  );
+  return { ...groupSleeve, instruments };
+}
+
+async function buildCashMarginSnapshot(
   pairs: StrategyPair[],
   valueMap: Map<string, number>,
   splitMap: Map<string, SplitConfig>,
-): CashMarginSnapshotResult {
+): Promise<CashMarginSnapshotResult> {
   const strategies: CashMarginSnapshotRow[] = [];
   for (const pair of pairs) {
     const account_value = valueMap.get(`${pair.qcode}|${pair.tag}`) ?? 0;
     if (account_value === 0) continue;
 
     const split = splitMap.get(`${pair.qcode}|${pair.strategy}`)!;
+    const asOfDate = new Date();
+
+    // mutual_funds / bond_stock_holdings -- flat, hardcoded reads, same
+    // shape as always. Not catalog-driven: neither ever splits into
+    // subtypes or gets redistributed, so they don't belong in the dynamic
+    // structure at all.
     const mutual_funds =
       valueMap.get(`${pair.qcode}|${pair.strategy} Mutual Funds`) ?? 0;
-    const equity_stock_holdings =
-      valueMap.get(`${pair.qcode}|${pair.strategy} Equity Stock Holdings`) ?? 0;
     const bond_stock_holdings =
       valueMap.get(`${pair.qcode}|${pair.strategy} Bond Stock Holdings`) ?? 0;
-    const gold =
-      valueMap.get(`${pair.qcode}|${pair.strategy} Gold Stock Holdings`) ?? 0;
-    const momentum =
-      valueMap.get(`${pair.qcode}|${pair.strategy} Momentum Stock Holdings`) ??
-      0;
-    const lowvol =
-      valueMap.get(`${pair.qcode}|${pair.strategy} Low Vol Stock Holdings`) ??
-      0;
-    // gated on resolved config, never a strategy-name check
-    const has_equity_split = split.gold_pct != null;
 
-    const holdings = has_equity_split
-      ? gold + momentum + lowvol
-      : mutual_funds + equity_stock_holdings + bond_stock_holdings;
+    // derived, not a column check -- see resolveHasEquitySplit
+    const has_equity_split = await resolveHasEquitySplit(
+      pair.strategy,
+      asOfDate,
+    );
 
-    const liquidcase =
+    // Equity Book's total is read directly off its own tag
+    // ("Equity Stock Holdings"), not summed from gold/momentum/lowvol's
+    // tags -- correct even if a client holds something outside the
+    // tracked leaves (a real case: a QYE+ client holding GOLDBEES directly
+    // alongside untracked Large Cap/Small Cap positions). When
+    // has_equity_split is false, no leaf breakdown is computed at all --
+    // equity_book_total is still whatever it is (Ashit Jhaveri's real
+    // GOLDBEES counts), just shown as one flat number, not split into
+    // instruments.
+    const equity_book_total =
+      valueMap.get(`${pair.qcode}|${pair.strategy} Equity Stock Holdings`) ?? 0;
+    let equity_groups: EquityGroupSnapshot[] = [];
+    if (has_equity_split) {
+      const groups = await resolveEquityGroups();
+      equity_groups = await resolveGroupSplit(
+        pair.qcode,
+        equity_book_total,
+        groups,
+      );
+    }
+
+    const holdings = equity_book_total + mutual_funds + bond_stock_holdings;
+
+    // Liquid Component -- applies unconditionally, both split and
+    // non-split strategies, per the design doc. Own tag, own redistribution,
+    // independent of has_equity_split entirely.
+    const liquidGroupDef = await resolveLiquidGroup();
+    const liquidTagTotal =
       valueMap.get(
         `${pair.qcode}|${pair.strategy} Liquidcase Stock Holdings`,
       ) ?? 0;
+    const liquidSplit = await resolveGroupSplit(pair.qcode, liquidTagTotal, [
+      liquidGroupDef,
+    ]);
+    const liquid_group = liquidSplit[0] ?? {
+      config_key: "liquid_component",
+      label: "Liquidcase",
+      total: liquidTagTotal,
+      leaves: [],
+    };
+    const liquidcase = liquid_group.total;
+
     const cash = account_value - holdings - liquidcase;
     const cash_plus_liquidcase = cash + liquidcase;
 
@@ -2139,10 +2497,11 @@ function buildCashMarginSnapshot(
       account_name: pair.account_name,
       strategy: pair.strategy,
       account_value,
-      gold,
-      momentum,
-      lowvol,
+      equity_groups,
+      equity_book_total,
+      liquid_group,
       mutual_funds,
+      bond_stock_holdings,
       holdings,
       has_equity_split,
       liquidcase,
@@ -2180,10 +2539,16 @@ function buildCashMarginSnapshot(
     account_name: strategies[0].account_name,
     strategy: "combined",
     account_value: combinedAv,
-    gold: sum((r) => r.gold),
-    momentum: sum((r) => r.momentum),
-    lowvol: sum((r) => r.lowvol),
+    equity_groups: [], // combined is a display rollup only, never fed into sleeve-building
+    equity_book_total: sum((r) => r.equity_book_total),
+    liquid_group: {
+      config_key: "liquid_component",
+      label: "Liquidcase",
+      total: sum((r) => r.liquidcase),
+      leaves: [],
+    },
     mutual_funds: sum((r) => r.mutual_funds),
+    bond_stock_holdings: sum((r) => r.bond_stock_holdings),
     holdings: sum((r) => r.holdings),
     has_equity_split: strategies.some((r) => r.has_equity_split),
     liquidcase: sum((r) => r.liquidcase),
@@ -2206,7 +2571,7 @@ export async function fetchCashMarginSnapshot(
 ): Promise<CashMarginSnapshotResult> {
   const { pairs, valueMap, splitMap } = await fetchCashMarginContext(qcode);
   if (pairs.length === 0) return { strategies: [], combined: null };
-  return buildCashMarginSnapshot(pairs, valueMap, splitMap);
+  return await buildCashMarginSnapshot(pairs, valueMap, splitMap);
 }
 
 // ── Cash & Margin: Withdrawal ────────────────────────────────────────────────
@@ -2217,12 +2582,12 @@ export interface WithdrawalTargets {
   equity_pct: number;
   cash_pct: number;
   lc_pct: number; // §10.1 — derived by default (1 - equity_pct - cash_pct), overridable via liquidcase_pct
-  // safety-floor/model-ratio fields — same cascade, never payload-overridable
+  // safety-floor fields — same cascade, never payload-overridable
   cash_pct_healthy: number | null;
   liquidcase_pct_gate: number | null;
-  gold_model_pct: number | null;
-  momentum_model_pct: number | null;
-  lowvol_model_pct: number | null;
+  // model targets no longer live here -- resolveWithdrawalEqSplit reads
+  // them dynamically per group from strategy_config_defaults/
+  // client_config_values, not from named fields on this object.
 }
 
 const RATIO_EPSILON = 0.0001; // tolerance for the equity+cash+liquidcase = 1 identity check
@@ -2278,9 +2643,6 @@ function mergeWithdrawalTargets(
     lc_pct,
     cash_pct_healthy: split.cash_pct_healthy,
     liquidcase_pct_gate: split.liquidcase_pct_gate,
-    gold_model_pct: split.gold_model_pct,
-    momentum_model_pct: split.momentum_model_pct,
-    lowvol_model_pct: split.lowvol_model_pct,
   };
 }
 
@@ -2321,9 +2683,10 @@ export interface WithdrawalSleeve {
   new_value: number;
   change_amount: number; // positive = value left this bucket
   direction: WithdrawalDirection;
-  ltp: number | null; // Liquidcase only — informational, see note above
-  quantity: number | null; // fractional, informational — NOT whole-unit floored
+  ltp?: number | null; // informational, not whole-unit floored -- omitted entirely on a group-level sleeve (no single symbol the whole group trades as)
+  quantity?: number | null; // fractional, informational — NOT whole-unit floored
   new_pct: number;
+  instruments?: WithdrawalSleeve[]; // always present for a group sleeve (Equity Book leaves, Liquid Component leaves), one entry per underlying tradeable instrument, even when there's only one
 }
 
 function buildWithdrawalSleeve(
@@ -2347,32 +2710,39 @@ function buildWithdrawalSleeve(
   };
 }
 
-// current/ideal/model split from data on hand, not a separate defaults fetch
-function resolveWithdrawalEqSplit(
+// dynamic across all three ratio types -- returns fraction per whatever
+// equity-book group currently exists, not a fixed 3-field shape. 'ideal'
+// and 'model' both read strategy_config_defaults/client_config_values
+// (leaf rows summed per group), not a hardcoded literal or named columns.
+async function resolveWithdrawalEqSplit(
   row: CashMarginSnapshotRow,
-  targets: WithdrawalTargets,
+  qcode: string,
+  strategy: string,
   ratioType: "current" | "ideal" | "model",
-): { gold: number; momentum: number; lowvol: number } {
-  if (ratioType === "ideal") {
-    return { gold: 0.4, momentum: 0.4, lowvol: 0.2 };
+): Promise<Record<string, number>> {
+  if (ratioType === "current") {
+    const fractions: Record<string, number> = {};
+    for (const g of row.equity_groups) {
+      fractions[g.config_key] =
+        row.equity_book_total > 0 ? g.total / row.equity_book_total : 0;
+    }
+    return fractions;
   }
-  if (ratioType === "model") {
-    const g = targets.gold_model_pct ?? 0;
-    const m = targets.momentum_model_pct ?? 0;
-    const l = targets.lowvol_model_pct ?? 0;
-    const total = g + m + l;
-    return total > 0
-      ? { gold: g / total, momentum: m / total, lowvol: l / total }
-      : { gold: 0, momentum: 0, lowvol: 0 };
+  const groups = await resolveEquityGroups();
+  const targets = await resolveEquityGroupTargets(
+    qcode,
+    strategy,
+    ratioType,
+    groups,
+    new Date(),
+  );
+  const total = Object.values(targets).reduce((s, v) => s + v, 0);
+  const fractions: Record<string, number> = {};
+  for (const group of groups) {
+    fractions[group.config_key] =
+      total > 0 ? (targets[group.config_key] ?? 0) / total : 0;
   }
-  // current
-  return row.holdings > 0
-    ? {
-        gold: row.gold / row.holdings,
-        momentum: row.momentum / row.holdings,
-        lowvol: row.lowvol / row.holdings,
-      }
-    : { gold: 0, momentum: 0, lowvol: 0 };
+  return fractions;
 }
 
 function resolveWithdrawalAmount(
@@ -2419,108 +2789,111 @@ export interface WithdrawalViewResult {
 }
 
 // ── Balanced — two regimes joined exactly at the excess-cash boundary ──────
-function computeBalancedQye(
+async function computeBalanced(
   row: CashMarginSnapshotRow,
   targets: WithdrawalTargets,
   amountToWithdraw: number,
   excessCashBeforeWithdrawal: number,
-  liquidcaseLtp: number | undefined,
-): WithdrawalViewResult {
-  const newAccountValue = row.account_value - amountToWithdraw;
-  const isRegimeB = amountToWithdraw > excessCashBeforeWithdrawal;
-  const newHoldings = isRegimeB
-    ? newAccountValue * targets.equity_pct
-    : row.holdings;
-  const newCash = newAccountValue * targets.cash_pct;
-  const newLiquidcase = newAccountValue - newHoldings - newCash;
-
-  const sleeves = [
-    buildWithdrawalSleeve(
-      "Holdings",
-      row.holdings,
-      newHoldings,
-      newAccountValue,
-      "sell_buy",
-    ),
-    buildWithdrawalSleeve(
-      "Liquidcase",
-      row.liquidcase,
-      newLiquidcase,
-      newAccountValue,
-      "sell_buy",
-      liquidcaseLtp,
-    ),
-    buildWithdrawalSleeve(
-      "Cash",
-      row.cash,
-      newCash,
-      newAccountValue,
-      "withdraw_deposit",
-    ),
-  ];
-  return { new_account_value: round(newAccountValue, 2)!, sleeves };
-}
-
-async function computeBalancedQaw(
-  row: CashMarginSnapshotRow,
-  targets: WithdrawalTargets,
-  amountToWithdraw: number,
-  excessCashBeforeWithdrawal: number,
-  ratioType: "current" | "ideal" | "model",
-  liquidcaseLtp: number | undefined,
+  ratioType: "current" | "ideal" | "model" | undefined,
+  qcode: string,
+  strategy: string,
+  ltps: Map<string, number>,
 ): Promise<WithdrawalViewResult> {
   const newAccountValue = row.account_value - amountToWithdraw;
   const isRegimeB = amountToWithdraw > excessCashBeforeWithdrawal;
 
-  let newGold = row.gold;
-  let newMomentum = row.momentum;
-  let newLowvol = row.lowvol;
-  if (isRegimeB) {
-    const subRatios = resolveWithdrawalEqSplit(row, targets, ratioType);
-    const newEquityTotal = newAccountValue * targets.equity_pct;
-    const equityReduction = row.holdings - newEquityTotal;
-    const [redGold, redMomentum, redLowvol] = allocateWithRounding(
-      equityReduction,
-      [subRatios.gold, subRatios.momentum, subRatios.lowvol],
-    );
-    newGold = row.gold - redGold;
-    newMomentum = row.momentum - redMomentum;
-    newLowvol = row.lowvol - redLowvol;
-  }
-  const newCash = newAccountValue * targets.cash_pct;
-  const newLiquidcase =
-    newAccountValue - newGold - newMomentum - newLowvol - newCash;
+  const sleeves: WithdrawalSleeve[] = [];
+  let newLiquidcaseBudget: number;
 
-  const sleeves = [
-    buildWithdrawalSleeve(
-      "Gold",
-      row.gold,
-      newGold,
-      newAccountValue,
-      "sell_buy",
-    ),
-    buildWithdrawalSleeve(
-      "Momentum",
-      row.momentum,
-      newMomentum,
-      newAccountValue,
-      "sell_buy",
-    ),
-    buildWithdrawalSleeve(
-      "Low Vol",
-      row.lowvol,
-      newLowvol,
-      newAccountValue,
-      "sell_buy",
-    ),
-    buildWithdrawalSleeve(
-      "Liquidcase",
-      row.liquidcase,
-      newLiquidcase,
-      newAccountValue,
-      "sell_buy",
-      liquidcaseLtp,
-    ),
+  if (row.has_equity_split) {
+    // mf/bond stay frozen here -- same assumption the original QAW code
+    // always made implicitly (they were never even read), now explicit
+    // rather than silently correct-by-coincidence. Edge case (a
+    // split strategy that also holds MF/Bond) isn't solved by this --
+    // flagged, not addressed, per the earlier open question.
+    let newEquityBookTotal = row.equity_book_total;
+    let newGroupTotals: Record<string, number> = {};
+    row.equity_groups.forEach((g) => (newGroupTotals[g.config_key] = g.total));
+
+    if (isRegimeB) {
+      const subRatios = await resolveWithdrawalEqSplit(
+        row,
+        qcode,
+        strategy,
+        ratioType!,
+      );
+      newEquityBookTotal = newAccountValue * targets.equity_pct;
+      const equityReduction = row.equity_book_total - newEquityBookTotal;
+      const groupKeys = row.equity_groups.map((g) => g.config_key);
+      const reductions = allocateWithRounding(
+        equityReduction,
+        groupKeys.map((k) => subRatios[k] ?? 0),
+      );
+      row.equity_groups.forEach((g, i) => {
+        newGroupTotals[g.config_key] = g.total - reductions[i];
+      });
+    }
+
+    for (const g of row.equity_groups) {
+      sleeves.push(
+        buildGroupSleeve(
+          g,
+          newGroupTotals[g.config_key],
+          newAccountValue,
+          ltps,
+        ),
+      );
+    }
+    if (row.mutual_funds !== 0) {
+      sleeves.push(
+        buildWithdrawalSleeve(
+          "Mutual Funds",
+          row.mutual_funds,
+          row.mutual_funds,
+          newAccountValue,
+          "sell_buy",
+        ),
+      );
+    }
+    if (row.bond_stock_holdings !== 0) {
+      sleeves.push(
+        buildWithdrawalSleeve(
+          "Bond Stock Holdings",
+          row.bond_stock_holdings,
+          row.bond_stock_holdings,
+          newAccountValue,
+          "sell_buy",
+        ),
+      );
+    }
+    newLiquidcaseBudget =
+      newEquityBookTotal + row.mutual_funds + row.bond_stock_holdings;
+  } else {
+    // no equity split -- equity_book_total + mutual_funds + bond_stock_holdings
+    // move together as one lump, exactly matching the original QYE
+    // behavior (a single "Holdings" figure, never broken down).
+    const newHoldings = isRegimeB
+      ? newAccountValue * targets.equity_pct
+      : row.holdings;
+    sleeves.push(
+      buildWithdrawalSleeve(
+        "Holdings",
+        row.holdings,
+        newHoldings,
+        newAccountValue,
+        "sell_buy",
+      ),
+    );
+    newLiquidcaseBudget = newHoldings;
+  }
+
+  const newCash = newAccountValue * targets.cash_pct;
+  const newLiquidcase = newAccountValue - newLiquidcaseBudget - newCash;
+
+  sleeves.push(
+    buildGroupSleeve(row.liquid_group, newLiquidcase, newAccountValue, ltps),
+  );
+  sleeves.push(
     buildWithdrawalSleeve(
       "Cash",
       row.cash,
@@ -2528,38 +2901,66 @@ async function computeBalancedQaw(
       newAccountValue,
       "withdraw_deposit",
     ),
-  ];
+  );
+
   return { new_account_value: round(newAccountValue, 2)!, sleeves };
 }
 
 // ── Holdings-Frozen — "don't reduce exposure". Liquidcase can come out
 // Liquidcase can go negative — the informative signal, not capped
-function computeHoldingsFrozenQye(
+function computeHoldingsFrozen(
   row: CashMarginSnapshotRow,
   targets: WithdrawalTargets,
   amountToWithdraw: number,
-  liquidcaseLtp: number | undefined,
+  ltps: Map<string, number>,
 ): WithdrawalViewResult {
   const newAccountValue = row.account_value - amountToWithdraw;
   const newCash = newAccountValue * targets.cash_pct;
   const newLiquidcase = newAccountValue - row.holdings - newCash;
 
-  const sleeves = [
-    buildWithdrawalSleeve(
-      "Holdings",
-      row.holdings,
-      row.holdings,
-      newAccountValue,
-      "sell_buy",
-    ),
-    buildWithdrawalSleeve(
-      "Liquidcase",
-      row.liquidcase,
-      newLiquidcase,
-      newAccountValue,
-      "sell_buy",
-      liquidcaseLtp,
-    ),
+  const sleeves: WithdrawalSleeve[] = [];
+  if (row.has_equity_split) {
+    for (const g of row.equity_groups) {
+      sleeves.push(buildGroupSleeve(g, g.total, newAccountValue, ltps));
+    }
+    if (row.mutual_funds !== 0) {
+      sleeves.push(
+        buildWithdrawalSleeve(
+          "Mutual Funds",
+          row.mutual_funds,
+          row.mutual_funds,
+          newAccountValue,
+          "sell_buy",
+        ),
+      );
+    }
+    if (row.bond_stock_holdings !== 0) {
+      sleeves.push(
+        buildWithdrawalSleeve(
+          "Bond Stock Holdings",
+          row.bond_stock_holdings,
+          row.bond_stock_holdings,
+          newAccountValue,
+          "sell_buy",
+        ),
+      );
+    }
+  } else {
+    sleeves.push(
+      buildWithdrawalSleeve(
+        "Holdings",
+        row.holdings,
+        row.holdings,
+        newAccountValue,
+        "sell_buy",
+      ),
+    );
+  }
+
+  sleeves.push(
+    buildGroupSleeve(row.liquid_group, newLiquidcase, newAccountValue, ltps),
+  );
+  sleeves.push(
     buildWithdrawalSleeve(
       "Cash",
       row.cash,
@@ -2567,142 +2968,90 @@ function computeHoldingsFrozenQye(
       newAccountValue,
       "withdraw_deposit",
     ),
-  ];
-  return { new_account_value: round(newAccountValue, 2)!, sleeves };
-}
+  );
 
-function computeHoldingsFrozenQaw(
-  row: CashMarginSnapshotRow,
-  targets: WithdrawalTargets,
-  amountToWithdraw: number,
-  liquidcaseLtp: number | undefined,
-): WithdrawalViewResult {
-  const newAccountValue = row.account_value - amountToWithdraw;
-  const newCash = newAccountValue * targets.cash_pct;
-  const newLiquidcase = newAccountValue - row.holdings - newCash;
-
-  const sleeves = [
-    buildWithdrawalSleeve(
-      "Gold",
-      row.gold,
-      row.gold,
-      newAccountValue,
-      "sell_buy",
-    ),
-    buildWithdrawalSleeve(
-      "Momentum",
-      row.momentum,
-      row.momentum,
-      newAccountValue,
-      "sell_buy",
-    ),
-    buildWithdrawalSleeve(
-      "Low Vol",
-      row.lowvol,
-      row.lowvol,
-      newAccountValue,
-      "sell_buy",
-    ),
-    buildWithdrawalSleeve(
-      "Liquidcase",
-      row.liquidcase,
-      newLiquidcase,
-      newAccountValue,
-      "sell_buy",
-      liquidcaseLtp,
-    ),
-    buildWithdrawalSleeve(
-      "Cash",
-      row.cash,
-      newCash,
-      newAccountValue,
-      "withdraw_deposit",
-    ),
-  ];
   return { new_account_value: round(newAccountValue, 2)!, sleeves };
 }
 
 // ── Cash-Frozen — "only reduce exposure". Becomes null with a reason when
 // null + reason when amount exceeds Holdings — never a partial execution
-function computeCashFrozenQye(
-  row: CashMarginSnapshotRow,
-  amountToWithdraw: number,
-): WithdrawalViewResult {
-  const newHoldings = row.holdings - amountToWithdraw;
-  const newAccountValue = row.account_value - amountToWithdraw;
-
-  const sleeves = [
-    buildWithdrawalSleeve(
-      "Holdings",
-      row.holdings,
-      newHoldings,
-      newAccountValue,
-      "sell_buy",
-    ),
-    buildWithdrawalSleeve(
-      "Liquidcase",
-      row.liquidcase,
-      row.liquidcase,
-      newAccountValue,
-      "sell_buy",
-    ),
-    buildWithdrawalSleeve(
-      "Cash",
-      row.cash,
-      row.cash,
-      newAccountValue,
-      "withdraw_deposit",
-    ),
-  ];
-  return { new_account_value: round(newAccountValue, 2)!, sleeves };
-}
-
-function computeCashFrozenQaw(
+async function computeCashFrozen(
   row: CashMarginSnapshotRow,
   targets: WithdrawalTargets,
   amountToWithdraw: number,
-  ratioType: "current" | "ideal" | "model",
-): WithdrawalViewResult {
+  ratioType: "current" | "ideal" | "model" | undefined,
+  qcode: string,
+  strategy: string,
+  ltps: Map<string, number>,
+): Promise<WithdrawalViewResult> {
   const newAccountValue = row.account_value - amountToWithdraw;
+  const sleeves: WithdrawalSleeve[] = [];
 
-  const subRatios = resolveWithdrawalEqSplit(row, targets, ratioType);
-  const [redGold, redMomentum, redLowvol] = allocateWithRounding(
-    amountToWithdraw,
-    [subRatios.gold, subRatios.momentum, subRatios.lowvol],
+  if (row.has_equity_split) {
+    const subRatios = await resolveWithdrawalEqSplit(
+      row,
+      qcode,
+      strategy,
+      ratioType!,
+    );
+    const groupKeys = row.equity_groups.map((g) => g.config_key);
+    const reductions = allocateWithRounding(
+      amountToWithdraw,
+      groupKeys.map((k) => subRatios[k] ?? 0),
+    );
+    const newGroupTotals: Record<string, number> = {};
+    row.equity_groups.forEach((g, i) => {
+      newGroupTotals[g.config_key] = g.total - reductions[i];
+    });
+    for (const g of row.equity_groups) {
+      sleeves.push(
+        buildGroupSleeve(
+          g,
+          newGroupTotals[g.config_key],
+          newAccountValue,
+          ltps,
+        ),
+      );
+    }
+    if (row.mutual_funds !== 0) {
+      sleeves.push(
+        buildWithdrawalSleeve(
+          "Mutual Funds",
+          row.mutual_funds,
+          row.mutual_funds,
+          newAccountValue,
+          "sell_buy",
+        ),
+      );
+    }
+    if (row.bond_stock_holdings !== 0) {
+      sleeves.push(
+        buildWithdrawalSleeve(
+          "Bond Stock Holdings",
+          row.bond_stock_holdings,
+          row.bond_stock_holdings,
+          newAccountValue,
+          "sell_buy",
+        ),
+      );
+    }
+  } else {
+    const newHoldings = row.holdings - amountToWithdraw;
+    sleeves.push(
+      buildWithdrawalSleeve(
+        "Holdings",
+        row.holdings,
+        newHoldings,
+        newAccountValue,
+        "sell_buy",
+      ),
+    );
+  }
+
+  sleeves.push(
+    buildGroupSleeve(row.liquid_group, row.liquidcase, newAccountValue, ltps),
   );
-  const newGold = row.gold - redGold;
-  const newMomentum = row.momentum - redMomentum;
-  const newLowvol = row.lowvol - redLowvol;
-
-  const sleeves = [
-    buildWithdrawalSleeve(
-      "Gold",
-      row.gold,
-      newGold,
-      newAccountValue,
-      "sell_buy",
-    ),
-    buildWithdrawalSleeve(
-      "Momentum",
-      row.momentum,
-      newMomentum,
-      newAccountValue,
-      "sell_buy",
-    ),
-    buildWithdrawalSleeve(
-      "Low Vol",
-      row.lowvol,
-      newLowvol,
-      newAccountValue,
-      "sell_buy",
-    ),
-    buildWithdrawalSleeve(
-      "Liquidcase",
-      row.liquidcase,
-      row.liquidcase,
-      newAccountValue,
-      "sell_buy",
-    ),
+  sleeves.push(
     buildWithdrawalSleeve(
       "Cash",
       row.cash,
@@ -2710,7 +3059,8 @@ function computeCashFrozenQaw(
       newAccountValue,
       "withdraw_deposit",
     ),
-  ];
+  );
+
   return { new_account_value: round(newAccountValue, 2)!, sleeves };
 }
 
@@ -2750,7 +3100,7 @@ export async function computeCashMarginWithdrawal(
   const snapshot =
     pairs.length === 0
       ? { strategies: [], combined: null }
-      : buildCashMarginSnapshot(pairs, valueMap, splitMap);
+      : await buildCashMarginSnapshot(pairs, valueMap, splitMap);
 
   const empty = {
     blocked: false,
@@ -2845,56 +3195,48 @@ export async function computeCashMarginWithdrawal(
   let cash_frozen: WithdrawalViewResult | null;
   let cash_frozen_unavailable_reason: string | null = null;
 
-  // informational only, fetched live like Deploy; degrades to null on failure
-  const liquidcaseLtp = (await fetchLtps([ETF_SYMBOLS.liquidcase])).get(
-    ETF_SYMBOLS.liquidcase,
+  // informational only, fetched live like Deploy; degrades to null on
+  // failure. Batched across every equity-group leaf's symbol AND every
+  // Liquid Component leaf's symbol -- one call, fetched once per response,
+  // reused across the snapshot and all three views.
+  const equityLeafSymbols = row.equity_groups.flatMap((g) =>
+    g.leaves.map((l) => l.ltp_symbol),
   );
+  const liquidLeafSymbols = row.liquid_group.leaves.map((l) => l.ltp_symbol);
+  const ltps = await fetchLtps([...equityLeafSymbols, ...liquidLeafSymbols]);
 
-  // see computeCashFrozenQaw/Qye
+  // see computeCashFrozen
   const cashFrozenAvailable = amountToWithdraw <= row.holdings;
   if (!cashFrozenAvailable) {
     cash_frozen_unavailable_reason = `Cash-Frozen can't fund this withdrawal without also selling Holdings — ₹${round(row.holdings, 2)} available, ₹${round(amountToWithdraw, 2)} requested.`;
   }
 
-  if (row.has_equity_split) {
-    if (!input.ratio_type) {
-      throw new Error("ratio_type is required for this strategy");
-    }
-    balanced = await computeBalancedQaw(
-      row,
-      targets,
-      amountToWithdraw,
-      excessCashBeforeWithdrawal,
-      input.ratio_type,
-      liquidcaseLtp,
-    );
-    holdings_frozen = computeHoldingsFrozenQaw(
-      row,
-      targets,
-      amountToWithdraw,
-      liquidcaseLtp,
-    );
-    cash_frozen = cashFrozenAvailable
-      ? computeCashFrozenQaw(row, targets, amountToWithdraw, input.ratio_type)
-      : null;
-  } else {
-    balanced = computeBalancedQye(
-      row,
-      targets,
-      amountToWithdraw,
-      excessCashBeforeWithdrawal,
-      liquidcaseLtp,
-    );
-    holdings_frozen = computeHoldingsFrozenQye(
-      row,
-      targets,
-      amountToWithdraw,
-      liquidcaseLtp,
-    );
-    cash_frozen = cashFrozenAvailable
-      ? computeCashFrozenQye(row, amountToWithdraw)
-      : null;
+  if (row.has_equity_split && !input.ratio_type) {
+    throw new Error("ratio_type is required for this strategy");
   }
+
+  balanced = await computeBalanced(
+    row,
+    targets,
+    amountToWithdraw,
+    excessCashBeforeWithdrawal,
+    input.ratio_type,
+    input.qcode,
+    input.strategy,
+    ltps,
+  );
+  holdings_frozen = computeHoldingsFrozen(row, targets, amountToWithdraw, ltps);
+  cash_frozen = cashFrozenAvailable
+    ? await computeCashFrozen(
+        row,
+        targets,
+        amountToWithdraw,
+        input.ratio_type,
+        input.qcode,
+        input.strategy,
+        ltps,
+      )
+    : null;
 
   return {
     snapshot,
@@ -3077,9 +3419,15 @@ async function resolveQawSubRatios(
     );
   }
   return {
-    gold: row.gold / row.holdings,
-    momentum: row.momentum / row.holdings,
-    lowvol: row.lowvol / row.holdings,
+    gold:
+      (row.equity_groups.find((g) => g.config_key === "gold")?.total ?? 0) /
+      row.equity_book_total,
+    momentum:
+      (row.equity_groups.find((g) => g.config_key === "momentum")?.total ?? 0) /
+      row.equity_book_total,
+    lowvol:
+      (row.equity_groups.find((g) => g.config_key === "lowvol")?.total ?? 0) /
+      row.equity_book_total,
   };
 }
 
@@ -3448,19 +3796,19 @@ async function computeGapSplitQaw(
 
   const gold = buildGapSleeve(
     "Gold",
-    row.gold,
+    row.equity_groups.find((g) => g.config_key === "gold")?.total ?? 0,
     amountToAdd * subRatios.gold,
     ltps.get(ETF_SYMBOLS.gold),
   );
   const momentum = buildGapSleeve(
     "Momentum",
-    row.momentum,
+    row.equity_groups.find((g) => g.config_key === "momentum")?.total ?? 0,
     amountToAdd * subRatios.momentum,
     ltps.get(ETF_SYMBOLS.momentum),
   );
   const lowvol = buildGapSleeve(
     "Low Vol",
-    row.lowvol,
+    row.equity_groups.find((g) => g.config_key === "lowvol")?.total ?? 0,
     amountToAdd * subRatios.lowvol,
     ltps.get(ETF_SYMBOLS.lowvol),
   );
@@ -3595,19 +3943,19 @@ async function computeExcessCashSplitQaw(
 
   const gold = buildEquitySleeve(
     "Gold",
-    row.gold,
+    row.equity_groups.find((g) => g.config_key === "gold")?.total ?? 0,
     amountDeployed * subRatios.gold,
     ltps.get(ETF_SYMBOLS.gold),
   );
   const momentum = buildEquitySleeve(
     "Momentum",
-    row.momentum,
+    row.equity_groups.find((g) => g.config_key === "momentum")?.total ?? 0,
     amountDeployed * subRatios.momentum,
     ltps.get(ETF_SYMBOLS.momentum),
   );
   const lowvol = buildEquitySleeve(
     "Low Vol",
-    row.lowvol,
+    row.equity_groups.find((g) => g.config_key === "lowvol")?.total ?? 0,
     amountDeployed * subRatios.lowvol,
     ltps.get(ETF_SYMBOLS.lowvol),
   );
@@ -3766,19 +4114,19 @@ async function computeSpecificDeploymentQaw(
 
   const gold = buildSleeve(
     "Gold",
-    row.gold,
+    row.equity_groups.find((g) => g.config_key === "gold")?.total ?? 0,
     eqBookAmount * subRatios.gold,
     ltps.get(ETF_SYMBOLS.gold),
   );
   const momentum = buildSleeve(
     "Momentum",
-    row.momentum,
+    row.equity_groups.find((g) => g.config_key === "momentum")?.total ?? 0,
     eqBookAmount * subRatios.momentum,
     ltps.get(ETF_SYMBOLS.momentum),
   );
   const lowvol = buildSleeve(
     "Low Vol",
-    row.lowvol,
+    row.equity_groups.find((g) => g.config_key === "lowvol")?.total ?? 0,
     eqBookAmount * subRatios.lowvol,
     ltps.get(ETF_SYMBOLS.lowvol),
   );
