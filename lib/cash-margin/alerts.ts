@@ -14,7 +14,7 @@
  * row for EVERY metric including HEALTHY -- the live table shows all of them.
  */
 import { prisma } from "@/lib/prisma";
-import { detectTier, isXtsMandate, type Tier } from "./tags";
+import { detectTier, isXtsMandate, PROP_STRATEGY, type Tier } from "./tags";
 import { loadMastersheet, computeAccountSummary } from "./mastersheet";
 import { computeExposureShare } from "./exposure";
 import { loadMarginCollaterals, type MarginAvailable } from "./margin-api";
@@ -72,6 +72,7 @@ const CASH_ALERT_EXCLUDED_QCODES = new Set<string>([
 async function loadActiveMandates(referenceDate: Date = new Date()): Promise<ActiveMandate[]> {
   const rows = await prisma.client_strategy_configs.findMany({
     where: {
+      strategy: { not: PROP_STRATEGY },
       effective_from: { lte: referenceDate },
       OR: [{ effective_to: null }, { effective_to: { gte: referenceDate } }],
     },
@@ -103,8 +104,9 @@ function pct(part: number, whole: number): number | null {
  * @param overrides - optional, request-scoped only, never persisted (POST
  *   body override of the resolved threshold bands -- see
  *   lib/cash-margin/config.ts and docs/thresholds-to-table-and-post-override-plan.md).
- * @param asOfDate - TEMPORARY, for verification against frozen
- *   managed_accounts_analysis Excels -- see loadMastersheet(). Remove once done.
+ * @param asOfDate - pins every mandate/mastersheet read in this response to
+ *   a historical date instead of always-latest -- see loadMastersheet().
+ *   Omit for "latest."
  */
 export async function buildAlertRows(overrides?: StrategyOverrides, asOfDate?: Date): Promise<AlertRow[]> {
   const mandates = await loadActiveMandates(asOfDate ?? new Date());

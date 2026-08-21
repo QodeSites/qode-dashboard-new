@@ -15,9 +15,12 @@
  *  - long_opt_pct / psar_multiplier / psar_leverage / drawdown_margin_pct
  *    come from client_strategy_configs ?? strategy_defaults (DB-driven),
  *    not Python's hardcoded STRATEGY_MARGIN_CONFIG / CLIENT_OVERRIDES dicts.
- *  - Put Protection is gated on the resolved gold/momentum/lowvol_pct
- *    config being present for that strategy, not a hardcoded
- *    {"QAW+","QAW++"} name check.
+ *  - Put Protection is gated on config_catalog's equity_book leaves having
+ *    a resolved "ideal" value for that strategy (same hasConfiguredLeaves
+ *    check system-breakup.ts/consolidated.ts use), not a hardcoded
+ *    {"QAW+","QAW++"} name check, and not the old gold_pct/momentum_pct/
+ *    lowvol_pct != null check this file used before it moved onto
+ *    config_catalog -- those columns are no longer read here at all.
  *  - Put Protection lots use Math.ceil (matching Python's math.ceil), so
  *    protection is never under-sized -- see docs/assumptions-and-changes-from-krish-logic.md
  *    §19.1 (previously Math.round, changed after diffing against real client
@@ -54,7 +57,16 @@ import { loadMastersheet, getVal, computeAccountSummary, type MastersheetSnapsho
 import { computeExposureShare } from "./exposure";
 import { loadMarginCollaterals, type MarginAvailable } from "./margin-api";
 import { getNiftyLotSize, getPutProtectionAvgPricePerQty } from "./global-config";
+import { PROP_STRATEGY } from "./tags";
 import type { StrategyOverrides } from "./config";
+import { loadCatalog } from "./catalog";
+import {
+  loadResolvedRatios,
+  withOverrides,
+  hasConfiguredLeaves,
+  Diagnostics,
+  type Diagnostic,
+} from "./ratio-resolver";
 
 export interface MarginLine {
   system: "Long Options" | "PSAR" | "Put Protection" | "Drawdown Margin";
@@ -113,9 +125,6 @@ export interface ResolvedMarginConfig {
   psarMultiplier: number;
   psarLeverage: number;
   drawdownMarginPct: number;
-  goldPct: number | null;
-  momentumPct: number | null;
-  lowvolPct: number | null;
 }
 
 export interface MandateRow {
@@ -127,9 +136,6 @@ export interface MandateRow {
   psar_multiplier: number | null;
   psar_leverage: number | null;
   drawdown_margin_pct: number | null;
-  gold_pct: number | null;
-  momentum_pct: number | null;
-  lowvol_pct: number | null;
 }
 
 export interface StrategyDefaultRow {
@@ -138,9 +144,6 @@ export interface StrategyDefaultRow {
   psar_multiplier: number;
   psar_leverage: number;
   drawdown_margin_pct: number;
-  gold_pct: number | null;
-  momentum_pct: number | null;
-  lowvol_pct: number | null;
 }
 
 function toNum(v: unknown): number | null {
@@ -166,23 +169,22 @@ export function resolveMarginConfig(
     psarLeverage: ov?.psarLeverage ?? toNum(mandate.psar_leverage) ?? toNum(fallback?.psar_leverage) ?? 0,
     drawdownMarginPct:
       ov?.drawdownMarginPct ?? toNum(mandate.drawdown_margin_pct) ?? toNum(fallback?.drawdown_margin_pct) ?? 0,
-    goldPct: ov?.goldPct ?? toNum(mandate.gold_pct) ?? toNum(fallback?.gold_pct),
-    momentumPct: ov?.momentumPct ?? toNum(mandate.momentum_pct) ?? toNum(fallback?.momentum_pct),
-    lowvolPct: ov?.lowvolPct ?? toNum(mandate.lowvol_pct) ?? toNum(fallback?.lowvol_pct),
   };
 }
 
 /**
  * Required-margin line items + account value for one strategy mandate.
- * Put Protection only appears when the resolved config carries all three of
- * gold_pct/momentum_pct/lowvol_pct (the QAW-split signature) -- config
- * presence stands in for Python's hardcoded strategy-name gate.
+ * Put Protection only appears when `hasPutProtectionConfig` is true -- the
+ * caller resolves this via config_catalog's equity_book leaves (same
+ * hasConfiguredLeaves check system-breakup.ts/consolidated.ts use), which
+ * stands in for Python's hardcoded strategy-name gate.
  */
 function computeRequiredLines(
   ms: MastersheetSnapshot,
   strategy: string,
   exposureTagSuffix: string,
   config: ResolvedMarginConfig,
+  hasPutProtectionConfig: boolean,
   niftyLotSize: number,
   avgPricePerQty: number,
   niftyLtp?: number,
@@ -203,8 +205,6 @@ function computeRequiredLines(
     : 0;
   lines.push({ system: "PSAR", cashComponent: psarMargin, nonCashComponent: psarMargin, cash: null });
 
-  const hasPutProtectionConfig =
-    config.goldPct !== null && config.momentumPct !== null && config.lowvolPct !== null;
   let putProtectionDebug: MarginRequirementsScope["putProtectionDebug"];
   if (hasPutProtectionConfig) {
     const momentumVal = getVal(ms, `${strategy} Momentum Stock Holdings`);
@@ -302,6 +302,14 @@ export interface MarginRequirementsResult {
   globalConfig: { niftyLotSize: number; avgPricePerQty: number };
   combined: MarginRequirementsScope;
   byStrategy: Record<string, MarginRequirementsScope>;
+  /** Problems hit resolving config_catalog for the Put Protection gate (see
+   *  ratio-resolver.ts's DiagnosticCode) -- [] in the healthy case, and in
+   *  practice always [] today: hasConfiguredLeaves is diagnostic-free by
+   *  design. Kept for shape consistency with the other cash-margin tables
+   *  (system-breakup/account-summary/page2), and so this stays true if
+   *  margin math ever reads a resolved value directly instead of just the
+   *  gate. */
+  diagnostics: Diagnostic[];
 }
 
 /**
@@ -312,8 +320,9 @@ export interface MarginRequirementsResult {
  * @param overrides - optional, request-scoped only, never persisted (POST
  *   body override of long_opt_pct/psar_multiplier/psar_leverage/
  *   drawdown_margin_pct/gold_pct/momentum_pct/lowvol_pct).
- * @param asOfDate - TEMPORARY, for verification against frozen
- *   managed_accounts_analysis Excels -- see loadMastersheet(). Remove once done.
+ * @param asOfDate - pins every mandate/mastersheet read in this response to
+ *   a historical date instead of always-latest -- see loadMastersheet().
+ *   Omit for "latest."
  * @param niftyLtpOverride - a caller-supplied NIFTY LTP, standing in for
  *   Python's live/manual Nifty ATM figure. Drives Put Protection's
  *   contractValue (= niftyLtpOverride * niftyLotSize); without it,
@@ -335,6 +344,7 @@ export async function buildMarginRequirements(
   const mandates = await prisma.client_strategy_configs.findMany({
     where: {
       qcode,
+      strategy: { not: PROP_STRATEGY },
       effective_from: { lte: referenceDate },
       OR: [{ effective_to: null }, { effective_to: { gte: referenceDate } }],
     },
@@ -347,9 +357,6 @@ export async function buildMarginRequirements(
       psar_multiplier: true,
       psar_leverage: true,
       drawdown_margin_pct: true,
-      gold_pct: true,
-      momentum_pct: true,
-      lowvol_pct: true,
     },
     orderBy: { strategy: "asc" },
   });
@@ -367,6 +374,8 @@ export async function buildMarginRequirements(
   const marginFetchOk = margin !== null;
   const niftyLotSize = globalOverrides?.niftyLotSize ?? (await getNiftyLotSize());
   const avgPricePerQty = globalOverrides?.avgPricePerQty ?? (await getPutProtectionAvgPricePerQty());
+  const catalog = await loadCatalog();
+  const diagnostics = new Diagnostics();
 
   const byStrategy: Record<string, MarginRequirementsScope> = {};
   const combinedLines = new Map<string, MarginLine>();
@@ -376,11 +385,20 @@ export async function buildMarginRequirements(
 
   for (const m of mandates as unknown as MandateRow[]) {
     const config = resolveMarginConfig(m, defaultsByStrategy.get(m.strategy), overrides);
+    // Put Protection's gate, resolved from config_catalog -- same
+    // hasConfiguredLeaves check system-breakup.ts/consolidated.ts use, not
+    // the old gold_pct/momentum_pct/lowvol_pct != null check (see this
+    // file's header comment).
+    const rawRatios = await loadResolvedRatios(m.strategy, qcode, referenceDate);
+    const ratios = withOverrides(rawRatios, overrides);
+    const hasPutProtectionConfig = hasConfiguredLeaves(catalog, "equity_book", "ideal", ratios);
+
     const { lines, accountValue, required, putProtectionDebug } = computeRequiredLines(
       ms,
       m.strategy,
       m.exposure_tag_suffix,
       config,
+      hasPutProtectionConfig,
       niftyLotSize,
       avgPricePerQty,
       niftyLtpOverride,
@@ -457,5 +475,6 @@ export async function buildMarginRequirements(
     globalConfig: { niftyLotSize, avgPricePerQty },
     combined,
     byStrategy,
+    diagnostics: diagnostics.items,
   };
 }

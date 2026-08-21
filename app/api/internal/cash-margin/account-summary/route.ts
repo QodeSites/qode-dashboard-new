@@ -6,13 +6,20 @@ import {
   computeAccountSummaryCombined,
   computeAccountSummaryForStrategy,
 } from "@/lib/cash-margin/consolidated";
+import { loadCatalog } from "@/lib/cash-margin/catalog";
+import { loadHoldings } from "@/lib/cash-margin/holdings";
+import { loadResolvedRatios, hasConfiguredLeaves, Diagnostics } from "@/lib/cash-margin/ratio-resolver";
 import { parseCashMarginBody } from "@/lib/cash-margin/request-utils";
+import { PROP_STRATEGY } from "@/lib/cash-margin/tags";
 
 /**
  * "ACCOUNT SUMMARY - Combined / {strategy}" for one client (qcode) -- Account
- * Value, Mutual Funds, Equity Stock Holdings, Gold, Low Vol, Momentum, Bond
- * Stock Holdings, Liquidcase, Cash, Holdings (MF+EQ+Bond), Cash + Liquidcase,
- * each with % of that scope's own Account Value. Combined always uses the
+ * Value, Mutual Funds, Equity Stock Holdings, Bond Stock Holdings,
+ * Liquidcase, Cash, Holdings (MF+EQ+Bond), Cash + Liquidcase (the 8 flat
+ * rows), plus Gold/Low Vol/Momentum's dynamic sub-breakdown
+ * (`equitySleeves`, walked from config_catalog -- see
+ * lib/cash-margin/consolidated.ts's AccountSummarySleeveRow and
+ * docs/cash-margin-dynamic-api-contract.md). Combined always uses the
  * no-prefix rollup (not a sum of the per-strategy legs, per
  * excess_cash_report.py) and is returned unconditionally, even for
  * single-strategy clients.
@@ -28,10 +35,9 @@ import { parseCashMarginBody } from "@/lib/cash-margin/request-utils";
  * POST /api/internal/cash-margin/account-summary
  * body: { qcode: string, asOfDate?: string }
  *
- * `asOfDate` (YYYY-MM-DD) is TEMPORARY -- for verifying against frozen
- * managed_accounts_analysis Excels by pinning the mastersheet read to a
- * historical date instead of always-latest. Remove once done (see
- * lib/cash-margin/mastersheet.ts's loadMastersheet).
+ * `asOfDate` (YYYY-MM-DD) pins the mastersheet read in this response to a
+ * historical date instead of always-latest (see
+ * lib/cash-margin/mastersheet.ts's loadMastersheet). Omit for "latest."
  */
 export const dynamic = "force-dynamic";
 
@@ -45,10 +51,14 @@ export async function POST(request: Request) {
   const qcode = data.qcode as string;
 
   try {
+    // Mandate selection must honour asOfDate -- see system-breakup/route.ts.
+    const referenceDate = asOfDate ?? new Date();
     const mandates = await prisma.client_strategy_configs.findMany({
       where: {
         qcode,
-        OR: [{ effective_to: null }, { effective_to: { gte: new Date() } }],
+        strategy: { not: PROP_STRATEGY },
+        effective_from: { lte: referenceDate },
+        OR: [{ effective_to: null }, { effective_to: { gte: referenceDate } }],
       },
       select: { account_name: true, strategy: true, exposure_tag_suffix: true },
       orderBy: { strategy: "asc" },
@@ -61,19 +71,42 @@ export async function POST(request: Request) {
       );
     }
 
-    const ms = await loadMastersheet(qcode, asOfDate);
+    const [ms, catalog, holdings] = await Promise.all([
+      loadMastersheet(qcode, asOfDate),
+      loadCatalog(),
+      loadHoldings(qcode, asOfDate),
+    ]);
+    const diagnostics = new Diagnostics();
+    const splitStrategies = new Set<string>();
 
     const byStrategy: Record<string, ReturnType<typeof computeAccountSummaryForStrategy>> = {};
     for (const m of mandates) {
+      // Same split gate as system-breakup.ts -- required here even though
+      // this route never builds targets, because console_equity_holdings
+      // has no strategy dimension: an ungated strategy would re-report
+      // another strategy's sleeve position. See consolidated.ts's
+      // buildEquitySleeves doc comment.
+      const ratios = await loadResolvedRatios(m.strategy, qcode, referenceDate);
+      const hasEquitySplit = hasConfiguredLeaves(catalog, "equity_book", "ideal", ratios);
+      if (hasEquitySplit) splitStrategies.add(m.strategy);
+
       byStrategy[m.strategy] = computeAccountSummaryForStrategy(
         ms,
         m.strategy,
         m.exposure_tag_suffix,
+        catalog,
+        holdings,
+        hasEquitySplit,
+        diagnostics,
       );
     }
     const combined = computeAccountSummaryCombined(
       ms,
       mandates.map((m) => m.strategy),
+      catalog,
+      holdings,
+      splitStrategies,
+      diagnostics,
     );
 
     return NextResponse.json({
@@ -82,6 +115,7 @@ export async function POST(request: Request) {
       strategies: mandates.map((m) => m.strategy),
       mastersheetDate: ms.date ? ms.date.toISOString().slice(0, 10) : null,
       summary: { combined, byStrategy },
+      diagnostics: diagnostics.items,
     });
   } catch (e) {
     console.error("[cash-margin/account-summary] failed:", e);

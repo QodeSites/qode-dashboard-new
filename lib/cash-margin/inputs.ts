@@ -30,18 +30,32 @@
  *    column -- strategy_defaults has no such field. It equals long_opt_pct
  *    for every tier today (see docs/cash-margin-client-dashboard-plan.md
  *    Q5) and is displayed as such, not invented.
+ *  - equityPct/cashPct/lcPct/debtPct/goldPct/momentumPct/lowvolPct come from
+ *    config_catalog (lib/cash-margin/ratio-resolver.ts), not
+ *    client_strategy_configs/strategy_defaults' flat *_pct columns --
+ *    unified onto the same source every other cash-margin table uses.
+ *    goldPct/momentumPct/lowvolPct are top-of-tree values (config_catalog's
+ *    "gold"/"momentum"/"lowvol", ratio_type "ideal") -- deeper splits under
+ *    momentum (momentum50/momidmtm) aren't surfaced in this reference table,
+ *    same reach as the old flat columns had.
  */
 import { prisma } from "@/lib/prisma";
 import { loadMastersheet, computeAccountSummary, getVal } from "./mastersheet";
 import { resolveMarginConfig, type MandateRow, type StrategyDefaultRow } from "./margin-requirements";
-import { resolveRatioConfig, type StrategyOverrides, type StrategyConfigFields } from "./config";
+import type { StrategyOverrides } from "./config";
+import { loadCatalog } from "./catalog";
+import {
+  loadResolvedRatios,
+  withOverrides,
+  resolveTarget,
+  resolveAbsoluteTarget,
+  hasConfiguredLeaves,
+  Diagnostics,
+  type Diagnostic,
+} from "./ratio-resolver";
 import { fetchNiftyLtp } from "./nifty-ltp";
 import { getNiftyLotSize, getPutProtectionAvgPricePerQty } from "./global-config";
-
-/** `MandateRow` (margin-requirements.ts) plus the ratio fields `resolveRatioConfig` needs
- *  (equity_pct/cash_pct/lc_pct/derivative_pct) -- both are optional-field subsets of the
- *  same client_strategy_configs row, so this just widens the selected columns' type. */
-type FullMandateRow = MandateRow & StrategyConfigFields;
+import { PROP_STRATEGY } from "./tags";
 
 export interface TierReferenceRow {
   strategy: string;
@@ -56,7 +70,7 @@ export interface TierReferenceRow {
   momentumPct: number | null;
   lowvolPct: number | null;
   equityPct: number;
-  derivativePct: number;
+  debtPct: number;
   /** Same as longOptPct today -- no distinct DB column, see file header. */
   putProtectionPct: number;
 }
@@ -102,6 +116,9 @@ export interface InputsPanelResult {
   byStrategy: Record<string, StrategyInputsRow>;
   combined: CombinedInputsRow;
   putProtectionCalculation: PutProtectionCalculation;
+  /** Problems hit resolving config_catalog for tierReference's ratio fields
+   *  (see ratio-resolver.ts's DiagnosticCode) -- [] in the healthy case. */
+  diagnostics: Diagnostic[];
 }
 
 function toNum(v: unknown): number {
@@ -113,14 +130,15 @@ function toNum(v: unknown): number {
  *
  * @param overrides - optional, request-scoped only, never persisted (POST
  *   body override of long_opt_pct/psar_multiplier/psar_leverage/
- *   drawdown_margin_pct/equity_pct/cash_pct/lc_pct/derivative_pct/gold_pct/
+ *   drawdown_margin_pct/equity_pct/cash_pct/lc_pct/debt_pct/gold_pct/
  *   momentum_pct/lowvol_pct -- see lib/cash-margin/config.ts). Affects BOTH
  *   tierReference and byStrategy -- tierReference is no longer a static
  *   strategy_defaults table, it's this client's own resolved config, one row
  *   per active mandate (override -> client_strategy_configs -> strategy_defaults),
  *   same chain as every other cash-margin table.
- * @param asOfDate - TEMPORARY, for verification against frozen
- *   managed_accounts_analysis Excels -- see loadMastersheet(). Remove once done.
+ * @param asOfDate - pins every mandate/mastersheet read in this response to
+ *   a historical date instead of always-latest -- see loadMastersheet().
+ *   Omit for "latest."
  * @param globalOverrides - optional, request-scoped only, never persisted --
  *   session override for niftyLotSize/avgPricePerQty, falling back to
  *   global_config when omitted. See lib/cash-margin/request-utils.ts.
@@ -135,6 +153,7 @@ export async function buildInputsPanel(
   const mandates = await prisma.client_strategy_configs.findMany({
     where: {
       qcode,
+      strategy: { not: PROP_STRATEGY },
       effective_from: { lte: referenceDate },
       OR: [{ effective_to: null }, { effective_to: { gte: referenceDate } }],
     },
@@ -147,13 +166,6 @@ export async function buildInputsPanel(
       psar_multiplier: true,
       psar_leverage: true,
       drawdown_margin_pct: true,
-      gold_pct: true,
-      momentum_pct: true,
-      lowvol_pct: true,
-      equity_pct: true,
-      cash_pct: true,
-      lc_pct: true,
-      derivative_pct: true,
     },
     orderBy: { strategy: "asc" },
   });
@@ -163,6 +175,8 @@ export async function buildInputsPanel(
   const defaultsByStrategy = new Map(allDefaults.map((d) => [d.strategy_name, d as unknown as StrategyDefaultRow]));
   const niftyLotSize = globalOverrides?.niftyLotSize ?? (await getNiftyLotSize());
   const avgPricePerQty = globalOverrides?.avgPricePerQty ?? (await getPutProtectionAvgPricePerQty());
+  const catalog = await loadCatalog();
+  const diagnostics = new Diagnostics();
 
   const ms = await loadMastersheet(qcode, asOfDate);
 
@@ -176,9 +190,28 @@ export async function buildInputsPanel(
 
   let putProtectionStrategy: string | null = null;
 
-  for (const m of mandates as unknown as FullMandateRow[]) {
+  for (const m of mandates as unknown as MandateRow[]) {
     const config = resolveMarginConfig(m, defaultsByStrategy.get(m.strategy), overrides);
-    const ratioConfig = resolveRatioConfig(m.strategy, m, defaultsByStrategy.get(m.strategy), overrides);
+    const rawRatios = await loadResolvedRatios(m.strategy, qcode, referenceDate);
+    const ratios = withOverrides(rawRatios, overrides);
+    // gold/momentum/lowvol are "self"-scale (a fraction of equity_book) --
+    // plain resolveTarget reads that directly, correctly.
+    const goldPct = resolveTarget(catalog, "gold", "ideal", ratios, diagnostics);
+    const momentumPct = resolveTarget(catalog, "momentum", "ideal", ratios, diagnostics);
+    const lowvolPct = resolveTarget(catalog, "lowvol", "ideal", ratios, diagnostics);
+    // equity_pct/debt_pct are Account-Value-scale roots -- resolveTarget
+    // already gives the right number for these two (no ancestors to chain
+    // through). cash_pct/lc_pct are NOT: they're stored relative to
+    // debt_pct (e.g. 0.3333, not 0.10), matching system-breakup.ts's own
+    // convention. resolveAbsoluteTarget(..., accountValue=1, ...)
+    // chain-multiplies back to the Account-Value-scale percentage this
+    // reference table has always shown -- plain resolveTarget here would
+    // display cash_pct as "33.33%" instead of the correct "10%" of Account
+    // Value (see docs/cash-margin-architecture.md §7.6).
+    const equityPct = resolveAbsoluteTarget(catalog, "equity_pct", "value", ratios, 1, diagnostics) ?? 0;
+    const cashPct = resolveAbsoluteTarget(catalog, "cash_pct", "value", ratios, 1, diagnostics) ?? 0;
+    const lcPct = resolveAbsoluteTarget(catalog, "lc_pct", "value", ratios, 1, diagnostics) ?? 0;
+    const debtPct = resolveAbsoluteTarget(catalog, "debt_pct", "value", ratios, 1, diagnostics) ?? 0;
 
     byStrategy[m.strategy] = {
       strategy: m.strategy,
@@ -195,13 +228,13 @@ export async function buildInputsPanel(
       longOptPct: config.longOptPct * 100,
       drawdownMarginPct: config.drawdownMarginPct * 100,
       niftyLotSize,
-      lcPct: ratioConfig.lcPct * 100,
-      cashPct: ratioConfig.cashPct * 100,
-      goldPct: ratioConfig.goldPct !== null ? ratioConfig.goldPct * 100 : null,
-      momentumPct: ratioConfig.momentumPct !== null ? ratioConfig.momentumPct * 100 : null,
-      lowvolPct: ratioConfig.lowvolPct !== null ? ratioConfig.lowvolPct * 100 : null,
-      equityPct: ratioConfig.equityPct * 100,
-      derivativePct: ratioConfig.derivativePct * 100,
+      lcPct: lcPct * 100,
+      cashPct: cashPct * 100,
+      goldPct: goldPct !== null ? goldPct * 100 : null,
+      momentumPct: momentumPct !== null ? momentumPct * 100 : null,
+      lowvolPct: lowvolPct !== null ? lowvolPct * 100 : null,
+      equityPct: equityPct * 100,
+      debtPct: debtPct * 100,
       putProtectionPct: config.longOptPct * 100,
     });
 
@@ -213,12 +246,10 @@ export async function buildInputsPanel(
     combinedLongOptCash += accountValue * config.longOptPct;
     combinedDrawdownCash += accountValue * config.drawdownMarginPct;
 
-    if (
-      !putProtectionStrategy &&
-      config.goldPct !== null &&
-      config.momentumPct !== null &&
-      config.lowvolPct !== null
-    ) {
+    // Same gate as system-breakup.ts/consolidated.ts/margin-requirements.ts's
+    // Put Protection -- resolved from config_catalog, not the old
+    // gold_pct/momentum_pct/lowvol_pct != null check.
+    if (!putProtectionStrategy && hasConfiguredLeaves(catalog, "equity_book", "ideal", ratios)) {
       putProtectionStrategy = m.strategy;
     }
   }
@@ -263,5 +294,6 @@ export async function buildInputsPanel(
     byStrategy,
     combined,
     putProtectionCalculation,
+    diagnostics: diagnostics.items,
   };
 }

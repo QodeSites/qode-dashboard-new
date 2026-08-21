@@ -17,6 +17,9 @@
 import type { MastersheetSnapshot } from "./mastersheet";
 import { getVal, computeAccountSummary } from "./mastersheet";
 import type { Tier } from "./tags";
+import type { Catalog, CatalogNode } from "./catalog";
+import type { HoldingsSnapshot } from "./holdings";
+import { resolveActual, type Diagnostics } from "./ratio-resolver";
 
 const CONSOLIDATED_TAGS = {
   zerodhaTotal: "Zerodha Total Portfolio",
@@ -26,17 +29,6 @@ const CONSOLIDATED_TAGS = {
   liquidcase: "Liquidcase Stock Holdings",
 } as const;
 const LIQUIDBEES_TAG = "Liquidbees";
-
-// QAW's Gold/Momentum/Low Vol ETF legs live only under strategy-prefixed tags
-// (e.g. "QAW++ Gold Stock Holdings") -- ported from qaw_report.py's QAW_SUBS.
-// They are NOT part of the no-prefix "Equity Stock Holdings" rollup CONSOLIDATED_TAGS
-// reads, so summing them across a client's active strategies is additive
-// information only -- never subtracted back out of equityStock/holdings.
-const QAW_SUB_TAG_SUFFIXES = {
-  gold: "Gold Stock Holdings",
-  momentum: "Momentum Stock Holdings",
-  lowVol: "Low Vol Stock Holdings",
-} as const;
 
 export interface ConsolidatedSummary {
   accountValue: number;
@@ -148,13 +140,35 @@ export interface AccountSummaryLine {
   pct: number;
 }
 
+/**
+ * Gold/Low Vol/Momentum's dynamic sub-breakdown, replacing the old fixed
+ * 3-row shape. Recursive: Momentum's `children` are momentum50/momidmtm
+ * when config_catalog has them configured, [] otherwise -- a split added to
+ * the catalog (or removed) changes this shape with no code change here. See
+ * lib/cash-margin/system-breakup.ts's SystemBreakupRow for the sibling type
+ * (this one carries no target/diff -- Account Summary is actuals-only).
+ */
+export interface AccountSummarySleeveRow {
+  /** Stable catalog id -- use for logic/keys, never `label`. */
+  configKey: string;
+  label: string;
+  /** 0 = direct child of equity_book, 1 = nested under that (e.g. momentum's children). */
+  depth: number;
+  /** null when the client has no data source at all for this leg (see
+   *  ratio-resolver.ts's NO_HOLDINGS_DATA) -- render "--", never Rs 0. A
+   *  genuine zero position (catalog symbol absent from holdings) is a real
+   *  0, not null -- see UNMATCHED_SYMBOL. */
+  value: number | null;
+  /** % of THIS scope's own Account Value (same convention as every
+   *  AccountSummaryLine here) -- null only when value is null. */
+  pct: number | null;
+  children: AccountSummarySleeveRow[];
+}
+
 export interface AccountSummaryCombined {
   accountValue: number;
   mutualFunds: number;
   equityStock: number;
-  gold: number;
-  lowVol: number;
-  momentum: number;
   bondStock: number;
   liquidcase: number;
   cash: number;
@@ -165,103 +179,225 @@ export interface AccountSummaryCombined {
    * explicitly subtracts them back out. */
   holdings: number;
   cashPlusLiquidcase: number;
+  /** Account Value / Mutual Funds / Equity Stock Holdings / Bond Stock
+   *  Holdings / Liquidcase / Cash / Holdings / Cash + Liquidcase -- the 8
+   *  flat, always-present rows. Unchanged shape from before this file's
+   *  catalog rewrite. */
   rows: AccountSummaryLine[];
+  /** Gold/Low Vol/Momentum, dynamically walked from config_catalog. See
+   *  AccountSummarySleeveRow. Unconditionally attempted for every strategy
+   *  (unlike system-breakup.ts's hasEquitySplit gate) -- these are actuals,
+   *  not targets, so there's nothing to gate on; a non-QAW strategy simply
+   *  resolves 0/null here exactly as its old hardcoded tag reads did. */
+  equitySleeves: AccountSummarySleeveRow[];
 }
 
 /**
- * Shared row-builder for the "ACCOUNT SUMMARY" table -- same 11 rows whether
- * the scope is Combined (no-prefix rollup) or a single strategy (prefixed
- * tags). Pure -- no DB access. `%` is always of THIS scope's own Account
- * Value, including for gold/lowVol/momentum (confirmed against the pasted
- * target table, not the QAW-equity-book denominator the plan doc's reference
- * sheet uses for those three rows).
+ * Shared row-builder for the "ACCOUNT SUMMARY" table's 8 flat rows -- same
+ * whether the scope is Combined (no-prefix rollup) or a single strategy
+ * (prefixed tags). Pure -- no DB access.
  */
-function buildAccountSummaryRows(
-  summary: ConsolidatedSummary,
-  gold: number,
-  lowVol: number,
-  momentum: number,
-): AccountSummaryCombined {
+function buildAccountSummaryRows(summary: ConsolidatedSummary): AccountSummaryLine[] {
   const holdings = summary.mutualFunds + summary.equityStock + summary.bondStock;
   const cashPlusLiquidcase = summary.cash + summary.liquidcase;
   const av = summary.accountValue;
   const pct = (part: number) => (av ? (part / av) * 100 : 0);
 
-  const rows: AccountSummaryLine[] = [
+  return [
     { label: "Account Value", value: av, pct: 100 },
     { label: "Mutual Funds", value: summary.mutualFunds, pct: pct(summary.mutualFunds) },
     { label: "Equity Stock Holdings", value: summary.equityStock, pct: pct(summary.equityStock) },
-    { label: "Gold", value: gold, pct: pct(gold) },
-    { label: "Low Vol", value: lowVol, pct: pct(lowVol) },
-    { label: "Momentum", value: momentum, pct: pct(momentum) },
     { label: "Bond Stock Holdings", value: summary.bondStock, pct: pct(summary.bondStock) },
     { label: "Liquidcase", value: summary.liquidcase, pct: pct(summary.liquidcase) },
     { label: "Cash", value: summary.cash, pct: pct(summary.cash) },
     { label: "Holdings", value: holdings, pct: pct(holdings) },
     { label: "Cash + Liquidcase", value: cashPlusLiquidcase, pct: pct(cashPlusLiquidcase) },
   ];
+}
 
+/**
+ * Recursively builds one Gold/Low Vol/Momentum sub-row (and its children)
+ * by walking config_catalog under equity_book. Unlike
+ * system-breakup.ts's buildRow, this never checks a ratio config_key for
+ * "is this configured" -- Account Summary shows actuals only, and an actual
+ * value is meaningful (0, or a genuine position) regardless of whether a
+ * target ratio exists for it. A non-QAW strategy's gold/lowvol/momentum
+ * legs simply resolve their mastersheet/holdings sources as usual, which
+ * are 0/absent for it -- identical in effect to the old hardcoded tag reads
+ * this replaces.
+ */
+function buildSleeveRow(
+  catalog: Catalog,
+  node: CatalogNode,
+  depth: number,
+  holdings: HoldingsSnapshot,
+  ms: MastersheetSnapshot,
+  strategy: string,
+  accountValue: number,
+  diagnostics: Diagnostics,
+): AccountSummarySleeveRow {
+  const value = resolveActual(catalog, node.configKey, holdings, ms, strategy, diagnostics);
+  const pct = value === null || !accountValue ? (value === null ? null : 0) : (value / accountValue) * 100;
   return {
-    accountValue: av,
-    mutualFunds: summary.mutualFunds,
-    equityStock: summary.equityStock,
-    gold,
-    lowVol,
-    momentum,
-    bondStock: summary.bondStock,
-    liquidcase: summary.liquidcase,
-    cash: summary.cash,
-    holdings,
-    cashPlusLiquidcase,
-    rows,
+    configKey: node.configKey,
+    label: node.label,
+    depth,
+    value,
+    pct,
+    children: node.children.map((c) =>
+      buildSleeveRow(catalog, c, depth + 1, holdings, ms, strategy, accountValue, diagnostics),
+    ),
   };
 }
 
-function sumQawSubTags(
+/**
+ * @param hasEquitySplit - gates whether this STRATEGY's sleeves are resolved
+ *   at all. Required because console_equity_holdings has NO strategy column
+ *   (see holdings.ts) -- it returns the client's one true gold/momentum/lowvol
+ *   position no matter which strategy asks, so resolving it unconditionally
+ *   for every active strategy would double-count a leg on any client running
+ *   a split strategy alongside a non-split one. Gating on the same
+ *   hasEquitySplit check system-breakup.ts uses (any equity_book leaf
+ *   resolved under "ideal" for THIS strategy) means only the strategy that
+ *   actually owns the split contributes -- others contribute nothing. See
+ *   docs/cash-margin-architecture.md §7.4 for the incident this prevents.
+ */
+function buildEquitySleeves(
+  catalog: Catalog,
+  holdings: HoldingsSnapshot,
   ms: MastersheetSnapshot,
-  strategies: string[],
-): { gold: number; momentum: number; lowVol: number } {
-  let gold = 0;
-  let momentum = 0;
-  let lowVol = 0;
-  for (const strategy of strategies) {
-    gold += getVal(ms, `${strategy} ${QAW_SUB_TAG_SUFFIXES.gold}`);
-    momentum += getVal(ms, `${strategy} ${QAW_SUB_TAG_SUFFIXES.momentum}`);
-    lowVol += getVal(ms, `${strategy} ${QAW_SUB_TAG_SUFFIXES.lowVol}`);
+  strategy: string,
+  accountValue: number,
+  hasEquitySplit: boolean,
+  diagnostics: Diagnostics,
+): AccountSummarySleeveRow[] {
+  if (!hasEquitySplit) return [];
+  const equityBook = catalog.byKey.get("equity_book");
+  if (!equityBook) return [];
+  return equityBook.children.map((c) =>
+    buildSleeveRow(catalog, c, 0, holdings, ms, strategy, accountValue, diagnostics),
+  );
+}
+
+/** Sums matching configKeys across multiple strategies' sleeve trees into
+ *  one row per distinct key -- same by-key approach as
+ *  system-breakup.ts's sumRowsByKey, for the same reason: robust to
+ *  strategies having different resolved shapes.
+ *
+ *  NOTE: console_equity_holdings carries no strategy dimension (one row per
+ *  qcode+date+symbol -- see holdings.ts's docstring), so summing per-strategy
+ *  resolveActual() results for the SAME qcode double-counts if more than one
+ *  active strategy has the equity split configured. Accepted today because
+ *  no client currently runs two concurrently-active split strategies (same
+ *  caveat holdings.ts already documents) -- not newly introduced by this
+ *  function, and system-breakup.ts's Combined carries the identical
+ *  assumption. */
+function sumSleevesByKey(rowSets: AccountSummarySleeveRow[][], combinedAv: number): AccountSummarySleeveRow[] {
+  const byKey = new Map<string, { label: string; depth: number; value: number | null; childSets: AccountSummarySleeveRow[][] }>();
+  const order: string[] = [];
+
+  for (const rows of rowSets) {
+    for (const row of rows) {
+      if (!byKey.has(row.configKey)) {
+        byKey.set(row.configKey, { label: row.label, depth: row.depth, value: null, childSets: [] });
+        order.push(row.configKey);
+      }
+      const agg = byKey.get(row.configKey)!;
+      if (row.value !== null) agg.value = (agg.value ?? 0) + row.value;
+      if (row.children.length > 0) agg.childSets.push(row.children);
+    }
   }
-  return { gold, momentum, lowVol };
+
+  return order.map((configKey) => {
+    const agg = byKey.get(configKey)!;
+    return {
+      configKey,
+      label: agg.label,
+      depth: agg.depth,
+      value: agg.value,
+      pct: agg.value !== null && combinedAv ? (agg.value / combinedAv) * 100 : agg.value === null ? null : 0,
+      children: agg.childSets.length ? sumSleevesByKey(agg.childSets, combinedAv) : [],
+    };
+  });
 }
 
 /**
  * "ACCOUNT SUMMARY - Combined" -- one client's whole-account breakdown across
  * all of its active strategies. accountValue/mutualFunds/equityStock/
- * bondStock/liquidcase/cash come from the no-prefix rollup (computeConsolidated),
- * matching what excess_cash_report.py's compute_consolidated() actually reads
- * (not a sum of the per-strategy legs). Gold/Low Vol/Momentum are summed
- * separately across each active strategy's prefixed tags
- * (QAW_SUB_TAG_SUFFIXES), since they don't exist in the no-prefix rollup.
+ * bondStock/liquidcase/cash come from the no-prefix rollup
+ * (computeConsolidated), matching what excess_cash_report.py's
+ * compute_consolidated() actually reads (not a sum of the per-strategy
+ * legs). Gold/Low Vol/Momentum are resolved via config_catalog +
+ * console_equity_holdings/mastersheet, ONLY for strategies in
+ * `splitStrategies`, and summed by key -- see buildEquitySleeves' doc
+ * comment for why the gate is required (console_equity_holdings has no
+ * strategy dimension; an ungated strategy would re-report another
+ * strategy's position and double it here).
+ *
+ * @param splitStrategies - which of `activeStrategies` have the equity
+ *   split configured (same hasEquitySplit check as
+ *   system-breakup.ts/computeSystemBreakupForStrategy) -- the caller
+ *   already computes this while building System Breakup for the same
+ *   mandates, so it's passed in rather than re-derived here.
  */
 export function computeAccountSummaryCombined(
   ms: MastersheetSnapshot,
   activeStrategies: string[],
+  catalog: Catalog,
+  holdings: HoldingsSnapshot,
+  splitStrategies: ReadonlySet<string>,
+  diagnostics: Diagnostics,
 ): AccountSummaryCombined {
   const summary = computeConsolidated(ms);
-  const { gold, momentum, lowVol } = sumQawSubTags(ms, activeStrategies);
-  return buildAccountSummaryRows(summary, gold, lowVol, momentum);
+  const rows = buildAccountSummaryRows(summary);
+  const sleeveSets = activeStrategies.map((strategy) =>
+    buildEquitySleeves(catalog, holdings, ms, strategy, summary.accountValue, splitStrategies.has(strategy), diagnostics),
+  );
+  const equitySleeves = sumSleevesByKey(sleeveSets, summary.accountValue);
+
+  return {
+    accountValue: summary.accountValue,
+    mutualFunds: summary.mutualFunds,
+    equityStock: summary.equityStock,
+    bondStock: summary.bondStock,
+    liquidcase: summary.liquidcase,
+    cash: summary.cash,
+    holdings: summary.mutualFunds + summary.equityStock + summary.bondStock,
+    cashPlusLiquidcase: summary.cash + summary.liquidcase,
+    rows,
+    equitySleeves,
+  };
 }
 
 /**
  * "ACCOUNT SUMMARY" for a single active strategy (e.g. QYE++ or QAW++) --
  * prefixed tags throughout (mastersheet.ts's computeAccountSummary), plus
- * that same strategy's own Gold/Low Vol/Momentum legs (₹0 for non-QAW
- * strategies, since those tags simply won't exist for them).
+ * that same strategy's own Gold/Low Vol/Momentum legs via config_catalog,
+ * gated by `hasEquitySplit` -- see buildEquitySleeves' doc comment.
  */
 export function computeAccountSummaryForStrategy(
   ms: MastersheetSnapshot,
   strategy: string,
   exposureTagSuffix: string,
+  catalog: Catalog,
+  holdings: HoldingsSnapshot,
+  hasEquitySplit: boolean,
+  diagnostics: Diagnostics,
 ): AccountSummaryCombined {
   const summary = computeAccountSummary(ms, strategy, exposureTagSuffix);
-  const { gold, momentum, lowVol } = sumQawSubTags(ms, [strategy]);
-  return buildAccountSummaryRows(summary, gold, lowVol, momentum);
+  const rows = buildAccountSummaryRows(summary);
+  const equitySleeves = buildEquitySleeves(catalog, holdings, ms, strategy, summary.accountValue, hasEquitySplit, diagnostics);
+
+  return {
+    accountValue: summary.accountValue,
+    mutualFunds: summary.mutualFunds,
+    equityStock: summary.equityStock,
+    bondStock: summary.bondStock,
+    liquidcase: summary.liquidcase,
+    cash: summary.cash,
+    holdings: summary.mutualFunds + summary.equityStock + summary.bondStock,
+    cashPlusLiquidcase: summary.cash + summary.liquidcase,
+    rows,
+    equitySleeves,
+  };
 }
