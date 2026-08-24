@@ -139,7 +139,9 @@ export function AdminStats({
                     key={acc.name}
                     className="flex justify-between border-b pb-2 text-sm"
                   >
-                    <span>{acc.name}</span>
+                    <span className="truncate max-w-[300px]" title={acc.name}>
+                      {acc.name}
+                    </span>
                     <span className="font-medium">
                       {formatInr(acc.aum)}
                     </span>
