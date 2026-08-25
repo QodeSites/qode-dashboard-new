@@ -1,14 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import YahooFinance from "yahoo-finance2";
 
-// Types
-
 export interface NavPoint {
   date: Date;
   nav: number;
   prev_nav: number | null;
-  drawdown: number; // stored as % (e.g. -4.19)
-  pnl: number; // daily ₹
+  drawdown: number;
+  pnl: number;
   portfolio_value: number;
 }
 
@@ -66,14 +64,11 @@ export interface BenchmarkResult {
   series: { date: string; nav: number; drawdown: number }[];
 }
 
-// DB
-
-// Fetch summary (non-numbered) tags filtered by strategy or combined view
 export async function fetchTagData(
   qcode: string,
-  strategy: string, // strategy name e.g. "QYE++" or "combined"
-  allPrefixes: string[], // all known strategy prefixes for this client
-  asOf?: Date, // optional cutoff — omit for latest available
+  strategy: string,
+  allPrefixes: string[],
+  asOf?: Date,
 ): Promise<Record<string, NavPoint[]>> {
   let rows: any[];
 
@@ -139,8 +134,6 @@ function groupRows(rows: any[]): Record<string, NavPoint[]> {
   return grouped;
 }
 
-// Math helpers
-
 const MS = 1000 * 60 * 60 * 24;
 
 export function round(v: number | null | undefined, d: number): number | null {
@@ -158,19 +151,15 @@ function std(a: number[]): number {
   return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / (a.length - 1));
 }
 
-// Core metrics
-
 export function calcSinceInception(nav: NavPoint[]): number | null {
   if (nav.length < 2) return null;
   const days =
     (nav[nav.length - 1].date.getTime() - nav[0].date.getTime()) / MS;
-  // true inception has no prior day; windowed start uses nav[0].prev_nav as base
   const baseNav =
     nav[0].prev_nav != null && nav[0].prev_nav > 0 ? nav[0].prev_nav : 100;
   const startNav = nav[0].nav;
   const endNav = nav[nav.length - 1].nav;
   if (endNav <= 0 || startNav <= 0 || days <= 0) return null;
-  // <365 days: simple return from baseNav; >=365: CAGR using actual first NAV
   return round(
     days < 365 ? endNav / baseNav - 1 : (endNav / startNav) ** (365 / days) - 1,
     4,
@@ -190,8 +179,6 @@ export function calcCurrentDrawdown(nav: NavPoint[]): number | null {
 export function calcSiPnl(nav: NavPoint[]): number {
   return parseFloat(nav.reduce((s, p) => s + p.pnl, 0).toFixed(2));
 }
-
-// ── Returns ─────────────────────────────────────────────────────────────────
 
 const MONTHS = [
   "January",
@@ -299,8 +286,6 @@ export function calcYearlyReturns(monthly: MonthlyReturn[]): YearlyReturn[] {
     .sort((a, b) => a.year - b.year);
 }
 
-// ── Ratios ─────────────────────────────────────────────────────────────────
-
 const EMPTY_RATIOS: Ratios = {
   sharpe: null,
   sortino: null,
@@ -369,8 +354,6 @@ export function calcRatios(
   };
 }
 
-// ── Build full tag metrics object ───────────────────────────────────────────
-
 export function buildTagMetrics(nav: NavPoint[], rfr: number): TagMetrics {
   const monthly = calcMonthlyReturns(nav);
   const quarterly = calcQuarterlyReturns(monthly);
@@ -394,12 +377,9 @@ export function buildTagMetrics(nav: NavPoint[], rfr: number): TagMetrics {
   };
 }
 
-// ── Nifty 50 Benchmark ──────────────────────────────────────────────────────
-
 const NIFTY_URL =
   "https://qode360-backend.qodeinvest.com/api/v1/returns/indices/?downloadNav=true";
 
-// raw price fetch only, shared across clients instead of one call each
 async function fetchNiftyRawSeries(
   startDate: Date,
   endDate: Date,
@@ -423,7 +403,6 @@ async function fetchNiftyRawSeries(
   return Array.isArray(raw) && raw.length > 0 ? raw : null;
 }
 
-// pure — slices metrics for one window from an already-fetched raw series
 function computeBenchmarkMetrics(
   raw: { date: string; nav: number }[],
   startDate: Date,
@@ -432,7 +411,6 @@ function computeBenchmarkMetrics(
   const startStr = startDate.toISOString().split("T")[0];
   const endStr = endDate.toISOString().split("T")[0];
 
-  // Compare date strings directly — no timezone ambiguity
   const earlier = raw.filter((p) => p.date < startStr);
   if (earlier.length === 0) return null;
   const ref = earlier[earlier.length - 1];
@@ -483,14 +461,11 @@ export async function fetchBenchmark(
   }
 }
 
-// ── Portfolio Summary ────────────────────────────────────────────────────────
-
 export interface AumPoint {
   date: string;
   aum: number;
 }
 
-// group by qcode for investor-level rollups, by strategy for strategy-level ones
 export interface InvestorAum {
   qcode: string;
   account_name: string;
@@ -518,7 +493,6 @@ interface StrategyPair {
   account_name: string;
   strategy: string;
   tag: string;
-  // split overrides — null means "use strategy_defaults for this field"
   equity_pct: number | null;
   debt_pct: number | null;
   lc_pct: number | null;
@@ -546,7 +520,6 @@ function toNum(v: unknown): number | null {
   return v != null ? Number(v) : null;
 }
 
-// one row per (qcode, strategy), latest revision wins; suffixField picks exposure vs profit
 async function fetchStrategyPairs(
   suffixField: "exposure_tag_suffix" | "profit_tag_suffix",
 ): Promise<StrategyPair[]> {
@@ -583,7 +556,6 @@ async function fetchStrategyPairs(
   return [...map.values()];
 }
 
-// carries values forward per series until each one's `until` date, so lapsed strategies drop to 0
 function mergeFfillSum(
   seriesList: { series: SeriesPoint[]; until: string | null }[],
   dates: string[],
@@ -607,14 +579,12 @@ function mergeFfillSum(
   return out;
 }
 
-// drop the trailing zero run once a strategy has no active clients left
 function trimTrailingZeros(series: AumPoint[]): AumPoint[] {
   let end = series.length;
   while (end > 0 && series[end - 1].aum === 0) end--;
   return series.slice(0, end);
 }
 
-// drop the leading zero run before a strategy's first real client
 function trimLeadingZeros(series: AumPoint[]): AumPoint[] {
   let start = 0;
   while (start < series.length && series[start].aum === 0) start++;
@@ -645,7 +615,6 @@ function computeMom(
   };
 }
 
-// shared "is this strategy still active" check — same rule everywhere it's used
 function isActive(until: string | null, today: string): boolean {
   return !until || until >= today;
 }
@@ -663,7 +632,6 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
     };
   }
 
-  // single batched query — paired via unnest, no N+1
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `SELECT b.qcode, b.system_tag, b.date, b.portfolio_value
      FROM bifurcated_master_sheet_test b
@@ -696,7 +664,7 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
 
   for (const pair of pairs) {
     const series = seriesMap.get(`${pair.qcode}|${pair.tag}`);
-    if (!series || series.length === 0) continue; // no data — nothing to report
+    if (!series || series.length === 0) continue;
 
     investors.push({
       qcode: pair.qcode,
@@ -714,22 +682,19 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
     strategySeries.get(pair.strategy)!.push(entry);
   }
 
-  // shared axis so a lapsed strategy resolves to 0, not a frozen stale value
   const dateSet = new Set<string>();
   for (const { series } of allSeries)
     for (const p of series) dateSet.add(p.date);
   const dates = [...dateSet].sort();
 
   const activeInvestors = investors.filter((inv) => isActive(inv.until, today));
-  const activeClients = new Set(activeInvestors.map((inv) => inv.qcode)); // dedupe multi-strategy clients
+  const activeClients = new Set(activeInvestors.map((inv) => inv.qcode));
   const activeStrategies = new Set(activeInvestors.map((inv) => inv.strategy));
 
-  // per-series cutoff is now baked in, so this is accurate for any date — mom included
   const aum_daily = mergeFfillSum(allSeries, dates);
   const strategy_aum_daily: Record<string, AumPoint[]> = {};
   for (const [strategy, list] of strategySeries) {
-    const series = trimLeadingZeros(mergeFfillSum(list, dates)); // no padding before its own inception
-    // fully-lapsed strategies don't need the trailing zero repeat out to today
+    const series = trimLeadingZeros(mergeFfillSum(list, dates));
     strategy_aum_daily[strategy] = activeStrategies.has(strategy)
       ? series
       : trimTrailingZeros(series);
@@ -745,7 +710,6 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
   };
 }
 
-// resolves payload override -> global_config, shared by every route needing rfr
 export async function resolveRiskFreeRate(
   payloadValue?: number | null,
 ): Promise<number | null> {
@@ -755,8 +719,6 @@ export async function resolveRiskFreeRate(
   });
   return cfg ? parseFloat(cfg.value) : null;
 }
-
-// ── Strategy-wise Client Breakup ─────────────────────────────────────────────
 
 export interface StrategyBreakupRow {
   qcode: string;
@@ -780,18 +742,16 @@ export interface StrategyBreakupRow {
   end_date: string | null;
 }
 
-// top-level query window — distinct from each row's own effective_to
 export interface StrategyBreakupResult {
   start_date: string | null;
   end_date: string;
   clients: StrategyBreakupRow[];
 }
 
-// batched nav/prev_nav/drawdown/pnl fetch for any (qcode, tag) list, one round trip
 async function fetchBulkNavSeries(
   pairs: { qcode: string; tag: string }[],
-  end?: Date, // optional upper bound — omit for latest available
-  start?: Date, // optional lower bound — omit for full history
+  end?: Date,
+  start?: Date,
 ): Promise<Map<string, NavPoint[]>> {
   const params: any[] = [pairs.map((p) => p.qcode), pairs.map((p) => p.tag)];
   let dateClause = "";
@@ -824,25 +784,23 @@ async function fetchBulkNavSeries(
       prev_nav: row.prev_nav != null ? Number(row.prev_nav) : null,
       drawdown: Number(row.drawdown) || 0,
       pnl: Number(row.pnl) || 0,
-      portfolio_value: 0, // unused for these tabs' metrics
+      portfolio_value: 0,
     });
   }
   return seriesMap;
 }
 
-// parses optional "YYYY-MM-DD" — undefined if omitted, null if invalid
 export function parseOptionalDate(input?: string): Date | null | undefined {
   if (!input) return undefined;
   const d = new Date(input);
   return isNaN(d.getTime()) ? null : d;
 }
 
-// keyed by "YYYY-MM" so portfolio/benchmark align by calendar month, not position
 function toMonthlyReturnMap(
   series: { date: string; nav: number }[],
 ): Map<string, number> {
   const monthEnd = new Map<string, number>();
-  for (const p of series) monthEnd.set(p.date.slice(0, 7), p.nav); // rows are ascending, last write wins
+  for (const p of series) monthEnd.set(p.date.slice(0, 7), p.nav);
   const keys = [...monthEnd.keys()].sort();
 
   const out = new Map<string, number>();
@@ -854,7 +812,6 @@ function toMonthlyReturnMap(
   return out;
 }
 
-// intersect portfolio + benchmark monthly returns on shared calendar-month keys
 function alignMonthlyReturns(
   portfolioMonthly: MonthlyReturn[],
   benchmarkMonthly: Map<string, number>,
@@ -872,7 +829,6 @@ function alignMonthlyReturns(
   return { port, bm };
 }
 
-// sample covariance (n-1), matching the existing std() convention in this file
 function covariance(a: number[], b: number[]): number {
   if (a.length < 2) return 0;
   const ma = mean(a);
@@ -887,7 +843,6 @@ export interface CaptureRatios {
   downside_capture: number | null;
 }
 
-// monthly upside/downside capture vs benchmark — port/bm must already be aligned
 export function calcCaptureRatios(port: number[], bm: number[]): CaptureRatios {
   const empty: CaptureRatios = { upside_capture: null, downside_capture: null };
   if (port.length < 3 || bm.length !== port.length) return empty;
@@ -924,7 +879,6 @@ export interface ExtraRatios {
   beta: number | null;
 }
 
-// benchmark-relative ratios, monthly basis — Capture Ratios has no daily equivalent
 export function calcExtraRatios(port: number[], bm: number[]): ExtraRatios {
   const empty: ExtraRatios = {
     tracking_error: null,
@@ -978,7 +932,6 @@ export async function computeStrategyBreakup(
     start,
   );
 
-  // one shared date span covers every client — Nifty gets fetched exactly once
   let minStart: Date | null = null;
   let maxEnd: Date | null = null;
   for (const series of seriesMap.values()) {
@@ -993,20 +946,19 @@ export async function computeStrategyBreakup(
     try {
       niftyRaw = await fetchNiftyRawSeries(minStart, maxEnd);
     } catch {
-      niftyRaw = null; // benchmark-relative columns fall back to null, rest of the row still returns
+      niftyRaw = null;
     }
   }
 
   const rows: StrategyBreakupRow[] = [];
   for (const pair of pairs) {
     const nav = seriesMap.get(`${pair.qcode}|${pair.tag}`);
-    if (!nav || nav.length === 0) continue; // no data — nothing to report
+    if (!nav || nav.length === 0) continue;
 
     const monthly = calcMonthlyReturns(nav);
     const clientStart = nav[0].date;
     const clientEnd = nav[nav.length - 1].date;
 
-    // slice the shared raw series for this client's own window — no extra fetch
     const bmMetrics = niftyRaw
       ? computeBenchmarkMetrics(niftyRaw, clientStart, clientEnd)
       : null;
@@ -1031,7 +983,6 @@ export async function computeStrategyBreakup(
       beta = extra.beta;
     }
 
-    // Sharpe/Sortino/Calmar/Vol reuse calcRatios, consistent with Client Dashboards
     const ratios = calcRatios(nav, monthly, rfr);
 
     rows.push({
@@ -1060,9 +1011,6 @@ export async function computeStrategyBreakup(
   return { start_date: startDate, end_date: endDate, clients: rows };
 }
 
-// ── Account Value Breakup ────────────────────────────────────────────────────
-
-// fixed tag suffixes — bifurcation output, not a per-client config
 const COMPONENT_TAGS = [
   "Mutual Funds",
   "Equity Stock Holdings",
@@ -1132,7 +1080,6 @@ export interface SplitConfig {
   liquidcase_pct_gate: number | null;
 }
 
-// client override (already on the pair) → strategy_defaults, per field
 async function resolveSplitConfigs(
   pairs: StrategyPair[],
 ): Promise<Map<string, SplitConfig>> {
@@ -1165,7 +1112,6 @@ async function resolveSplitConfigs(
   return result;
 }
 
-// DISTINCT ON — snapshot only, no history needed
 async function fetchLatestTagValues(
   pairs: StrategyPair[],
 ): Promise<Map<string, number>> {
@@ -1230,7 +1176,6 @@ export async function computeAccountValueBreakup(
       gold_pct: override.gold_pct ?? base.gold_pct,
       lowvol_pct: override.lowvol_pct ?? base.lowvol_pct,
       momentum_pct: override.momentum_pct ?? base.momentum_pct,
-      // added when SplitConfig grew for Withdrawal/Deploy — always pass through
       psar_leverage: base.psar_leverage,
       psar_multiplier: base.psar_multiplier,
       long_opt_pct: base.long_opt_pct,
@@ -1247,7 +1192,7 @@ export async function computeAccountValueBreakup(
 
   for (const pair of pairs) {
     const total = valueMap.get(`${pair.qcode}|${pair.tag}`) ?? 0;
-    if (total === 0) continue; // no data for this strategy — nothing to report
+    if (total === 0) continue;
 
     const split = splitMap.get(`${pair.qcode}|${pair.strategy}`)!;
 
@@ -1294,7 +1239,6 @@ export async function computeAccountValueBreakup(
         split.cash_pct != null ? round(split.cash_pct - cash_pct, 4) : null,
     });
 
-    // gated on resolved config, never a strategy-name check
     if (
       split.gold_pct == null ||
       split.lowvol_pct == null ||
@@ -1312,7 +1256,7 @@ export async function computeAccountValueBreakup(
       valueMap.get(`${pair.qcode}|${pair.strategy} Momentum Stock Holdings`) ??
       0;
     const legSum = gold + lowvol + momentum;
-    const eqBk = legSum > 0 ? legSum : equity_book; // fall back to Section 1's figure if legs are missing
+    const eqBk = legSum > 0 ? legSum : equity_book;
 
     const gold_pct = eqBk > 0 ? gold / eqBk : null;
     const lowvol_pct = eqBk > 0 ? lowvol / eqBk : null;
@@ -1343,21 +1287,18 @@ export async function computeAccountValueBreakup(
   return { accounts, equity_breakup };
 }
 
-// ── Sub-Strategy Performance ─────────────────────────────────────────────────
-
 interface SubStrategySectionDef {
   label: string;
-  tag: string; // flat rollup tag suffix — pre-aggregated upstream, confirmed against real data
+  tag: string;
   existsField:
     | "long_opt_pct"
     | "psar_leverage"
     | "gold_pct"
     | "lowvol_pct"
     | "momentum_pct";
-  tier: 1 | 2 | null; // required psar_multiplier value, or null if the section has no tier split
+  tier: 1 | 2 | null;
 }
 
-// no strategy names anywhere — section membership is entirely config-driven
 const SUB_STRATEGY_SECTIONS: SubStrategySectionDef[] = [
   {
     label: "Long Options (1%)",
@@ -1435,7 +1376,6 @@ export async function computeSubStrategyPerformance(
 
   const splitMap = await resolveSplitConfigs(pairs);
 
-  // build every (qcode, tag) needed once, so NAV fetch is a single batched round trip
   const queries: { qcode: string; tag: string }[] = [];
   for (const pair of pairs) {
     const split = splitMap.get(`${pair.qcode}|${pair.strategy}`)!;
@@ -1456,7 +1396,7 @@ export async function computeSubStrategyPerformance(
       if (sec.tier != null && split.psar_multiplier !== sec.tier) continue;
 
       const nav = seriesMap.get(`${pair.qcode}|${pair.strategy} ${sec.tag}`);
-      if (!nav || nav.length === 0) continue; // config says it should exist, data doesn't — nothing to report
+      if (!nav || nav.length === 0) continue;
 
       const monthly = calcMonthlyReturns(nav);
       rows.push({
@@ -1473,8 +1413,6 @@ export async function computeSubStrategyPerformance(
   return { start_date: startDate, end_date: endDate, rows };
 }
 
-// ── Sub-Strategy Daily PnL (export-only) ─────────────────────────────────────
-
 export interface DailyPnlSelection {
   qcode: string;
   strategy: string;
@@ -1482,7 +1420,7 @@ export interface DailyPnlSelection {
 
 export interface DailyPnlPoint {
   date: string;
-  return_pct: number | null; // null on a client's first data point — no prev_nav to ratio against
+  return_pct: number | null;
   pnl_inr: number;
 }
 
@@ -1494,7 +1432,6 @@ export interface DailyPnlSeries {
   points: DailyPnlPoint[];
 }
 
-// per-day nav ratio — same formula calcMonthlyReturns chains across a month
 function calcDailyReturns(nav: NavPoint[]): DailyPnlPoint[] {
   return nav.map((p) => ({
     date: p.date.toISOString().split("T")[0],
@@ -1520,7 +1457,6 @@ export async function computeSubStrategyDailyPnl(
   const allPairs = await fetchStrategyPairs("profit_tag_suffix");
   const pairMap = new Map(allPairs.map((p) => [`${p.qcode}|${p.strategy}`, p]));
 
-  // dedupe selections before the unnest join, same fix as computeCompare
   const uniqueKeys = new Set(selections.map((s) => `${s.qcode}|${s.strategy}`));
   const pairs = [...uniqueKeys]
     .map((k) => pairMap.get(k))
@@ -1548,7 +1484,7 @@ export async function computeSubStrategyDailyPnl(
   const result: DailyPnlSeries[] = [];
   for (const { pair, sec } of combos) {
     const nav = seriesMap.get(`${pair.qcode}|${pair.strategy} ${sec.tag}`);
-    if (!nav || nav.length === 0) continue; // config says it should exist, data doesn't — nothing to report
+    if (!nav || nav.length === 0) continue;
 
     result.push({
       qcode: pair.qcode,
@@ -1560,8 +1496,6 @@ export async function computeSubStrategyDailyPnl(
   }
   return result;
 }
-
-// ── Strategy-wise Monthly Returns ────────────────────────────────────────────
 
 export interface StrategyMonthlyRow {
   qcode: string;
@@ -1584,7 +1518,7 @@ export async function computeStrategyMonthlyReturns(): Promise<
   const rows: StrategyMonthlyRow[] = [];
   for (const pair of pairs) {
     const nav = seriesMap.get(`${pair.qcode}|${pair.tag}`);
-    if (!nav || nav.length === 0) continue; // no data — nothing to report
+    if (!nav || nav.length === 0) continue;
 
     const monthly = calcMonthlyReturns(nav);
     rows.push({
@@ -1599,13 +1533,11 @@ export async function computeStrategyMonthlyReturns(): Promise<
   return rows;
 }
 
-// ── Backtest (Research Dashboard) ────────────────────────────────────────────
-
 const SCHEDULE_RUNS_URL = "https://research.qodeinvest.com/api/schedule-runs";
 const LIVE_RUN_BASE_URL = "https://research.qodeinvest.com/api/live-runs";
 
-const LIVE_RUN_ID_TTL_MS = 15 * 60 * 1000; // recheck for a newer completed run periodically
-const COMBINED_METRICS_TTL_MS = 24 * 60 * 60 * 1000; // a completed run's own data never changes
+const LIVE_RUN_ID_TTL_MS = 15 * 60 * 1000;
+const COMBINED_METRICS_TTL_MS = 24 * 60 * 60 * 1000;
 
 interface ScheduleRun {
   live_run_id: string;
@@ -1619,7 +1551,6 @@ const combinedMetricsCache = new Map<
   { data: any; fetchedAt: number }
 >();
 
-// every COMPLETED run, newest first — cached; stale beats nothing on fetch failure
 async function resolveCompletedLiveRunIds(): Promise<string[]> {
   if (
     cachedLiveRunIds &&
@@ -1646,7 +1577,6 @@ async function resolveCompletedLiveRunIds(): Promise<string[]> {
   }
 }
 
-// one option's combined-metrics payload — immutable once COMPLETED, cached longer
 async function fetchCombinedMetrics(
   liveRunId: string,
   option: string,
@@ -1671,7 +1601,6 @@ async function fetchCombinedMetrics(
   }
 }
 
-// tries newest-first completed run; a bad run doesn't sink the whole option
 async function fetchCombinedMetricsWithFallback(
   liveRunIds: string[],
   option: string,
@@ -1683,7 +1612,6 @@ async function fetchCombinedMetricsWithFallback(
   return null;
 }
 
-// client's strategy field -> research dashboard scheme; QTF has none, by design
 const SCHEME_OPTION: Record<string, string> = {
   "QAW+": "qaw_plus",
   "QAW++": "qaw_plus_plus",
@@ -1691,7 +1619,6 @@ const SCHEME_OPTION: Record<string, string> = {
   "QYE++": "qye_plus_plus",
 };
 
-// PSAR/BTST curves are columns in the scheme-level nav_curve, not nested
 type BacktestSource =
   | {
       kind: "scheme";
@@ -1707,7 +1634,7 @@ type BacktestSource =
         | "qaw_mom_matrics"
         | "qaw_put_prot_matrics";
     }
-  | { kind: "standalone"; tab: "all" | "nifty" | "sensex" }; // Section 3 — always the Compounded variant
+  | { kind: "standalone"; tab: "all" | "nifty" | "sensex" };
 
 const TOTAL_PORTFOLIO_SOURCE: BacktestSource = {
   kind: "scheme",
@@ -1715,7 +1642,6 @@ const TOTAL_PORTFOLIO_SOURCE: BacktestSource = {
   field: "normalized_nav",
 };
 
-// scheme-prefixed tags (e.g. "QYE++ PSAR") — client's own strategy determines the scheme
 const BACKTEST_TAG_SOURCE: Record<string, BacktestSource> = {
   "Total Portfolio Value": TOTAL_PORTFOLIO_SOURCE,
   "Total Portfolio Exposure": TOTAL_PORTFOLIO_SOURCE,
@@ -1736,7 +1662,6 @@ const BACKTEST_TAG_SOURCE: Record<string, BacktestSource> = {
   DMA1: { kind: "qaw_split", split: "qaw_put_prot_matrics" },
 };
 
-// bare tags with no scheme prefix — Section 3's standalone options
 const UNPREFIXED_OPTION: Record<string, string> = {
   PSAR: "pbsar",
   NPSAR: "pbsar",
@@ -1757,7 +1682,6 @@ const UNPREFIXED_SOURCE: Record<string, BacktestSource> = {
   DMA1: { kind: "standalone", tab: "all" },
 };
 
-// pulls {date, nav} pairs out of an already-fetched scheme payload — no I/O
 function extractBacktestRaw(
   schemeData: any,
   source: BacktestSource,
@@ -1775,8 +1699,6 @@ function extractBacktestRaw(
     .filter((p: { date: unknown; nav: number }) => p.date && isFinite(p.nav));
   return out.length > 0 ? out : null;
 }
-
-// ── Compare ───────────────────────────────────────────────────────────────
 
 export interface CompareSelection {
   qcode: string;
@@ -1811,7 +1733,6 @@ export async function computeCompare(
   if (selections.length === 0)
     return { benchmark_series: [], backtest_series: [], results: [] };
 
-  // dedupe first — a repeated pair would double NAV points in the join
   const uniquePairs = new Map<string, CompareSelection>();
   for (const s of selections) uniquePairs.set(`${s.qcode}|${s.system_tag}`, s);
   const unique = [...uniquePairs.values()];
@@ -1820,7 +1741,6 @@ export async function computeCompare(
     unique.map((s) => ({ qcode: s.qcode, tag: s.system_tag })),
   );
 
-  // no rfr needed — ratios are stripped, so 0 is just a placeholder input
   const built = new Map<
     string,
     { nav: NavPoint[] | null; metrics: Omit<TagMetrics, "ratios"> | null }
@@ -1836,7 +1756,6 @@ export async function computeCompare(
     built.set(key, { nav, metrics });
   }
 
-  // shared window across every unique pair — one Nifty fetch regardless of count
   let minStart: Date | null = null;
   let maxEnd: Date | null = null;
   for (const b of built.values()) {
@@ -1850,13 +1769,11 @@ export async function computeCompare(
   const niftyRaw =
     minStart && maxEnd ? await fetchNiftyRawSeries(minStart, maxEnd) : null;
 
-  // chart line: one series, rebased at the oldest selection's start
   const chartBenchmark =
     niftyRaw && minStart && maxEnd
       ? computeBenchmarkMetrics(niftyRaw, minStart, maxEnd)
       : null;
 
-  // overview card per unique pair, rebased at that pair's own start; cached
   const overviewCache = new Map<string, CompareResult["benchmark_overview"]>();
   function benchmarkOverview(key: string, nav: NavPoint[]) {
     if (overviewCache.has(key)) return overviewCache.get(key)!;
@@ -1874,7 +1791,6 @@ export async function computeCompare(
     return result;
   }
 
-  // rebuilt in original request order — duplicates still get one entry each
   const results: CompareResult[] = selections.map((s) => {
     const key = `${s.qcode}|${s.system_tag}`;
     const b = built.get(key)!;
@@ -1894,8 +1810,6 @@ export async function computeCompare(
     };
   });
 
-  // ── Backtest curves — one per distinct system_tag, not one shared line
-  // shared-tag selections merge into one rebased curve; different tags never merge
   const tagGroups = new Map<string, NavPoint[][]>();
   for (const s of unique) {
     const b = built.get(`${s.qcode}|${s.system_tag}`);
@@ -1908,7 +1822,6 @@ export async function computeCompare(
   if (tagGroups.size > 0) {
     const liveRunIds = await resolveCompletedLiveRunIds();
     if (liveRunIds.length > 0) {
-      // one combined-metrics fetch per distinct scheme, reused across its tag groups
       const schemeCache = new Map<string, any | null>();
       for (const [systemTag, members] of tagGroups) {
         const trimmed = systemTag.trim();
@@ -1917,7 +1830,6 @@ export async function computeCompare(
         let option: string | undefined;
         let source: BacktestSource | undefined;
         if (spaceIdx === -1) {
-          // no scheme prefix — client runs the strategy directly, not bifurcated
           option = UNPREFIXED_OPTION[trimmed];
           source = UNPREFIXED_SOURCE[trimmed];
         } else {
@@ -1926,7 +1838,7 @@ export async function computeCompare(
           option = SCHEME_OPTION[strategy];
           source = BACKTEST_TAG_SOURCE[tag];
         }
-        if (!option || !source) continue; // no backtest for this tag (QTF, or a UID-level tag)
+        if (!option || !source) continue;
 
         if (!schemeCache.has(option)) {
           schemeCache.set(
@@ -1969,9 +1881,6 @@ export async function computeCompare(
   };
 }
 
-// ── System Tags ───────────────────────────────────────────────────────────
-
-// all distinct strategies configured for a client — resolves "combined" views
 async function fetchClientStrategies(qcode: string): Promise<string[]> {
   const configs = await prisma.client_strategy_configs.findMany({
     where: { qcode },
@@ -1980,7 +1889,6 @@ async function fetchClientStrategies(qcode: string): Promise<string[]> {
   return [...new Set(configs.map((c) => c.strategy))];
 }
 
-// distinct tags for a qcode+strategy; "combined" = no known strategy prefix match
 export async function fetchSystemTags(
   qcode: string,
   strategy: string,
@@ -2024,37 +1932,33 @@ export async function fetchSystemTags(
   return rows.map((r) => r.system_tag);
 }
 
-// ── Cash & Margin: Snapshot ──────────────────────────────────────────────────
-
-// uses Exposure Tag, not Profit Tag — diverges from Portfolio Review when F&O positions are open
 export interface CashMarginSnapshotRow {
   account_name: string;
   strategy: string;
   account_value: number;
-  equity_groups: EquityGroupSnapshot[]; // dynamic -- whatever's under equity_book today. Empty when has_equity_split is false.
-  equity_book_total: number; // read directly off the "Equity Stock Holdings" tag -- NOT summed from equity_groups' leaves, so it's correct even if a client holds something outside the tracked leaves
-  liquid_group: EquityGroupSnapshot; // Liquidcase/Liquidadd breakdown -- applies unconditionally, both split and non-split strategies
+  equity_groups: EquityGroupSnapshot[];
+  equity_book_total: number;
+  liquid_group: EquityGroupSnapshot;
   mutual_funds: number;
   bond_stock_holdings: number;
-  holdings: number; // equity_book_total + mutual_funds + bond_stock_holdings -- unconditional, each term naturally 0 when absent
-  has_equity_split: boolean; // derived from strategy_config_defaults, computed once per row and cached here -- not a stored column
-  liquidcase: number; // = liquid_group.total, kept as its own field for backward-compatible reads
+  holdings: number;
+  has_equity_split: boolean;
+  liquid_component_total: number;
   cash: number;
-  cash_plus_liquidcase: number;
+  cash_plus_liquid_component: number;
   excess_cash: number;
   excess_cash_pct: number;
   cash_drift: number | null;
   holdings_drift: number | null;
   cash_component_drift: number | null;
-  snapshot_below_floor: boolean | null; // §2 — null on Combined, no single target
+  snapshot_below_floor: boolean | null;
 }
 
 export interface CashMarginSnapshotResult {
   strategies: CashMarginSnapshotRow[];
-  combined: CashMarginSnapshotRow | null; // drift fields null — no single target across strategies
+  combined: CashMarginSnapshotRow | null;
 }
 
-// §8.2/§10.2
 function calcExcessCash(
   holdings: number,
   cashPlusLc: number,
@@ -2065,14 +1969,12 @@ function calcExcessCash(
   return cashPlusLc - requiredBuffer;
 }
 
-// one DB round-trip shared by the snapshot and withdrawal targets
 async function fetchCashMarginContext(qcode: string): Promise<{
   pairs: StrategyPair[];
   valueMap: Map<string, number>;
   splitMap: Map<string, SplitConfig>;
 }> {
   const today = new Date().toISOString().split("T")[0];
-  // Exposure Tag, not Profit Tag — diverges from Portfolio Review with open F&O
   const allPairs = await fetchStrategyPairs("exposure_tag_suffix");
   const pairs = allPairs.filter(
     (p) => p.qcode === qcode && isActive(p.effective_to, today),
@@ -2080,34 +1982,48 @@ async function fetchCashMarginContext(qcode: string): Promise<{
   if (pairs.length === 0) {
     return { pairs, valueMap: new Map(), splitMap: new Map() };
   }
-  const [valueMap, splitMap] = await Promise.all([
+  const [valueMap, splitEntries] = await Promise.all([
     fetchLatestTagValues(pairs),
-    resolveSplitConfigs(pairs),
+    (async () => {
+      const oldDefaultsMap = new Map(
+        (await prisma.strategy_defaults.findMany()).map((d) => [
+          d.strategy_name,
+          d,
+        ]),
+      );
+      return Promise.all(
+        pairs.map(
+          async (pair) =>
+            [
+              `${pair.qcode}|${pair.strategy}`,
+              await resolveStrategyConfig(
+                pair.qcode,
+                pair.strategy,
+                pair,
+                oldDefaultsMap.get(pair.strategy) ?? null,
+                new Date(),
+              ),
+            ] as const,
+        ),
+      );
+    })(),
   ]);
+  const splitMap = new Map(splitEntries);
   return { pairs, valueMap, splitMap };
 }
-
-// ── Equity Book / Liquid Component — dynamic, catalog-driven ───────────────
-// Groups (gold/momentum/lowvol under equity_book, liquidcase/liquidadd
-// under liquid_component) are discovered by querying config_catalog, not a
-// hardcoded list. Adding a new leaf (a third Momentum scrip, say) is a
-// catalog row, no code change. A genuinely new top-level group is still a
-// deliberate decision either way (real targets, a real symbol, frontend
-// awareness) — this doesn't try to make that free, only what's underneath
-// a known group.
 
 export interface EquityLeaf {
   config_key: string;
   label: string;
-  ltp_symbol: string; // Yahoo Finance ticker, for LTP
-  console_symbol: string; // broker tradingsymbol, matches console_equity_holdings.symbol exactly -- used for the value lookup AND shown as this leaf's particular
+  ltp_symbol: string;
+  console_symbol: string;
   value: number;
 }
 
 interface EquityGroupDef {
   config_key: string;
   label: string;
-  tag_suffix: string | null; // mastersheet aggregate tag, read directly as this group's total
+  tag_suffix: string | null;
   leaves: {
     config_key: string;
     label: string;
@@ -2123,9 +2039,6 @@ export interface EquityGroupSnapshot {
   leaves: EquityLeaf[];
 }
 
-// resolves ONE group's leaf children by the group's own config_key --
-// shared by resolveEquityGroups() and resolveLiquidGroup(). A group with
-// no children of its own is its own single leaf.
 function resolveGroupFromNodes(
   groupKey: string,
   nodes: Awaited<ReturnType<typeof prisma.config_catalog.findMany>>,
@@ -2163,30 +2076,17 @@ function resolveGroupFromNodes(
   };
 }
 
-// discovers equity_book's children by query (parent_key === "equity_book"),
-// not a hardcoded list.
 async function resolveEquityGroups(): Promise<EquityGroupDef[]> {
   const nodes = await prisma.config_catalog.findMany();
   const topLevel = nodes.filter((n) => n.parent_key === "equity_book");
   return topLevel.map((g) => resolveGroupFromNodes(g.config_key, nodes));
 }
 
-// standalone group, not nested under equity_book (it's the Liquid
-// Portion, not part of the equity sleeve). May sit under a purely
-// structural debt_book node for graph-construction purposes elsewhere --
-// this function looks it up directly by config_key regardless of what its
-// own parent_key is, so that's invisible here.
 async function resolveLiquidGroup(): Promise<EquityGroupDef> {
   const nodes = await prisma.config_catalog.findMany();
   return resolveGroupFromNodes("liquid_component", nodes);
 }
 
-// derived, not stored. A strategy "has an equity split" precisely when it
-// has at least one active 'ideal' row for an equity_book leaf -- not a
-// column on client_strategy_configs/strategy_defaults, and not a
-// strategy-name check. Checking 'ideal' specifically, not 'model': QTF has
-// real ideal targets but no daily model sync, so model-presence would
-// wrongly say "no split" for a strategy that clearly has one.
 async function resolveHasEquitySplit(
   strategy: string,
   asOfDate: Date,
@@ -2205,9 +2105,6 @@ async function resolveHasEquitySplit(
   return row != null;
 }
 
-// pledged units are real holdings -- quantity alone understates anything
-// collateralized. Reads console_equity_holdings directly -- a real
-// Postgres table, not a CSV file, despite what the design doc calls it.
 async function fetchConsoleHoldingsValue(
   qcode: string,
   symbols: string[],
@@ -2229,12 +2126,6 @@ async function fetchConsoleHoldingsValue(
   return values;
 }
 
-// redistributes a mastersheet-derived total across every leaf, in every
-// group, currently in the given group list -- generic over which groups
-// (Equity Book's gold/momentum/lowvol, or Liquid Component's
-// liquidcase/liquidadd), one console_equity_holdings fetch, called once
-// per snapshot build and reused for every reduction-split within the same
-// call.
 async function resolveGroupSplit(
   qcode: string,
   total: number,
@@ -2267,49 +2158,21 @@ async function resolveGroupSplit(
   });
 }
 
-// dynamic ideal/model targets, per equity-book group -- resolved
-// recursively, not by a flat sum. A leaf's stored value is relative to its
-// *direct* parent, not necessarily the group root -- momentum50 stored as
-// 0.5 means "0.5 of Momentum," and Momentum itself is stored as its own
-// equity-book-relative share (e.g. 0.4). Momentum50's true equity-book
-// weight is the product of both: 0.5 x 0.4 = 0.2. Nodes with no stored
-// value (pure structural rollups, e.g. equity_book/liquid_component
-// themselves) contribute a multiplicative 1 and are simply skipped.
-// Client override, then strategy default, then tombstone falls through --
-// same coalesce at every level of the chain, not just the leaf.
-async function resolveEquityGroupTargets(
-  qcode: string,
+async function fetchOwnValues(
+  configKeys: string[],
+  ratioType: "ideal" | "model" | "value",
   strategy: string,
-  ratioType: "ideal" | "model",
-  groups: EquityGroupDef[],
+  qcode: string,
   asOfDate: Date,
-): Promise<Record<string, number>> {
-  const allLeafKeys = groups.flatMap((g) => g.leaves.map((l) => l.config_key));
-  if (allLeafKeys.length === 0) return {};
-
-  const nodes = await prisma.config_catalog.findMany();
-  const groupRootKeys = new Set(groups.map((g) => g.config_key));
-
-  // every config_key that could appear between a leaf and its group root,
-  // inclusive of the leaf, exclusive of the root itself
-  const chainKeys = new Set<string>();
-  for (const leafKey of allLeafKeys) {
-    let current: string | null = leafKey;
-    while (current && !groupRootKeys.has(current)) {
-      chainKeys.add(current);
-      const node = nodes.find((n) => n.config_key === current);
-      current = node?.parent_key ?? null;
-    }
-  }
-  const keyArray = Array.from(chainKeys);
-
+): Promise<Map<string, number>> {
+  if (configKeys.length === 0) return new Map();
   const [clientRows, defaultRows] = await Promise.all([
     prisma.client_config_values.findMany({
       where: {
         qcode,
         strategy,
         ratio_type: ratioType,
-        config_key: { in: keyArray },
+        config_key: { in: configKeys },
         as_of_date: { lte: asOfDate },
       },
       orderBy: { as_of_date: "desc" },
@@ -2318,7 +2181,7 @@ async function resolveEquityGroupTargets(
       where: {
         strategy_name: strategy,
         ratio_type: ratioType,
-        config_key: { in: keyArray },
+        config_key: { in: configKeys },
         as_of_date: { lte: asOfDate },
       },
       orderBy: { as_of_date: "desc" },
@@ -2336,58 +2199,465 @@ async function resolveEquityGroupTargets(
       latestDefault.set(r.config_key, Number(r.value));
     }
   }
-  const ownValue = (key: string): number | null =>
-    latestClient.get(key) ?? latestDefault.get(key) ?? null;
+  const result = new Map<string, number>();
+  for (const key of configKeys) {
+    const v = latestClient.get(key) ?? latestDefault.get(key);
+    if (v != null) result.set(key, v);
+  }
+  return result;
+}
 
-  const trueWeight = (leafKey: string): number => {
-    let weight = 1;
+function resolveChainValue(
+  leafKey: string,
+  ownValues: Map<string, number>,
+  nodes: Awaited<ReturnType<typeof prisma.config_catalog.findMany>>,
+  stopAtKey: string | null,
+): number | null {
+  if (!ownValues.has(leafKey)) return null;
+  let weight = ownValues.get(leafKey)!;
+  let current = nodes.find((n) => n.config_key === leafKey)?.parent_key ?? null;
+  while (current && current !== stopAtKey) {
+    const v = ownValues.get(current);
+    if (v != null) weight *= v;
+    current = nodes.find((n) => n.config_key === current)?.parent_key ?? null;
+  }
+  return weight;
+}
+
+async function resolveEquityGroupTargets(
+  qcode: string,
+  strategy: string,
+  ratioType: "ideal" | "model",
+  groups: EquityGroupDef[],
+  asOfDate: Date,
+): Promise<Record<string, number | null>> {
+  const allLeafKeys = groups.flatMap((g) => g.leaves.map((l) => l.config_key));
+  if (allLeafKeys.length === 0) return {};
+
+  const nodes = await prisma.config_catalog.findMany();
+  const groupRootKeys = new Set(groups.map((g) => g.config_key));
+
+  const chainKeys = new Set<string>();
+  for (const leafKey of allLeafKeys) {
     let current: string | null = leafKey;
     while (current && !groupRootKeys.has(current)) {
-      const v = ownValue(current);
-      if (v != null) weight *= v;
+      chainKeys.add(current);
       const node = nodes.find((n) => n.config_key === current);
       current = node?.parent_key ?? null;
     }
-    return weight;
-  };
+  }
 
-  const groupTotals: Record<string, number> = {};
+  const ownValues = await fetchOwnValues(
+    Array.from(chainKeys),
+    ratioType,
+    strategy,
+    qcode,
+    asOfDate,
+  );
+
+  const groupTotals: Record<string, number | null> = {};
   for (const group of groups) {
-    groupTotals[group.config_key] = group.leaves.reduce(
-      (s, l) => s + trueWeight(l.config_key),
-      0,
+    const resolvedLeaves = group.leaves.map((l) =>
+      resolveChainValue(l.config_key, ownValues, nodes, group.config_key),
     );
+    const anyConfigured = resolvedLeaves.some((v) => v != null);
+    groupTotals[group.config_key] = anyConfigured
+      ? resolvedLeaves.reduce((s: number, v) => s + (v ?? 0), 0)
+      : null;
   }
   return groupTotals;
 }
 
-// splits a change to a group's combined value across its leaves, weighted
-// by their already-resolved current values -- N-way, whatever N is today.
-// Reuses numbers the snapshot already fetched, no second lookup.
-function splitGroupChange(leaves: EquityLeaf[], amount: number): number[] {
-  return allocateWithRounding(
-    amount,
-    leaves.map((l) => l.value),
-  );
+export interface ConfigCatalogRow {
+  config_key: string;
+  parent_key: string | null;
+  label: string;
+  tag_suffix: string | null;
+  ltp_symbol: string | null;
+  console_symbol: string | null;
+  allowed_ratio_types: string[];
+  updated_by: string | null;
+  updated_at: Date | null;
 }
 
-// one sleeve per group, always with a nested "instruments" array -- even a
-// single-leaf group (Gold, Low Vol today) gets a one-element array, so the
-// shape is uniform everywhere. The group-level object has no ltp/quantity
-// at all -- there's no single symbol the whole group trades as, so those
-// fields would always be null; they're omitted rather than shown as dead
-// weight. Each instrument's particular is its console tradingsymbol --
-// what's actually typed into a trading terminal, not the display label.
+export async function fetchConfigCatalog(): Promise<ConfigCatalogRow[]> {
+  const nodes = await prisma.config_catalog.findMany();
+  return nodes.map((n) => ({
+    config_key: n.config_key,
+    parent_key: n.parent_key,
+    label: n.label,
+    tag_suffix: n.tag_suffix,
+    ltp_symbol: n.ltp_symbol,
+    console_symbol: n.console_symbol,
+    allowed_ratio_types: (n.allowed_ratio_types as string[] | null) ?? [],
+    updated_by: n.updated_by ?? null,
+    updated_at: n.updated_at ?? null,
+  }));
+}
+
+export interface CreateConfigCatalogInput {
+  config_key: string;
+  parent_key: string | null;
+  label: string;
+  tag_suffix?: string | null;
+  ltp_symbol?: string | null;
+  console_symbol?: string | null;
+  allowed_ratio_types?: string[];
+  updated_by: string;
+}
+
+async function verifyLeafSymbols(
+  ltp_symbol: string,
+  console_symbol: string,
+): Promise<void> {
+  const ltps = await fetchLtps([ltp_symbol]);
+  if (!ltps.has(ltp_symbol)) {
+    throw new Error(
+      `ltp_symbol '${ltp_symbol}' did not resolve to a live price`,
+    );
+  }
+  const consoleRow = await prisma.console_equity_holdings.findFirst({
+    where: { symbol: console_symbol },
+  });
+  if (!consoleRow) {
+    throw new Error(
+      `console_symbol '${console_symbol}' not found in console_equity_holdings`,
+    );
+  }
+}
+
+export async function createConfigCatalogEntry(
+  input: CreateConfigCatalogInput,
+  isElevated: boolean,
+): Promise<ConfigCatalogRow> {
+  const existing = await prisma.config_catalog.findUnique({
+    where: { config_key: input.config_key },
+  });
+  if (existing) {
+    throw new Error(`config_key '${input.config_key}' already exists`);
+  }
+  if (input.parent_key) {
+    const parent = await prisma.config_catalog.findUnique({
+      where: { config_key: input.parent_key },
+    });
+    if (!parent) {
+      throw new Error(`parent_key '${input.parent_key}' does not exist`);
+    }
+  }
+
+  const isLeaf = input.ltp_symbol != null && input.console_symbol != null;
+  if (isLeaf) {
+    if (!isElevated) {
+      throw new Error(
+        "Creating a new tradeable leaf (ltp_symbol/console_symbol) requires elevated permission -- this is structurally load-bearing for every Deploy/Withdrawal calculation touching this strategy.",
+      );
+    }
+    await verifyLeafSymbols(input.ltp_symbol!, input.console_symbol!);
+  }
+
+  const created = await prisma.config_catalog.create({
+    data: {
+      config_key: input.config_key,
+      parent_key: input.parent_key,
+      label: input.label,
+      tag_suffix: input.tag_suffix ?? null,
+      ltp_symbol: input.ltp_symbol ?? null,
+      console_symbol: input.console_symbol ?? null,
+      allowed_ratio_types: input.allowed_ratio_types ?? [],
+      updated_by: input.updated_by,
+      updated_at: new Date(),
+    },
+  });
+
+  return {
+    config_key: created.config_key,
+    parent_key: created.parent_key,
+    label: created.label,
+    tag_suffix: created.tag_suffix,
+    ltp_symbol: created.ltp_symbol,
+    console_symbol: created.console_symbol,
+    allowed_ratio_types: (created.allowed_ratio_types as string[] | null) ?? [],
+    updated_by: created.updated_by ?? null,
+    updated_at: created.updated_at ?? null,
+  };
+}
+
+export interface UpdateConfigCatalogInput {
+  label?: string;
+  tag_suffix?: string | null;
+  ltp_symbol?: string | null;
+  console_symbol?: string | null;
+  allowed_ratio_types?: string[];
+  updated_by: string;
+}
+
+export async function updateConfigCatalogEntry(
+  configKey: string,
+  input: UpdateConfigCatalogInput,
+): Promise<ConfigCatalogRow> {
+  const existing = await prisma.config_catalog.findUnique({
+    where: { config_key: configKey },
+  });
+  if (!existing) {
+    throw new Error(`config_key '${configKey}' not found`);
+  }
+
+  const newLtp =
+    input.ltp_symbol !== undefined ? input.ltp_symbol : existing.ltp_symbol;
+  const newConsole =
+    input.console_symbol !== undefined
+      ? input.console_symbol
+      : existing.console_symbol;
+  if (
+    (input.ltp_symbol !== undefined || input.console_symbol !== undefined) &&
+    newLtp &&
+    newConsole
+  ) {
+    await verifyLeafSymbols(newLtp, newConsole);
+  }
+
+  const updated = await prisma.config_catalog.update({
+    where: { config_key: configKey },
+    data: {
+      label: input.label ?? undefined,
+      tag_suffix: input.tag_suffix !== undefined ? input.tag_suffix : undefined,
+      ltp_symbol: input.ltp_symbol !== undefined ? input.ltp_symbol : undefined,
+      console_symbol:
+        input.console_symbol !== undefined ? input.console_symbol : undefined,
+      allowed_ratio_types: input.allowed_ratio_types ?? undefined,
+      updated_by: input.updated_by,
+      updated_at: new Date(),
+    },
+  });
+
+  return {
+    config_key: updated.config_key,
+    parent_key: updated.parent_key,
+    label: updated.label,
+    tag_suffix: updated.tag_suffix,
+    ltp_symbol: updated.ltp_symbol,
+    console_symbol: updated.console_symbol,
+    allowed_ratio_types: (updated.allowed_ratio_types as string[] | null) ?? [],
+    updated_by: updated.updated_by ?? null,
+    updated_at: updated.updated_at ?? null,
+  };
+}
+
+export async function deleteConfigCatalogEntry(
+  configKey: string,
+): Promise<{ deleted: true }> {
+  const children = await prisma.config_catalog.findMany({
+    where: { parent_key: configKey },
+  });
+  if (children.length > 0) {
+    throw new Error(
+      `Cannot delete '${configKey}' -- ${children.length} node(s) still reference it as parent_key: ${children.map((c) => c.config_key).join(", ")}`,
+    );
+  }
+  await prisma.config_catalog.delete({ where: { config_key: configKey } });
+  return { deleted: true };
+}
+
+export interface ResolvedStrategyConfig {
+  equity_pct: number | null;
+  debt_pct: number | null;
+  lc_pct: number | null;
+  cash_pct: number | null;
+  gold_pct: number | null;
+  lowvol_pct: number | null;
+  momentum_pct: number | null;
+  psar_leverage: number | null;
+  psar_multiplier: number | null;
+  long_opt_pct: number | null;
+  gold_model_pct: number | null;
+  momentum_model_pct: number | null;
+  lowvol_model_pct: number | null;
+  cash_pct_healthy: number | null;
+  liquidcase_pct_gate: number | null;
+}
+
+async function resolveStrategyConfig(
+  qcode: string,
+  strategy: string,
+  pair: StrategyPair | null,
+  oldDefaults: Awaited<
+    ReturnType<typeof prisma.strategy_defaults.findUnique>
+  > | null,
+  asOfDate: Date,
+): Promise<ResolvedStrategyConfig> {
+  const groups = await resolveEquityGroups();
+  const nodes = await prisma.config_catalog.findMany();
+
+  const flatKeys = [
+    "equity_pct",
+    "psar_leverage",
+    "psar_multiplier",
+    "long_opt_pct",
+    "cash_pct_healthy",
+    "liquidcase_pct_gate",
+  ];
+  const flatValues = await fetchOwnValues(
+    flatKeys,
+    "value",
+    strategy,
+    qcode,
+    asOfDate,
+  );
+
+  const debtRelValues = await fetchOwnValues(
+    ["cash_pct", "lc_pct", "debt_pct"],
+    "value",
+    strategy,
+    qcode,
+    asOfDate,
+  );
+  const newDebtPct = debtRelValues.get("debt_pct") ?? null;
+  const newCashPct = resolveChainValue("cash_pct", debtRelValues, nodes, null);
+  const newLcPct = resolveChainValue("lc_pct", debtRelValues, nodes, null);
+
+  const idealTargets = await resolveEquityGroupTargets(
+    qcode,
+    strategy,
+    "ideal",
+    groups,
+    asOfDate,
+  );
+  const modelTargets = await resolveEquityGroupTargets(
+    qcode,
+    strategy,
+    "model",
+    groups,
+    asOfDate,
+  );
+
+  return {
+    equity_pct:
+      flatValues.get("equity_pct") ??
+      toNum(pair?.equity_pct) ??
+      toNum(oldDefaults?.equity_pct) ??
+      null,
+    debt_pct:
+      newDebtPct ??
+      toNum(pair?.debt_pct) ??
+      toNum(oldDefaults?.debt_pct) ??
+      null,
+    lc_pct:
+      newLcPct ?? toNum(pair?.lc_pct) ?? toNum(oldDefaults?.lc_pct) ?? null,
+    cash_pct:
+      newCashPct ??
+      toNum(pair?.cash_pct) ??
+      toNum(oldDefaults?.cash_pct) ??
+      null,
+    gold_pct:
+      idealTargets["gold"] ??
+      toNum(pair?.gold_pct) ??
+      toNum(oldDefaults?.gold_pct) ??
+      null,
+    lowvol_pct:
+      idealTargets["lowvol"] ??
+      toNum(pair?.lowvol_pct) ??
+      toNum(oldDefaults?.lowvol_pct) ??
+      null,
+    momentum_pct:
+      idealTargets["momentum"] ??
+      toNum(pair?.momentum_pct) ??
+      toNum(oldDefaults?.momentum_pct) ??
+      null,
+    psar_leverage:
+      flatValues.get("psar_leverage") ??
+      toNum(pair?.psar_leverage) ??
+      toNum(oldDefaults?.psar_leverage) ??
+      null,
+    psar_multiplier:
+      flatValues.get("psar_multiplier") ??
+      toNum(pair?.psar_multiplier) ??
+      toNum(oldDefaults?.psar_multiplier) ??
+      null,
+    long_opt_pct:
+      flatValues.get("long_opt_pct") ??
+      toNum(pair?.long_opt_pct) ??
+      toNum(oldDefaults?.long_opt_pct) ??
+      null,
+    gold_model_pct:
+      modelTargets["gold"] ??
+      toNum(pair?.gold_model_pct) ??
+      toNum(oldDefaults?.gold_model_pct) ??
+      null,
+    momentum_model_pct:
+      modelTargets["momentum"] ??
+      toNum(pair?.momentum_model_pct) ??
+      toNum(oldDefaults?.momentum_model_pct) ??
+      null,
+    lowvol_model_pct:
+      modelTargets["lowvol"] ??
+      toNum(pair?.lowvol_model_pct) ??
+      toNum(oldDefaults?.lowvol_model_pct) ??
+      null,
+    cash_pct_healthy:
+      flatValues.get("cash_pct_healthy") ??
+      toNum(pair?.cash_pct_healthy) ??
+      toNum(oldDefaults?.cash_pct_healthy) ??
+      null,
+    liquidcase_pct_gate:
+      flatValues.get("liquidcase_pct_gate") ??
+      toNum(pair?.liquidcase_pct_gate) ??
+      toNum(oldDefaults?.liquidcase_pct_gate) ??
+      null,
+  };
+}
+
+function applyGroupSplitOverride(
+  computed: Record<string, number>,
+  override: Record<string, number> | undefined,
+): { fractions: Record<string, number>; usedOverride: boolean } {
+  if (!override || Object.keys(override).length === 0) {
+    return { fractions: computed, usedOverride: false };
+  }
+  const merged: Record<string, number> = {};
+  for (const key of Object.keys(computed)) {
+    merged[key] = override[key] ?? computed[key];
+  }
+  const total = Object.values(merged).reduce((s, v) => s + v, 0);
+  const normalized: Record<string, number> = {};
+  for (const key of Object.keys(merged)) {
+    normalized[key] = total > 0 ? merged[key] / total : 0;
+  }
+  return { fractions: normalized, usedOverride: true };
+}
+
+function splitGroupChange(
+  leaves: EquityLeaf[],
+  amount: number,
+  overrideWeights?: Record<string, number>,
+): number[] {
+  const usingOverride =
+    overrideWeights != null &&
+    leaves.some((l) => overrideWeights[l.config_key] != null);
+  const currentTotal = leaves.reduce((s, l) => s + l.value, 0);
+  const weights = usingOverride
+    ? leaves.map(
+        (l) =>
+          overrideWeights![l.config_key] ??
+          (currentTotal > 0 ? l.value / currentTotal : 1 / leaves.length),
+      )
+    : leaves.map((l) => l.value);
+  return allocateWithRounding(amount, weights);
+}
+
 function buildGroupSleeve(
   group: { label: string; leaves: EquityLeaf[] },
   newGroupTotal: number,
   newAccountValue: number,
   ltps: Map<string, number>,
+  overrideWeights?: Record<string, number>,
 ): WithdrawalSleeve {
   const { leaves } = group;
   const oldGroupTotal = leaves.reduce((s, l) => s + l.value, 0);
   const change = oldGroupTotal - newGroupTotal;
-  const shares = splitGroupChange(leaves, change);
+  const shares = splitGroupChange(leaves, change, overrideWeights);
+  const usingOverride =
+    overrideWeights != null &&
+    leaves.some((l) => overrideWeights[l.config_key] != null);
 
   const instruments = leaves.map((leaf, i) =>
     buildWithdrawalSleeve(
@@ -2407,7 +2677,11 @@ function buildGroupSleeve(
     newAccountValue,
     "sell_buy",
   );
-  return { ...groupSleeve, instruments };
+  return {
+    ...groupSleeve,
+    instruments,
+    split_source: usingOverride ? "override" : "computed",
+  };
 }
 
 async function buildCashMarginSnapshot(
@@ -2423,30 +2697,16 @@ async function buildCashMarginSnapshot(
     const split = splitMap.get(`${pair.qcode}|${pair.strategy}`)!;
     const asOfDate = new Date();
 
-    // mutual_funds / bond_stock_holdings -- flat, hardcoded reads, same
-    // shape as always. Not catalog-driven: neither ever splits into
-    // subtypes or gets redistributed, so they don't belong in the dynamic
-    // structure at all.
     const mutual_funds =
       valueMap.get(`${pair.qcode}|${pair.strategy} Mutual Funds`) ?? 0;
     const bond_stock_holdings =
       valueMap.get(`${pair.qcode}|${pair.strategy} Bond Stock Holdings`) ?? 0;
 
-    // derived, not a column check -- see resolveHasEquitySplit
     const has_equity_split = await resolveHasEquitySplit(
       pair.strategy,
       asOfDate,
     );
 
-    // Equity Book's total is read directly off its own tag
-    // ("Equity Stock Holdings"), not summed from gold/momentum/lowvol's
-    // tags -- correct even if a client holds something outside the
-    // tracked leaves (a real case: a QYE+ client holding GOLDBEES directly
-    // alongside untracked Large Cap/Small Cap positions). When
-    // has_equity_split is false, no leaf breakdown is computed at all --
-    // equity_book_total is still whatever it is (Ashit Jhaveri's real
-    // GOLDBEES counts), just shown as one flat number, not split into
-    // instruments.
     const equity_book_total =
       valueMap.get(`${pair.qcode}|${pair.strategy} Equity Stock Holdings`) ?? 0;
     let equity_groups: EquityGroupSnapshot[] = [];
@@ -2461,9 +2721,6 @@ async function buildCashMarginSnapshot(
 
     const holdings = equity_book_total + mutual_funds + bond_stock_holdings;
 
-    // Liquid Component -- applies unconditionally, both split and
-    // non-split strategies, per the design doc. Own tag, own redistribution,
-    // independent of has_equity_split entirely.
     const liquidGroupDef = await resolveLiquidGroup();
     const liquidTagTotal =
       valueMap.get(
@@ -2478,20 +2735,20 @@ async function buildCashMarginSnapshot(
       total: liquidTagTotal,
       leaves: [],
     };
-    const liquidcase = liquid_group.total;
+    const liquid_component_total = liquid_group.total;
 
-    const cash = account_value - holdings - liquidcase;
-    const cash_plus_liquidcase = cash + liquidcase;
+    const cash = account_value - holdings - liquid_component_total;
+    const cash_plus_liquid_component = cash + liquid_component_total;
 
     const excess_cash = calcExcessCash(
       holdings,
-      cash_plus_liquidcase,
+      cash_plus_liquid_component,
       split.equity_pct,
     );
 
     const cashPctActual = cash / account_value;
     const holdingsPctActual = holdings / account_value;
-    const cashLcPctActual = cash_plus_liquidcase / account_value;
+    const cashLcPctActual = cash_plus_liquid_component / account_value;
 
     strategies.push({
       account_name: pair.account_name,
@@ -2504,9 +2761,9 @@ async function buildCashMarginSnapshot(
       bond_stock_holdings,
       holdings,
       has_equity_split,
-      liquidcase,
+      liquid_component_total,
       cash,
-      cash_plus_liquidcase,
+      cash_plus_liquid_component,
       excess_cash: round(excess_cash, 2)!,
       excess_cash_pct: round(excess_cash / account_value, 4)!,
       cash_drift:
@@ -2523,7 +2780,7 @@ async function buildCashMarginSnapshot(
           : null,
       snapshot_below_floor:
         split.cash_pct != null
-          ? cash_plus_liquidcase < split.cash_pct * account_value
+          ? cash_plus_liquid_component < split.cash_pct * account_value
           : null,
     });
   }
@@ -2539,21 +2796,21 @@ async function buildCashMarginSnapshot(
     account_name: strategies[0].account_name,
     strategy: "combined",
     account_value: combinedAv,
-    equity_groups: [], // combined is a display rollup only, never fed into sleeve-building
+    equity_groups: [],
     equity_book_total: sum((r) => r.equity_book_total),
     liquid_group: {
       config_key: "liquid_component",
       label: "Liquidcase",
-      total: sum((r) => r.liquidcase),
+      total: sum((r) => r.liquid_component_total),
       leaves: [],
     },
     mutual_funds: sum((r) => r.mutual_funds),
     bond_stock_holdings: sum((r) => r.bond_stock_holdings),
     holdings: sum((r) => r.holdings),
     has_equity_split: strategies.some((r) => r.has_equity_split),
-    liquidcase: sum((r) => r.liquidcase),
+    liquid_component_total: sum((r) => r.liquid_component_total),
     cash: sum((r) => r.cash),
-    cash_plus_liquidcase: sum((r) => r.cash_plus_liquidcase),
+    cash_plus_liquid_component: sum((r) => r.cash_plus_liquid_component),
     excess_cash: round(combinedExcess, 2)!,
     excess_cash_pct:
       combinedAv > 0 ? round(combinedExcess / combinedAv, 4)! : 0,
@@ -2574,25 +2831,23 @@ export async function fetchCashMarginSnapshot(
   return await buildCashMarginSnapshot(pairs, valueMap, splitMap);
 }
 
-// ── Cash & Margin: Withdrawal ────────────────────────────────────────────────
-
-const EPSILON = 0.01; // rupee tolerance for floor/remainder comparisons — absorbs float noise, not real shortfalls
+const EPSILON = 0.01;
 
 export interface WithdrawalTargets {
   equity_pct: number;
   cash_pct: number;
-  lc_pct: number; // §10.1 — derived by default (1 - equity_pct - cash_pct), overridable via liquidcase_pct
-  // safety-floor fields — same cascade, never payload-overridable
+  lc_pct: number;
   cash_pct_healthy: number | null;
   liquidcase_pct_gate: number | null;
-  // model targets no longer live here -- resolveWithdrawalEqSplit reads
-  // them dynamically per group from strategy_config_defaults/
-  // client_config_values, not from named fields on this object.
+  targets_source: {
+    equity_pct: "override" | "computed";
+    cash_pct: "override" | "computed";
+    lc_pct: "override" | "computed";
+  };
 }
 
-const RATIO_EPSILON = 0.0001; // tolerance for the equity+cash+liquidcase = 1 identity check
+const RATIO_EPSILON = 0.0001;
 
-// only two of equity/cash/lc are ever independent — third is derived, or validated if both given
 function resolveCashLiquidcaseSplit(
   equity_pct: number,
   defaultCashPct: number | null,
@@ -2616,10 +2871,9 @@ function resolveCashLiquidcaseSplit(
   if (cash_pct == null) {
     throw new Error("cash_pct not configured for this strategy");
   }
-  return { cash_pct, lc_pct: 1 - equity_pct - cash_pct }; // §10.1, default derivation
+  return { cash_pct, lc_pct: 1 - equity_pct - cash_pct };
 }
 
-// payload override -> resolved SplitConfig, pure, no DB access
 function mergeWithdrawalTargets(
   split: SplitConfig,
   equityPctOverride?: number,
@@ -2643,18 +2897,20 @@ function mergeWithdrawalTargets(
     lc_pct,
     cash_pct_healthy: split.cash_pct_healthy,
     liquidcase_pct_gate: split.liquidcase_pct_gate,
+    targets_source: {
+      equity_pct: equityPctOverride != null ? "override" : "computed",
+      cash_pct: cashPctOverride != null ? "override" : "computed",
+      lc_pct: liquidcasePctOverride != null ? "override" : "computed",
+    },
   };
 }
 
-// ── Cash & Margin: Withdrawal — reworked to match Sahil's four-source /
-// four sources resolve one amount; Balanced/Holdings-Frozen/Cash-Frozen
-// always compute together. Liquidcase LTP is informational only here.
-
-// last bucket absorbs the rounding remainder so the parts sum exactly to `total`
 function allocateWithRounding(total: number, weights: number[]): number[] {
   const sumWeights = weights.reduce((a, b) => a + b, 0);
-  const amounts = weights.map((w) =>
-    sumWeights > 0 ? round((total * w) / sumWeights, 2)! : 0,
+  const effectiveWeights = sumWeights > 0 ? weights : weights.map(() => 1);
+  const effectiveSum = sumWeights > 0 ? sumWeights : weights.length;
+  const amounts = effectiveWeights.map(
+    (w) => round((total * w) / effectiveSum, 2)!,
   );
   const allocatedSoFar = amounts.slice(0, -1).reduce((a, b) => a + b, 0);
   amounts[amounts.length - 1] = round(total - allocatedSoFar, 2)!;
@@ -2681,12 +2937,13 @@ export interface WithdrawalSleeve {
   particular: string;
   current_value: number;
   new_value: number;
-  change_amount: number; // positive = value left this bucket
+  change_amount: number;
   direction: WithdrawalDirection;
-  ltp?: number | null; // informational, not whole-unit floored -- omitted entirely on a group-level sleeve (no single symbol the whole group trades as)
-  quantity?: number | null; // fractional, informational — NOT whole-unit floored
+  ltp?: number | null;
+  quantity?: number | null;
   new_pct: number;
-  instruments?: WithdrawalSleeve[]; // always present for a group sleeve (Equity Book leaves, Liquid Component leaves), one entry per underlying tradeable instrument, even when there's only one
+  instruments?: WithdrawalSleeve[];
+  split_source?: "override" | "computed";
 }
 
 function buildWithdrawalSleeve(
@@ -2710,23 +2967,20 @@ function buildWithdrawalSleeve(
   };
 }
 
-// dynamic across all three ratio types -- returns fraction per whatever
-// equity-book group currently exists, not a fixed 3-field shape. 'ideal'
-// and 'model' both read strategy_config_defaults/client_config_values
-// (leaf rows summed per group), not a hardcoded literal or named columns.
 async function resolveWithdrawalEqSplit(
   row: CashMarginSnapshotRow,
   qcode: string,
   strategy: string,
   ratioType: "current" | "ideal" | "model",
-): Promise<Record<string, number>> {
+  override?: Record<string, number>,
+): Promise<{ fractions: Record<string, number>; usedOverride: boolean }> {
   if (ratioType === "current") {
     const fractions: Record<string, number> = {};
     for (const g of row.equity_groups) {
       fractions[g.config_key] =
         row.equity_book_total > 0 ? g.total / row.equity_book_total : 0;
     }
-    return fractions;
+    return applyGroupSplitOverride(fractions, override);
   }
   const groups = await resolveEquityGroups();
   const targets = await resolveEquityGroupTargets(
@@ -2736,13 +2990,16 @@ async function resolveWithdrawalEqSplit(
     groups,
     new Date(),
   );
-  const total = Object.values(targets).reduce((s, v) => s + v, 0);
+  const total = Object.values(targets).reduce<number>(
+    (s, v) => s + (v ?? 0),
+    0,
+  );
   const fractions: Record<string, number> = {};
   for (const group of groups) {
     fractions[group.config_key] =
       total > 0 ? (targets[group.config_key] ?? 0) / total : 0;
   }
-  return fractions;
+  return applyGroupSplitOverride(fractions, override);
 }
 
 function resolveWithdrawalAmount(
@@ -2772,7 +3029,6 @@ function resolveWithdrawalAmount(
     }
     return { blocked: false, warning: null, amount: totalProfits };
   }
-  // excess_cash
   if (excessCashBeforeWithdrawal <= 0) {
     return {
       blocked: true,
@@ -2788,7 +3044,12 @@ export interface WithdrawalViewResult {
   sleeves: WithdrawalSleeve[];
 }
 
-// ── Balanced — two regimes joined exactly at the excess-cash boundary ──────
+interface WithdrawalOverrides {
+  equity_group_split?: Record<string, number>;
+  equity_leaf_splits?: Record<string, Record<string, number>>;
+  liquid_component_split?: Record<string, number>;
+}
+
 async function computeBalanced(
   row: CashMarginSnapshotRow,
   targets: WithdrawalTargets,
@@ -2798,6 +3059,7 @@ async function computeBalanced(
   qcode: string,
   strategy: string,
   ltps: Map<string, number>,
+  overrides: WithdrawalOverrides,
 ): Promise<WithdrawalViewResult> {
   const newAccountValue = row.account_value - amountToWithdraw;
   const isRegimeB = amountToWithdraw > excessCashBeforeWithdrawal;
@@ -2806,21 +3068,17 @@ async function computeBalanced(
   let newLiquidcaseBudget: number;
 
   if (row.has_equity_split) {
-    // mf/bond stay frozen here -- same assumption the original QAW code
-    // always made implicitly (they were never even read), now explicit
-    // rather than silently correct-by-coincidence. Edge case (a
-    // split strategy that also holds MF/Bond) isn't solved by this --
-    // flagged, not addressed, per the earlier open question.
     let newEquityBookTotal = row.equity_book_total;
     let newGroupTotals: Record<string, number> = {};
     row.equity_groups.forEach((g) => (newGroupTotals[g.config_key] = g.total));
 
     if (isRegimeB) {
-      const subRatios = await resolveWithdrawalEqSplit(
+      const { fractions: subRatios } = await resolveWithdrawalEqSplit(
         row,
         qcode,
         strategy,
         ratioType!,
+        overrides.equity_group_split,
       );
       newEquityBookTotal = newAccountValue * targets.equity_pct;
       const equityReduction = row.equity_book_total - newEquityBookTotal;
@@ -2841,6 +3099,7 @@ async function computeBalanced(
           newGroupTotals[g.config_key],
           newAccountValue,
           ltps,
+          overrides.equity_leaf_splits?.[g.config_key],
         ),
       );
     }
@@ -2869,9 +3128,6 @@ async function computeBalanced(
     newLiquidcaseBudget =
       newEquityBookTotal + row.mutual_funds + row.bond_stock_holdings;
   } else {
-    // no equity split -- equity_book_total + mutual_funds + bond_stock_holdings
-    // move together as one lump, exactly matching the original QYE
-    // behavior (a single "Holdings" figure, never broken down).
     const newHoldings = isRegimeB
       ? newAccountValue * targets.equity_pct
       : row.holdings;
@@ -2891,7 +3147,13 @@ async function computeBalanced(
   const newLiquidcase = newAccountValue - newLiquidcaseBudget - newCash;
 
   sleeves.push(
-    buildGroupSleeve(row.liquid_group, newLiquidcase, newAccountValue, ltps),
+    buildGroupSleeve(
+      row.liquid_group,
+      newLiquidcase,
+      newAccountValue,
+      ltps,
+      overrides.liquid_component_split,
+    ),
   );
   sleeves.push(
     buildWithdrawalSleeve(
@@ -2906,13 +3168,12 @@ async function computeBalanced(
   return { new_account_value: round(newAccountValue, 2)!, sleeves };
 }
 
-// ── Holdings-Frozen — "don't reduce exposure". Liquidcase can come out
-// Liquidcase can go negative — the informative signal, not capped
 function computeHoldingsFrozen(
   row: CashMarginSnapshotRow,
   targets: WithdrawalTargets,
   amountToWithdraw: number,
   ltps: Map<string, number>,
+  overrides: WithdrawalOverrides,
 ): WithdrawalViewResult {
   const newAccountValue = row.account_value - amountToWithdraw;
   const newCash = newAccountValue * targets.cash_pct;
@@ -2921,7 +3182,15 @@ function computeHoldingsFrozen(
   const sleeves: WithdrawalSleeve[] = [];
   if (row.has_equity_split) {
     for (const g of row.equity_groups) {
-      sleeves.push(buildGroupSleeve(g, g.total, newAccountValue, ltps));
+      sleeves.push(
+        buildGroupSleeve(
+          g,
+          g.total,
+          newAccountValue,
+          ltps,
+          overrides.equity_leaf_splits?.[g.config_key],
+        ),
+      );
     }
     if (row.mutual_funds !== 0) {
       sleeves.push(
@@ -2958,7 +3227,13 @@ function computeHoldingsFrozen(
   }
 
   sleeves.push(
-    buildGroupSleeve(row.liquid_group, newLiquidcase, newAccountValue, ltps),
+    buildGroupSleeve(
+      row.liquid_group,
+      newLiquidcase,
+      newAccountValue,
+      ltps,
+      overrides.liquid_component_split,
+    ),
   );
   sleeves.push(
     buildWithdrawalSleeve(
@@ -2973,8 +3248,6 @@ function computeHoldingsFrozen(
   return { new_account_value: round(newAccountValue, 2)!, sleeves };
 }
 
-// ── Cash-Frozen — "only reduce exposure". Becomes null with a reason when
-// null + reason when amount exceeds Holdings — never a partial execution
 async function computeCashFrozen(
   row: CashMarginSnapshotRow,
   targets: WithdrawalTargets,
@@ -2983,16 +3256,18 @@ async function computeCashFrozen(
   qcode: string,
   strategy: string,
   ltps: Map<string, number>,
+  overrides: WithdrawalOverrides,
 ): Promise<WithdrawalViewResult> {
   const newAccountValue = row.account_value - amountToWithdraw;
   const sleeves: WithdrawalSleeve[] = [];
 
   if (row.has_equity_split) {
-    const subRatios = await resolveWithdrawalEqSplit(
+    const { fractions: subRatios } = await resolveWithdrawalEqSplit(
       row,
       qcode,
       strategy,
       ratioType!,
+      overrides.equity_group_split,
     );
     const groupKeys = row.equity_groups.map((g) => g.config_key);
     const reductions = allocateWithRounding(
@@ -3010,6 +3285,7 @@ async function computeCashFrozen(
           newGroupTotals[g.config_key],
           newAccountValue,
           ltps,
+          overrides.equity_leaf_splits?.[g.config_key],
         ),
       );
     }
@@ -3049,7 +3325,13 @@ async function computeCashFrozen(
   }
 
   sleeves.push(
-    buildGroupSleeve(row.liquid_group, row.liquidcase, newAccountValue, ltps),
+    buildGroupSleeve(
+      row.liquid_group,
+      row.liquid_component_total,
+      newAccountValue,
+      ltps,
+      overrides.liquid_component_split,
+    ),
   );
   sleeves.push(
     buildWithdrawalSleeve(
@@ -3064,17 +3346,19 @@ async function computeCashFrozen(
   return { new_account_value: round(newAccountValue, 2)!, sleeves };
 }
 
-// ── Orchestration ────────────────────────────────────────────────────────
 export interface WithdrawalInput {
   qcode: string;
-  strategy?: string; // absent → snapshot-only preview, matching prior behavior
+  strategy?: string;
   source?: "all_profits" | "specific" | "fees" | "excess_cash";
-  total_profits?: number; // required when source = "all_profits" — manual input, no automated source, confirmed
-  amount?: number; // required when source = "specific" or "fees"
-  ratio_type?: "current" | "ideal" | "model"; // required for QAW strategies
+  total_profits?: number;
+  amount?: number;
+  ratio_type?: "current" | "ideal" | "model";
   equity_pct?: number;
   cash_pct?: number;
-  lc_pct?: number; // renamed from liquidcase_pct to match Deploy's naming exactly
+  lc_pct?: number;
+  equity_group_split?: Record<string, number>;
+  equity_leaf_splits?: Record<string, Record<string, number>>;
+  liquid_component_split?: Record<string, number>;
 }
 
 export interface CashMarginWithdrawalResult {
@@ -3084,10 +3368,10 @@ export interface CashMarginWithdrawalResult {
   amount_to_withdraw: number | null;
   excess_cash_before_withdrawal: number | null;
   ratio_type: "current" | "ideal" | "model" | null;
+  targets_source: WithdrawalTargets["targets_source"] | null;
   balanced: WithdrawalViewResult | null;
   holdings_frozen: WithdrawalViewResult | null;
   cash_frozen: WithdrawalViewResult | null;
-  // set only when cash_frozen is null
   cash_frozen_unavailable_reason: string | null;
 }
 
@@ -3108,6 +3392,7 @@ export async function computeCashMarginWithdrawal(
     amount_to_withdraw: null,
     excess_cash_before_withdrawal: null,
     ratio_type: null,
+    targets_source: null,
     balanced: null,
     holdings_frozen: null,
     cash_frozen: null,
@@ -3125,7 +3410,6 @@ export async function computeCashMarginWithdrawal(
     );
   }
 
-  // §2 — blocks outright so every view downstream doesn't re-derive safety
   if (row.snapshot_below_floor) {
     return {
       snapshot,
@@ -3152,10 +3436,9 @@ export async function computeCashMarginWithdrawal(
     throw new Error("source is required");
   }
 
-  // override-aware, not row.excess_cash (tier-default) — also drives the Regime A/B boundary below
   const excessCashBeforeWithdrawal = calcExcessCash(
     row.holdings,
-    row.cash_plus_liquidcase,
+    row.cash_plus_liquid_component,
     targets.equity_pct,
   );
 
@@ -3173,11 +3456,11 @@ export async function computeCashMarginWithdrawal(
       warning: resolved.warning,
       excess_cash_before_withdrawal: round(excessCashBeforeWithdrawal, 2)!,
       ratio_type: input.ratio_type ?? null,
+      targets_source: targets.targets_source,
     };
   }
   const amountToWithdraw = resolved.amount!;
 
-  // top-level impossibility — graceful block, not a throw
   if (amountToWithdraw >= row.account_value) {
     return {
       snapshot,
@@ -3187,6 +3470,7 @@ export async function computeCashMarginWithdrawal(
       amount_to_withdraw: round(amountToWithdraw, 2)!,
       excess_cash_before_withdrawal: round(excessCashBeforeWithdrawal, 2)!,
       ratio_type: input.ratio_type ?? null,
+      targets_source: targets.targets_source,
     };
   }
 
@@ -3195,17 +3479,12 @@ export async function computeCashMarginWithdrawal(
   let cash_frozen: WithdrawalViewResult | null;
   let cash_frozen_unavailable_reason: string | null = null;
 
-  // informational only, fetched live like Deploy; degrades to null on
-  // failure. Batched across every equity-group leaf's symbol AND every
-  // Liquid Component leaf's symbol -- one call, fetched once per response,
-  // reused across the snapshot and all three views.
   const equityLeafSymbols = row.equity_groups.flatMap((g) =>
     g.leaves.map((l) => l.ltp_symbol),
   );
   const liquidLeafSymbols = row.liquid_group.leaves.map((l) => l.ltp_symbol);
   const ltps = await fetchLtps([...equityLeafSymbols, ...liquidLeafSymbols]);
 
-  // see computeCashFrozen
   const cashFrozenAvailable = amountToWithdraw <= row.holdings;
   if (!cashFrozenAvailable) {
     cash_frozen_unavailable_reason = `Cash-Frozen can't fund this withdrawal without also selling Holdings — ₹${round(row.holdings, 2)} available, ₹${round(amountToWithdraw, 2)} requested.`;
@@ -3214,6 +3493,12 @@ export async function computeCashMarginWithdrawal(
   if (row.has_equity_split && !input.ratio_type) {
     throw new Error("ratio_type is required for this strategy");
   }
+
+  const overrides: WithdrawalOverrides = {
+    equity_group_split: input.equity_group_split,
+    equity_leaf_splits: input.equity_leaf_splits,
+    liquid_component_split: input.liquid_component_split,
+  };
 
   balanced = await computeBalanced(
     row,
@@ -3224,8 +3509,15 @@ export async function computeCashMarginWithdrawal(
     input.qcode,
     input.strategy,
     ltps,
+    overrides,
   );
-  holdings_frozen = computeHoldingsFrozen(row, targets, amountToWithdraw, ltps);
+  holdings_frozen = computeHoldingsFrozen(
+    row,
+    targets,
+    amountToWithdraw,
+    ltps,
+    overrides,
+  );
   cash_frozen = cashFrozenAvailable
     ? await computeCashFrozen(
         row,
@@ -3235,6 +3527,7 @@ export async function computeCashMarginWithdrawal(
         input.qcode,
         input.strategy,
         ltps,
+        overrides,
       )
     : null;
 
@@ -3245,15 +3538,13 @@ export async function computeCashMarginWithdrawal(
     amount_to_withdraw: round(amountToWithdraw, 2)!,
     excess_cash_before_withdrawal: round(excessCashBeforeWithdrawal, 2)!,
     ratio_type: input.ratio_type ?? null,
+    targets_source: targets.targets_source,
     balanced,
     holdings_frozen,
     cash_frozen,
     cash_frozen_unavailable_reason,
   };
 }
-
-// ── Cash & Margin: Deploy (D0 — hypothetical new-client deployment) ─────────
-// LTP via yahoo-finance2 (no auth needed) — batched into one call per computation
 
 const yahooFinance = new YahooFinance();
 
@@ -3263,8 +3554,6 @@ const ETF_SYMBOLS = {
   lowvol: "LOWVOLIETF.NS",
   liquidcase: "LIQUIDCASE.NS",
 } as const;
-
-const QAW_IDEAL_RATIOS = { gold: 0.4, momentum: 0.4, lowvol: 0.2 }; // hardcoded by explicit instruction — never DB-driven, unlike Model
 
 async function fetchLtps(symbols: string[]): Promise<Map<string, number>> {
   let quotes;
@@ -3285,11 +3574,10 @@ async function fetchLtps(symbols: string[]): Promise<Map<string, number>> {
   return map;
 }
 
-// strategy_defaults only — no client_strategy_configs row for a hypothetical client
 async function fetchStrategyDefaults(strategy: string): Promise<{
   equity_pct: number | null;
   cash_pct: number | null;
-  gold_pct: number | null; // presence of this, not the strategy name, decides QAW-shaped vs QYE-shaped
+  gold_pct: number | null;
   gold_model_pct: number | null;
   momentum_model_pct: number | null;
   lowvol_model_pct: number | null;
@@ -3313,13 +3601,14 @@ async function fetchStrategyDefaults(strategy: string): Promise<{
 export interface DeploySleeve {
   particular: string;
   target_pct: number;
-  target_value: number; // pure ideal target, never adjusted for rounding — same meaning on every row
-  actual_value: number; // what this sleeve genuinely holds after rounding
-  ltp: number | null; // null for non-tradeable rows (Cash, Holdings rollup)
+  target_value: number;
+  actual_value: number;
+  ltp: number | null;
   quantity: number | null;
+  instruments?: DeploySleeve[];
+  split_source?: "override" | "computed";
 }
 
-// floors to whole units; remainder returned for the caller to sweep into Cash
 function buildPricedSleeve(
   particular: string,
   target_pct: number,
@@ -3340,7 +3629,6 @@ function buildPricedSleeve(
       dust: 0,
     };
   }
-  // trunc, not floor — floor over-sells on negative targets
   const quantity = Math.trunc(target_value / ltp);
   const actualValue = quantity * ltp;
   return {
@@ -3356,53 +3644,68 @@ function buildPricedSleeve(
   };
 }
 
-// ── unified input — one route, no strategy-name check anywhere. Which fields
-// required fields depend on has_equity_split, resolved once by computeDeploy
 export interface DeployInput {
-  qcode?: string; // presence decides D0 vs real-client path
+  qcode?: string;
   strategy: string;
-  // D0-only (qcode absent) — QAW-shaped
   ratio_type?: "current" | "ideal" | "model";
   account_value?: number;
-  reference_qcode?: string; // required only for ratio_type "current" — proportions only
-  // D0-only (qcode absent) — QYE-shaped
+  reference_qcode?: string;
+  liquid_component_split?: Record<string, number>;
+  equity_leaf_splits?: Record<string, Record<string, number>>;
+  equity_group_split?: Record<string, number>;
   input_mode?: "holdings" | "account_value" | "cash";
   value?: number;
-  // real-client only (qcode present)
-  amount?: number; // specific-amount deployment, sibling to the always-computed results
-  today_pnl?: number; // scoped to additional_cash_required/additional_holdings_required only — see applyTodayPnl
-  // shared by both paths
+  amount?: number;
+  today_pnl?: number;
   equity_pct?: number;
   cash_pct?: number;
   lc_pct?: number;
 }
 
-export interface QawDeployResult {
+type Level1TargetsSource = {
+  equity_pct: "override" | "computed";
+  cash_pct: "override" | "computed";
+  lc_pct: "override" | "computed";
+};
+
+export interface NewClientSplitDeployResult {
   ratio_type: "current" | "ideal" | "model";
   strategy: string;
   account_value: number;
-  sleeves: DeploySleeve[]; // Equity - Stock (rollup), Gold, Momentum, Low Vol, Liquidcase, Cash
+  sleeves: DeploySleeve[];
+  targets_source: Level1TargetsSource;
 }
 
-async function resolveQawSubRatios(
+async function resolveDeployEquitySplit(
   ratio_type: NonNullable<DeployInput["ratio_type"]>,
   strategy: string,
+  qcode: string | undefined,
   reference_qcode: string | undefined,
-  defaults: Awaited<ReturnType<typeof fetchStrategyDefaults>>,
-): Promise<{ gold: number; momentum: number; lowvol: number }> {
-  if (ratio_type === "ideal") return QAW_IDEAL_RATIOS;
-
-  if (ratio_type === "model") {
-    const gold = defaults.gold_model_pct;
-    const momentum = defaults.momentum_model_pct;
-    const lowvol = defaults.lowvol_model_pct;
-    if (gold == null || momentum == null || lowvol == null) {
-      throw new Error(`Model ratios not configured for '${strategy}'`);
+  override?: Record<string, number>,
+): Promise<{ fractions: Record<string, number>; usedOverride: boolean }> {
+  if (ratio_type === "ideal" || ratio_type === "model") {
+    const groups = await resolveEquityGroups();
+    const targets = await resolveEquityGroupTargets(
+      qcode ?? "",
+      strategy,
+      ratio_type,
+      groups,
+      new Date(),
+    );
+    const total = Object.values(targets).reduce<number>(
+      (s, v) => s + (v ?? 0),
+      0,
+    );
+    if (total <= 0) {
+      throw new Error(`${ratio_type} ratios not configured for '${strategy}'`);
     }
-    return { gold, momentum, lowvol };
+    const fractions: Record<string, number> = {};
+    for (const group of groups) {
+      fractions[group.config_key] = (targets[group.config_key] ?? 0) / total;
+    }
+    return applyGroupSplitOverride(fractions, override);
   }
 
-  // "current" — proportions only, from the reference client's own holdings
   if (!reference_qcode) {
     throw new Error("reference_qcode is required for ratio_type 'current'");
   }
@@ -3413,28 +3716,174 @@ async function resolveQawSubRatios(
       `No active '${strategy}' row found for reference_qcode ${reference_qcode}`,
     );
   }
-  if (!row.has_equity_split || row.holdings <= 0) {
+  if (!row.has_equity_split || row.equity_book_total <= 0) {
     throw new Error(
       `Reference client ${reference_qcode}/${strategy} has no equity split to copy Current ratios from`,
     );
   }
-  return {
-    gold:
-      (row.equity_groups.find((g) => g.config_key === "gold")?.total ?? 0) /
-      row.equity_book_total,
-    momentum:
-      (row.equity_groups.find((g) => g.config_key === "momentum")?.total ?? 0) /
-      row.equity_book_total,
-    lowvol:
-      (row.equity_groups.find((g) => g.config_key === "lowvol")?.total ?? 0) /
-      row.equity_book_total,
-  };
+  const fractions: Record<string, number> = {};
+  for (const g of row.equity_groups) {
+    fractions[g.config_key] =
+      row.equity_book_total > 0 ? g.total / row.equity_book_total : 0;
+  }
+  return applyGroupSplitOverride(fractions, override);
 }
 
-async function computeQawDeploy(
+async function resolveLeafSplitForNewClient(
+  groupKey: string,
+  ratioType: "current" | "ideal" | "model",
+  strategy: string,
+  qcode: string,
+  reference_qcode: string | undefined,
+  asOfDate: Date,
+  explicitSplit: Record<string, number> | undefined,
+  hasStoredTargetConcept: boolean,
+): Promise<
+  {
+    label: string;
+    ltp_symbol: string;
+    console_symbol: string;
+    weight: number;
+  }[]
+> {
+  const nodes = await prisma.config_catalog.findMany();
+  let leaves = nodes.filter(
+    (n) =>
+      n.parent_key === groupKey &&
+      n.ltp_symbol != null &&
+      n.console_symbol != null,
+  );
+  if (leaves.length === 0) {
+    const self = nodes.find((n) => n.config_key === groupKey);
+    leaves = self && self.ltp_symbol && self.console_symbol ? [self] : [];
+  }
+  if (leaves.length === 0) return [];
+  const equalSplit = () =>
+    leaves.map((l) => ({
+      label: l.label,
+      ltp_symbol: l.ltp_symbol!,
+      console_symbol: l.console_symbol!,
+      weight: 1 / leaves.length,
+    }));
+
+  if (
+    explicitSplit &&
+    leaves.every((l) => explicitSplit[l.config_key] != null)
+  ) {
+    return leaves.map((l) => ({
+      label: l.label,
+      ltp_symbol: l.ltp_symbol!,
+      console_symbol: l.console_symbol!,
+      weight: explicitSplit[l.config_key],
+    }));
+  }
+
+  if (ratioType === "ideal" || ratioType === "model") {
+    const ownValues = await fetchOwnValues(
+      leaves.map((l) => l.config_key),
+      ratioType,
+      strategy,
+      qcode,
+      asOfDate,
+    );
+    if (leaves.every((l) => ownValues.has(l.config_key))) {
+      return leaves.map((l) => ({
+        label: l.label,
+        ltp_symbol: l.ltp_symbol!,
+        console_symbol: l.console_symbol!,
+        weight: ownValues.get(l.config_key)!,
+      }));
+    }
+  }
+
+  if (reference_qcode) {
+    const snapshot = await fetchCashMarginSnapshot(reference_qcode);
+    const row = snapshot.strategies.find((r) => r.strategy === strategy);
+    const group =
+      row?.equity_groups.find((g) => g.config_key === groupKey) ??
+      (row?.liquid_group.config_key === groupKey
+        ? row.liquid_group
+        : undefined);
+    if (group && group.leaves.length > 0 && group.total > 0) {
+      return group.leaves.map((l) => ({
+        label: l.label,
+        ltp_symbol: l.ltp_symbol,
+        console_symbol: l.console_symbol,
+        weight: l.value,
+      }));
+    }
+  }
+
+  if (!hasStoredTargetConcept) {
+    const placeholderValues = await fetchOwnValues(
+      leaves.map((l) => l.config_key),
+      "value",
+      strategy,
+      qcode,
+      asOfDate,
+    );
+    if (leaves.every((l) => placeholderValues.has(l.config_key))) {
+      return leaves.map((l) => ({
+        label: l.label,
+        ltp_symbol: l.ltp_symbol!,
+        console_symbol: l.console_symbol!,
+        weight: placeholderValues.get(l.config_key)!,
+      }));
+    }
+    return equalSplit();
+  }
+
+  throw new Error(
+    `No way to resolve the split across ${leaves.map((l) => l.label).join("/")} for '${strategy}' -- ` +
+      `this group is expected to have a stored ideal/model target, but none was found, no reference_qcode, and no explicit split.`,
+  );
+}
+
+function buildTargetGroupSleeve(
+  groupLabel: string,
+  groupTargetPct: number,
+  groupTargetValue: number,
+  leaves: { label: string; ltp_symbol: string; weight: number }[],
+  ltps: Map<string, number>,
+): { sleeve: DeploySleeve; dust: number } {
+  const rawTotalWeight = leaves.reduce((s, l) => s + l.weight, 0);
+  const effectiveWeights =
+    rawTotalWeight > 0 ? leaves.map((l) => l.weight) : leaves.map(() => 1);
+  const totalWeight = rawTotalWeight > 0 ? rawTotalWeight : leaves.length;
+  let dust = 0;
+  const instruments: DeploySleeve[] = leaves.map((leaf, i) => {
+    const leafValue =
+      totalWeight > 0
+        ? groupTargetValue * (effectiveWeights[i] / totalWeight)
+        : 0;
+    const leafPct =
+      groupTargetValue > 0
+        ? groupTargetPct * (leafValue / groupTargetValue)
+        : 0;
+    const priced = buildPricedSleeve(
+      leaf.label,
+      leafPct,
+      leafValue,
+      ltps.get(leaf.ltp_symbol),
+    );
+    dust += priced.dust;
+    return priced.sleeve;
+  });
+  const parent: DeploySleeve = {
+    particular: groupLabel,
+    target_pct: groupTargetPct,
+    target_value: round(groupTargetValue, 2)!,
+    actual_value: round(groupTargetValue, 2)!,
+    ltp: null,
+    quantity: null,
+    instruments,
+  };
+  return { sleeve: parent, dust };
+}
+
+async function computeNewClientSplitDeploy(
   input: DeployInput,
-  defaults: Awaited<ReturnType<typeof fetchStrategyDefaults>>,
-): Promise<QawDeployResult> {
+): Promise<NewClientSplitDeployResult> {
   if (!input.ratio_type) {
     throw new Error("ratio_type is required for this strategy");
   }
@@ -3442,72 +3891,100 @@ async function computeQawDeploy(
     throw new Error("account_value is required for this strategy");
   }
 
-  const equity_pct = input.equity_pct ?? defaults.equity_pct;
+  const oldDefaults = await prisma.strategy_defaults.findUnique({
+    where: { strategy_name: input.strategy },
+  });
+  const config = await resolveStrategyConfig(
+    input.qcode ?? "",
+    input.strategy,
+    null,
+    oldDefaults,
+    new Date(),
+  );
+
+  const equity_pct = input.equity_pct ?? config.equity_pct;
   if (equity_pct == null) {
     throw new Error(`equity_pct not configured for '${input.strategy}'`);
   }
   const { cash_pct, lc_pct } = resolveCashLiquidcaseSplit(
     equity_pct,
-    defaults.cash_pct,
+    config.cash_pct,
     input.cash_pct,
     input.lc_pct,
   );
+  const targetsSource: Level1TargetsSource = {
+    equity_pct: input.equity_pct != null ? "override" : "computed",
+    cash_pct: input.cash_pct != null ? "override" : "computed",
+    lc_pct: input.lc_pct != null ? "override" : "computed",
+  };
 
-  const subRatios = await resolveQawSubRatios(
+  const { fractions: subRatios } = await resolveDeployEquitySplit(
     input.ratio_type,
     input.strategy,
+    input.qcode,
     input.reference_qcode,
-    defaults,
+    input.equity_group_split,
+  );
+  const equityGroups = await resolveEquityGroups();
+  const equityLeavesByGroup = await Promise.all(
+    equityGroups.map((g) =>
+      resolveLeafSplitForNewClient(
+        g.config_key,
+        input.ratio_type!,
+        input.strategy,
+        input.qcode ?? "",
+        input.reference_qcode,
+        new Date(),
+        input.equity_leaf_splits?.[g.config_key],
+        true,
+      ),
+    ),
+  );
+  const liquidLeaves = await resolveLeafSplitForNewClient(
+    "liquid_component",
+    input.ratio_type,
+    input.strategy,
+    input.qcode ?? "",
+    input.reference_qcode,
+    new Date(),
+    input.liquid_component_split,
+    false,
   );
 
   const ltps = await fetchLtps([
-    ETF_SYMBOLS.gold,
-    ETF_SYMBOLS.momentum,
-    ETF_SYMBOLS.lowvol,
-    ETF_SYMBOLS.liquidcase,
+    ...equityLeavesByGroup.flatMap((leaves) => leaves.map((l) => l.ltp_symbol)),
+    ...liquidLeaves.map((l) => l.ltp_symbol),
   ]);
 
   const equityBookValue = input.account_value * equity_pct;
   const liquidcaseValue = input.account_value * lc_pct;
   const cashValue = input.account_value * cash_pct;
 
-  const goldTarget = equityBookValue * subRatios.gold;
-  const momentumTarget = equityBookValue * subRatios.momentum;
-  const lowvolTarget = equityBookValue * subRatios.lowvol;
-
-  const gold = buildPricedSleeve(
-    "Gold",
-    subRatios.gold * equity_pct,
-    goldTarget,
-    ltps.get(ETF_SYMBOLS.gold),
-  );
-  const momentum = buildPricedSleeve(
-    "Momentum",
-    subRatios.momentum * equity_pct,
-    momentumTarget,
-    ltps.get(ETF_SYMBOLS.momentum),
-  );
-  const lowvol = buildPricedSleeve(
-    "Low Vol",
-    subRatios.lowvol * equity_pct,
-    lowvolTarget,
-    ltps.get(ETF_SYMBOLS.lowvol),
-  );
-  const liquidcase = buildPricedSleeve(
+  const equitySleeves = equityGroups.map((g, i) => {
+    const groupFraction = subRatios[g.config_key] ?? 0;
+    return buildTargetGroupSleeve(
+      g.label,
+      groupFraction * equity_pct,
+      equityBookValue * groupFraction,
+      equityLeavesByGroup[i],
+      ltps,
+    );
+  });
+  const liquidcase = buildTargetGroupSleeve(
     "Liquidcase",
     lc_pct,
     liquidcaseValue,
-    ltps.get(ETF_SYMBOLS.liquidcase),
+    liquidLeaves,
+    ltps,
   );
 
-  // rounding dust swept into Cash — the one row with no unit-size constraint
-  const dust = gold.dust + momentum.dust + lowvol.dust + liquidcase.dust;
+  const dust = equitySleeves.reduce((s, e) => s + e.dust, 0) + liquidcase.dust;
 
   const equityRollup: DeploySleeve = {
     particular: "Equity - Stock",
     target_pct: equity_pct,
     target_value: round(equityBookValue, 2)!,
-    actual_value: round(equityBookValue, 2)!, // rollup itself is never rounded — only its Gold/Momentum/Low Vol components are
+    actual_value: round(equityBookValue, 2)!,
     ltp: null,
     quantity: null,
   };
@@ -3515,8 +3992,8 @@ async function computeQawDeploy(
   const cashSleeve: DeploySleeve = {
     particular: "Cash",
     target_pct: cash_pct,
-    target_value: cashTarget, // pure target — same meaning as every other sleeve's target_value
-    actual_value: round(cashValue + dust, 2)!, // what Cash genuinely ends up holding, once it absorbs the other sleeves' rounding dust
+    target_value: cashTarget,
+    actual_value: round(cashValue + dust, 2)!,
     ltp: null,
     quantity: null,
   };
@@ -3525,30 +4002,27 @@ async function computeQawDeploy(
     ratio_type: input.ratio_type,
     strategy: input.strategy,
     account_value: input.account_value,
+    targets_source: targetsSource,
     sleeves: [
       equityRollup,
-      gold.sleeve,
-      momentum.sleeve,
-      lowvol.sleeve,
+      ...equitySleeves.map((e) => e.sleeve),
       liquidcase.sleeve,
       cashSleeve,
     ],
   };
 }
 
-// ── QYE ───────────────────────────────────────────────────────────────────
-
-export interface QyeDeployResult {
+export interface NewClientFlatDeployResult {
   input_mode: "holdings" | "account_value" | "cash";
   strategy: string;
   account_value: number;
-  sleeves: DeploySleeve[]; // Holdings (Mutual Funds), Liquidcase, Cash
+  sleeves: DeploySleeve[];
+  targets_source: Level1TargetsSource;
 }
 
-async function computeQyeDeploy(
+async function computeNewClientFlatDeploy(
   input: DeployInput,
-  defaults: Awaited<ReturnType<typeof fetchStrategyDefaults>>,
-): Promise<QyeDeployResult> {
+): Promise<NewClientFlatDeployResult> {
   if (!input.input_mode) {
     throw new Error("input_mode is required for this strategy");
   }
@@ -3556,16 +4030,32 @@ async function computeQyeDeploy(
     throw new Error("value is required for this strategy");
   }
 
-  const equity_pct = input.equity_pct ?? defaults.equity_pct;
+  const oldDefaults = await prisma.strategy_defaults.findUnique({
+    where: { strategy_name: input.strategy },
+  });
+  const config = await resolveStrategyConfig(
+    input.qcode ?? "",
+    input.strategy,
+    null,
+    oldDefaults,
+    new Date(),
+  );
+
+  const equity_pct = input.equity_pct ?? config.equity_pct;
   if (equity_pct == null) {
     throw new Error(`equity_pct not configured for '${input.strategy}'`);
   }
   const { cash_pct, lc_pct } = resolveCashLiquidcaseSplit(
     equity_pct,
-    defaults.cash_pct,
+    config.cash_pct,
     input.cash_pct,
     input.lc_pct,
   );
+  const targetsSource: Level1TargetsSource = {
+    equity_pct: input.equity_pct != null ? "override" : "computed",
+    cash_pct: input.cash_pct != null ? "override" : "computed",
+    lc_pct: input.lc_pct != null ? "override" : "computed",
+  };
 
   let account_value: number;
   if (input.input_mode === "holdings") {
@@ -3576,24 +4066,35 @@ async function computeQyeDeploy(
     account_value = input.value;
   }
 
-  const ltps = await fetchLtps([ETF_SYMBOLS.liquidcase]);
+  const liquidLeaves = await resolveLeafSplitForNewClient(
+    "liquid_component",
+    "current",
+    input.strategy,
+    input.qcode ?? "",
+    input.reference_qcode,
+    new Date(),
+    input.liquid_component_split,
+    false,
+  );
+  const ltps = await fetchLtps(liquidLeaves.map((l) => l.ltp_symbol));
 
   const holdingsValue = account_value * equity_pct;
   const liquidcaseValue = account_value * lc_pct;
   const cashValue = account_value * cash_pct;
 
-  const liquidcase = buildPricedSleeve(
+  const liquidcase = buildTargetGroupSleeve(
     "Liquidcase",
     lc_pct,
     liquidcaseValue,
-    ltps.get(ETF_SYMBOLS.liquidcase),
+    liquidLeaves,
+    ltps,
   );
 
   const holdingsSleeve: DeploySleeve = {
     particular: "Holdings",
     target_pct: equity_pct,
     target_value: round(holdingsValue, 2)!,
-    actual_value: round(holdingsValue, 2)!, // no rounding involved for this sleeve — no LTP/quantity constraint
+    actual_value: round(holdingsValue, 2)!,
     ltp: null,
     quantity: null,
   };
@@ -3601,8 +4102,8 @@ async function computeQyeDeploy(
   const cashSleeve: DeploySleeve = {
     particular: "Cash",
     target_pct: cash_pct,
-    target_value: cashTarget, // pure target — same meaning as every other sleeve's target_value
-    actual_value: round(cashValue + liquidcase.dust, 2)!, // absorbs Liquidcase's rounding dust
+    target_value: cashTarget,
+    actual_value: round(cashValue + liquidcase.dust, 2)!,
     ltp: null,
     quantity: null,
   };
@@ -3611,14 +4112,11 @@ async function computeQyeDeploy(
     input_mode: input.input_mode,
     strategy: input.strategy,
     account_value: round(account_value, 2)!,
+    targets_source: targetsSource,
     sleeves: [holdingsSleeve, liquidcase.sleeve, cashSleeve],
   };
 }
 
-// ── Real-client scenarios (qcode present) ───────────────────────────────────
-// re-derived independently, not ported from reference code
-
-// solve for Account Value at ideal ratio; distinct from row.excess_cash
 function computeAdditionalHoldingsGap(
   cashComponent: number,
   accountValue: number,
@@ -3627,7 +4125,6 @@ function computeAdditionalHoldingsGap(
   return cashComponent / derivBookPct - accountValue;
 }
 
-// Scenario 2 — mirror: Holdings fixed, solve for the ideal Cash Component
 function computeAdditionalCashRequired(
   holdingsValue: number,
   cashComponent: number,
@@ -3639,7 +4136,6 @@ function computeAdditionalCashRequired(
   return idealCashComponent - cashComponent;
 }
 
-// manual overlay on Cash only, scoped to Scenario 2/3/5
 function applyTodayPnl(
   row: CashMarginSnapshotRow,
   todayPnl: number | undefined,
@@ -3651,11 +4147,10 @@ function applyTodayPnl(
     ...row,
     account_value,
     cash,
-    cash_plus_liquidcase: cash + row.liquidcase,
+    cash_plus_liquid_component: cash + row.liquid_component_total,
   };
 }
 
-// Console total minus deployed, per symbol; assumes one symbol per strategy
 async function resolveUndeployedValue(
   qcode: string,
   strategy: string,
@@ -3719,17 +4214,15 @@ async function resolveUndeployedValue(
   let undeployedValue = 0;
 
   for (const c of consoleEq) {
-    // pledged shares ADDITIVE for equity — don't skip collateral_quantity
     const consoleQty =
       (toNum(c.quantity) ?? 0) + (toNum(c.collateral_quantity) ?? 0);
     const deployed = deployedEqBySymbol.get(c.symbol);
-    const undeployedQty = Math.max(0, consoleQty - (deployed?.qty ?? 0)); // floored — defensive, not expected in normal operation
+    const undeployedQty = Math.max(0, consoleQty - (deployed?.qty ?? 0));
     const price = deployed?.ltp ?? toNum(c.last_price) ?? 0;
     undeployedValue += undeployedQty * price;
   }
 
   for (const c of consoleMf) {
-    // pledged units NOT additive for MF — quantity already includes them
     const consoleQty = toNum(c.quantity) ?? 0;
     const deployed = deployedMfByIsin.get(c.isin);
     const undeployedQty = Math.max(0, consoleQty - (deployed?.qty ?? 0));
@@ -3743,87 +4236,155 @@ async function resolveUndeployedValue(
 export interface GapDeploymentSleeve {
   particular: string;
   current_value: number;
-  addition_target: number; // pure target — how much MORE should be bought
-  addition_actual: number; // post-rounding — what will genuinely be bought
-  new_value: number; // current_value + addition_actual
+  addition_target: number;
+  addition_actual: number;
+  new_value: number;
   ltp: number | null;
-  quantity: number | null; // units being newly bought
+  quantity: number | null;
+  instruments?: GapDeploymentSleeve[];
+  split_source?: "override" | "computed";
 }
 
-// QAW only — splits gap across Gold/Momentum/Low Vol; Liquidcase/Cash untouched
-async function computeGapSplitQaw(
-  row: CashMarginSnapshotRow,
-  qcode: string,
-  targets: { equity_pct: number; cash_pct: number; lc_pct: number },
-  defaults: Awaited<ReturnType<typeof fetchStrategyDefaults>>,
-  amountToAdd: number,
-  ratio_type: NonNullable<DeployInput["ratio_type"]>,
-): Promise<{ new_account_value: number; sleeves: GapDeploymentSleeve[] }> {
-  // "current" uses the client's own qcode as reference, same as D0
-  const subRatios = await resolveQawSubRatios(
-    ratio_type,
-    row.strategy,
-    qcode,
-    defaults,
-  );
-
-  const ltps = await fetchLtps([
-    ETF_SYMBOLS.gold,
-    ETF_SYMBOLS.momentum,
-    ETF_SYMBOLS.lowvol,
-  ]);
-
-  const buildGapSleeve = (
-    particular: string,
-    current: number,
-    additionTarget: number,
-    ltp: number | undefined,
-  ): { sleeve: GapDeploymentSleeve; dust: number } => {
-    const priced = buildPricedSleeve(particular, 0, additionTarget, ltp);
+function buildGapGroupSleeve(
+  groupLabel: string,
+  leaves: EquityLeaf[],
+  additionTarget: number,
+  ltps: Map<string, number>,
+  overrideWeights?: Record<string, number>,
+): { sleeve: GapDeploymentSleeve; dust: number } {
+  const currentTotal = leaves.reduce((s, l) => s + l.value, 0);
+  const usingOverride =
+    overrideWeights != null &&
+    leaves.some((l) => overrideWeights[l.config_key] != null);
+  const splitWeights = usingOverride
+    ? leaves.map(
+        (l) =>
+          overrideWeights![l.config_key] ??
+          (currentTotal > 0 ? l.value / currentTotal : 1 / leaves.length),
+      )
+    : leaves.map((l) => l.value);
+  const shares =
+    leaves.length > 0 ? allocateWithRounding(additionTarget, splitWeights) : [];
+  let dust = 0;
+  const instruments: GapDeploymentSleeve[] = leaves.map((leaf, i) => {
+    const priced = buildPricedSleeve(
+      leaf.console_symbol,
+      0,
+      shares[i] ?? 0,
+      ltps.get(leaf.ltp_symbol),
+    );
+    dust += priced.dust;
     return {
-      sleeve: {
-        particular,
-        current_value: round(current, 2)!,
-        addition_target: priced.sleeve.target_value,
-        addition_actual: priced.sleeve.actual_value,
-        new_value: round(current + priced.sleeve.actual_value, 2)!,
-        ltp: priced.sleeve.ltp,
-        quantity: priced.sleeve.quantity,
-      },
-      dust: priced.dust,
+      particular: leaf.console_symbol,
+      current_value: round(leaf.value, 2)!,
+      addition_target: priced.sleeve.target_value,
+      addition_actual: priced.sleeve.actual_value,
+      new_value: round(leaf.value + priced.sleeve.actual_value, 2)!,
+      ltp: priced.sleeve.ltp,
+      quantity: priced.sleeve.quantity,
     };
+  });
+  const totalActual = instruments.reduce(
+    (s, inst) => s + inst.addition_actual,
+    0,
+  );
+  return {
+    sleeve: {
+      particular: groupLabel,
+      current_value: round(currentTotal, 2)!,
+      addition_target: round(additionTarget, 2)!,
+      addition_actual: round(totalActual, 2)!,
+      new_value: round(currentTotal + totalActual, 2)!,
+      ltp: null,
+      quantity: null,
+      instruments,
+      split_source: usingOverride ? "override" : "computed",
+    },
+    dust,
   };
+}
 
-  const gold = buildGapSleeve(
-    "Gold",
-    row.equity_groups.find((g) => g.config_key === "gold")?.total ?? 0,
-    amountToAdd * subRatios.gold,
-    ltps.get(ETF_SYMBOLS.gold),
-  );
-  const momentum = buildGapSleeve(
-    "Momentum",
-    row.equity_groups.find((g) => g.config_key === "momentum")?.total ?? 0,
-    amountToAdd * subRatios.momentum,
-    ltps.get(ETF_SYMBOLS.momentum),
-  );
-  const lowvol = buildGapSleeve(
-    "Low Vol",
-    row.equity_groups.find((g) => g.config_key === "lowvol")?.total ?? 0,
-    amountToAdd * subRatios.lowvol,
-    ltps.get(ETF_SYMBOLS.lowvol),
+interface DeployOverrides {
+  equity_group_split?: Record<string, number>;
+  equity_leaf_splits?: Record<string, Record<string, number>>;
+  liquid_component_split?: Record<string, number>;
+}
+
+async function computeGapSplit(
+  row: CashMarginSnapshotRow,
+  amountToAdd: number,
+  qcode?: string,
+  ratio_type?: NonNullable<DeployInput["ratio_type"]>,
+  overrides: DeployOverrides = {},
+): Promise<{ new_account_value: number; sleeves: GapDeploymentSleeve[] }> {
+  const liquidLtps = await fetchLtps(
+    row.liquid_group.leaves.map((l) => l.ltp_symbol),
   );
 
-  const liquidcaseSleeve: GapDeploymentSleeve = {
-    particular: "Liquidcase",
-    current_value: round(row.liquidcase, 2)!,
-    addition_target: 0,
-    addition_actual: 0,
-    new_value: round(row.liquidcase, 2)!,
-    ltp: null,
-    quantity: null,
-  };
-  // flooring remainder swept into Cash so new_account_value reconciles exactly
-  const dust = gold.dust + momentum.dust + lowvol.dust;
+  if (!row.has_equity_split) {
+    const holdingsSleeve: GapDeploymentSleeve = {
+      particular: "Holdings",
+      current_value: round(row.holdings, 2)!,
+      addition_target: round(amountToAdd, 2)!,
+      addition_actual: round(amountToAdd, 2)!,
+      new_value: round(row.holdings + amountToAdd, 2)!,
+      ltp: null,
+      quantity: null,
+    };
+    const liquidcase = buildGapGroupSleeve(
+      "Liquidcase",
+      row.liquid_group.leaves,
+      0,
+      liquidLtps,
+      overrides.liquid_component_split,
+    );
+    const cashSleeve: GapDeploymentSleeve = {
+      particular: "Cash",
+      current_value: round(row.cash, 2)!,
+      addition_target: 0,
+      addition_actual: 0,
+      new_value: round(row.cash, 2)!,
+      ltp: null,
+      quantity: null,
+    };
+    return {
+      new_account_value: round(row.account_value + amountToAdd, 2)!,
+      sleeves: [holdingsSleeve, liquidcase.sleeve, cashSleeve],
+    };
+  }
+
+  const { fractions: subRatios } = await resolveDeployEquitySplit(
+    ratio_type!,
+    row.strategy,
+    qcode!,
+    qcode!,
+    overrides.equity_group_split,
+  );
+
+  const equityLeafSymbols = row.equity_groups.flatMap((g) =>
+    g.leaves.map((l) => l.ltp_symbol),
+  );
+  const ltps = await fetchLtps(equityLeafSymbols);
+
+  const equitySleeves = row.equity_groups.map((g) =>
+    buildGapGroupSleeve(
+      g.label,
+      g.leaves,
+      amountToAdd * (subRatios[g.config_key] ?? 0),
+      ltps,
+      overrides.equity_leaf_splits?.[g.config_key],
+    ),
+  );
+  const liquidcase = buildGapGroupSleeve(
+    "Liquidcase",
+    row.liquid_group.leaves,
+    0,
+    liquidLtps,
+    overrides.liquid_component_split,
+  );
+
+  const equityDust = equitySleeves.reduce((s, e) => s + e.dust, 0);
+  const dust = equityDust + liquidcase.dust;
   const cashSleeve: GapDeploymentSleeve = {
     particular: "Cash",
     current_value: round(row.cash, 2)!,
@@ -3835,64 +4396,18 @@ async function computeGapSplitQaw(
   };
 
   const actualTotal =
-    gold.sleeve.addition_actual +
-    momentum.sleeve.addition_actual +
-    lowvol.sleeve.addition_actual +
-    dust;
+    equitySleeves.reduce((s, e) => s + e.sleeve.addition_actual, 0) + dust;
 
   return {
     new_account_value: round(row.account_value + actualTotal, 2)!,
     sleeves: [
-      gold.sleeve,
-      momentum.sleeve,
-      lowvol.sleeve,
-      liquidcaseSleeve,
+      ...equitySleeves.map((e) => e.sleeve),
+      liquidcase.sleeve,
       cashSleeve,
     ],
   };
 }
 
-// QYE — single bucket, no LTP (only Liquidcase is ever priced)
-function computeGapSplitQye(
-  row: CashMarginSnapshotRow,
-  amountToAdd: number,
-): { new_account_value: number; sleeves: GapDeploymentSleeve[] } {
-  const holdingsSleeve: GapDeploymentSleeve = {
-    particular: "Holdings",
-    current_value: round(row.holdings, 2)!,
-    addition_target: round(amountToAdd, 2)!,
-    addition_actual: round(amountToAdd, 2)!,
-    new_value: round(row.holdings + amountToAdd, 2)!,
-    ltp: null,
-    quantity: null,
-  };
-  const liquidcaseSleeve: GapDeploymentSleeve = {
-    particular: "Liquidcase",
-    current_value: round(row.liquidcase, 2)!,
-    addition_target: 0,
-    addition_actual: 0,
-    new_value: round(row.liquidcase, 2)!,
-    ltp: null,
-    quantity: null,
-  };
-  const cashSleeve: GapDeploymentSleeve = {
-    particular: "Cash",
-    current_value: round(row.cash, 2)!,
-    addition_target: 0,
-    addition_actual: 0,
-    new_value: round(row.cash, 2)!,
-    ltp: null,
-    quantity: null,
-  };
-
-  return {
-    new_account_value: round(row.account_value + amountToAdd, 2)!,
-    sleeves: [holdingsSleeve, liquidcaseSleeve, cashSleeve],
-  };
-}
-
-// ── Excess Cash Deployment — genuinely different mechanism from the gap
-// Account Value stays fixed — Cash snaps to target, Liquidcase is the plug
 function computeExcessCashAvailable(
   accountValue: number,
   holdings: number,
@@ -3901,95 +4416,95 @@ function computeExcessCashAvailable(
   return accountValue * equityPct - holdings;
 }
 
-async function computeExcessCashSplitQaw(
+async function computeExcessCashSplit(
   row: CashMarginSnapshotRow,
-  qcode: string,
   targets: { equity_pct: number; cash_pct: number; lc_pct: number },
-  defaults: Awaited<ReturnType<typeof fetchStrategyDefaults>>,
   amountDeployed: number,
-  ratio_type: NonNullable<DeployInput["ratio_type"]>,
+  qcode?: string,
+  ratio_type?: NonNullable<DeployInput["ratio_type"]>,
+  overrides: DeployOverrides = {},
 ): Promise<{ sleeves: GapDeploymentSleeve[] }> {
-  const subRatios = await resolveQawSubRatios(
-    ratio_type,
-    row.strategy,
-    qcode,
-    defaults,
-  );
-  const ltps = await fetchLtps([
-    ETF_SYMBOLS.gold,
-    ETF_SYMBOLS.momentum,
-    ETF_SYMBOLS.lowvol,
-    ETF_SYMBOLS.liquidcase,
-  ]);
-
-  const buildEquitySleeve = (
-    particular: string,
-    current: number,
-    target: number,
-    ltp: number | undefined,
-  ) => {
-    const priced = buildPricedSleeve(particular, 0, target, ltp);
-    const sleeve: GapDeploymentSleeve = {
-      particular,
-      current_value: round(current, 2)!,
-      addition_target: priced.sleeve.target_value,
-      addition_actual: priced.sleeve.actual_value,
-      new_value: round(current + priced.sleeve.actual_value, 2)!,
-      ltp: priced.sleeve.ltp,
-      quantity: priced.sleeve.quantity,
+  if (!row.has_equity_split) {
+    const holdingsSleeve: GapDeploymentSleeve = {
+      particular: "Holdings",
+      current_value: round(row.holdings, 2)!,
+      addition_target: round(amountDeployed, 2)!,
+      addition_actual: round(amountDeployed, 2)!,
+      new_value: round(row.holdings + amountDeployed, 2)!,
+      ltp: null,
+      quantity: null,
     };
-    return { sleeve, target: priced.sleeve.target_value };
-  };
+    const newCashSnapped = targets.cash_pct * row.account_value;
+    const cashChangeTarget = newCashSnapped - row.cash;
+    const liquidcaseChangeTarget = -(amountDeployed + cashChangeTarget);
+    const liquidLtps = await fetchLtps(
+      row.liquid_group.leaves.map((l) => l.ltp_symbol),
+    );
+    const liquidcase = buildGapGroupSleeve(
+      "Liquidcase",
+      row.liquid_group.leaves,
+      liquidcaseChangeTarget,
+      liquidLtps,
+      overrides.liquid_component_split,
+    );
+    const cashChangeActual = cashChangeTarget + liquidcase.dust;
+    const cashSleeve: GapDeploymentSleeve = {
+      particular: "Cash",
+      current_value: round(row.cash, 2)!,
+      addition_target: round(cashChangeTarget, 2)!,
+      addition_actual: round(cashChangeActual, 2)!,
+      new_value: round(row.cash + cashChangeActual, 2)!,
+      ltp: null,
+      quantity: null,
+    };
+    return { sleeves: [holdingsSleeve, liquidcase.sleeve, cashSleeve] };
+  }
 
-  const gold = buildEquitySleeve(
-    "Gold",
-    row.equity_groups.find((g) => g.config_key === "gold")?.total ?? 0,
-    amountDeployed * subRatios.gold,
-    ltps.get(ETF_SYMBOLS.gold),
+  const { fractions: subRatios } = await resolveDeployEquitySplit(
+    ratio_type!,
+    row.strategy,
+    qcode!,
+    qcode!,
+    overrides.equity_group_split,
   );
-  const momentum = buildEquitySleeve(
-    "Momentum",
-    row.equity_groups.find((g) => g.config_key === "momentum")?.total ?? 0,
-    amountDeployed * subRatios.momentum,
-    ltps.get(ETF_SYMBOLS.momentum),
+  const equityLeafSymbols = row.equity_groups.flatMap((g) =>
+    g.leaves.map((l) => l.ltp_symbol),
   );
-  const lowvol = buildEquitySleeve(
-    "Low Vol",
-    row.equity_groups.find((g) => g.config_key === "lowvol")?.total ?? 0,
-    amountDeployed * subRatios.lowvol,
-    ltps.get(ETF_SYMBOLS.lowvol),
-  );
-  // target vs actual kept separate — using actual for both leaked dust into addition_target
-  const targetEquityTotal = gold.target + momentum.target + lowvol.target;
-  const actualEquityTotal =
-    gold.sleeve.addition_actual +
-    momentum.sleeve.addition_actual +
-    lowvol.sleeve.addition_actual;
+  const liquidLeafSymbols = row.liquid_group.leaves.map((l) => l.ltp_symbol);
+  const ltps = await fetchLtps([...equityLeafSymbols, ...liquidLeafSymbols]);
 
-  // Liquidcase priced via LTP too, matching specific_deployment; Cash absorbs its dust
+  const equitySleeves = row.equity_groups.map((g) =>
+    buildGapGroupSleeve(
+      g.label,
+      g.leaves,
+      amountDeployed * (subRatios[g.config_key] ?? 0),
+      ltps,
+      overrides.equity_leaf_splits?.[g.config_key],
+    ),
+  );
+
+  const targetEquityTotal = equitySleeves.reduce(
+    (s, e) => s + e.sleeve.addition_target,
+    0,
+  );
+  const actualEquityTotal = equitySleeves.reduce(
+    (s, e) => s + e.sleeve.addition_actual,
+    0,
+  );
+
   const newCashSnapped = targets.cash_pct * row.account_value;
   const cashChangeTarget = newCashSnapped - row.cash;
-  const liquidcaseChangeTarget = -(targetEquityTotal + cashChangeTarget); // pure — for display only
-  const liquidcaseReconcileTarget = -(actualEquityTotal + cashChangeTarget); // what actually gets floored/transacted
-  const lcPriced = buildPricedSleeve(
+  const liquidcaseChangeTarget = -(targetEquityTotal + cashChangeTarget);
+  const liquidcaseReconcileTarget = -(actualEquityTotal + cashChangeTarget);
+  const liquidcase = buildGapGroupSleeve(
     "Liquidcase",
-    0,
+    row.liquid_group.leaves,
     liquidcaseReconcileTarget,
-    ltps.get(ETF_SYMBOLS.liquidcase),
+    ltps,
+    overrides.liquid_component_split,
   );
-  const liquidcaseChangeActual = lcPriced.sleeve.actual_value;
-  const liquidcaseDust = lcPriced.dust;
-  const cashChangeActual = cashChangeTarget + liquidcaseDust;
+  const cashChangeActual = cashChangeTarget + liquidcase.dust;
 
-  const liquidcaseSleeve: GapDeploymentSleeve = {
-    particular: "Liquidcase",
-    current_value: round(row.liquidcase, 2)!,
-    addition_target: round(liquidcaseChangeTarget, 2)!,
-    addition_actual: round(liquidcaseChangeActual, 2)!,
-    new_value: round(row.liquidcase + liquidcaseChangeActual, 2)!,
-    ltp: lcPriced.sleeve.ltp,
-    quantity: lcPriced.sleeve.quantity,
-  };
   const cashSleeve: GapDeploymentSleeve = {
     particular: "Cash",
     current_value: round(row.cash, 2)!,
@@ -4002,148 +4517,107 @@ async function computeExcessCashSplitQaw(
 
   return {
     sleeves: [
-      gold.sleeve,
-      momentum.sleeve,
-      lowvol.sleeve,
-      liquidcaseSleeve,
+      ...equitySleeves.map((e) => e.sleeve),
+      {
+        ...liquidcase.sleeve,
+        addition_target: round(liquidcaseChangeTarget, 2)!,
+      },
       cashSleeve,
     ],
   };
 }
 
-async function computeExcessCashSplitQye(
+async function computeSpecificDeployment(
   row: CashMarginSnapshotRow,
-  targets: { cash_pct: number },
-  amountDeployed: number,
-): Promise<{ sleeves: GapDeploymentSleeve[] }> {
-  const ltps = await fetchLtps([ETF_SYMBOLS.liquidcase]);
-
-  const holdingsSleeve: GapDeploymentSleeve = {
-    particular: "Holdings",
-    current_value: round(row.holdings, 2)!,
-    addition_target: round(amountDeployed, 2)!,
-    addition_actual: round(amountDeployed, 2)!,
-    new_value: round(row.holdings + amountDeployed, 2)!,
-    ltp: null,
-    quantity: null,
-  };
-
-  const newCashSnapped = targets.cash_pct * row.account_value;
-  const cashChangeTarget = newCashSnapped - row.cash;
-  const liquidcaseChangeTarget = -(amountDeployed + cashChangeTarget);
-  const lcPriced = buildPricedSleeve(
-    "Liquidcase",
-    0,
-    liquidcaseChangeTarget,
-    ltps.get(ETF_SYMBOLS.liquidcase),
-  );
-  const liquidcaseChangeActual = lcPriced.sleeve.actual_value;
-  const cashChangeActual = cashChangeTarget + lcPriced.dust;
-
-  const liquidcaseSleeve: GapDeploymentSleeve = {
-    particular: "Liquidcase",
-    current_value: round(row.liquidcase, 2)!,
-    addition_target: round(liquidcaseChangeTarget, 2)!,
-    addition_actual: round(liquidcaseChangeActual, 2)!,
-    new_value: round(row.liquidcase + liquidcaseChangeActual, 2)!,
-    ltp: lcPriced.sleeve.ltp,
-    quantity: lcPriced.sleeve.quantity,
-  };
-  const cashSleeve: GapDeploymentSleeve = {
-    particular: "Cash",
-    current_value: round(row.cash, 2)!,
-    addition_target: round(cashChangeTarget, 2)!,
-    addition_actual: round(cashChangeActual, 2)!,
-    new_value: round(row.cash + cashChangeActual, 2)!,
-    ltp: null,
-    quantity: null,
-  };
-
-  return { sleeves: [holdingsSleeve, liquidcaseSleeve, cashSleeve] };
-}
-
-// ── Specific Deployment — FIXED. Was wrongly reusing the gap-split
-// splits Eq Book/Deriv Book by equity_pct; Liquidcase/Cash share Deriv Book by their own ratio
-async function computeSpecificDeploymentQaw(
-  row: CashMarginSnapshotRow,
-  qcode: string,
   targets: { equity_pct: number; cash_pct: number; lc_pct: number },
-  defaults: Awaited<ReturnType<typeof fetchStrategyDefaults>>,
   amount: number,
-  ratio_type: NonNullable<DeployInput["ratio_type"]>,
+  qcode?: string,
+  ratio_type?: NonNullable<DeployInput["ratio_type"]>,
+  overrides: DeployOverrides = {},
 ): Promise<{
-  eq_book_amount: number;
-  deriv_book_amount: number;
+  eq_book_amount: number | null;
+  deriv_book_amount: number | null;
   new_account_value: number;
   sleeves: GapDeploymentSleeve[];
 }> {
   const eqBookAmount = amount * targets.equity_pct;
   const derivBookAmount = amount * (1 - targets.equity_pct);
-
-  const subRatios = await resolveQawSubRatios(
-    ratio_type,
-    row.strategy,
-    qcode,
-    defaults,
-  );
-  const ltps = await fetchLtps([
-    ETF_SYMBOLS.gold,
-    ETF_SYMBOLS.momentum,
-    ETF_SYMBOLS.lowvol,
-    ETF_SYMBOLS.liquidcase,
-  ]);
-
-  const buildSleeve = (
-    particular: string,
-    current: number,
-    target: number,
-    ltp: number | undefined,
-  ) => {
-    const priced = buildPricedSleeve(particular, 0, target, ltp);
-    const sleeve: GapDeploymentSleeve = {
-      particular,
-      current_value: round(current, 2)!,
-      addition_target: priced.sleeve.target_value,
-      addition_actual: priced.sleeve.actual_value,
-      new_value: round(current + priced.sleeve.actual_value, 2)!,
-      ltp: priced.sleeve.ltp,
-      quantity: priced.sleeve.quantity,
-    };
-    return { sleeve, dust: priced.dust };
-  };
-
-  const gold = buildSleeve(
-    "Gold",
-    row.equity_groups.find((g) => g.config_key === "gold")?.total ?? 0,
-    eqBookAmount * subRatios.gold,
-    ltps.get(ETF_SYMBOLS.gold),
-  );
-  const momentum = buildSleeve(
-    "Momentum",
-    row.equity_groups.find((g) => g.config_key === "momentum")?.total ?? 0,
-    eqBookAmount * subRatios.momentum,
-    ltps.get(ETF_SYMBOLS.momentum),
-  );
-  const lowvol = buildSleeve(
-    "Low Vol",
-    row.equity_groups.find((g) => g.config_key === "lowvol")?.total ?? 0,
-    eqBookAmount * subRatios.lowvol,
-    ltps.get(ETF_SYMBOLS.lowvol),
-  );
-
   const lcTarget =
     derivBookAmount * (targets.lc_pct / (targets.lc_pct + targets.cash_pct));
   const cashTarget =
     derivBookAmount * (targets.cash_pct / (targets.lc_pct + targets.cash_pct));
-  const lc = buildSleeve(
+
+  if (!row.has_equity_split) {
+    const holdingsSleeve: GapDeploymentSleeve = {
+      particular: "Holdings",
+      current_value: round(row.holdings, 2)!,
+      addition_target: round(eqBookAmount, 2)!,
+      addition_actual: round(eqBookAmount, 2)!,
+      new_value: round(row.holdings + eqBookAmount, 2)!,
+      ltp: null,
+      quantity: null,
+    };
+    const liquidLtps = await fetchLtps(
+      row.liquid_group.leaves.map((l) => l.ltp_symbol),
+    );
+    const liquidcase = buildGapGroupSleeve(
+      "Liquidcase",
+      row.liquid_group.leaves,
+      lcTarget,
+      liquidLtps,
+      overrides.liquid_component_split,
+    );
+    const cashActual = round(cashTarget + liquidcase.dust, 2)!;
+    const cashSleeve: GapDeploymentSleeve = {
+      particular: "Cash",
+      current_value: round(row.cash, 2)!,
+      addition_target: round(cashTarget, 2)!,
+      addition_actual: cashActual,
+      new_value: round(row.cash + cashActual, 2)!,
+      ltp: null,
+      quantity: null,
+    };
+    const actualTotal =
+      eqBookAmount + liquidcase.sleeve.addition_actual + cashActual;
+    return {
+      eq_book_amount: null,
+      deriv_book_amount: null,
+      new_account_value: round(row.account_value + actualTotal, 2)!,
+      sleeves: [holdingsSleeve, liquidcase.sleeve, cashSleeve],
+    };
+  }
+
+  const { fractions: subRatios } = await resolveDeployEquitySplit(
+    ratio_type!,
+    row.strategy,
+    qcode!,
+    qcode!,
+    overrides.equity_group_split,
+  );
+  const equityLeafSymbols = row.equity_groups.flatMap((g) =>
+    g.leaves.map((l) => l.ltp_symbol),
+  );
+  const liquidLeafSymbols = row.liquid_group.leaves.map((l) => l.ltp_symbol);
+  const ltps = await fetchLtps([...equityLeafSymbols, ...liquidLeafSymbols]);
+
+  const equitySleeves = row.equity_groups.map((g) =>
+    buildGapGroupSleeve(
+      g.label,
+      g.leaves,
+      eqBookAmount * (subRatios[g.config_key] ?? 0),
+      ltps,
+      overrides.equity_leaf_splits?.[g.config_key],
+    ),
+  );
+  const lc = buildGapGroupSleeve(
     "Liquidcase",
-    row.liquidcase,
+    row.liquid_group.leaves,
     lcTarget,
-    ltps.get(ETF_SYMBOLS.liquidcase),
+    ltps,
+    overrides.liquid_component_split,
   );
 
-  // dust from every priced sleeve swept into Cash, the one unpriced bucket
-  const dust = gold.dust + momentum.dust + lowvol.dust + lc.dust;
+  const dust = equitySleeves.reduce((s, e) => s + e.dust, 0) + lc.dust;
   const cashActual = round(cashTarget + dust, 2)!;
   const cashSleeve: GapDeploymentSleeve = {
     particular: "Cash",
@@ -4156,9 +4630,7 @@ async function computeSpecificDeploymentQaw(
   };
 
   const actualTotal =
-    gold.sleeve.addition_actual +
-    momentum.sleeve.addition_actual +
-    lowvol.sleeve.addition_actual +
+    equitySleeves.reduce((s, e) => s + e.sleeve.addition_actual, 0) +
     lc.sleeve.addition_actual +
     cashActual;
 
@@ -4166,84 +4638,10 @@ async function computeSpecificDeploymentQaw(
     eq_book_amount: round(eqBookAmount, 2)!,
     deriv_book_amount: round(derivBookAmount, 2)!,
     new_account_value: round(row.account_value + actualTotal, 2)!,
-    sleeves: [
-      gold.sleeve,
-      momentum.sleeve,
-      lowvol.sleeve,
-      lc.sleeve,
-      cashSleeve,
-    ],
+    sleeves: [...equitySleeves.map((e) => e.sleeve), lc.sleeve, cashSleeve],
   };
 }
 
-async function computeSpecificDeploymentQye(
-  row: CashMarginSnapshotRow,
-  targets: { equity_pct: number; cash_pct: number; lc_pct: number },
-  amount: number,
-): Promise<{
-  eq_book_amount: null;
-  deriv_book_amount: null;
-  new_account_value: number;
-  sleeves: GapDeploymentSleeve[];
-}> {
-  const eqBookAmount = amount * targets.equity_pct;
-  const derivBookAmount = amount * (1 - targets.equity_pct);
-  const lcTarget =
-    derivBookAmount * (targets.lc_pct / (targets.lc_pct + targets.cash_pct));
-  const cashTarget =
-    derivBookAmount * (targets.cash_pct / (targets.lc_pct + targets.cash_pct));
-
-  const holdingsSleeve: GapDeploymentSleeve = {
-    particular: "Holdings",
-    current_value: round(row.holdings, 2)!,
-    addition_target: round(eqBookAmount, 2)!,
-    addition_actual: round(eqBookAmount, 2)!,
-    new_value: round(row.holdings + eqBookAmount, 2)!,
-    ltp: null,
-    quantity: null,
-  };
-
-  // Liquidcase priced via LTP too, dust swept into Cash
-  const ltps = await fetchLtps([ETF_SYMBOLS.liquidcase]);
-  const lcPriced = buildPricedSleeve(
-    "Liquidcase",
-    0,
-    lcTarget,
-    ltps.get(ETF_SYMBOLS.liquidcase),
-  );
-  const liquidcaseSleeve: GapDeploymentSleeve = {
-    particular: "Liquidcase",
-    current_value: round(row.liquidcase, 2)!,
-    addition_target: lcPriced.sleeve.target_value,
-    addition_actual: lcPriced.sleeve.actual_value,
-    new_value: round(row.liquidcase + lcPriced.sleeve.actual_value, 2)!,
-    ltp: lcPriced.sleeve.ltp,
-    quantity: lcPriced.sleeve.quantity,
-  };
-
-  const cashActual = round(cashTarget + lcPriced.dust, 2)!;
-  const cashSleeve: GapDeploymentSleeve = {
-    particular: "Cash",
-    current_value: round(row.cash, 2)!,
-    addition_target: round(cashTarget, 2)!,
-    addition_actual: cashActual,
-    new_value: round(row.cash + cashActual, 2)!,
-    ltp: null,
-    quantity: null,
-  };
-
-  const actualTotal = eqBookAmount + lcPriced.sleeve.actual_value + cashActual;
-
-  return {
-    eq_book_amount: null,
-    deriv_book_amount: null,
-    new_account_value: round(row.account_value + actualTotal, 2)!,
-    sleeves: [holdingsSleeve, liquidcaseSleeve, cashSleeve],
-  };
-}
-
-// ── D6 — Buy Liquid Case from Excess Cash. Never built before now. Cash
-// D6 — Cash snaps to ideal, Liquidcase absorbs the diff; Holdings/AV untouched
 async function computeLiquidCaseFromExcessCash(
   row: CashMarginSnapshotRow,
   cashPct: number,
@@ -4256,7 +4654,6 @@ async function computeLiquidCaseFromExcessCash(
   const idealCash = row.account_value * cashPct;
   const excessOverIdeal = round(row.cash - idealCash, 2)!;
 
-  // action request — "nothing to move" is a hard stop here, unlike Scenario 2/3
   if (excessOverIdeal <= 0) {
     return {
       ideal_cash: round(idealCash, 2)!,
@@ -4266,26 +4663,17 @@ async function computeLiquidCaseFromExcessCash(
     };
   }
 
-  const ltps = await fetchLtps([ETF_SYMBOLS.liquidcase]);
-  const lcPriced = buildPricedSleeve(
-    "Liquidcase",
-    0,
-    excessOverIdeal,
-    ltps.get(ETF_SYMBOLS.liquidcase),
+  const liquidLtps = await fetchLtps(
+    row.liquid_group.leaves.map((l) => l.ltp_symbol),
   );
-  const liquidcaseActual = lcPriced.sleeve.actual_value;
-  // dust from Liquidcase's own flooring swept into Cash, same convention as everywhere else
-  const cashActual = -excessOverIdeal + lcPriced.dust;
+  const liquidcase = buildGapGroupSleeve(
+    "Liquidcase",
+    row.liquid_group.leaves,
+    excessOverIdeal,
+    liquidLtps,
+  );
+  const cashActual = -excessOverIdeal + liquidcase.dust;
 
-  const liquidcaseSleeve: GapDeploymentSleeve = {
-    particular: "Liquidcase",
-    current_value: round(row.liquidcase, 2)!,
-    addition_target: round(excessOverIdeal, 2)!,
-    addition_actual: round(liquidcaseActual, 2)!,
-    new_value: round(row.liquidcase + liquidcaseActual, 2)!,
-    ltp: lcPriced.sleeve.ltp,
-    quantity: lcPriced.sleeve.quantity,
-  };
   const cashSleeve: GapDeploymentSleeve = {
     particular: "Cash",
     current_value: round(row.cash, 2)!,
@@ -4300,26 +4688,24 @@ async function computeLiquidCaseFromExcessCash(
     ideal_cash: round(idealCash, 2)!,
     excess_cash_over_ideal: excessOverIdeal,
     blocked: false,
-    sleeves: [liquidcaseSleeve, cashSleeve],
+    sleeves: [liquidcase.sleeve, cashSleeve],
   };
 }
 
 export interface AdditionalCashRequiredResult {
   ideal_account_value: number;
-  additional_cash_required: number; // negative = already above ideal — shown plainly, never blocked
-  // Liquidcase/Cash can move opposite directions — the aggregate alone hides that
+  additional_cash_required: number;
   liquidcase_ideal: number;
-  liquidcase_inflow: number; // negative = already above ideal
+  liquidcase_inflow: number;
   cash_ideal: number;
-  cash_inflow: number; // negative = already above ideal
+  cash_inflow: number;
 }
 
 export interface AdditionalHoldingsRequiredResult {
-  gap: number; // negative = a reduction, not blocked
-  ratio_type: "current" | "ideal" | "model" | null; // null for QYE — no ratio choice
+  gap: number;
+  ratio_type: "current" | "ideal" | "model" | null;
   new_account_value: number;
   sleeves: GapDeploymentSleeve[];
-  // QYE only; always computed even on a negative gap
   undeployed_stock_value: number | null;
   stock_deployed: number | null;
   remaining_gap_after_stock: number | null;
@@ -4330,20 +4716,17 @@ export interface AdditionalHoldingsRequiredResult {
 export interface SpecificDeploymentResult {
   amount: number;
   ratio_type: "current" | "ideal" | "model" | null;
-  eq_book_amount: number | null; // null for QYE — no separate eq/deriv book split label, Holdings IS the eq book
+  eq_book_amount: number | null;
   deriv_book_amount: number | null;
   new_account_value: number;
   sleeves: GapDeploymentSleeve[];
 }
 
 export interface ExcessCashDeploymentResult {
-  // Account Value never changes here — money moves Liquidcase/Cash into equity
   amount_available: number;
-  // blocks when nothing's available — action request, not a diagnostic
   blocked: boolean;
   ratio_type: "current" | "ideal" | "model" | null;
   full: { amount_deployed: number; sleeves: GapDeploymentSleeve[] } | null;
-  // populated only when `amount` is given and not blocked
   partial: {
     amount_deployed: number;
     capped: boolean;
@@ -4352,27 +4735,26 @@ export interface ExcessCashDeploymentResult {
 }
 
 export interface LiquidCaseFromExcessCashResult {
-  // D6 — Cash snaps to ideal, Liquidcase absorbs the diff; Holdings/AV untouched
   ideal_cash: number;
-  excess_cash_over_ideal: number; // negative = Cash is already below ideal, shown plainly
-  blocked: boolean; // action request — true and sleeves empty when there's nothing to move
-  sleeves: GapDeploymentSleeve[]; // Liquidcase + Cash only — Holdings isn't included since it never moves
+  excess_cash_over_ideal: number;
+  blocked: boolean;
+  sleeves: GapDeploymentSleeve[];
 }
 
 export interface RealClientDeployResult {
-  snapshot: CashMarginSnapshotRow; // current real state, as fetched — never reflects today_pnl, see applyTodayPnl
+  targets_source: Level1TargetsSource;
+  snapshot: CashMarginSnapshotRow;
   additional_cash_required: AdditionalCashRequiredResult;
-  // null for QAW when ratio_type wasn't given — skips just this section
   additional_holdings_required: AdditionalHoldingsRequiredResult | null;
   excess_cash_deployment: ExcessCashDeploymentResult;
   liquid_case_from_excess_cash: LiquidCaseFromExcessCashResult;
-  specific_deployment: SpecificDeploymentResult | null; // only when amount is given
+  specific_deployment: SpecificDeploymentResult | null;
 }
 
 async function computeRealClientDeploy(
   input: DeployInput,
   has_equity_split: boolean,
-  defaults: Awaited<ReturnType<typeof fetchStrategyDefaults>>,
+  oldDefaults: Awaited<ReturnType<typeof fetchStrategyDefaults>>,
 ): Promise<RealClientDeployResult> {
   const qcode = input.qcode!;
   const snapshot = await fetchCashMarginSnapshot(qcode);
@@ -4381,24 +4763,52 @@ async function computeRealClientDeploy(
     throw new Error(`No active '${input.strategy}' row found for ${qcode}`);
   }
 
-  const equity_pct = input.equity_pct ?? defaults.equity_pct;
+  const today = new Date().toISOString().split("T")[0];
+  const allPairs = await fetchStrategyPairs("exposure_tag_suffix");
+  const pair =
+    allPairs.find(
+      (p) =>
+        p.qcode === qcode &&
+        p.strategy === input.strategy &&
+        isActive(p.effective_to, today),
+    ) ?? null;
+  const oldDefaultsRow = await prisma.strategy_defaults.findUnique({
+    where: { strategy_name: input.strategy },
+  });
+  const config = await resolveStrategyConfig(
+    qcode,
+    input.strategy,
+    pair,
+    oldDefaultsRow,
+    new Date(),
+  );
+
+  const equity_pct = input.equity_pct ?? config.equity_pct;
   if (equity_pct == null) {
     throw new Error(`equity_pct not configured for '${input.strategy}'`);
   }
   const { cash_pct, lc_pct } = resolveCashLiquidcaseSplit(
     equity_pct,
-    defaults.cash_pct,
+    config.cash_pct,
     input.cash_pct,
     input.lc_pct,
   );
-  const derivBookPct = cash_pct + lc_pct; // = 1 - equity_pct, resolved consistently with everything else in this file
+  const derivBookPct = cash_pct + lc_pct;
   const targets = { equity_pct, cash_pct, lc_pct };
+  const targetsSource: Level1TargetsSource = {
+    equity_pct: input.equity_pct != null ? "override" : "computed",
+    cash_pct: input.cash_pct != null ? "override" : "computed",
+    lc_pct: input.lc_pct != null ? "override" : "computed",
+  };
+  const overrides: DeployOverrides = {
+    equity_group_split: input.equity_group_split,
+    equity_leaf_splits: input.equity_leaf_splits,
+    liquid_component_split: input.liquid_component_split,
+  };
 
-  // today_pnl scoped to Scenario 2/3/5 only
   const pnlRow = applyTodayPnl(row, input.today_pnl);
-  const pnlCashComponent = pnlRow.cash + pnlRow.liquidcase;
+  const pnlCashComponent = pnlRow.cash + pnlRow.liquid_component_total;
 
-  // Scenario 2 — always computed; per-bucket since Liquidcase/Cash can move opposite ways
   const idealAccountValue = pnlRow.holdings / equity_pct;
   const additionalCashRequired = computeAdditionalCashRequired(
     pnlRow.holdings,
@@ -4412,12 +4822,14 @@ async function computeRealClientDeploy(
     ideal_account_value: round(idealAccountValue, 2)!,
     additional_cash_required: round(additionalCashRequired, 2)!,
     liquidcase_ideal: round(liquidcaseIdeal, 2)!,
-    liquidcase_inflow: round(liquidcaseIdeal - pnlRow.liquidcase, 2)!,
+    liquidcase_inflow: round(
+      liquidcaseIdeal - pnlRow.liquid_component_total,
+      2,
+    )!,
     cash_ideal: round(cashIdeal, 2)!,
     cash_inflow: round(cashIdeal - pnlRow.cash, 2)!,
   };
 
-  // Scenario 3/5 — never blocked; a negative gap is a reduction, not an error
   const gap = computeAdditionalHoldingsGap(
     pnlCashComponent,
     pnlRow.account_value,
@@ -4428,13 +4840,12 @@ async function computeRealClientDeploy(
   if (has_equity_split && !input.ratio_type) {
     additional_holdings_required = null;
   } else if (has_equity_split) {
-    const split = await computeGapSplitQaw(
+    const split = await computeGapSplit(
       pnlRow,
-      qcode,
-      targets,
-      defaults,
       gap,
+      qcode,
       input.ratio_type!,
+      overrides,
     );
     additional_holdings_required = {
       gap: round(gap, 2)!,
@@ -4448,16 +4859,26 @@ async function computeRealClientDeploy(
       partial_sleeves: null,
     };
   } else {
-    // only Scenario 5's fields clamp at 0; the split below shows the real signed reduction
-    const split = computeGapSplitQye(pnlRow, gap);
-    // undeployed_stock_value is unconditional; only stock_deployed depends on sign
+    const split = await computeGapSplit(
+      pnlRow,
+      gap,
+      undefined,
+      undefined,
+      overrides,
+    );
     const undeployedStockValue = await resolveUndeployedValue(
       qcode,
       input.strategy,
     );
     const stockDeployed = gap <= 0 ? 0 : Math.min(undeployedStockValue, gap);
     const remainingGap = gap - stockDeployed;
-    const partialSplit = computeGapSplitQye(pnlRow, stockDeployed);
+    const partialSplit = await computeGapSplit(
+      pnlRow,
+      stockDeployed,
+      undefined,
+      undefined,
+      overrides,
+    );
     additional_holdings_required = {
       gap: round(gap, 2)!,
       ratio_type: null,
@@ -4471,7 +4892,6 @@ async function computeRealClientDeploy(
     };
   }
 
-  // uses the raw (non-P&L) row; blocks entirely when nothing's available
   const excessCashAvailable = computeExcessCashAvailable(
     row.account_value,
     row.holdings,
@@ -4488,7 +4908,6 @@ async function computeRealClientDeploy(
       partial: null,
     };
   } else if (has_equity_split && !input.ratio_type) {
-    // no ratio_type — amount_available still shown, only the split is skipped
     excess_cash_deployment = {
       amount_available: round(excessCashAvailable, 2)!,
       blocked: false,
@@ -4497,25 +4916,25 @@ async function computeRealClientDeploy(
       partial: null,
     };
   } else if (has_equity_split) {
-    const full = await computeExcessCashSplitQaw(
+    const full = await computeExcessCashSplit(
       row,
-      qcode,
       targets,
-      defaults,
       excessCashAvailable,
+      qcode,
       input.ratio_type!,
+      overrides,
     );
     let partial: ExcessCashDeploymentResult["partial"] = null;
     if (input.amount != null) {
       const capped = input.amount > excessCashAvailable;
       const amountDeployed = capped ? excessCashAvailable : input.amount;
-      const partialSplit = await computeExcessCashSplitQaw(
+      const partialSplit = await computeExcessCashSplit(
         row,
-        qcode,
         targets,
-        defaults,
         amountDeployed,
+        qcode,
         input.ratio_type!,
+        overrides,
       );
       partial = {
         amount_deployed: round(amountDeployed, 2)!,
@@ -4534,19 +4953,25 @@ async function computeRealClientDeploy(
       partial,
     };
   } else {
-    const full = await computeExcessCashSplitQye(
+    const full = await computeExcessCashSplit(
       row,
       targets,
       excessCashAvailable,
+      undefined,
+      undefined,
+      overrides,
     );
     let partial: ExcessCashDeploymentResult["partial"] = null;
     if (input.amount != null) {
       const capped = input.amount > excessCashAvailable;
       const amountDeployed = capped ? excessCashAvailable : input.amount;
-      const partialSplit = await computeExcessCashSplitQye(
+      const partialSplit = await computeExcessCashSplit(
         row,
         targets,
         amountDeployed,
+        undefined,
+        undefined,
+        overrides,
       );
       partial = {
         amount_deployed: round(amountDeployed, 2)!,
@@ -4566,23 +4991,21 @@ async function computeRealClientDeploy(
     };
   }
 
-  // D6 — Buy Liquid Case from Excess Cash. Never touches Holdings, so QAW/QYE share one function.
   const liquid_case_from_excess_cash = await computeLiquidCaseFromExcessCash(
     row,
     cash_pct,
   );
 
-  // FIXED to use the real Eq Book/Deriv Book split (was 100% into equity)
   let specific_deployment: SpecificDeploymentResult | null = null;
   if (input.amount != null) {
     if (has_equity_split && input.ratio_type) {
-      const split = await computeSpecificDeploymentQaw(
+      const split = await computeSpecificDeployment(
         row,
-        qcode,
         targets,
-        defaults,
         input.amount,
+        qcode,
         input.ratio_type,
+        overrides,
       );
       specific_deployment = {
         amount: input.amount,
@@ -4593,10 +5016,13 @@ async function computeRealClientDeploy(
         sleeves: split.sleeves,
       };
     } else if (!has_equity_split) {
-      const split = await computeSpecificDeploymentQye(
+      const split = await computeSpecificDeployment(
         row,
         targets,
         input.amount,
+        undefined,
+        undefined,
+        overrides,
       );
       specific_deployment = {
         amount: input.amount,
@@ -4610,6 +5036,7 @@ async function computeRealClientDeploy(
   }
 
   return {
+    targets_source: targetsSource,
     snapshot: row,
     additional_cash_required,
     additional_holdings_required,
@@ -4619,19 +5046,777 @@ async function computeRealClientDeploy(
   };
 }
 
-// ── unified entry point — one route, no scenario-name field anywhere.
-// qcode presence picks D0 vs real-client; has_equity_split picks QAW vs QYE
 export async function computeDeploy(
   input: DeployInput,
-): Promise<QawDeployResult | QyeDeployResult | RealClientDeployResult> {
+): Promise<
+  | NewClientSplitDeployResult
+  | NewClientFlatDeployResult
+  | RealClientDeployResult
+> {
   const defaults = await fetchStrategyDefaults(input.strategy);
-  const has_equity_split = defaults.gold_pct != null;
+  const has_equity_split = await resolveHasEquitySplit(
+    input.strategy,
+    new Date(),
+  );
 
   if (input.qcode) {
     return computeRealClientDeploy(input, has_equity_split, defaults);
   }
 
   return has_equity_split
-    ? computeQawDeploy(input, defaults)
-    : computeQyeDeploy(input, defaults);
+    ? computeNewClientSplitDeploy(input)
+    : computeNewClientFlatDeploy(input);
+}
+
+export interface ClientStrategyPairRow {
+  id: number;
+  qcode: string;
+  account_name: string;
+  strategy: string;
+  exposure_tag_suffix: string;
+  profit_tag_suffix: string;
+  effective_from: string;
+  effective_to: string | null;
+}
+
+export async function fetchClientStrategyPairs(filter: {
+  qcode?: string;
+  strategy?: string;
+  as_of_date?: string;
+}): Promise<ClientStrategyPairRow[]> {
+  const rows = await prisma.client_strategy_configs.findMany({
+    where: {
+      qcode: filter.qcode ?? undefined,
+      strategy: filter.strategy ?? undefined,
+    },
+    orderBy: [{ qcode: "asc" }, { strategy: "asc" }, { effective_from: "asc" }],
+  });
+
+  const asOf = filter.as_of_date;
+  const filtered = asOf
+    ? rows.filter((r) => {
+        const from = r.effective_from
+          ? new Date(r.effective_from).toISOString().slice(0, 10)
+          : null;
+        const to = r.effective_to
+          ? new Date(r.effective_to).toISOString().slice(0, 10)
+          : null;
+        return (!from || from <= asOf) && (!to || to > asOf);
+      })
+    : rows;
+
+  return filtered.map((r) => ({
+    id: r.id,
+    qcode: r.qcode,
+    account_name: r.account_name,
+    strategy: r.strategy,
+    exposure_tag_suffix: r.exposure_tag_suffix,
+    profit_tag_suffix: r.profit_tag_suffix,
+    effective_from: r.effective_from
+      ? new Date(r.effective_from).toISOString().slice(0, 10)
+      : "",
+    effective_to: r.effective_to
+      ? new Date(r.effective_to).toISOString().slice(0, 10)
+      : null,
+  }));
+}
+
+export interface GroupedClientStrategyPairs {
+  qcode: string;
+  account_name: string;
+  strategies: {
+    id: number | null;
+    strategy: string;
+    effective_from: string;
+    effective_to: string | null;
+    profit_tag: string;
+    exposure_tag: string;
+  }[];
+}
+
+export async function fetchClientStrategyPairsGrouped(): Promise<
+  GroupedClientStrategyPairs[]
+> {
+  const configs = await prisma.client_strategy_configs.findMany({
+    orderBy: [{ qcode: "asc" }, { effective_from: "asc" }],
+  });
+
+  const today = new Date();
+
+  const grouped = new Map<string, typeof configs>();
+  for (const c of configs) {
+    if (!grouped.has(c.qcode)) grouped.set(c.qcode, []);
+    grouped.get(c.qcode)!.push(c);
+  }
+
+  const result: GroupedClientStrategyPairs[] = [];
+  for (const [qcode, rows] of grouped) {
+    const hasActive = rows.some(
+      (r) => !r.effective_to || r.effective_to >= today,
+    );
+    if (!hasActive) continue;
+
+    const minFrom = rows.reduce<Date>(
+      (min, r) => (r.effective_from < min ? r.effective_from : min),
+      rows[0].effective_from,
+    );
+
+    const hasZerodha = rows.some((r) =>
+      r.exposure_tag_suffix.toLowerCase().includes("zerodha"),
+    );
+
+    result.push({
+      qcode,
+      account_name: rows[0].account_name,
+      strategies: [
+        ...rows.map((r) => ({
+          id: r.id,
+          strategy: r.strategy,
+          effective_from: r.effective_from.toISOString().split("T")[0],
+          effective_to: r.effective_to
+            ? r.effective_to.toISOString().split("T")[0]
+            : null,
+          profit_tag: `${r.strategy} ${r.profit_tag_suffix}`,
+          exposure_tag: `${r.strategy} ${r.exposure_tag_suffix}`,
+        })),
+        {
+          id: null,
+          strategy: "combined",
+          effective_from: minFrom.toISOString().split("T")[0],
+          effective_to: null,
+          profit_tag: "Qode Total Portfolio",
+          exposure_tag: hasZerodha
+            ? "Zerodha Total Portfolio"
+            : "Total Portfolio Exposure",
+        },
+      ],
+    });
+  }
+
+  return result;
+}
+
+export interface CreateClientStrategyPairInput {
+  qcode: string;
+  account_name: string;
+  strategy: string;
+  exposure_tag_suffix: string;
+  profit_tag_suffix: string;
+  effective_from: string;
+}
+
+export async function createClientStrategyPair(
+  input: CreateClientStrategyPairInput,
+): Promise<ClientStrategyPairRow> {
+  const account = await prisma.accounts.findUnique({
+    where: { qcode: input.qcode },
+  });
+  if (!account) {
+    throw new Error(
+      `qcode '${input.qcode}' does not exist in accounts -- qcodes are auto-assigned when a real account is created, not chosen freely. Create the account first, or use an existing qcode.`,
+    );
+  }
+  const existing = await prisma.client_strategy_configs.findFirst({
+    where: {
+      qcode: input.qcode,
+      strategy: input.strategy,
+      effective_from: new Date(input.effective_from),
+    },
+  });
+  if (existing) {
+    throw new Error(
+      `A pair already exists for ${input.qcode}/${input.strategy} starting ${input.effective_from}`,
+    );
+  }
+  const created = await prisma.client_strategy_configs.create({
+    data: {
+      qcode: input.qcode,
+      account_name: input.account_name,
+      strategy: input.strategy,
+      exposure_tag_suffix: input.exposure_tag_suffix,
+      profit_tag_suffix: input.profit_tag_suffix,
+      effective_from: new Date(input.effective_from),
+      effective_to: null,
+    },
+  });
+  return {
+    id: created.id,
+    qcode: created.qcode,
+    account_name: created.account_name,
+    strategy: created.strategy,
+    exposure_tag_suffix: created.exposure_tag_suffix,
+    profit_tag_suffix: created.profit_tag_suffix,
+    effective_from: new Date(created.effective_from).toISOString().slice(0, 10),
+    effective_to: null,
+  };
+}
+
+export interface UpdateClientStrategyPairInput {
+  account_name?: string;
+  exposure_tag_suffix?: string;
+  profit_tag_suffix?: string;
+}
+
+export async function updateClientStrategyPair(
+  qcode: string,
+  strategy: string,
+  effective_from: string,
+  input: UpdateClientStrategyPairInput,
+): Promise<ClientStrategyPairRow> {
+  const existing = await prisma.client_strategy_configs.findFirst({
+    where: { qcode, strategy, effective_from: new Date(effective_from) },
+  });
+  if (!existing) {
+    throw new Error(
+      `No pair found for ${qcode}/${strategy} starting ${effective_from}`,
+    );
+  }
+  const updated = await prisma.client_strategy_configs.update({
+    where: { id: existing.id },
+    data: {
+      account_name: input.account_name ?? undefined,
+      exposure_tag_suffix: input.exposure_tag_suffix ?? undefined,
+      profit_tag_suffix: input.profit_tag_suffix ?? undefined,
+    },
+  });
+  return {
+    id: updated.id,
+    qcode: updated.qcode,
+    account_name: updated.account_name,
+    strategy: updated.strategy,
+    exposure_tag_suffix: updated.exposure_tag_suffix,
+    profit_tag_suffix: updated.profit_tag_suffix,
+    effective_from: new Date(updated.effective_from).toISOString().slice(0, 10),
+    effective_to: updated.effective_to
+      ? new Date(updated.effective_to).toISOString().slice(0, 10)
+      : null,
+  };
+}
+
+export async function closeClientStrategyPair(
+  qcode: string,
+  strategy: string,
+  effective_from: string,
+  effective_to: string,
+): Promise<ClientStrategyPairRow> {
+  const existing = await prisma.client_strategy_configs.findFirst({
+    where: { qcode, strategy, effective_from: new Date(effective_from) },
+  });
+  if (!existing) {
+    throw new Error(
+      `No pair found for ${qcode}/${strategy} starting ${effective_from}`,
+    );
+  }
+  if (new Date(effective_to) < new Date(effective_from)) {
+    throw new Error("effective_to cannot be before effective_from");
+  }
+  const updated = await prisma.client_strategy_configs.update({
+    where: { id: existing.id },
+    data: { effective_to: new Date(effective_to) },
+  });
+  return {
+    id: updated.id,
+    qcode: updated.qcode,
+    account_name: updated.account_name,
+    strategy: updated.strategy,
+    exposure_tag_suffix: updated.exposure_tag_suffix,
+    profit_tag_suffix: updated.profit_tag_suffix,
+    effective_from: new Date(updated.effective_from).toISOString().slice(0, 10),
+    effective_to: new Date(updated.effective_to!).toISOString().slice(0, 10),
+  };
+}
+
+export async function deleteClientStrategyPair(
+  qcode: string,
+  strategy: string,
+  effective_from: string,
+  confirmed: boolean,
+): Promise<{ deleted: true }> {
+  if (!confirmed) {
+    throw new Error(
+      "Deleting a pair requires explicit confirmation that no computation has run against it since creation -- pass confirmed: true.",
+    );
+  }
+  const existing = await prisma.client_strategy_configs.findFirst({
+    where: { qcode, strategy, effective_from: new Date(effective_from) },
+  });
+  if (!existing) {
+    throw new Error(
+      `No pair found for ${qcode}/${strategy} starting ${effective_from}`,
+    );
+  }
+  await prisma.client_strategy_configs.delete({ where: { id: existing.id } });
+  return { deleted: true };
+}
+
+const THRESHOLD_KEYS = new Set([
+  "psar_leverage",
+  "psar_multiplier",
+  "long_opt_pct",
+  "drawdown_margin_pct",
+  "cash_pct_healthy",
+  "cash_pct_warning",
+  "cash_pct_upside",
+  "liquidcase_pct_gate",
+  "cash_collateral_pct_healthy",
+  "cash_collateral_pct_warning",
+  "non_cash_collateral_pct_healthy",
+  "non_cash_collateral_pct_warning",
+]);
+
+export interface ConfigValueRow {
+  config_key: string;
+  ratio_type: string;
+  value: number | null;
+  as_of_date: string;
+  source: "client_override" | "strategy_default";
+  updated_by: string | null;
+  resolved_preview?: { as_of_today: number; note: string };
+}
+
+async function resolveParentChainPreview(
+  configKey: string,
+  ratioType: "ideal" | "model" | "value",
+  strategy: string,
+  qcode: string,
+  value: number,
+): Promise<{ as_of_today: number; note: string } | undefined> {
+  const nodes = await prisma.config_catalog.findMany();
+  const node = nodes.find((n) => n.config_key === configKey);
+  if (!node || !node.parent_key) return undefined;
+
+  const chainKeys: string[] = [];
+  let current: string | null = node.parent_key;
+  while (current) {
+    chainKeys.push(current);
+    current = nodes.find((n) => n.config_key === current)?.parent_key ?? null;
+  }
+  if (chainKeys.length === 0) return undefined;
+
+  const ancestorValues = await fetchOwnValues(
+    chainKeys,
+    ratioType,
+    strategy,
+    qcode,
+    new Date(),
+  );
+  let resolved = value;
+  const parts: string[] = [`${value} is relative to ${node.parent_key}`];
+  for (const key of chainKeys) {
+    const v = ancestorValues.get(key);
+    if (v != null) {
+      resolved *= v;
+      parts.push(`(currently ${v})`);
+    }
+  }
+  return {
+    as_of_today: round(resolved, 6)!,
+    note: `${parts.join(" ")}. ${value} x ${chainKeys.map((k) => ancestorValues.get(k) ?? 1).join(" x ")} = ${round(resolved, 6)} of the ultimate root today -- will change if any ancestor changes.`,
+  };
+}
+
+export async function fetchConfigValuesForStrategy(
+  strategy: string,
+  category: "ratio" | "threshold" | "all",
+  as_of_date: string,
+): Promise<ConfigValueRow[]> {
+  const asOf = new Date(as_of_date);
+  const defaultRows = await prisma.strategy_config_defaults.findMany({
+    where: { strategy_name: strategy, as_of_date: { lte: asOf } },
+    orderBy: { as_of_date: "desc" },
+  });
+  const latest = new Map<string, (typeof defaultRows)[number]>();
+  for (const r of defaultRows) {
+    const k = `${r.config_key}|${r.ratio_type}`;
+    if (!latest.has(k)) latest.set(k, r);
+  }
+  const rows: ConfigValueRow[] = [];
+  for (const r of latest.values()) {
+    const isThreshold = THRESHOLD_KEYS.has(r.config_key);
+    if (category === "ratio" && isThreshold) continue;
+    if (category === "threshold" && !isThreshold) continue;
+    const value = r.value != null ? Number(r.value) : null;
+    const preview =
+      value != null
+        ? await resolveParentChainPreview(
+            r.config_key,
+            r.ratio_type as any,
+            strategy,
+            "",
+            value,
+          )
+        : undefined;
+    rows.push({
+      config_key: r.config_key,
+      ratio_type: r.ratio_type,
+      value,
+      as_of_date: r.as_of_date.toISOString().slice(0, 10),
+      source: "strategy_default",
+      updated_by: r.updated_by ?? null,
+      resolved_preview: preview,
+    });
+  }
+  return rows;
+}
+
+export async function fetchConfigValuesForClient(
+  qcode: string,
+  strategy: string,
+  category: "ratio" | "threshold" | "all",
+  as_of_date: string,
+): Promise<ConfigValueRow[]> {
+  const asOf = new Date(as_of_date);
+  const [clientRows, defaultRows] = await Promise.all([
+    prisma.client_config_values.findMany({
+      where: { qcode, strategy, as_of_date: { lte: asOf } },
+      orderBy: { as_of_date: "desc" },
+    }),
+    prisma.strategy_config_defaults.findMany({
+      where: { strategy_name: strategy, as_of_date: { lte: asOf } },
+      orderBy: { as_of_date: "desc" },
+    }),
+  ]);
+  const latestClient = new Map<string, (typeof clientRows)[number]>();
+  for (const r of clientRows) {
+    const k = `${r.config_key}|${r.ratio_type}`;
+    if (!latestClient.has(k)) latestClient.set(k, r);
+  }
+  const latestDefault = new Map<string, (typeof defaultRows)[number]>();
+  for (const r of defaultRows) {
+    const k = `${r.config_key}|${r.ratio_type}`;
+    if (!latestDefault.has(k)) latestDefault.set(k, r);
+  }
+  const allKeys = new Set([...latestClient.keys(), ...latestDefault.keys()]);
+  const rows: ConfigValueRow[] = [];
+  for (const k of allKeys) {
+    const [config_key, ratio_type] = k.split("|");
+    const isThreshold = THRESHOLD_KEYS.has(config_key);
+    if (category === "ratio" && isThreshold) continue;
+    if (category === "threshold" && !isThreshold) continue;
+    const clientRow = latestClient.get(k);
+    const defaultRow = latestDefault.get(k);
+    const source: ConfigValueRow["source"] = clientRow
+      ? "client_override"
+      : "strategy_default";
+    const row = clientRow ?? defaultRow!;
+    const value = row.value != null ? Number(row.value) : null;
+    const preview =
+      value != null
+        ? await resolveParentChainPreview(
+            config_key,
+            ratio_type as any,
+            strategy,
+            qcode,
+            value,
+          )
+        : undefined;
+    rows.push({
+      config_key,
+      ratio_type,
+      value,
+      as_of_date: row.as_of_date.toISOString().slice(0, 10),
+      source,
+      updated_by: row.updated_by ?? null,
+      resolved_preview: preview,
+    });
+  }
+  return rows;
+}
+
+export interface WriteConfigValueInput {
+  config_key: string;
+  ratio_type: "ideal" | "model" | "value";
+  value: number | null;
+  as_of_date: string;
+  updated_by: string;
+}
+
+async function validateRatioTypeAllowed(
+  configKey: string,
+  ratioType: string,
+): Promise<void> {
+  const node = await prisma.config_catalog.findUnique({
+    where: { config_key: configKey },
+  });
+  if (!node) {
+    throw new Error(`config_key '${configKey}' not found in catalog`);
+  }
+  const allowed = (node.allowed_ratio_types as string[] | null) ?? [];
+  if (allowed.length > 0 && !allowed.includes(ratioType)) {
+    throw new Error(
+      `ratio_type '${ratioType}' is not valid for '${configKey}' -- allowed: ${allowed.join(", ") || "(none configured)"}`,
+    );
+  }
+}
+
+export async function writeStrategyConfigValue(
+  strategy: string,
+  input: WriteConfigValueInput,
+): Promise<{ written: boolean; reason?: string; row?: ConfigValueRow }> {
+  await validateRatioTypeAllowed(input.config_key, input.ratio_type);
+
+  const latest = await prisma.strategy_config_defaults.findFirst({
+    where: {
+      strategy_name: strategy,
+      config_key: input.config_key,
+      ratio_type: input.ratio_type,
+    },
+    orderBy: { as_of_date: "desc" },
+  });
+  const latestValue = latest?.value != null ? Number(latest.value) : null;
+  if (latestValue === input.value) {
+    return {
+      written: false,
+      reason: `value unchanged from latest row (${latest?.as_of_date.toISOString().slice(0, 10)})`,
+    };
+  }
+
+  await prisma.strategy_config_defaults.create({
+    data: {
+      strategy_name: strategy,
+      config_key: input.config_key,
+      ratio_type: input.ratio_type,
+      value: input.value,
+      as_of_date: new Date(input.as_of_date),
+      updated_by: input.updated_by,
+    },
+  });
+
+  const preview =
+    input.value != null
+      ? await resolveParentChainPreview(
+          input.config_key,
+          input.ratio_type,
+          strategy,
+          "",
+          input.value,
+        )
+      : undefined;
+
+  return {
+    written: true,
+    row: {
+      config_key: input.config_key,
+      ratio_type: input.ratio_type,
+      value: input.value,
+      as_of_date: input.as_of_date,
+      source: "strategy_default",
+      updated_by: input.updated_by,
+      resolved_preview: preview,
+    },
+  };
+}
+
+export async function writeClientConfigValue(
+  qcode: string,
+  strategy: string,
+  input: WriteConfigValueInput,
+): Promise<{ written: boolean; reason?: string; row?: ConfigValueRow }> {
+  await validateRatioTypeAllowed(input.config_key, input.ratio_type);
+
+  const latest = await prisma.client_config_values.findFirst({
+    where: {
+      qcode,
+      strategy,
+      config_key: input.config_key,
+      ratio_type: input.ratio_type,
+    },
+    orderBy: { as_of_date: "desc" },
+  });
+  const latestValue = latest?.value != null ? Number(latest.value) : null;
+  if (latestValue === input.value) {
+    return {
+      written: false,
+      reason: `value unchanged from latest row (${latest?.as_of_date.toISOString().slice(0, 10)})`,
+    };
+  }
+
+  await prisma.client_config_values.create({
+    data: {
+      qcode,
+      strategy,
+      config_key: input.config_key,
+      ratio_type: input.ratio_type,
+      value: input.value,
+      as_of_date: new Date(input.as_of_date),
+      updated_by: input.updated_by,
+    },
+  });
+
+  const preview =
+    input.value != null
+      ? await resolveParentChainPreview(
+          input.config_key,
+          input.ratio_type,
+          strategy,
+          qcode,
+          input.value,
+        )
+      : undefined;
+
+  return {
+    written: true,
+    row: {
+      config_key: input.config_key,
+      ratio_type: input.ratio_type,
+      value: input.value,
+      as_of_date: input.as_of_date,
+      source: "client_override",
+      updated_by: input.updated_by,
+      resolved_preview: preview,
+    },
+  };
+}
+
+export interface ResolvedConfigTreeNode {
+  config_key: string;
+  label: string;
+  ratio_type: string | null;
+  own_value: number | null;
+  source: "client_override" | "strategy_default" | "not_configured";
+  children: ResolvedConfigTreeNode[];
+}
+
+async function resolveConfigTreeNode(
+  node: { config_key: string; label: string; allowed_ratio_types: string[] },
+  childrenByParent: Map<
+    string,
+    { config_key: string; label: string; allowed_ratio_types: string[] }[]
+  >,
+  strategy: string,
+  qcode: string,
+  preferredRatioType: "ideal" | "model",
+  asOfDate: Date,
+): Promise<ResolvedConfigTreeNode> {
+  const allowed = node.allowed_ratio_types;
+  let ratioType: "ideal" | "model" | "value" | null = null;
+  if (allowed.includes(preferredRatioType)) {
+    ratioType = preferredRatioType;
+  } else if (allowed.includes("value")) {
+    ratioType = "value";
+  } else if (allowed.length > 0) {
+    ratioType = allowed[0] as "ideal" | "model" | "value";
+  }
+
+  let own_value: number | null = null;
+  let source: ResolvedConfigTreeNode["source"] = "not_configured";
+  if (ratioType) {
+    const clientRow = qcode
+      ? await prisma.client_config_values.findFirst({
+          where: {
+            qcode,
+            strategy,
+            config_key: node.config_key,
+            ratio_type: ratioType,
+            as_of_date: { lte: asOfDate },
+          },
+          orderBy: { as_of_date: "desc" },
+        })
+      : null;
+    if (clientRow && clientRow.value != null) {
+      own_value = Number(clientRow.value);
+      source = "client_override";
+    } else {
+      const defaultRow = await prisma.strategy_config_defaults.findFirst({
+        where: {
+          strategy_name: strategy,
+          config_key: node.config_key,
+          ratio_type: ratioType,
+          as_of_date: { lte: asOfDate },
+        },
+        orderBy: { as_of_date: "desc" },
+      });
+      if (defaultRow && defaultRow.value != null) {
+        own_value = Number(defaultRow.value);
+        source = "strategy_default";
+      }
+    }
+  }
+
+  const childNodes = childrenByParent.get(node.config_key) ?? [];
+  const children = await Promise.all(
+    childNodes.map((c) =>
+      resolveConfigTreeNode(
+        c,
+        childrenByParent,
+        strategy,
+        qcode,
+        preferredRatioType,
+        asOfDate,
+      ),
+    ),
+  );
+
+  return {
+    config_key: node.config_key,
+    label: node.label,
+    ratio_type: own_value != null ? ratioType : null,
+    own_value,
+    source: own_value != null ? source : "not_configured",
+    children,
+  };
+}
+
+export async function fetchResolvedConfigTree(
+  strategy: string,
+  qcode: string,
+  ratio_type: "ideal" | "model" = "ideal",
+  as_of_date: string = new Date().toISOString().slice(0, 10),
+): Promise<ResolvedConfigTreeNode[]> {
+  const allNodes = await prisma.config_catalog.findMany();
+  const childrenByParent = new Map<string, typeof allNodes>();
+  for (const n of allNodes) {
+    if (!n.parent_key) continue;
+    if (!childrenByParent.has(n.parent_key))
+      childrenByParent.set(n.parent_key, []);
+    childrenByParent.get(n.parent_key)!.push(n);
+  }
+  const roots = allNodes.filter((n) => !n.parent_key);
+  const asOf = new Date(as_of_date);
+
+  return Promise.all(
+    roots.map((r) =>
+      resolveConfigTreeNode(
+        {
+          config_key: r.config_key,
+          label: r.label,
+          allowed_ratio_types: (r.allowed_ratio_types as string[] | null) ?? [],
+        },
+        childrenByParent as any,
+        strategy,
+        qcode,
+        ratio_type,
+        asOf,
+      ),
+    ),
+  );
+}
+
+export interface TreePreviewInput {
+  strategy: string;
+  qcode?: string;
+  ratio_type: "ideal" | "model";
+  overrides: Record<string, number>;
+}
+
+export async function previewResolvedConfigTree(
+  input: TreePreviewInput,
+): Promise<ResolvedConfigTreeNode[]> {
+  const tree = await fetchResolvedConfigTree(
+    input.strategy,
+    input.qcode ?? "",
+    input.ratio_type,
+  );
+  const applyOverrides = (
+    node: ResolvedConfigTreeNode,
+  ): ResolvedConfigTreeNode => {
+    const overridden = input.overrides[node.config_key];
+    return {
+      ...node,
+      own_value: overridden ?? node.own_value,
+      source: overridden != null ? "client_override" : node.source,
+      children: node.children.map(applyOverrides),
+    };
+  };
+  return tree.map(applyOverrides);
 }
