@@ -22,6 +22,9 @@ export async function POST(req: Request) {
       equity_pct: body.equity_pct,
       cash_pct: body.cash_pct,
       lc_pct: body.lc_pct,
+      equity_group_split: body.equity_group_split,
+      equity_leaf_splits: body.equity_leaf_splits,
+      liquid_component_split: body.liquid_component_split,
     });
     return NextResponse.json(result);
   } catch (e: any) {

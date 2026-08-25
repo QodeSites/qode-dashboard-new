@@ -1230,14 +1230,17 @@ model strategy_defaults {
 }
 
 model config_catalog {
-  config_key     String           @id @db.VarChar(50)
-  parent_key     String?          @db.VarChar(50)
-  label          String           @db.VarChar(100)
-  tag_suffix     String?          @db.VarChar(100)
-  console_symbol String?          @db.VarChar(30)
-  ltp_symbol     String?          @db.VarChar(30)
-  parent         config_catalog?  @relation("CatalogTree", fields: [parent_key], references: [config_key])
-  children       config_catalog[] @relation("CatalogTree")
+  config_key          String           @id @db.VarChar(50)
+  parent_key          String?          @db.VarChar(50)
+  label               String           @db.VarChar(100)
+  tag_suffix          String?          @db.VarChar(100)
+  console_symbol      String?          @db.VarChar(30)
+  ltp_symbol          String?          @db.VarChar(30)
+  allowed_ratio_types String[]         @default([])
+  updated_at          DateTime?        @db.Timestamptz(6)
+  updated_by          String?          @db.VarChar(100)
+  parent              config_catalog?  @relation("CatalogTree", fields: [parent_key], references: [config_key])
+  children            config_catalog[] @relation("CatalogTree")
 
   @@index([parent_key])
   @@schema("public")
@@ -1248,7 +1251,7 @@ model strategy_config_defaults {
   strategy_name String   @db.VarChar(50)
   config_key    String   @db.VarChar(50)
   ratio_type    String   @db.VarChar(10)
-  value         Decimal? @db.Decimal(9, 4)
+  value         Decimal? @db.Decimal(12, 8)
   as_of_date    DateTime @db.Date
   updated_by    String?  @db.VarChar(100)
   updated_at    DateTime @updatedAt @db.Timestamptz(6)
@@ -1264,7 +1267,7 @@ model client_config_values {
   strategy   String   @db.VarChar(50)
   config_key String   @db.VarChar(50)
   ratio_type String   @db.VarChar(10)
-  value      Decimal? @db.Decimal(9, 4)
+  value      Decimal? @db.Decimal(12, 8)
   as_of_date DateTime @db.Date
   updated_by String?  @db.VarChar(100)
   updated_at DateTime @updatedAt @db.Timestamptz(6)
