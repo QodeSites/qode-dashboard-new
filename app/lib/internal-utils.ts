@@ -5820,3 +5820,110 @@ export async function previewResolvedConfigTree(
   };
   return tree.map(applyOverrides);
 }
+
+export interface GlobalConfigRow {
+  key: string;
+  value: string;
+  data_type: string;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+export async function fetchGlobalConfig(
+  key?: string,
+): Promise<GlobalConfigRow[]> {
+  const rows = await prisma.global_config.findMany({
+    where: key ? { key } : undefined,
+    orderBy: { key: "asc" },
+  });
+  return rows.map((r) => ({
+    key: r.key,
+    value: r.value,
+    data_type: r.data_type,
+    updated_by: r.updated_by ?? null,
+    updated_at: r.updated_at.toISOString(),
+  }));
+}
+
+export interface CreateGlobalConfigInput {
+  key: string;
+  value: string;
+  data_type?: string;
+  updated_by: string;
+}
+
+export async function createGlobalConfigEntry(
+  input: CreateGlobalConfigInput,
+): Promise<GlobalConfigRow> {
+  const existing = await prisma.global_config.findUnique({
+    where: { key: input.key },
+  });
+  if (existing) {
+    throw new Error(
+      `global_config key '${input.key}' already exists -- use update instead`,
+    );
+  }
+  const created = await prisma.global_config.create({
+    data: {
+      key: input.key,
+      value: input.value,
+      data_type: input.data_type ?? "string",
+      updated_by: input.updated_by,
+    },
+  });
+  return {
+    key: created.key,
+    value: created.value,
+    data_type: created.data_type,
+    updated_by: created.updated_by ?? null,
+    updated_at: created.updated_at.toISOString(),
+  };
+}
+
+export interface UpdateGlobalConfigInput {
+  value?: string;
+  data_type?: string;
+  updated_by: string;
+}
+
+export async function updateGlobalConfigEntry(
+  key: string,
+  input: UpdateGlobalConfigInput,
+): Promise<GlobalConfigRow> {
+  const existing = await prisma.global_config.findUnique({ where: { key } });
+  if (!existing) {
+    throw new Error(`global_config key '${key}' not found`);
+  }
+  const updated = await prisma.global_config.update({
+    where: { key },
+    data: {
+      value: input.value ?? undefined,
+      data_type: input.data_type ?? undefined,
+      updated_by: input.updated_by,
+    },
+  });
+  return {
+    key: updated.key,
+    value: updated.value,
+    data_type: updated.data_type,
+    updated_by: updated.updated_by ?? null,
+    updated_at: updated.updated_at.toISOString(),
+  };
+}
+
+export async function deleteGlobalConfigEntry(
+  key: string,
+  confirmed: boolean,
+): Promise<{ deleted: true }> {
+  if (!confirmed) {
+    throw new Error(
+      `Deleting global_config key '${key}' requires explicit confirmation -- this table has no known consumer inventory, so the blast radius of removing a key that's actually in use elsewhere is unknown. Pass confirmed: true.`,
+    );
+  }
+  const existing = await prisma.global_config.findUnique({ where: { key } });
+  if (!existing) {
+    throw new Error(`global_config key '${key}' not found`);
+  }
+  await prisma.global_config.delete({ where: { key } });
+  return { deleted: true };
+}
