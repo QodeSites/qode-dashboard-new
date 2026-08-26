@@ -2239,7 +2239,10 @@ async function resolveEquityGroupTargets(
 
   const chainKeys = new Set<string>();
   for (const leafKey of allLeafKeys) {
-    let current: string | null = leafKey;
+    chainKeys.add(leafKey);
+    if (groupRootKeys.has(leafKey)) continue;
+    let current: string | null =
+      nodes.find((n) => n.config_key === leafKey)?.parent_key ?? null;
     while (current && !groupRootKeys.has(current)) {
       chainKeys.add(current);
       const node = nodes.find((n) => n.config_key === current);
