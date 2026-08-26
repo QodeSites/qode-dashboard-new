@@ -71,21 +71,20 @@ export async function sumPnlSince(qcode: string, systemTag: string, since: Date,
 }
 
 /**
- * Lifetime totalProfit for Satidham's 3 permanently-inactive PRE-QAW++/QYE++
- * schemes (Scheme A, B, A(Old)) — these predate QAC00066/bifurcated_master_sheet_test
- * entirely (old master_sheet tags, per app/lib/sarla-utils.ts's SATIDHAM_SYSTEM_TAGS:
- * "Total Portfolio Value A/B/Old"), so they stay hardcoded, matching
- * SATIDHAM_HARDCODED_DATA (single source, kept in sync by hand).
- *
- * Scheme QYE++ (Old) is DELIBERATELY NOT here — it lives in QAC00066/
- * bifurcated_master_sheet_test just like QYE++ (New), so it's given its own
- * live-computed book (computeQyeOldBook below) instead of a hardcoded figure.
+ * Scheme A / B / A (Old) — Satidham's 3 permanently-inactive PRE-QAW++/QYE++
+ * schemes — are DELIBERATELY EXCLUDED from the combined Total Realised
+ * below, per explicit instruction (2026-08-26) after diffing against the
+ * team's own ground-truth "Invst Summary Current" sheet
+ * (Satidham Invst Summary 25.08.26 1.xlsx): that sheet's live "Current"
+ * reconciliation never references these 3 schemes anywhere (not in Total
+ * Realised, not in Profit Redeployment, not in any cross-check) — only
+ * Scheme QYE++ (Old) is tracked as inactive there. Including them
+ * previously added a net -₹25,775.13 to Total Realised that the ground
+ * truth doesn't carry, accounting for most of a ₹26,431.28 Check gap found
+ * the same day. Their figures (Scheme A: -1234832.40, Scheme B: 1645377.07,
+ * Scheme A (Old): -436319.80 — matching app/lib/sarla-utils.ts's
+ * SATIDHAM_HARDCODED_DATA) are no longer referenced anywhere in this file.
  */
-const INACTIVE_SCHEME_PROFITS: Record<string, number> = {
-  "Scheme A": -1234832.4,
-  "Scheme B": 1645377.07,
-  "Scheme A (Old)": -436319.8,
-};
 
 /**
  * QYE++'s own separate "book" for its OLD stint (2025-11-28 -> 2026-01-06,
@@ -144,7 +143,19 @@ export async function computeQyeOldBook(): Promise<QyeOldBook> {
   const baseTags = await getBaseTags();
   const strategyPrefix = "QYE++";
   const since = QYE_OLD_STINT_START;
-  const until = QYE_REINCEPTION_DATE;
+  // until = prevDay(QYE_REINCEPTION_DATE), i.e. stop BEFORE 2026-07-23 —
+  // not QYE_REINCEPTION_DATE (2026-07-24) itself. Found 2026-08-26: Jul 23
+  // is the reinception day (the "Internal Transfer (QAW++ to QYE++)" cash
+  // row and QYE++'s ztp jump both land on Jul 23), but the NEW stint's own
+  // computeStrategySummary call uses `dateFloor = prevDay(QYE_REINCEPTION_DATE)
+  // = Jul 23` (inclusive) for its pnl sums — so a `until = QYE_REINCEPTION_DATE`
+  // here (which is exclusive, i.e. < Jul 24, i.e. INCLUDES Jul 23) double-
+  // counted any tag with real activity that day. Liquidcase Stock Holdings
+  // has exactly one such row (pnl -237.77 on 2026-07-23), causing the old+new
+  // combined Liquidcase sum to undercount the true lifetime total by that
+  // amount (double-counting a negative number lowers the sum). Aligning this
+  // window's end with the new window's start removes the overlap entirely.
+  const until = prevDay(QYE_REINCEPTION_DATE);
 
   const [portfolioValuePnl, liquidcase, liquidbees, miscPnl, eqOther, eqTax] = await Promise.all([
     sumPnlSince(SATIDHAM_LIVE_QCODE, `${strategyPrefix} ${baseTags.totalPortfolioValue}`, since, until),
@@ -275,23 +286,24 @@ export async function computeSatidhamOverviewCashSummary(icode: string): Promise
     computeStrategySummary("QYE++", false, prevDay(QYE_REINCEPTION_DATE)),
     computeQyeOldBook(),
     getSatidhamPmsSummary(),
-    // excludeInternal: false, per explicit instruction (2026-08-18) — sum
-    // EVERY row in cash_transactions.csv for Satidham, including "Internal
-    // Transfer" rows between her own QAW++/QYE++ strategies. This deviates
-    // from strategy-summaries.ts's calcCombinedSummary() convention (used
-    // for every other multi-strategy client), which excludes internal
-    // transfers on the grounds that they're not real new client cash. One
-    // of Satidham's two transfer pairs (2026-07-23) doesn't net to zero
-    // (+₹3.30 Cr, from a non-cash holdings reallocation riding along with
-    // it) — including it inflates Cash Investment by that amount versus the
-    // excludeInternal:true figure.
-    calcCashInvestmentSummary(SATIDHAM_CASH_CLIENT_NAME, undefined, false),
+    // excludeInternal: true — REVERTED 2026-08-26 after diffing against the
+    // team's own ground-truth "Invst Summary Current" sheet
+    // (Satidham Invst Summary 25.08.26 1.xlsx), dated today. That sheet's
+    // own Cash Investment (₹16,72,59,637.65) is computed excluding internal
+    // transfers and reconciles to a Check of just -₹91.02 — matching
+    // excludeInternal:true exactly, not the excludeInternal:false variant
+    // tried 2026-08-18. That earlier change was tested against a since-
+    // replaced cash_transactions.csv state and looked better only by
+    // coincidence there; against the real, current data it inflates Cash
+    // Investment by the mismatched 2026-07-23 transfer pair's +₹3.30 Cr
+    // non-cash reallocation and makes Check dramatically worse. Matches
+    // strategy-summaries.ts's calcCombinedSummary() convention (used for
+    // every other multi-strategy client) again.
+    calcCashInvestmentSummary(SATIDHAM_CASH_CLIENT_NAME, undefined, true),
     calcEquityPurchaseSold(SATIDHAM_CASH_CLIENT_NAME),
   ]);
 
-  const inactiveRealisedTotal =
-    Object.values(INACTIVE_SCHEME_PROFITS).reduce((sum, v) => sum + v, 0) + qyeOld.totalRealised;
-  const totalRealised = qawpp.totalRealised + qyepp.totalRealised + eqPurchaseSold + inactiveRealisedTotal;
+  const totalRealised = qawpp.totalRealised + qyepp.totalRealised + eqPurchaseSold + qyeOld.totalRealised;
   const totalUnrealised = qawpp.totalUnrealised + qyepp.totalUnrealised + pms.totalProfit;
   const totalProfits = totalRealised + totalUnrealised;
   const totalCashGenerated = totalProfits + cashInvestment.netCashBalance;
@@ -309,12 +321,9 @@ export async function computeSatidhamOverviewCashSummary(icode: string): Promise
       { label: "Check", amount: check },
     ],
     adjustments: [
-      // Inactive schemes broken out individually — Scheme QYE++ (Old) shown
-      // separately from Scheme QYE++'s live new-stint rows below, so old vs
-      // new never sit in one lumped figure.
-      { label: "Scheme A (Inactive)", amount: INACTIVE_SCHEME_PROFITS["Scheme A"] },
-      { label: "Scheme B (Inactive)", amount: INACTIVE_SCHEME_PROFITS["Scheme B"] },
-      { label: "Scheme A (Old, Inactive)", amount: INACTIVE_SCHEME_PROFITS["Scheme A (Old)"] },
+      // Scheme A/B/A(Old) deliberately not listed here — excluded from
+      // Total Realised 2026-08-26 to match the ground-truth "Invst Summary
+      // Current" sheet, which never references them either.
       {
         label: `Scheme QYE++ (Old, Inactive, ${qyeOld.dateRange.since} → ${qyeOld.dateRange.until}) — Realised (live, portfolio value pnl ${qyeOld.portfolioValuePnl.toFixed(2)} + adjustment items ${qyeOld.adjustmentItems.toFixed(2)})`,
         amount: qyeOld.totalRealised,

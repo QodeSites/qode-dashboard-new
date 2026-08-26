@@ -44,6 +44,7 @@
  * treatment.
  */
 import { getClientConfig, getBaseTags } from "./config";
+import { getLatestMastersheetDate } from "./mastersheet";
 import { identifyTransitionWashTrades, isFullCashStrategy } from "./tradebook";
 import { calcPerStrategySummaries, calcCombinedSummary } from "./strategy-summaries";
 import { calcProfitRedeployment } from "./profit-redeployment";
@@ -283,6 +284,13 @@ export async function computeInvestmentSummary(icode: string): Promise<MultiStra
   ];
 
   const now = new Date();
+  // "Data as of" reflects the latest managed-account mastersheet row for
+  // this qcode, not "today" — pms_master_sheet is excluded (see
+  // getLatestMastersheetDate's comment) since PMS tends to post ~1 day
+  // behind and would understate how current the managed-account figures
+  // actually are. Falls back to `now` if the qcode somehow has zero rows.
+  const latestMastersheetDate = await getLatestMastersheetDate(qcode);
+  const dataAsOfDate = (latestMastersheetDate ?? now).toISOString().slice(0, 10);
 
   // Port of main.py's validation step (calc_validation_summary), run against
   // the COMBINED summary — matches Python's `validation_overview`/
@@ -317,7 +325,7 @@ export async function computeInvestmentSummary(icode: string): Promise<MultiStra
   return {
     clientName,
     generatedDate: now.toISOString().slice(0, 10),
-    dataAsOfDate: now.toISOString().slice(0, 10),
+    dataAsOfDate,
 
     amountInvested: combined.amountInvested,
     validationChecks,

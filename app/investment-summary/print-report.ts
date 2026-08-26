@@ -136,11 +136,13 @@ export function printInvestmentSummaryReport(
   } = params;
 
   const money = (n: number) => `${n < 0 ? "-" : ""}₹ ${fmt(Math.abs(n))}`;
-  const todayStr = new Date().toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  const formatDMY = (d: Date | string) => {
+    const date = typeof d === "string" ? new Date(d) : d;
+    const dd = String(date.getDate()).padStart(2, "0");
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    return `${dd}/${mm}/${date.getFullYear()}`;
+  };
+  const todayStr = formatDMY(new Date());
 
   const statCard = (items: { label: string; value: number }[]) => `
     <div class="stat-card">
@@ -366,7 +368,7 @@ export function printInvestmentSummaryReport(
       </div>
       <div class="header-right">
         Generated: ${todayStr}<br/>
-        ${data.dataAsOfDate ? `Data as of: <strong>${data.dataAsOfDate}</strong>` : ""}
+        ${data.dataAsOfDate ? `Data as of: <strong>${formatDMY(data.dataAsOfDate)}</strong>` : ""}
       </div>
     </div>`;
 

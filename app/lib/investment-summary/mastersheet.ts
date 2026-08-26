@@ -55,6 +55,23 @@ export async function sumPnl(qcode: string, systemTag: string): Promise<number> 
 }
 
 /**
+ * Latest date with ANY row for this qcode in bifurcated_master_sheet_test,
+ * across all system_tags — used for the report's "Data as of" label.
+ * Deliberately scoped to this table only (not pms_master_sheet), which
+ * tends to post ~1 day behind the managed-account mastersheet and would
+ * make "Data as of" look staler than the managed-account figures actually
+ * are. Returns null if the qcode has no rows at all.
+ */
+export async function getLatestMastersheetDate(qcode: string): Promise<Date | null> {
+  const row = await prisma.bifurcated_master_sheet_test.findFirst({
+    where: { qcode },
+    orderBy: { date: "desc" },
+    select: { date: true },
+  });
+  return row?.date ?? null;
+}
+
+/**
  * Most recent (date, value) pair for a system_tag — Python's
  * get_latest_portfolio_value(ms, tag). `value` reads `portfolio_value`
  * (the column calc_current_account_summary and friends actually use).
