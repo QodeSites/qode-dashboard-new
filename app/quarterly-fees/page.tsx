@@ -57,6 +57,7 @@ export default function QuarterlyFeesPage() {
     "2023": { q1: "186871.07", q2: "188947.41", q3: "432749.52", q4: "1499186.69", total: "2307754.70" },
     "2024": { q1: "1771936.35", q2: "3419092.44", q3: "4658621.93", q4: "5687534.29", total: "15537185.00" },
     "2025": { q1: "7802830.42", q2: "7732665.25", q3: "5297606.19", q4: "5582892.53", total: "26415994.38" },
+    "2026": { q1: "51647013.05", q2: "-", q3: "-", q4: "-", total: "51647013.05" },
   };
 
   const zerodhaFees: FeesData = {
@@ -64,10 +65,12 @@ export default function QuarterlyFeesPage() {
     "2023": { q1: "186871.07", q2: "188947.41", q3: "432749.52", q4: "1499186.69", total: "2307754.70" },
     "2024": { q1: "1771936.35", q2: "3419092.44", q3: "4658621.93", q4: "5687534.29", total: "15537185.00" },
     "2025": { q1: "7802830.42", q2: "7039398.56", q3: "4229977.78", q4: "4376154.01", total: "23448360.76" },
+    "2026": { q1: "41978798.13", q2: "-", q3: "-", q4: "-", total: "41978798.13" },
   };
 
   const pmsFees: FeesData = {
     "2025": { q1: "-", q2: "693266.69", q3: "1067628.41", q4: "1206738.52", total: "2967633.62" },
+    "2026": { q1: "9668214.92", q2: "-", q3: "-", q4: "-", total: "9668214.92" },
   };
 
   // Excel Download Function with styled headers
@@ -118,7 +121,7 @@ export default function QuarterlyFeesPage() {
       addFeeSection("Zerodha Costs", zerodhaFees);
       wsData.push([
         "",
-        "Note: Zerodha costs figures are as of 31 December 2025 and include both collections and accruals.",
+        "Note: Zerodha costs figures are as of 31 March 2026 and include both collections and accruals.",
       ]);
       wsData.push([]);
 
@@ -126,11 +129,11 @@ export default function QuarterlyFeesPage() {
       addFeeSection("PMS Costs", pmsFees);
       wsData.push([
         "",
-        "Note: PMS costs figures are as of 31 December 2025 and include both collections and accruals.",
+        "Note: PMS costs figures are as of 31 March 2026 and include both collections and accruals.",
       ]);
       wsData.push([
         "",
-        "Disclaimer: The costs listed for PMS represent the agreed-upon quarterly Management Fee only. This amount excludes the Performance Fee, which is calculated separately and charged at the end of the respective financial year.",
+        "Disclaimer: The costs listed for PMS represent the agreed-upon quarterly Management Fee and Performance Fees. Performance Fee is calculated separately and charged at the end of the respective financial year.",
       ]);
       wsData.push([]);
 
@@ -358,21 +361,21 @@ export default function QuarterlyFeesPage() {
         {/* Zerodha Fees Table */}
         <FeesTable fees={zerodhaFees} title="Zerodha Costs (₹)" />
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          Note: Zerodha costs figures are as of 31 December 2025 and include both
+          Note: Zerodha costs figures are as of 31 March 2026 and include both
           collections and accruals.
         </p>
 
         {/* PMS Fees Table */}
         <FeesTable fees={pmsFees} title="PMS Costs (₹)" />
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          Note: PMS costs figures are as of 31 December 2025 and include both
+          Note: PMS costs figures are as of 31 March 2026 and include both
           collections and accruals.
         </p>
         <p className="text-sm text-gray-600 dark:text-gray-400">
           Disclaimer: The costs listed for PMS represent the agreed-upon
-          quarterly Management Fee only. This amount excludes the Performance
-          Fee, which is calculated separately and charged at the end of the
-          respective financial year.
+          quarterly Management Fee and Performance Fees. Performance Fee is
+          calculated separately and charged at the end of the respective
+          financial year.
         </p>
       </div>
     </DashboardLayout>
