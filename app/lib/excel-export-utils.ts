@@ -24,6 +24,7 @@ export interface PortfolioEntry {
     accountType: string;
     broker: string;
   };
+  hasNavBasedTotalPortfolio?: boolean;
 }
 
 export interface ExcelExportAccount {
@@ -57,6 +58,7 @@ function toExcelInput(entry: PortfolioEntry, clientName: string): ServerExcelInp
   return {
     strategyName: entry.strategyName,
     isTotalPortfolio: entry.strategyName === "Total Portfolio",
+    hasNavBasedTotalPortfolio: entry.hasNavBasedTotalPortfolio ?? false,
     isActive: metadata.isActive ?? true,
     clientName,
     dataAsOfDate: metadata.dataAsOfDate ?? null,
@@ -104,10 +106,16 @@ export async function fetchStrategies(
     // Similar to Sarla/Satidham: pass qcode via URL param. No actual HTTP call.
     const res  = await engine.handleGET(makeMockRequest(`http://localhost/api/bifurcated-portfolio?qcode=${bifurcated.qcode}`));
     const data = await res.json();
+    // PMS-blended clients (e.g. Ashok) render Total Portfolio Sarla/Satidham-style
+    // (absolute ₹ only, no NAV curve) even if hasNavBasedTotalPortfolio is set —
+    // mirrors the `pmsBlendedTP` check in app/dashboard/page.tsx.
+    const pmsBlendedTP = (bifurcated.config?.pmsSchemes?.length ?? 0) > 0;
+    const navBased = bifurcated.hasNavBasedTotalPortfolio && !pmsBlendedTP;
     return Object.entries(data).map(([strategyName, portRes]: [string, any]) => ({
       strategyName,
       data:     portRes.data     ?? {},
       metadata: portRes.metadata ?? {},
+      hasNavBasedTotalPortfolio: strategyName === "Total Portfolio" ? navBased : false,
     }));
   }
 
