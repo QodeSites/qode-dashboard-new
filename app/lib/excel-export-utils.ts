@@ -1,5 +1,5 @@
 import JSZip from "jszip";
-import { PortfolioApi } from "@/app/lib/sarla-utils";
+import { PortfolioApi, SARLA_TOTAL_FEES } from "@/app/lib/sarla-utils";
 import { getEngineForQcode } from "@/app/lib/bifurcated-portfolio-utils";
 import { findByIcode } from "@/app/lib/bifurcated-clients-registry";
 import { getUserQcodes, calculatePortfolioMetrics, formatPortfolioStats } from "@/app/lib/portfolio-utils";
@@ -53,11 +53,15 @@ function makeMockRequest(url: string): Request {
 }
 
 /** Convert a raw portfolio response entry into ServerExcelInput. */
-function toExcelInput(entry: PortfolioEntry, clientName: string): ServerExcelInput {
+function toExcelInput(entry: PortfolioEntry, clientName: string, icode: string): ServerExcelInput {
   const { data, metadata, accountInfo } = entry;
+  const isTotalPortfolio = entry.strategyName === "Total Portfolio";
+  // Sarla's Total Portfolio is the only strategy with a Gross/Net fee breakdown today
+  // (see SARLA_TOTAL_FEES in sarla-utils.ts, mirrored client-side in app/dashboard/page.tsx).
+  const fees = icode === "QUS0007" && isTotalPortfolio ? SARLA_TOTAL_FEES : undefined;
   return {
     strategyName: entry.strategyName,
-    isTotalPortfolio: entry.strategyName === "Total Portfolio",
+    isTotalPortfolio,
     hasNavBasedTotalPortfolio: entry.hasNavBasedTotalPortfolio ?? false,
     isActive: metadata.isActive ?? true,
     clientName,
@@ -73,6 +77,7 @@ function toExcelInput(entry: PortfolioEntry, clientName: string): ServerExcelInp
     cashFlows:   (data.cashFlows   ?? []) as ServerExcelInput["cashFlows"],
     monthlyPnl:  (data.monthlyPnl  ?? null) as ServerExcelInput["monthlyPnl"],
     quarterlyPnl:(data.quarterlyPnl ?? null) as ServerExcelInput["quarterlyPnl"],
+    fees,
   };
 }
 
@@ -212,7 +217,7 @@ async function writeDashboardForClient(
 
   for (const strategy of strategies) {
     try {
-      const input = toExcelInput(strategy, client.user_name ?? client.icode);
+      const input = toExcelInput(strategy, client.user_name ?? client.icode, client.icode);
 
       const inceptionDate = strategy.metadata.inceptionDate ?? strategy.metadata.startDate;
       if (inceptionDate && strategy.metadata.dataAsOfDate) {
