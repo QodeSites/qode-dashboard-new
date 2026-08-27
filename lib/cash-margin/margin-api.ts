@@ -21,14 +21,27 @@ export interface MarginAvailable {
    * Requirements (§2c), split by exposure share like liquidCollateral/
    * stockCollateral. NOT the same as the mastersheet-residual "Cash" used
    * by Account Summary -- see docs/cash-margin-client-dashboard-plan.md D2.
-   * Zerodha only (equity.available.opening_balance); no XTS equivalent. */
-  openingBalance: number;
+   * `null` (not 0) when the upstream job hasn't populated this column for
+   * this row yet -- true of every "xts" broker row today, e.g. Nagarjun
+   * (QAC00123). Callers must treat null as "not computable", not silently
+   * default it to 0 -- otherwise Available Cash collapses to just
+   * contract_value (a signed daily delta with no base), producing a
+   * fabricated negative "cash" figure instead of an honest unavailable. */
+  openingBalance: number | null;
 }
 
 /**
- * Latest cm_margin_collateral row per qcode, restricted to the zerodha broker
- * (non-XTS mandates are the only ones fed into this path -- see
- * isXtsMandate in tags.ts). Returns null for a qcode with no row yet.
+ * Latest cm_margin_collateral row per qcode, whichever broker actually fed
+ * it (Zerodha or XTS -- a qcode is only ever fed by one). No broker filter:
+ * earlier this queried `broker: "zerodha"` only, on the assumption that
+ * "XTS mandates" (isXtsMandate in tags.ts, based on exposure_tag_suffix
+ * naming) were the only non-Zerodha clients and were already filtered out
+ * upstream. That assumption doesn't hold -- Nagarjun (QAC00123) has a
+ * "Zerodha Total Portfolio"-style exposure tag (isXtsMandate is false for
+ * him) but his real cm_margin_collateral rows are broker: "xts", so the old
+ * filter silently excluded him (and 12 other clients) entirely, even though
+ * cash_collateral/non_cash_collateral data exists for them. Returns null for
+ * a qcode with no row yet.
  */
 export async function loadMarginCollaterals(qcodes: string[]): Promise<Map<string, MarginAvailable | null>> {
   const unique = Array.from(new Set(qcodes));
@@ -36,7 +49,7 @@ export async function loadMarginCollaterals(qcodes: string[]): Promise<Map<strin
   if (unique.length === 0) return map;
 
   const rows = await prisma.cm_margin_collateral.findMany({
-    where: { qcode: { in: unique }, broker: "zerodha" },
+    where: { qcode: { in: unique } },
     select: {
       qcode: true,
       date: true,
@@ -64,7 +77,9 @@ export async function loadMarginCollaterals(qcodes: string[]): Promise<Map<strin
       liquidCollateral: row.cash_collateral ? Number(row.cash_collateral) : 0,
       stockCollateral: row.non_cash_collateral ? Number(row.non_cash_collateral) : 0,
       liveBalance: row.live_balance ? Number(row.live_balance) : 0,
-      openingBalance: row.opening_balance ? Number(row.opening_balance) : 0,
+      openingBalance: row.opening_balance === null || row.opening_balance === undefined
+        ? null
+        : Number(row.opening_balance),
     });
   }
   return map;

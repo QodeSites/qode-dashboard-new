@@ -174,13 +174,17 @@ export async function buildPage2Dashboard(
     debtEquityByStrategy[m.strategy] = debtEquityRow;
   }
 
-  // buildMarginRequirements()/buildInputsPanel() are self-contained (their
-  // own mandate query + mastersheet load) -- called as-is, not inlined,
-  // to avoid touching either file. Both are guaranteed non-null here since
-  // we already confirmed mandates.length > 0 above with the same active-mandate filter.
+  // buildMarginRequirements()/buildInputsPanel() still run their own mandate
+  // query (different `select` shape than this file's -- long_opt_pct/
+  // psar_multiplier/etc. that Account Summary/System Breakup/Debt-Equity
+  // don't need), so that part isn't de-duplicated. But mastersheet/catalog/
+  // holdings ARE identical for the same (qcode, asOfDate) regardless of which
+  // table asks -- passed through via `preloaded` so both functions skip their
+  // own otherwise-redundant loadMastersheet/loadCatalog/loadHoldings calls.
+  const preloaded = { ms, catalog, holdings };
   const [marginRequirements, inputs] = await Promise.all([
-    buildMarginRequirements(qcode, overrides, asOfDate, niftyLtpOverride, globalOverrides),
-    buildInputsPanel(qcode, overrides, asOfDate, globalOverrides),
+    buildMarginRequirements(qcode, overrides, asOfDate, niftyLtpOverride, globalOverrides, preloaded),
+    buildInputsPanel(qcode, overrides, asOfDate, globalOverrides, preloaded),
   ]);
 
   const { qcode: _mrQcode, accountName: _mrName, strategies: _mrStrategies, mastersheetDate: _mrDate, ...marginRequirementsRest } =

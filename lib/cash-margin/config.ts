@@ -1,11 +1,14 @@
 /**
  * lib/cash-margin/config.ts
- * Shared resolver for the ratio/threshold columns that used to be hardcoded
- * per-file constants (EQUITY_BOOK_PCT, IDEAL_CASH_PCT, QAW_SUB_PCT in
- * system-breakup.ts; the inline 0.7/0.8 in consolidated.ts;
- * MARGIN_HEALTH_THRESHOLDS in thresholds.ts).
+ * Shared resolver for the Margin Health threshold columns that used to be
+ * the hardcoded MARGIN_HEALTH_THRESHOLDS constant in thresholds.ts. (The
+ * Equity/Derivative Book ratios this file used to resolve the same way --
+ * EQUITY_BOOK_PCT, IDEAL_CASH_PCT, QAW_SUB_PCT -- moved to config_catalog +
+ * ratio-resolver.ts's resolveTarget/resolveAbsoluteTarget; the old
+ * resolveRatioConfig() here was superseded and removed once nothing called
+ * it anymore.)
  *
- * All of these already exist as columns on client_strategy_configs +
+ * These already exist as columns on client_strategy_configs +
  * strategy_defaults, already seeded, already read by app/lib/internal-utils.ts's
  * Withdrawal feature via the same pair.field ?? toNum(def?.field)
  * coalesce -- see docs/thresholds-to-table-and-post-override-plan.md.
@@ -54,9 +57,6 @@ export interface StrategyConfigFields {
   cash_pct?: unknown;
   lc_pct?: unknown;
   debt_pct?: unknown;
-  gold_pct?: unknown;
-  momentum_pct?: unknown;
-  lowvol_pct?: unknown;
   cash_pct_healthy?: unknown;
   cash_pct_warning?: unknown;
   cash_pct_upside?: unknown;
@@ -64,29 +64,6 @@ export interface StrategyConfigFields {
   cash_collateral_pct_warning?: unknown;
   non_cash_collateral_pct_healthy?: unknown;
   non_cash_collateral_pct_warning?: unknown;
-}
-
-export interface RatioConfig {
-  /** Equity Book target % of Account Value (was EQUITY_BOOK_PCT[tier]). */
-  equityPct: number;
-  /** Derivative Book's Cash sub-target (was IDEAL_CASH_PCT[tier]). */
-  cashPct: number;
-  /** Derivative Book's Liquid Case sub-target (was derived: derivPct - IDEAL_CASH_PCT[tier]). */
-  lcPct: number;
-  /** Derivative Book % of Account Value. Sourced from the `debt_pct` column
-   *  (client_strategy_configs / strategy_defaults), NOT `derivative_pct` --
-   *  that column is dead, never read anywhere in cash-margin (see
-   *  docs/cash-margin-architecture.md §9). `debt_pct` is the one
-   *  internal-utils.ts already reads for the same "everything that isn't
-   *  equity" concept, and it's the column a client-level override actually
-   *  sets alongside equity_pct -- reading `derivative_pct` instead would
-   *  silently fall through to the strategy default and desync from the
-   *  equity override. */
-  debtPct: number;
-  /** QAW Equity Book split (was the hardcoded global QAW_SUB_PCT). Null for non-split strategies. */
-  goldPct: number | null;
-  momentumPct: number | null;
-  lowvolPct: number | null;
 }
 
 export interface Band {
@@ -101,27 +78,6 @@ export type ThresholdConfig = Record<MetricKey, Band>;
 
 function toNum(v: unknown): number | null {
   return v === null || v === undefined ? null : Number(v);
-}
-
-/** Resolves the Equity/Derivative Book ratios for one strategy. */
-export function resolveRatioConfig(
-  strategy: string,
-  clientConfig: StrategyConfigFields | undefined,
-  strategyDefault: StrategyConfigFields | undefined,
-  overrides: StrategyOverrides | undefined,
-): RatioConfig {
-  const ov = overrides?.[strategy];
-  const equityPct =
-    ov?.equityPct ?? toNum(clientConfig?.equity_pct) ?? toNum(strategyDefault?.equity_pct) ?? 0;
-  const cashPct = ov?.cashPct ?? toNum(clientConfig?.cash_pct) ?? toNum(strategyDefault?.cash_pct) ?? 0;
-  const lcPct = ov?.lcPct ?? toNum(clientConfig?.lc_pct) ?? toNum(strategyDefault?.lc_pct) ?? 0;
-  const debtPct =
-    ov?.debtPct ?? toNum(clientConfig?.debt_pct) ?? toNum(strategyDefault?.debt_pct) ?? 1 - equityPct;
-  const goldPct = ov?.goldPct ?? toNum(clientConfig?.gold_pct) ?? toNum(strategyDefault?.gold_pct);
-  const momentumPct = ov?.momentumPct ?? toNum(clientConfig?.momentum_pct) ?? toNum(strategyDefault?.momentum_pct);
-  const lowvolPct = ov?.lowvolPct ?? toNum(clientConfig?.lowvol_pct) ?? toNum(strategyDefault?.lowvol_pct);
-
-  return { equityPct, cashPct, lcPct, debtPct, goldPct, momentumPct, lowvolPct };
 }
 
 /**

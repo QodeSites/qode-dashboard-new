@@ -35,3 +35,23 @@ export function classifyMarginMetric(pct: number | null, band: Band): Severity {
   if (pct < band.warning) return "WARNING";
   return "ACTION_REQUIRED";
 }
+
+/**
+ * Sleeve Drift severity -- symmetric around 0, unlike classifyMarginMetric's
+ * one-sided floor check. A sleeve can drift too high OR too low against its
+ * target, and both directions are equally a problem (it's a model-portfolio
+ * shift, not a minimum-balance guarantee), so this classifies on |diffPct|
+ * against a healthy/warning band with no upside concept.
+ *
+ * `diffPct` is SystemBreakupRow.diffPct (currentPct - targetPct, both
+ * already expressed as % of the equity book's own total) -- see
+ * system-breakup.ts. No UNAVAILABLE-vs-real-zero ambiguity here beyond what
+ * diffPct already carries: null means the leg had no resolvable data.
+ */
+export function classifySleeveDrift(diffPct: number | null, band: Band): Severity {
+  if (diffPct === null || diffPct === undefined || Number.isNaN(diffPct)) return "UNAVAILABLE";
+  const abs = Math.abs(diffPct);
+  if (abs <= band.healthy) return "HEALTHY";
+  if (abs <= band.warning) return "WARNING";
+  return "ACTION_REQUIRED";
+}

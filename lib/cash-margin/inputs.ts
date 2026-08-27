@@ -40,11 +40,11 @@
  *    same reach as the old flat columns had.
  */
 import { prisma } from "@/lib/prisma";
-import { loadMastersheet, computeAccountSummary } from "./mastersheet";
+import { loadMastersheet, computeAccountSummary, type MastersheetSnapshot } from "./mastersheet";
 import { resolveMarginConfig, resolvePutProtectionLegs, type MandateRow, type StrategyDefaultRow } from "./margin-requirements";
 import type { StrategyOverrides } from "./config";
-import { loadCatalog } from "./catalog";
-import { loadHoldings } from "./holdings";
+import { loadCatalog, type Catalog } from "./catalog";
+import { loadHoldings, type HoldingsSnapshot } from "./holdings";
 import {
   loadResolvedRatios,
   withOverrides,
@@ -146,12 +146,17 @@ function toNum(v: unknown): number {
  * @param globalOverrides - optional, request-scoped only, never persisted --
  *   session override for niftyLotSize/avgPricePerQty, falling back to
  *   global_config when omitted. See lib/cash-margin/request-utils.ts.
+ * @param preloaded - optional. When a caller (page2.ts) has already loaded
+ *   the mastersheet/catalog/holdings for this exact (qcode, asOfDate), pass
+ *   them here to skip the otherwise-redundant reload. Omit (the default,
+ *   every existing standalone route) to load fresh, unchanged behavior.
  */
 export async function buildInputsPanel(
   qcode: string,
   overrides?: StrategyOverrides,
   asOfDate?: Date,
   globalOverrides?: { niftyLotSize?: number; avgPricePerQty?: number },
+  preloaded?: { ms?: MastersheetSnapshot; catalog?: Catalog; holdings?: HoldingsSnapshot },
 ): Promise<InputsPanelResult | null> {
   const referenceDate = asOfDate ?? new Date();
   const mandates = await prisma.client_strategy_configs.findMany({
@@ -179,11 +184,11 @@ export async function buildInputsPanel(
   const defaultsByStrategy = new Map(allDefaults.map((d) => [d.strategy_name, d as unknown as StrategyDefaultRow]));
   const niftyLotSize = globalOverrides?.niftyLotSize ?? (await getNiftyLotSize());
   const avgPricePerQty = globalOverrides?.avgPricePerQty ?? (await getPutProtectionAvgPricePerQty());
-  const catalog = await loadCatalog();
+  const catalog = preloaded?.catalog ?? (await loadCatalog());
   const diagnostics = new Diagnostics();
 
-  const ms = await loadMastersheet(qcode, asOfDate);
-  const holdings = await loadHoldings(qcode, asOfDate);
+  const ms = preloaded?.ms ?? (await loadMastersheet(qcode, asOfDate));
+  const holdings = preloaded?.holdings ?? (await loadHoldings(qcode, asOfDate));
 
   const tierReference: TierReferenceRow[] = [];
   const byStrategy: Record<string, StrategyInputsRow> = {};

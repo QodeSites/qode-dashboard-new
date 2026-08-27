@@ -394,6 +394,11 @@ export interface MarginRequirementsResult {
  * @param globalOverrides - optional, request-scoped only, never persisted --
  *   session override for niftyLotSize/avgPricePerQty, falling back to
  *   global_config when omitted. See lib/cash-margin/request-utils.ts.
+ * @param preloaded - optional. When a caller (page2.ts) has already loaded
+ *   the mastersheet/catalog/holdings for this exact (qcode, asOfDate) --
+ *   e.g. building Account Summary/System Breakup from the same data first --
+ *   pass them here to skip the otherwise-redundant reload. Omit (the default,
+ *   every existing standalone route) to load fresh, unchanged behavior.
  */
 export async function buildMarginRequirements(
   qcode: string,
@@ -401,6 +406,7 @@ export async function buildMarginRequirements(
   asOfDate?: Date,
   niftyLtpOverride?: number,
   globalOverrides?: { niftyLotSize?: number; avgPricePerQty?: number },
+  preloaded?: { ms?: MastersheetSnapshot; catalog?: Catalog; holdings?: HoldingsSnapshot },
 ): Promise<MarginRequirementsResult | null> {
   const referenceDate = asOfDate ?? new Date();
   const mandates = await prisma.client_strategy_configs.findMany({
@@ -430,8 +436,8 @@ export async function buildMarginRequirements(
   });
   const defaultsByStrategy = new Map(defaults.map((d) => [d.strategy_name, d as unknown as StrategyDefaultRow]));
 
-  const ms = await loadMastersheet(qcode, asOfDate);
-  const holdings = await loadHoldings(qcode, asOfDate);
+  const ms = preloaded?.ms ?? (await loadMastersheet(qcode, asOfDate));
+  const holdings = preloaded?.holdings ?? (await loadHoldings(qcode, asOfDate));
   const marginMap = await loadMarginCollaterals([qcode]);
   const margin: MarginAvailable | null = marginMap.get(qcode) ?? null;
   const marginFetchOk = margin !== null;
@@ -439,13 +445,20 @@ export async function buildMarginRequirements(
   const cmContractValue = contractValueMap.get(qcode) ?? 0;
   const niftyLotSize = globalOverrides?.niftyLotSize ?? (await getNiftyLotSize());
   const avgPricePerQty = globalOverrides?.avgPricePerQty ?? (await getPutProtectionAvgPricePerQty());
-  const catalog = await loadCatalog();
+  const catalog = preloaded?.catalog ?? (await loadCatalog());
   const diagnostics = new Diagnostics();
 
   const byStrategy: Record<string, MarginRequirementsScope> = {};
   const combinedLines = new Map<string, MarginLine>();
   const combinedRequired: MarginTotals = { cc: 0, ncc: 0, cash: 0 };
-  const combinedAvailable: MarginAvailableSplit = { cc: 0, ncc: 0, cash: 0 };
+  // Starts null, not 0 -- "no strategy has contributed a real number yet" is
+  // a different state from "the real total is zero", and collapsing them
+  // (via `?? 0` below) produces a fabricated zero that reads as a confirmed
+  // figure -- e.g. a real negative excessShortfall computed against it --
+  // instead of the honest "not computable" every contributing strategy
+  // already reports. See docs/cash-margin-architecture.md for the concrete
+  // scenario this was found from (Nagarjun, QAC00123).
+  const combinedAvailable: MarginAvailableSplit = { cc: null, ncc: null, cash: null };
   let combinedAccountValue = 0;
 
   for (const m of mandates as unknown as MandateRow[]) {
@@ -477,11 +490,15 @@ export async function buildMarginRequirements(
     // (contract_value), i.e. opening/closing-balance accounting -- then split
     // by exposure share like cc/ncc, since opening_balance and contract_value
     // are both one client-wide figure, not per-strategy. See header comment.
+    // openingBalance is null (not 0) for every "xts" broker row today (see
+    // margin-api.ts) -- null must stay null here, not silently become
+    // cmContractValue alone, which is a signed daily delta with no base and
+    // would read as a fabricated negative cash figure instead of unavailable.
     const available: MarginAvailableSplit = margin
       ? {
           cc: margin.liquidCollateral * share,
           ncc: margin.stockCollateral * share,
-          cash: (margin.openingBalance + cmContractValue) * share,
+          cash: margin.openingBalance === null ? null : (margin.openingBalance + cmContractValue) * share,
         }
       : { cc: null, ncc: null, cash: null };
 
@@ -500,12 +517,22 @@ export async function buildMarginRequirements(
     combinedRequired.ncc += required.ncc;
     combinedRequired.cash += required.cash;
     if (margin) {
-      // cc/ncc/cash all come from the same cm_margin_collateral fetch now
-      // (cash = opening_balance + contract_value), so all three are summed
-      // together, gated on the same marginFetchOk check.
-      combinedAvailable.cc = (combinedAvailable.cc ?? 0) + (available.cc ?? 0);
-      combinedAvailable.ncc = (combinedAvailable.ncc ?? 0) + (available.ncc ?? 0);
-      combinedAvailable.cash = (combinedAvailable.cash ?? 0) + (available.cash ?? 0);
+      // cc/ncc are always real numbers here (never null) once margin is
+      // truthy -- see the ternary above -- so accumulating with `?? 0` is
+      // safe: it only ever replaces the "nothing contributed yet" null with
+      // a running total, never masks a genuine per-strategy null.
+      combinedAvailable.cc = (combinedAvailable.cc ?? 0) + available.cc!;
+      combinedAvailable.ncc = (combinedAvailable.ncc ?? 0) + available.ncc!;
+      // cash CAN be null even with margin truthy (missing opening_balance --
+      // see the available.cash ternary above), so it needs its own check:
+      // only fold a strategy's cash into the running total when it's a real
+      // number. If every contributing strategy is null, combinedAvailable.cash
+      // stays null (Nagarjun's case today). If some are real and some are
+      // null, this is a best-effort partial sum -- an incomplete real number,
+      // still more informative than hiding it, but not a claim of completeness.
+      if (available.cash !== null) {
+        combinedAvailable.cash = (combinedAvailable.cash ?? 0) + available.cash;
+      }
     }
     for (const line of lines) {
       const existing = combinedLines.get(line.system);

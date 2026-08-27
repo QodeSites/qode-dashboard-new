@@ -6,9 +6,22 @@
  *   - reports/margin_report.py  (health % computation, exposure split)
  *   - alerts.py                 (classify_margin_metric, tiered thresholds)
  *
- * v1 scope: the three Margin Health metrics only (Cash %, Cash Collateral %,
- * Non-Cash Collateral %). QAW Sleeve Drift, ideal-% overrides, status
- * lifecycle and deep links are deferred (see docs/cash-margin-alerts-api-plan.md).
+ * v1 scope for buildAlertRows(): the three Margin Health metrics only (Cash %,
+ * Cash Collateral %, Non-Cash Collateral %). Unchanged in this file --
+ * buildSleeveDriftRows() below is a DELIBERATELY SEPARATE function/array, not
+ * folded into buildAlertRows()'s output: client-registry.ts groups
+ * buildAlertRows()'s rows by qcode and takes a worst-of severity across ALL
+ * of them, with no per-metric filter, to drive the per-client "Alert Status"
+ * badge on the P1 client list. Mixing Sleeve Drift rows into that array would
+ * silently change that badge (and the alerted-clients Action Queue) for every
+ * QAW client with any sleeve drift -- a real behavior change to an
+ * already-shipped page, not just additive table rows. Keeping the two arrays
+ * separate means buildAlertRows()'s existing callers (this file's route,
+ * app/previewma/Alerts.tsx, client-registry.ts) are completely unaffected by
+ * Sleeve Drift's addition; a caller that wants both concatenates them itself.
+ *
+ * ideal-% overrides beyond StrategyOverrides, status lifecycle, and deep
+ * links are still deferred (see docs/cash-margin-alerts-api-plan.md).
  *
  * Unlike alerts.py's alert path (which emits only breaches), this returns a
  * row for EVERY metric including HEALTHY -- the live table shows all of them.
@@ -18,8 +31,19 @@ import { detectTier, isXtsMandate, PROP_STRATEGY, type Tier } from "./tags";
 import { loadMastersheet, computeAccountSummary } from "./mastersheet";
 import { computeExposureShare } from "./exposure";
 import { loadMarginCollaterals, type MarginAvailable } from "./margin-api";
-import { METRIC_ORDER, METRIC_LABEL, classifyMarginMetric, type MetricKey, type Severity } from "./thresholds";
-import { resolveThresholdConfig, type StrategyOverrides } from "./config";
+import { loadCatalog } from "./catalog";
+import { loadHoldings } from "./holdings";
+import { loadResolvedRatios, withOverrides, hasConfiguredLeaves, Diagnostics } from "./ratio-resolver";
+import { computeSystemBreakupForStrategy } from "./system-breakup";
+import {
+  METRIC_ORDER,
+  METRIC_LABEL,
+  classifyMarginMetric,
+  classifySleeveDrift,
+  type MetricKey,
+  type Severity,
+} from "./thresholds";
+import { resolveThresholdConfig, type StrategyOverrides, type Band } from "./config";
 
 export interface AlertRow {
   client: string;
@@ -39,6 +63,49 @@ export interface AlertRow {
   marginFetchOk: boolean;
   mastersheetDate: string | null;
 }
+
+/**
+ * "QAW Sleeve Drift" / model-portfolio-shift -- one row per active mandate's
+ * equity-book leaf (Gold/Momentum/Low Vol), for mandates that actually have
+ * the sleeve split configured (hasConfiguredLeaves -- QYE has none). A
+ * DELIBERATELY SEPARATE type/array from AlertRow -- see this file's header
+ * comment for why it isn't folded into buildAlertRows()'s output.
+ *
+ * Reuses system-breakup.ts's own drift math (SystemBreakupRow.diffPct)
+ * rather than recomputing it, so this can never disagree with the System
+ * Breakup page about what a sleeve's current/target split is.
+ */
+export interface SleeveDriftRow {
+  client: string;
+  qcode: string;
+  strategy: string;
+  tier: Tier;
+  /** config_catalog configKey for the leaf, e.g. "gold"/"momentum"/"lowvol". */
+  configKey: string;
+  label: string;
+  /** This leaf's actual % of the equity book's own total (currentPct). */
+  currentValue: number | null;
+  /** This leaf's target % of the equity book's own total (subPct). */
+  targetValue: number;
+  healthyThreshold: number;
+  warningThreshold: number;
+  /** Signed drift (currentValue - targetValue) -- can be negative (under
+   *  target) or positive (over target); severity is classified on |delta|. */
+  delta: number | null;
+  severity: Severity;
+  mastersheetDate: string | null;
+}
+
+/**
+ * Sleeve Drift's severity band. No DB column exists for this yet (unlike
+ * Margin Health's cash_pct_healthy/warning etc., which come from
+ * client_strategy_configs/strategy_defaults) -- hardcoded here the same way
+ * CASH_ALERT_EXCLUDED_QCODES below is, as a placeholder default rather than
+ * a per-strategy/per-client resolved value. Revisit once (if) a
+ * sleeve_drift_pct_healthy/warning pair gets added to config_catalog or
+ * strategy_defaults.
+ */
+const SLEEVE_DRIFT_BAND: Band = { healthy: 3, warning: 7 };
 
 interface ActiveMandate {
   qcode: string;
@@ -181,6 +248,78 @@ export async function buildAlertRows(overrides?: StrategyOverrides, asOfDate?: D
         delta: value === null ? null : value - band.healthy,
         severity,
         marginFetchOk,
+        mastersheetDate: ms.date ? ms.date.toISOString().slice(0, 10) : null,
+      });
+    }
+  }
+
+  return rows;
+}
+
+/**
+ * Build Sleeve Drift rows -- see SleeveDriftRow's doc comment for why this
+ * is a separate function/array from buildAlertRows(), not merged into it.
+ *
+ * One row per (active mandate with hasEquitySplit) x (equity-book leaf,
+ * depth 0 only -- Gold/Momentum/Low Vol, not the deeper momentum50/momidmtm
+ * split). Reuses loadActiveMandates() (same PROP/XTS-mandate/hardcoded-
+ * exclusion filter as Margin Health) and computeSystemBreakupForStrategy()
+ * (same drift math the System Breakup page shows) rather than duplicating
+ * either.
+ *
+ * @param overrides - optional, request-scoped only, never persisted -- same
+ *   StrategyOverrides shape as buildAlertRows(), threaded into the
+ *   equity_pct/gold/momentum/lowvol ratio resolution.
+ * @param asOfDate - pins every mandate/mastersheet/holdings read to a
+ *   historical date instead of always-latest. Omit for "latest."
+ */
+export async function buildSleeveDriftRows(overrides?: StrategyOverrides, asOfDate?: Date): Promise<SleeveDriftRow[]> {
+  const referenceDate = asOfDate ?? new Date();
+  const mandates = await loadActiveMandates(referenceDate);
+  const catalog = await loadCatalog();
+  const diagnostics = new Diagnostics();
+
+  const rows: SleeveDriftRow[] = [];
+  const msCache = new Map<string, Awaited<ReturnType<typeof loadMastersheet>>>();
+  const holdingsCache = new Map<string, Awaited<ReturnType<typeof loadHoldings>>>();
+
+  for (const m of mandates) {
+    let ms = msCache.get(m.qcode);
+    if (!ms) {
+      ms = await loadMastersheet(m.qcode, asOfDate);
+      msCache.set(m.qcode, ms);
+    }
+    let holdings = holdingsCache.get(m.qcode);
+    if (!holdings) {
+      holdings = await loadHoldings(m.qcode, asOfDate);
+      holdingsCache.set(m.qcode, holdings);
+    }
+
+    const tier = detectTier(m.strategy);
+    const rawRatios = await loadResolvedRatios(m.strategy, m.qcode, referenceDate);
+    const ratios = withOverrides(rawRatios, overrides);
+    const hasEquitySplit = hasConfiguredLeaves(catalog, "equity_book", "ideal", ratios);
+    if (!hasEquitySplit) continue; // e.g. every QYE mandate -- no sleeve config to drift from
+
+    const breakup = computeSystemBreakupForStrategy(
+      ms, m.strategy, m.exposure_tag_suffix, tier, catalog, ratios, holdings, diagnostics,
+    );
+
+    for (const leaf of breakup.equityBook.rows) {
+      const delta = leaf.diffPct; // currentPct - subPct, already computed by system-breakup.ts
+      rows.push({
+        client: m.account_name,
+        qcode: m.qcode,
+        strategy: m.strategy,
+        tier,
+        configKey: leaf.configKey,
+        label: leaf.label,
+        currentValue: leaf.currentPct,
+        targetValue: leaf.subPct ?? 0,
+        healthyThreshold: SLEEVE_DRIFT_BAND.healthy,
+        warningThreshold: SLEEVE_DRIFT_BAND.warning,
+        delta,
+        severity: classifySleeveDrift(delta, SLEEVE_DRIFT_BAND),
         mastersheetDate: ms.date ? ms.date.toISOString().slice(0, 10) : null,
       });
     }
