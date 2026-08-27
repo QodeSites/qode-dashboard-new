@@ -443,41 +443,23 @@ export function resolveAbsoluteTarget(
 }
 
 /**
- * Current actual value for a key, in rupees.
+ * Current actual value for a key, in rupees -- UNRECONCILED. Non-leaf -> sum
+ * of children's raw values. Leaf -> straight console_equity_holdings read
+ * (never the leaf's own tagSuffix, even when one exists).
  *
- * Non-leaf -> sum of children. Leaf with a `symbol` -> console_equity_holdings.
- * Leaf with only a `tagSuffix` -> the mastersheet tag `${strategy} ${suffix}`.
- * A leaf with neither is not backed by holdings at all (thresholds, scalars
- * like psar_leverage) and resolves to null.
- *
- * A symbol present in the catalog but absent from the client's holdings
- * resolves to 0 -- the client genuinely holds none of it -- but is reported,
- * since a catalog/broker symbol mismatch looks identical to a zero position.
- *
- * A client with NO console_equity_holdings rows at all is a different case and
- * resolves to null, not 0: console_equity_holdings is Zerodha-sourced, so a
- * non-Zerodha client can hold real sleeve positions (visible in the mastersheet)
- * while having zero rows here. QAC00123 is exactly that today. There is
- * deliberately NO mastersheet fallback -- the gap is a data-sync issue to fix at
- * source, and a fallback would hide the next occurrence.
- *
- * `cash_pct` is DELIBERATELY UNRESOLVABLE by this function, permanently, and
- * that's correct, not a gap to close. It's a leaf with neither `symbol` nor
- * `tagSuffix` (verified live), so it falls through to the NO_VALUE_SOURCE
- * branch below and resolves null -- but not because its data source is
- * missing. It has no data source AT ALL, by nature: there is no "Cash" tag
- * or symbol anywhere upstream. Cash's actual value has only ever been a plug
- * figure -- `accountValue - mutualFunds - equityStock - bondStock -
- * liquidcase` (see mastersheet.ts's computeAccountSummary / consolidated.ts's
- * computeConsolidated) -- "whatever the account isn't otherwise accounted
- * for." That formula has no place in this leaf/symbol/tag model, and can't
- * be made to fit it: it needs the *sibling* totals, not just this node's own
- * subtree. Any caller building Cash's actual side must compute it by hand
- * with that formula, exactly like today's code does -- never by adding a
- * tag/symbol to `cash_pct`'s catalog row and expecting this function to
- * pick it up.
+ * This is the pre-correction reader: console_equity_holdings and the
+ * mastersheet are two independently-fed sources that do not agree exactly
+ * (broker feed timing, pledge/collateral snapshots, price-as-of moments all
+ * drift a little) -- see docs/cash-margin-architecture.md §7.11. A raw
+ * console leaf sum for a sleeve group therefore does NOT equal that group's
+ * trusted mastersheet tag, sometimes by a meaningful amount. Used ONLY as the
+ * proportion basis inside resolveActual's redistribution step below --
+ * never call this directly for a value that will be shown or summed as a
+ * client-facing figure. Diagnostics (NO_HOLDINGS_DATA, UNMATCHED_SYMBOL,
+ * NO_VALUE_SOURCE, UNKNOWN_KEY) still fire from here exactly as before; they
+ * describe the console side's own data gaps, independent of reconciliation.
  */
-export function resolveActual(
+function resolveRawActual(
   catalog: Catalog,
   configKey: string,
   holdings: HoldingsSnapshot,
@@ -500,7 +482,7 @@ export function resolveActual(
     let sum = 0;
     let resolved = 0;
     for (const child of node.children) {
-      const v = resolveActual(catalog, child.configKey, holdings, ms, strategy, diagnostics);
+      const v = resolveRawActual(catalog, child.configKey, holdings, ms, strategy, diagnostics);
       if (v === null) continue;
       sum += v;
       resolved++;
@@ -549,6 +531,120 @@ export function resolveActual(
     message: `'${configKey}' is a leaf with neither symbol nor tag_suffix -- no actual value source`,
   });
   return null;
+}
+
+/**
+ * Current actual value for a key, in rupees -- RECONCILED to the mastersheet.
+ *
+ * Same own-value-wins precedent resolveTarget already established for target
+ * fractions, applied here to actuals: a node's OWN tagSuffix, when it
+ * resolves, is always the answer, whether the node is a leaf (gold, lowvol --
+ * see the catalog: both carry a console symbol AND their own dedicated
+ * mastersheet tag) or a grouping node (equity_book, momentum, liquid_component).
+ * The mastersheet tag is the trusted, already-reconciled number every other
+ * figure on the dashboard is built from; console_equity_holdings is not
+ * independently trustworthy at the rupee-amount level (see resolveRawActual's
+ * doc comment) -- only at the PROPORTION level, for splitting a trusted total
+ * among children that have no tag of their own.
+ *
+ * A leaf with no own tag (momentum50/momidmtm under momentum;
+ * liquidcase/liquidadd under liquid_component -- the mastersheet has never
+ * tracked this granularity, only the combined parent figure) is reconciled
+ * against its immediate parent's trusted tag: each sibling's RAW console
+ * value (resolveRawActual) sets its proportional share, then that share is
+ * applied to the parent's tag total. The four sleeve legs (or two liquid
+ * legs) therefore always sum back EXACTLY to the trusted parent figure,
+ * never to whatever console's own total happens to be that day. See
+ * docs/cash-margin-architecture.md §7.11 for the incident (and the worked
+ * example) this fixes.
+ *
+ * A leaf with neither its own tag nor a tagged parent to reconcile against
+ * (or a tagged parent whose tag value isn't resolvable this period, or whose
+ * sibling group has zero raw console data to split by) falls back to
+ * resolveRawActual's plain read -- same behavior as before this function
+ * existed, including its diagnostics.
+ *
+ * `cash_pct` is DELIBERATELY UNRESOLVABLE by this function, permanently, and
+ * that's correct, not a gap to close. It's a leaf with neither `symbol` nor
+ * `tagSuffix` (verified live), so it falls through to the NO_VALUE_SOURCE
+ * branch below and resolves null -- but not because its data source is
+ * missing. It has no data source AT ALL, by nature: there is no "Cash" tag
+ * or symbol anywhere upstream. Cash's actual value has only ever been a plug
+ * figure -- `accountValue - mutualFunds - equityStock - bondStock -
+ * liquidcase` (see mastersheet.ts's computeAccountSummary / consolidated.ts's
+ * computeConsolidated) -- "whatever the account isn't otherwise accounted
+ * for." That formula has no place in this leaf/symbol/tag model, and can't
+ * be made to fit it: it needs the *sibling* totals, not just this node's own
+ * subtree. Any caller building Cash's actual side must compute it by hand
+ * with that formula, exactly like today's code does -- never by adding a
+ * tag/symbol to `cash_pct`'s catalog row and expecting this function to
+ * pick it up.
+ */
+export function resolveActual(
+  catalog: Catalog,
+  configKey: string,
+  holdings: HoldingsSnapshot,
+  ms: MastersheetSnapshot,
+  strategy: string,
+  diagnostics: Diagnostics,
+): number | null {
+  const node = catalog.byKey.get(configKey);
+  if (!node) {
+    diagnostics.add({
+      code: "UNKNOWN_KEY",
+      configKey,
+      strategy,
+      message: `'${configKey}' is not in config_catalog`,
+    });
+    return null;
+  }
+
+  // Own tag wins, leaf or grouping node alike -- the mastersheet's own
+  // trusted figure for exactly this node, already independent of whatever
+  // console says.
+  if (node.tagSuffix) {
+    const ownTag = ms.values.get(`${strategy} ${node.tagSuffix}`);
+    if (ownTag !== undefined) return ownTag;
+  }
+
+  if (node.children.length === 0) {
+    // Leaf with no (resolvable) own tag -- reconcile against the nearest
+    // tagged ancestor's trusted total, split by console-derived proportions
+    // among ALL of that ancestor's children (this node's siblings).
+    if (node.parentKey) {
+      const parent = catalog.byKey.get(node.parentKey);
+      const parentTag = parent?.tagSuffix ? ms.values.get(`${strategy} ${parent.tagSuffix}`) : undefined;
+      if (parent && parentTag !== undefined) {
+        let siblingSum = 0;
+        const raws = new Map<string, number>();
+        for (const sib of parent.children) {
+          const r = resolveRawActual(catalog, sib.configKey, holdings, ms, strategy, diagnostics) ?? 0;
+          raws.set(sib.configKey, r);
+          siblingSum += r;
+        }
+        if (siblingSum > 0) {
+          const myRaw = raws.get(node.configKey) ?? 0;
+          return (myRaw / siblingSum) * parentTag;
+        }
+        // No console data at all across the whole sibling group -- fall
+        // through to the raw leaf read, whose own diagnostics (NO_HOLDINGS_DATA
+        // etc.) already explain why.
+      }
+    }
+    return resolveRawActual(catalog, configKey, holdings, ms, strategy, diagnostics);
+  }
+
+  // Non-leaf with no own tag (no such node exists in the catalog today, but
+  // keep this general): sum of children's reconciled actuals.
+  let sum = 0;
+  let resolved = 0;
+  for (const child of node.children) {
+    const v = resolveActual(catalog, child.configKey, holdings, ms, strategy, diagnostics);
+    if (v === null) continue;
+    sum += v;
+    resolved++;
+  }
+  return resolved === 0 ? null : sum;
 }
 
 /**

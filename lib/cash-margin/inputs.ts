@@ -40,10 +40,11 @@
  *    same reach as the old flat columns had.
  */
 import { prisma } from "@/lib/prisma";
-import { loadMastersheet, computeAccountSummary, getVal } from "./mastersheet";
-import { resolveMarginConfig, type MandateRow, type StrategyDefaultRow } from "./margin-requirements";
+import { loadMastersheet, computeAccountSummary } from "./mastersheet";
+import { resolveMarginConfig, resolvePutProtectionLegs, type MandateRow, type StrategyDefaultRow } from "./margin-requirements";
 import type { StrategyOverrides } from "./config";
 import { loadCatalog } from "./catalog";
+import { loadHoldings } from "./holdings";
 import {
   loadResolvedRatios,
   withOverrides,
@@ -99,7 +100,10 @@ export interface PutProtectionCalculation {
   exposurePerLot: number | null;
   avgPricePerQty: number;
   niftyLotSize: number;
-  /** Momentum + Low Vol Stock Holdings for the first active QAW-split strategy; null if none. */
+  /** Sum of every Put-Protection-eligible equity-book leaf (everything
+   *  except Gold, discovered dynamically -- see margin-requirements.ts's
+   *  resolvePutProtectionLegs), each reconciled to the mastersheet, for the
+   *  first active QAW-split strategy; null if none. */
   protectedVal: number | null;
   lotsRequired: number | null;
 }
@@ -179,6 +183,7 @@ export async function buildInputsPanel(
   const diagnostics = new Diagnostics();
 
   const ms = await loadMastersheet(qcode, asOfDate);
+  const holdings = await loadHoldings(qcode, asOfDate);
 
   const tierReference: TierReferenceRow[] = [];
   const byStrategy: Record<string, StrategyInputsRow> = {};
@@ -266,9 +271,10 @@ export async function buildInputsPanel(
 
   let protectedVal: number | null = null;
   if (putProtectionStrategy) {
-    const momentumVal = getVal(ms, `${putProtectionStrategy} Momentum Stock Holdings`);
-    const lowVolVal = getVal(ms, `${putProtectionStrategy} Low Vol Stock Holdings`);
-    protectedVal = momentumVal + lowVolVal;
+    // Same dynamic, catalog-walked leg set as margin-requirements.ts's Put
+    // Protection block -- see resolvePutProtectionLegs' doc comment and
+    // docs/cash-margin-architecture.md §7.11/§7.12.
+    protectedVal = resolvePutProtectionLegs(catalog, holdings, ms, putProtectionStrategy, diagnostics).protectedVal;
   }
   const lotsRequired = protectedVal !== null && exposurePerLot ? protectedVal / exposurePerLot : null;
 

@@ -59,11 +59,13 @@ import { loadMarginCollaterals, type MarginAvailable } from "./margin-api";
 import { getNiftyLotSize, getPutProtectionAvgPricePerQty } from "./global-config";
 import { PROP_STRATEGY } from "./tags";
 import type { StrategyOverrides } from "./config";
-import { loadCatalog } from "./catalog";
+import { loadCatalog, type Catalog } from "./catalog";
+import { loadHoldings, type HoldingsSnapshot } from "./holdings";
 import {
   loadResolvedRatios,
   withOverrides,
   hasConfiguredLeaves,
+  resolveActual,
   Diagnostics,
   type Diagnostic,
 } from "./ratio-resolver";
@@ -105,8 +107,11 @@ export interface MarginRequirementsScope {
    * Remove once the current investigation is resolved.
    */
   putProtectionDebug?: {
-    momentumVal: number;
-    lowVolVal: number;
+    /** Every equity-book leaf actually summed into protectedVal, discovered
+     *  by walking config_catalog (see resolvePutProtectionLegs) -- not a
+     *  fixed field per leg. A future split under momentum or lowvol shows up
+     *  here automatically, no shape change. */
+    legs: PutProtectionLeg[];
     protectedVal: number;
     /** niftyLtp * niftyLotSize (Python's exposure_per_lot); null when niftyLtp isn't supplied. */
     contractValue: number | null;
@@ -172,6 +177,53 @@ export function resolveMarginConfig(
   };
 }
 
+export interface PutProtectionLeg {
+  configKey: string;
+  label: string;
+  value: number;
+}
+
+/** Top-level equity_book children never protected by a Nifty-put hedge --
+ *  Gold isn't equity-index-correlated, so it was never in scope, not even in
+ *  the original Python spec (`Momentum Stock Holdings + Low Vol Stock
+ *  Holdings`, no Gold term). A named exclusion, not a technical gap: unlike
+ *  everything else this leg-set walk is dynamic about, THIS is a genuine
+ *  product decision that has to live somewhere as an explicit rule -- see
+ *  docs/cash-margin-architecture.md §7.12 for the fuller reasoning and the
+ *  fully-catalog-driven alternative (a config_catalog flag column) that was
+ *  considered and deferred. */
+const PUT_PROTECTION_EXCLUDED_TOP_LEVEL: ReadonlySet<string> = new Set(["gold"]);
+
+/**
+ * Sums every equity-book leaf's reconciled actual (resolveActual) that's
+ * eligible for Put Protection, discovered by walking config_catalog rather
+ * than a hardcoded ["momentum50", "momidmtm", "lowvol"] list -- so a future
+ * split under momentum OR lowvol (or lowvol itself, unsplit today) is
+ * protected automatically, no code change here. Shared by
+ * margin-requirements.ts and inputs.ts's Put Protection blocks, same reuse
+ * pattern as resolveMarginConfig below.
+ */
+export function resolvePutProtectionLegs(
+  catalog: Catalog,
+  holdings: HoldingsSnapshot,
+  ms: MastersheetSnapshot,
+  strategy: string,
+  diagnostics: Diagnostics,
+): { legs: PutProtectionLeg[]; protectedVal: number } {
+  const equityBook = catalog.byKey.get("equity_book");
+  const legs: PutProtectionLeg[] = [];
+  if (equityBook) {
+    for (const top of equityBook.children) {
+      if (PUT_PROTECTION_EXCLUDED_TOP_LEVEL.has(top.configKey)) continue;
+      for (const leaf of catalog.leavesUnder(top.configKey)) {
+        const value = resolveActual(catalog, leaf.configKey, holdings, ms, strategy, diagnostics) ?? 0;
+        legs.push({ configKey: leaf.configKey, label: leaf.label, value });
+      }
+    }
+  }
+  return { legs, protectedVal: legs.reduce((s, l) => s + l.value, 0) };
+}
+
 /**
  * Required-margin line items + account value for one strategy mandate.
  * Put Protection only appears when `hasPutProtectionConfig` is true -- the
@@ -187,6 +239,9 @@ function computeRequiredLines(
   hasPutProtectionConfig: boolean,
   niftyLotSize: number,
   avgPricePerQty: number,
+  catalog: Catalog,
+  holdings: HoldingsSnapshot,
+  diagnostics: Diagnostics,
   niftyLtp?: number,
 ): {
   lines: MarginLine[];
@@ -207,9 +262,11 @@ function computeRequiredLines(
 
   let putProtectionDebug: MarginRequirementsScope["putProtectionDebug"];
   if (hasPutProtectionConfig) {
-    const momentumVal = getVal(ms, `${strategy} Momentum Stock Holdings`);
-    const lowVolVal = getVal(ms, `${strategy} Low Vol Stock Holdings`);
-    const protectedVal = momentumVal + lowVolVal;
+    // Dynamic leg set (see resolvePutProtectionLegs) -- not a hardcoded
+    // ["momentum50", "momidmtm", "lowvol"] list. Replaces the old
+    // momentumVal + lowVolVal 2-leg sum, which summed a stale pre-split
+    // "Momentum Stock Holdings" combined tag. See docs/cash-margin-architecture.md §7.11/§7.12.
+    const { legs, protectedVal } = resolvePutProtectionLegs(catalog, holdings, ms, strategy, diagnostics);
     // exposure_per_lot, matching Python's `nifty_atm * NIFTY_LOT_SIZE` --
     // niftyLtp stands in for Python's live/manual Nifty ATM figure. Null
     // when no niftyLtp is supplied (Put Protection falls back to 0, same as
@@ -222,8 +279,7 @@ function computeRequiredLines(
     const putProtectionCash = niftyLotSize * avgPricePerQty * lotsRequired;
     lines.push({ system: "Put Protection", cashComponent: null, nonCashComponent: null, cash: putProtectionCash });
     putProtectionDebug = {
-      momentumVal,
-      lowVolVal,
+      legs,
       protectedVal,
       contractValue,
       niftyLotSize,
@@ -369,6 +425,7 @@ export async function buildMarginRequirements(
   const defaultsByStrategy = new Map(defaults.map((d) => [d.strategy_name, d as unknown as StrategyDefaultRow]));
 
   const ms = await loadMastersheet(qcode, asOfDate);
+  const holdings = await loadHoldings(qcode, asOfDate);
   const marginMap = await loadMarginCollaterals([qcode]);
   const margin: MarginAvailable | null = marginMap.get(qcode) ?? null;
   const marginFetchOk = margin !== null;
@@ -401,6 +458,9 @@ export async function buildMarginRequirements(
       hasPutProtectionConfig,
       niftyLotSize,
       avgPricePerQty,
+      catalog,
+      holdings,
+      diagnostics,
       niftyLtpOverride,
     );
 
