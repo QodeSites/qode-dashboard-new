@@ -1006,7 +1006,8 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     overrideAccountInfo?: { accountName: string; accountType: string; broker: string },
     exportMetadata?: { dataAsOfDate?: string | null; isActive?: boolean },
     hasNavBasedTotalPortfolio: boolean = false,
-    pmsBlendedTP: boolean = false
+    pmsBlendedTP: boolean = false,
+    fees?: { [year: string]: { q1?: number; q2?: number; q3?: number; q4?: number } }
   ) => {
     try {
       setExporting(true);
@@ -1060,6 +1061,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
         cashFlows: convertedStats.cashFlows || [],
         monthlyPnl: convertedStats.monthlyPnl || null,
         quarterlyPnl: convertedStats.quarterlyPnl || null,
+        fees,
       });
 
     } catch (error) {
@@ -1099,6 +1101,9 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
   const CASH_PERCENT_STRATS_SARLA = ["Scheme A", "Scheme C", "Scheme D", "Scheme E", "Scheme F", "Scheme QAW", "Scheme B (inactive)"];
   const CASH_STRATS_SARLA = "Total Portfolio";
+  // Kept in sync with the identical table in app/lib/sarla-utils.ts (SARLA_TOTAL_FEES),
+  // which is used server-side by the admin bulk Excel export. This client component
+  // can't import sarla-utils.ts directly since that module pulls in Prisma.
   const SARLA_TOTAL_FEES: { [year: string]: { q1?: number; q2?: number; q3?: number; q4?: number } } = {
     "2022": { q3: 35297.87, q4: 191023.76 },
     "2023": { q1: 186871.07, q2: 188947.41, q3: 432749.52, q4: 1499186.69 },
@@ -1106,7 +1111,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
     "2025": { q1: 7802830.42, q2: 7732665.25, q3: 5297606.19, q4: 5582892.53 },
   };
   const SARLA_TOTAL_FEES_SUM = Object.values(SARLA_TOTAL_FEES).reduce(
-    (sum, year) => sum + Object.values(year).reduce((qSum, val) => qSum + val, 0),
+    (sum, year) => sum + Object.values(year).reduce((qSum, val) => qSum + (val || 0), 0),
     0
   );
   const CASH_PERCENT_STRATS_SATIDHAM = ["Scheme B", "Scheme A", "Scheme A (Old)"];
@@ -1151,7 +1156,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
               PDF
             </Button>
             <Button
-              onClick={() => handleDownloadExcel(convertedStats, selectedStrategy, isTotalPortfolio, undefined, { dataAsOfDate: strategyData.metadata?.dataAsOfDate, isActive })}
+              onClick={() => handleDownloadExcel(convertedStats, selectedStrategy, isTotalPortfolio, undefined, { dataAsOfDate: strategyData.metadata?.dataAsOfDate, isActive }, false, false, isTotalPortfolio ? SARLA_TOTAL_FEES : undefined)}
               disabled={exporting}
               className="h-9 px-3 text-sm font-medium bg-logo-green text-button-text hover:bg-logo-green/90"
               variant="default"

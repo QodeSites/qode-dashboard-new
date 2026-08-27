@@ -1,5 +1,5 @@
 import JSZip from "jszip";
-import { PortfolioApi } from "@/app/lib/sarla-utils";
+import { PortfolioApi, SARLA_TOTAL_FEES } from "@/app/lib/sarla-utils";
 import { getEngineForQcode } from "@/app/lib/bifurcated-portfolio-utils";
 import { findByIcode } from "@/app/lib/bifurcated-clients-registry";
 import { getUserQcodes, calculatePortfolioMetrics, formatPortfolioStats } from "@/app/lib/portfolio-utils";
@@ -24,6 +24,7 @@ export interface PortfolioEntry {
     accountType: string;
     broker: string;
   };
+  hasNavBasedTotalPortfolio?: boolean;
 }
 
 export interface ExcelExportAccount {
@@ -52,11 +53,16 @@ function makeMockRequest(url: string): Request {
 }
 
 /** Convert a raw portfolio response entry into ServerExcelInput. */
-function toExcelInput(entry: PortfolioEntry, clientName: string): ServerExcelInput {
+function toExcelInput(entry: PortfolioEntry, clientName: string, icode: string): ServerExcelInput {
   const { data, metadata, accountInfo } = entry;
+  const isTotalPortfolio = entry.strategyName === "Total Portfolio";
+  // Sarla's Total Portfolio is the only strategy with a Gross/Net fee breakdown today
+  // (see SARLA_TOTAL_FEES in sarla-utils.ts, mirrored client-side in app/dashboard/page.tsx).
+  const fees = icode === "QUS0007" && isTotalPortfolio ? SARLA_TOTAL_FEES : undefined;
   return {
     strategyName: entry.strategyName,
-    isTotalPortfolio: entry.strategyName === "Total Portfolio",
+    isTotalPortfolio,
+    hasNavBasedTotalPortfolio: entry.hasNavBasedTotalPortfolio ?? false,
     isActive: metadata.isActive ?? true,
     clientName,
     dataAsOfDate: metadata.dataAsOfDate ?? null,
@@ -71,6 +77,7 @@ function toExcelInput(entry: PortfolioEntry, clientName: string): ServerExcelInp
     cashFlows:   (data.cashFlows   ?? []) as ServerExcelInput["cashFlows"],
     monthlyPnl:  (data.monthlyPnl  ?? null) as ServerExcelInput["monthlyPnl"],
     quarterlyPnl:(data.quarterlyPnl ?? null) as ServerExcelInput["quarterlyPnl"],
+    fees,
   };
 }
 
@@ -104,10 +111,16 @@ export async function fetchStrategies(
     // Similar to Sarla/Satidham: pass qcode via URL param. No actual HTTP call.
     const res  = await engine.handleGET(makeMockRequest(`http://localhost/api/bifurcated-portfolio?qcode=${bifurcated.qcode}`));
     const data = await res.json();
+    // PMS-blended clients (e.g. Ashok) render Total Portfolio Sarla/Satidham-style
+    // (absolute ₹ only, no NAV curve) even if hasNavBasedTotalPortfolio is set —
+    // mirrors the `pmsBlendedTP` check in app/dashboard/page.tsx.
+    const pmsBlendedTP = (bifurcated.config?.pmsSchemes?.length ?? 0) > 0;
+    const navBased = bifurcated.hasNavBasedTotalPortfolio && !pmsBlendedTP;
     return Object.entries(data).map(([strategyName, portRes]: [string, any]) => ({
       strategyName,
       data:     portRes.data     ?? {},
       metadata: portRes.metadata ?? {},
+      hasNavBasedTotalPortfolio: strategyName === "Total Portfolio" ? navBased : false,
     }));
   }
 
@@ -204,7 +217,7 @@ async function writeDashboardForClient(
 
   for (const strategy of strategies) {
     try {
-      const input = toExcelInput(strategy, client.user_name ?? client.icode);
+      const input = toExcelInput(strategy, client.user_name ?? client.icode, client.icode);
 
       const inceptionDate = strategy.metadata.inceptionDate ?? strategy.metadata.startDate;
       if (inceptionDate && strategy.metadata.dataAsOfDate) {
