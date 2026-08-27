@@ -39,9 +39,15 @@
  *    (contractValue already has a niftyLotSize factor), but it's read fresh
  *    per request for Python/DB parity. See
  *    docs/assumptions-and-changes-from-krish-logic.md §14b.
- *  - Available Cash uses the mastersheet "cash" residual (compute_account_summary),
- *    matching Python's own formula -- see computeRequiredCash below for the
- *    exposure-share handling relative to cc/ncc.
+ *  - Available Cash = cm_margin_collateral.opening_balance + the day's signed
+ *    settlement delta (cm_contract_value.contract_value), split by exposure
+ *    share like cc/ncc since both are one client-wide figure, not
+ *    per-strategy -- standard opening/closing-balance accounting, not
+ *    Python's original mastersheet-residual formula (compute_account_summary).
+ *    That mastersheet residual was this file's Available Cash source until
+ *    now; margin-api.ts documented opening_balance as the intended source
+ *    for a while before the switch actually happened here. See
+ *    docs/cash-margin-architecture.md for the fix history.
  *  - Combined is a straight sum of each active strategy's Required line
  *    items and (already exposure-split) Available figures -- Python has no
  *    Combined view for Margin Requirements at all.
@@ -53,9 +59,9 @@
  * once resolved -- not meant to ship long-term.
  */
 import { prisma } from "@/lib/prisma";
-import { loadMastersheet, getVal, computeAccountSummary, type MastersheetSnapshot } from "./mastersheet";
+import { loadMastersheet, getVal, type MastersheetSnapshot } from "./mastersheet";
 import { computeExposureShare } from "./exposure";
-import { loadMarginCollaterals, type MarginAvailable } from "./margin-api";
+import { loadMarginCollaterals, loadContractValues, type MarginAvailable } from "./margin-api";
 import { getNiftyLotSize, getPutProtectionAvgPricePerQty } from "./global-config";
 import { PROP_STRATEGY } from "./tags";
 import type { StrategyOverrides } from "./config";
@@ -429,6 +435,8 @@ export async function buildMarginRequirements(
   const marginMap = await loadMarginCollaterals([qcode]);
   const margin: MarginAvailable | null = marginMap.get(qcode) ?? null;
   const marginFetchOk = margin !== null;
+  const contractValueMap = await loadContractValues([qcode]);
+  const cmContractValue = contractValueMap.get(qcode) ?? 0;
   const niftyLotSize = globalOverrides?.niftyLotSize ?? (await getNiftyLotSize());
   const avgPricePerQty = globalOverrides?.avgPricePerQty ?? (await getPutProtectionAvgPricePerQty());
   const catalog = await loadCatalog();
@@ -465,14 +473,17 @@ export async function buildMarginRequirements(
     );
 
     const share = computeExposureShare(ms, m.strategy, m.exposure_tag_suffix, mandates.length);
-    // Cash available is mastersheet-derived (compute_account_summary's residual
-    // cash), already strategy-specific -- no exposure split, unlike cc/ncc which
-    // come from one client-wide Zerodha collateral figure. See margin_report.py's
-    // get_available_from_zerodha/compute_account_summary split in the header comment.
-    const strategyCash = computeAccountSummary(ms, m.strategy, m.exposure_tag_suffix).cash;
+    // Cash available = opening_balance + the day's signed settlement delta
+    // (contract_value), i.e. opening/closing-balance accounting -- then split
+    // by exposure share like cc/ncc, since opening_balance and contract_value
+    // are both one client-wide figure, not per-strategy. See header comment.
     const available: MarginAvailableSplit = margin
-      ? { cc: margin.liquidCollateral * share, ncc: margin.stockCollateral * share, cash: strategyCash }
-      : { cc: null, ncc: null, cash: strategyCash };
+      ? {
+          cc: margin.liquidCollateral * share,
+          ncc: margin.stockCollateral * share,
+          cash: (margin.openingBalance + cmContractValue) * share,
+        }
+      : { cc: null, ncc: null, cash: null };
 
     byStrategy[m.strategy] = buildScope(
       m.strategy,
@@ -489,12 +500,13 @@ export async function buildMarginRequirements(
     combinedRequired.ncc += required.ncc;
     combinedRequired.cash += required.cash;
     if (margin) {
+      // cc/ncc/cash all come from the same cm_margin_collateral fetch now
+      // (cash = opening_balance + contract_value), so all three are summed
+      // together, gated on the same marginFetchOk check.
       combinedAvailable.cc = (combinedAvailable.cc ?? 0) + (available.cc ?? 0);
       combinedAvailable.ncc = (combinedAvailable.ncc ?? 0) + (available.ncc ?? 0);
+      combinedAvailable.cash = (combinedAvailable.cash ?? 0) + (available.cash ?? 0);
     }
-    // Cash available is mastersheet-derived, independent of the Zerodha margin
-    // fetch -- summed into Combined regardless of marginFetchOk.
-    combinedAvailable.cash = (combinedAvailable.cash ?? 0) + (available.cash ?? 0);
     for (const line of lines) {
       const existing = combinedLines.get(line.system);
       if (existing) {

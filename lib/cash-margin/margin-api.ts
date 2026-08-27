@@ -69,3 +69,38 @@ export async function loadMarginCollaterals(qcodes: string[]): Promise<Map<strin
   }
   return map;
 }
+
+/**
+ * Latest cm_contract_value.contract_value per qcode -- a signed daily
+ * settlement delta, NOT exposure-per-lot (that's a different, unrelated
+ * figure computed from niftyLtp in margin-requirements.ts's Put Protection
+ * math -- see that file's header comment for why cm_contract_value was
+ * dropped from THAT calculation specifically).
+ *
+ * Combined with opening_balance this reconstructs Available Cash, standard
+ * opening/closing-balance accounting: opening_balance + contract_value =
+ * current cash position. Returns 0 (never null) for a qcode with no row --
+ * callers add this straight to opening_balance.
+ */
+export async function loadContractValues(qcodes: string[]): Promise<Map<string, number>> {
+  const unique = Array.from(new Set(qcodes));
+  const map = new Map<string, number>();
+  if (unique.length === 0) return map;
+
+  const rows = await prisma.cm_contract_value.findMany({
+    where: { qcode: { in: unique } },
+    select: { qcode: true, date: true, contract_value: true },
+    orderBy: { date: "desc" },
+  });
+
+  const latestByQcode = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) {
+    if (!latestByQcode.has(r.qcode)) latestByQcode.set(r.qcode, r);
+  }
+
+  for (const qcode of unique) {
+    const row = latestByQcode.get(qcode);
+    map.set(qcode, row?.contract_value ? Number(row.contract_value) : 0);
+  }
+  return map;
+}
