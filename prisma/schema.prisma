@@ -1100,9 +1100,9 @@ model yearly_performance {
 model dashboard_visibility {
   id                Int      @id @default(autoincrement())
   icode             String   @db.VarChar(20)
-  page              String   @default("dashboard") @db.VarChar(50)
   dashboard_visible Boolean  @default(true)
   updated_at        DateTime @default(now()) @db.Timestamp(6)
+  page              String   @default("dashboard") @db.VarChar(50)
 
   @@unique([icode, page])
   @@schema("public")
@@ -1229,6 +1229,54 @@ model strategy_defaults {
   @@schema("public")
 }
 
+model config_catalog {
+  config_key          String           @id @db.VarChar(50)
+  parent_key          String?          @db.VarChar(50)
+  label               String           @db.VarChar(100)
+  tag_suffix          String?          @db.VarChar(100)
+  console_symbol      String?          @db.VarChar(30)
+  ltp_symbol          String?          @db.VarChar(30)
+  allowed_ratio_types String[]         @default([])
+  updated_at          DateTime?        @db.Timestamptz(6)
+  updated_by          String?          @db.VarChar(100)
+  parent              config_catalog?  @relation("CatalogTree", fields: [parent_key], references: [config_key])
+  children            config_catalog[] @relation("CatalogTree")
+
+  @@index([parent_key])
+  @@schema("public")
+}
+
+model strategy_config_defaults {
+  id            Int      @id @default(autoincrement())
+  strategy_name String   @db.VarChar(50)
+  config_key    String   @db.VarChar(50)
+  ratio_type    String   @db.VarChar(10)
+  value         Decimal? @db.Decimal(12, 8)
+  as_of_date    DateTime @db.Date
+  updated_by    String?  @db.VarChar(100)
+  updated_at    DateTime @updatedAt @db.Timestamptz(6)
+
+  @@unique([strategy_name, config_key, ratio_type, as_of_date], name: "strategy_config_unique", map: "uq_strategy_config_defaults")
+  @@index([strategy_name, config_key, ratio_type, as_of_date])
+  @@schema("public")
+}
+
+model client_config_values {
+  id         Int      @id @default(autoincrement())
+  qcode      String   @db.VarChar(20)
+  strategy   String   @db.VarChar(50)
+  config_key String   @db.VarChar(50)
+  ratio_type String   @db.VarChar(10)
+  value      Decimal? @db.Decimal(12, 8)
+  as_of_date DateTime @db.Date
+  updated_by String?  @db.VarChar(100)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  @@unique([qcode, strategy, config_key, ratio_type, as_of_date], name: "client_config_unique", map: "uq_client_config_values")
+  @@index([qcode, strategy, config_key, ratio_type, as_of_date])
+  @@schema("public")
+}
+
 model global_config {
   key        String   @id @db.VarChar(100)
   value      String   @db.VarChar(500)
@@ -1319,6 +1367,48 @@ model console_mf_holdings {
   @@schema("public")
 }
 
+model equity_holdings_tradebook {
+  id              BigInt   @id @default(autoincrement())
+  qcode           String   @db.VarChar(20)
+  mastersheet_tag String?  @db.VarChar(100)
+  date            DateTime @db.Date
+  trade_type      String   @db.VarChar(10)
+  symbol          String   @db.VarChar(50)
+  exchange        String?  @db.VarChar(20)
+  quantity        Decimal? @db.Decimal(20, 4)
+  price           Decimal? @db.Decimal(20, 4)
+  broker          String?  @db.VarChar(20)
+  debt_equity     String?  @db.VarChar(20)
+  collateral      String?  @db.VarChar(20)
+  sub_category    String?  @db.VarChar(50)
+  strategy        String   @db.VarChar(20)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([qcode, strategy], map: "idx_equity_tradebook_qcode_strategy")
+  @@schema("public")
+}
+
+model mutual_funds_tradebook {
+  id              BigInt   @id @default(autoincrement())
+  qcode           String   @db.VarChar(20)
+  mastersheet_tag String?  @db.VarChar(100)
+  date            DateTime @db.Date
+  trade_type      String   @db.VarChar(10)
+  symbol          String   @db.VarChar(200)
+  isin            String?  @db.VarChar(20)
+  quantity        Decimal? @db.Decimal(20, 4)
+  price           Decimal? @db.Decimal(20, 4)
+  broker          String?  @db.VarChar(20)
+  debt_equity     String?  @db.VarChar(20)
+  collateral      String?  @db.VarChar(20)
+  sub_category    String?  @db.VarChar(50)
+  strategy        String   @db.VarChar(20)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([qcode, strategy], map: "idx_mf_tradebook_qcode_strategy")
+  @@schema("public")
+}
+
 model distributor_invoice_issued {
   id                Int       @id @default(autoincrement())
   distributor_email String    @db.VarChar(255)
@@ -1361,27 +1451,6 @@ model distributor_invoice_profile {
   @@schema("public")
 }
 
-model equity_holdings_tradebook {
-  id              BigInt   @id @default(autoincrement())
-  qcode           String   @db.VarChar(20)
-  mastersheet_tag String?  @db.VarChar(100)
-  date            DateTime @db.Date
-  trade_type      String   @db.VarChar(10)
-  symbol          String   @db.VarChar(50)
-  exchange        String?  @db.VarChar(20)
-  quantity        Decimal? @db.Decimal(20, 4)
-  price           Decimal? @db.Decimal(20, 4)
-  broker          String?  @db.VarChar(20)
-  debt_equity     String?  @db.VarChar(20)
-  collateral      String?  @db.VarChar(20)
-  sub_category    String?  @db.VarChar(50)
-  strategy        String   @db.VarChar(20)
-  created_at      DateTime @default(now()) @db.Timestamptz(6)
-
-  @@index([qcode, strategy], map: "idx_equity_tradebook_qcode_strategy")
-  @@schema("public")
-}
-
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model login_events {
   id          BigInt   @id @default(autoincrement())
@@ -1392,27 +1461,6 @@ model login_events {
 
   @@index([email], map: "idx_login_events_email")
   @@index([platform, occurred_at(sort: Desc)], map: "idx_login_events_platform_ts")
-  @@schema("public")
-}
-
-model mutual_funds_tradebook {
-  id              BigInt   @id @default(autoincrement())
-  qcode           String   @db.VarChar(20)
-  mastersheet_tag String?  @db.VarChar(100)
-  date            DateTime @db.Date
-  trade_type      String   @db.VarChar(10)
-  symbol          String   @db.VarChar(200)
-  isin            String?  @db.VarChar(20)
-  quantity        Decimal? @db.Decimal(20, 4)
-  price           Decimal? @db.Decimal(20, 4)
-  broker          String?  @db.VarChar(20)
-  debt_equity     String?  @db.VarChar(20)
-  collateral      String?  @db.VarChar(20)
-  sub_category    String?  @db.VarChar(50)
-  strategy        String   @db.VarChar(20)
-  created_at      DateTime @default(now()) @db.Timestamptz(6)
-
-  @@index([qcode, strategy], map: "idx_mf_tradebook_qcode_strategy")
   @@schema("public")
 }
 
@@ -1446,5 +1494,52 @@ model webhook_events {
   @@index([reference_id], map: "idx_webhook_events_reference")
   @@index([status], map: "idx_webhook_events_status")
   @@index([event_type], map: "idx_webhook_events_type")
+  @@schema("public")
+}
+
+model investment_summary_config_files {
+  id         Int      @id @default(autoincrement())
+  filename   String
+  content    String
+  uploadedBy String
+  uploadedAt DateTime @default(now())
+
+  @@index([filename, uploadedAt])
+  @@schema("public")
+}
+
+model xts_holdings {
+  id                         BigInt    @id @default(autoincrement())
+  qcode                      String    @db.VarChar(20)
+  date                       DateTime  @db.Date
+  isin                       String?   @db.VarChar(20)
+  rms_holding_id             BigInt?
+  client_id                  String    @db.VarChar(50)
+  exchange_nse_instrument_id BigInt?
+  exchange_bse_instrument_id BigInt?
+  exchange_mse_instrument_id BigInt?
+  holding_type               Int?
+  holding_quantity           Decimal?  @db.Decimal(20, 4)
+  collateral_valuation_type  Int?
+  haircut                    Decimal?  @db.Decimal(10, 4)
+  collateral_quantity        Decimal?  @db.Decimal(20, 4)
+  created_by                 String?   @db.VarChar(50)
+  last_updated_by            String?   @db.VarChar(50)
+  created_on                 DateTime? @db.Timestamp(6)
+  last_updated_on            DateTime? @db.Timestamp(6)
+  used_quantity              Decimal?  @db.Decimal(20, 4)
+  is_collateral_holding      Boolean?
+  buy_avg_price              Decimal?  @db.Decimal(20, 4)
+  is_buy_avg_price_provided  Boolean?
+  authorize_quantity         Decimal?  @db.Decimal(20, 4)
+  is_need_to_delete          Boolean?
+  pledge_quantity            Decimal?  @db.Decimal(20, 4)
+  is_pledge_holding          Boolean?
+  symbol                     String    @db.VarChar(50)
+  instrument_type            String?   @db.VarChar(20)
+  value                      Decimal?  @db.Decimal(20, 4)
+  created_at                 DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([qcode, date], map: "idx_xts_holdings_qcode_date")
   @@schema("public")
 }
