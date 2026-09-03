@@ -2,6 +2,22 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Decimal } from "@prisma/client/runtime/library";
 
+// Sarla (QUS0007) Total Portfolio quarterly management fees (₹). Used to derive
+// Net = Gross - Fees for the Gross/Net toggle on-screen and in Excel exports.
+// Shared between app/dashboard/page.tsx and app/lib/excel-export-utils.ts so
+// both the interactive view and the bulk admin export stay in sync.
+export const SARLA_TOTAL_FEES: { [year: string]: { q1?: number; q2?: number; q3?: number; q4?: number } } = {
+  "2022": { q3: 35297.87, q4: 191023.76 },
+  "2023": { q1: 186871.07, q2: 188947.41, q3: 432749.52, q4: 1499186.69 },
+  "2024": { q1: 1771936.35, q2: 3419092.44, q3: 4658621.93, q4: 5687534.29 },
+  "2025": { q1: 7802830.42, q2: 7732665.25, q3: 5297606.19, q4: 5582892.53 },
+};
+
+export const SARLA_TOTAL_FEES_SUM = Object.values(SARLA_TOTAL_FEES).reduce(
+  (sum, year) => sum + Object.values(year).reduce((qSum, val) => qSum + (val || 0), 0),
+  0
+);
+
 interface CashFlow {
   date: string;
   amount: number;

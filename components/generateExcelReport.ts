@@ -73,6 +73,8 @@ interface ExcelReportInput {
   cashFlows: { date: string; amount: number }[];
   monthlyPnl: { [year: string]: MonthlyPnlYear } | null;
   quarterlyPnl: { [year: string]: QuarterlyPnlYear } | null;
+  /** Per-quarter fee amounts (₹). When present, Gross/Net sections are added to the export. */
+  fees?: { [year: string]: { q1?: number; q2?: number; q3?: number; q4?: number } };
 }
 
 // ============================================================================
@@ -94,7 +96,15 @@ export function generateExcelReport(input: ExcelReportInput): void {
     cashFlows,
     monthlyPnl,
     quarterlyPnl,
+    fees,
   } = input;
+
+  const totalFees = fees
+    ? Object.values(fees).reduce(
+        (sum, year) => sum + Object.values(year).reduce((qSum, val) => qSum + (val || 0), 0),
+        0
+      )
+    : 0;
 
   const includeFullSections = !isTotalPortfolio || (hasNavBasedTotalPortfolio && !pmsBlendedTP);
   const includeMonthly = includeFullSections || pmsBlendedTP;
@@ -139,7 +149,12 @@ export function generateExcelReport(input: ExcelReportInput): void {
     wsData.push(["", "Status", isActive ? "Active" : "Inactive"]);
     wsData.push(["", "Amount Deposited (₹)", metrics.amountDeposited || 0]);
     wsData.push(["", "Current Exposure (₹)", metrics.currentExposure || 0]);
-    wsData.push(["", "Total Profit (₹)", metrics.totalProfit || 0]);
+    if (fees) {
+      wsData.push(["", "Total Profit (Gross) (₹)", metrics.totalProfit || 0]);
+      wsData.push(["", "Total Profit (Net) (₹)", (metrics.totalProfit || 0) - totalFees]);
+    } else {
+      wsData.push(["", "Total Profit (₹)", metrics.totalProfit || 0]);
+    }
     wsData.push([]);
 
     // ========================================================================
@@ -294,6 +309,41 @@ export function generateExcelReport(input: ExcelReportInput): void {
           wsData.push(["", year, "Q4", parseFloat(yearData.percent.q4) || 0, parseFloat(yearData.cash.q4) || 0]);
         }
       });
+      wsData.push([]);
+    }
+
+    // ========================================================================
+    // 6. Quarterly P&L — Gross vs Net Section (only when fees are supplied)
+    // ========================================================================
+    if (fees && quarterlyPnl && Object.keys(quarterlyPnl).length > 0) {
+      headerRows.push(wsData.length);
+      wsData.push(["", "Quarterly P&L — Gross vs Net (₹)"]);
+      subHeaderRows.push(wsData.length);
+      wsData.push(["", "Year", "Quarter", "Gross (₹)", "Fees (₹)", "Net (₹)"]);
+
+      const years = Object.keys(quarterlyPnl).sort((a, b) => parseInt(a) - parseInt(b));
+      const quarters: (keyof QuarterData)[] = ["q1", "q2", "q3", "q4"];
+
+      let grossTotal = 0;
+      let feesTotal = 0;
+      let netTotal = 0;
+
+      years.forEach((year) => {
+        const yearData = quarterlyPnl[year];
+        quarters.forEach((quarter) => {
+          const rawValue = yearData.cash[quarter];
+          if (rawValue === undefined || rawValue === "-") return;
+          const gross = parseFloat(rawValue) || 0;
+          const fee = fees[year]?.[quarter as "q1" | "q2" | "q3" | "q4"] ?? 0;
+          const net = gross - fee;
+          wsData.push(["", year, quarter.toUpperCase(), gross, fee, net]);
+          grossTotal += gross;
+          feesTotal += fee;
+          netTotal += net;
+        });
+      });
+      subHeaderRows.push(wsData.length);
+      wsData.push(["", "", "Total", grossTotal, feesTotal, netTotal]);
       wsData.push([]);
     }
 
