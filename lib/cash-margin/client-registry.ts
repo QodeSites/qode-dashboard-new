@@ -45,9 +45,11 @@ import { computeAccountSummary } from "./mastersheet";
 import { computeConsolidatedExcessCash, type ConsolidatedSummary } from "./consolidated";
 import { computeDebtEquityForStrategy } from "./debt-equity";
 import { buildAlertRows, type AlertRow } from "./alerts";
-import { resolveRatioConfig, type StrategyOverrides } from "./config";
-import { resolveAccountValueTag, detectTier, isXtsMandate, type Tier } from "./tags";
+import type { StrategyOverrides } from "./config";
+import { resolveAccountValueTag, detectTier, isXtsMandate, PROP_STRATEGY, type Tier } from "./tags";
 import type { Severity } from "./thresholds";
+import { loadCatalog } from "./catalog";
+import { loadResolvedRatios, withOverrides, resolveAbsoluteTarget, Diagnostics, type Diagnostic } from "./ratio-resolver";
 
 /** ₹50L flat trigger for the "Deploy Excess Cash" action -- hardcoded, matching
  *  every other table's current state (see docs/page1-client-portfolio-overview-plan.md
@@ -187,6 +189,10 @@ export interface ClientRegistryResult {
   summary: SummaryBanner;
   /** "{client} {strategy} — {action}" for every row whose action isn't "No action required". */
   actionQueue: string[];
+  /** Problems hit resolving config_catalog's equity_pct/cash_pct for this
+   *  row's Excess Cash / Cash Drift math (see ratio-resolver.ts's
+   *  DiagnosticCode) -- [] in the healthy case. */
+  diagnostics: Diagnostic[];
 }
 
 interface MandateRow {
@@ -199,12 +205,6 @@ interface MandateRow {
    *  See app/lib/internal-utils.ts's fetchStrategyPairs("profit_tag_suffix")
    *  for the same convention elsewhere in this app. */
   profit_tag_suffix: string;
-  equity_pct: unknown;
-}
-
-interface StrategyDefaultRow {
-  strategy_name: string;
-  equity_pct: unknown;
 }
 
 function round(n: number): number {
@@ -221,10 +221,11 @@ function resolveAction(excessCash: number): RegistryAction {
  * Full Client Registry build across every active, non-XTS mandate.
  *
  * @param overrides - optional, request-scoped only, never persisted (POST
- *   body override of equity_pct and the alert threshold bands -- see
- *   lib/cash-margin/config.ts).
- * @param asOfDate - TEMPORARY, for verification against frozen
- *   managed_accounts_analysis Excels -- see loadMastersheet(). Remove once done.
+ *   body override of equity_pct/debt_pct via config_catalog, and the alert
+ *   threshold bands -- see lib/cash-margin/config.ts and ratio-resolver.ts).
+ * @param asOfDate - pins every mandate/mastersheet read in this response to
+ *   a historical date instead of always-latest -- see loadMastersheet().
+ *   Omit for "latest."
  */
 export async function buildClientRegistry(
   overrides?: StrategyOverrides,
@@ -238,6 +239,7 @@ export async function buildClientRegistry(
   const referenceDate = asOfDate ?? new Date();
   const allActiveMandates = (await prisma.client_strategy_configs.findMany({
     where: {
+      strategy: { not: PROP_STRATEGY },
       effective_from: { lte: referenceDate },
       OR: [{ effective_to: null }, { effective_to: { gte: referenceDate } }],
     },
@@ -247,21 +249,15 @@ export async function buildClientRegistry(
       strategy: true,
       exposure_tag_suffix: true,
       profit_tag_suffix: true,
-      equity_pct: true,
     },
     orderBy: [{ account_name: "asc" }, { strategy: "asc" }],
   })) as unknown as MandateRow[];
 
-  const strategyNames = Array.from(new Set(allActiveMandates.map((m) => m.strategy)));
-  const defaults = await prisma.strategy_defaults.findMany({
-    where: { strategy_name: { in: strategyNames } },
-  });
-  const defaultsByStrategy = new Map(defaults.map((d) => [d.strategy_name, d as unknown as StrategyDefaultRow]));
-
   // Alert Status is rolled up per CLIENT (worst-of across all of that
   // client's active strategies), so build the full alert table once and
   // group by qcode -- see the file header + plan doc open question #2.
-  const alertRows = await buildAlertRows(overrides, asOfDate);
+  const [catalog, alertRows] = await Promise.all([loadCatalog(), buildAlertRows(overrides, asOfDate)]);
+  const diagnostics = new Diagnostics();
   const alertsByQcode = new Map<string, AlertRow[]>();
   for (const r of alertRows) {
     const list = alertsByQcode.get(r.qcode);
@@ -321,9 +317,17 @@ export async function buildClientRegistry(
       continue;
     }
 
-    const ratioConfig = resolveRatioConfig(m.strategy, m, defaultsByStrategy.get(m.strategy), overrides);
+    // equity_pct/cash_pct via config_catalog -- same resolver every other
+    // cash-margin table uses (see ratio-resolver.ts). resolveAbsoluteTarget
+    // with accountValue=1 returns the true Account-Value-scale fraction by
+    // chain-multiplying up through any ancestors, same trick inputs.ts uses.
+    const rawRatios = await loadResolvedRatios(m.strategy, m.qcode, referenceDate);
+    const ratios = withOverrides(rawRatios, overrides);
+    const equityPct = resolveAbsoluteTarget(catalog, "equity_pct", "value", ratios, 1, diagnostics) ?? 0;
+    const cashPct = resolveAbsoluteTarget(catalog, "cash_pct", "value", ratios, 1, diagnostics) ?? 0;
+
     const consolidatedSummary: ConsolidatedSummary = summary;
-    const excessCashResult = computeConsolidatedExcessCash(consolidatedSummary, ratioConfig.equityPct);
+    const excessCashResult = computeConsolidatedExcessCash(consolidatedSummary, equityPct);
 
     // (Cash + Liquidcase) / AV -- NOT cash alone (see cashOnlyPct below), and
     // NOT the same as alerts.ts's own "cash_pct" metric (which is cash alone).
@@ -332,7 +336,7 @@ export async function buildClientRegistry(
     const excessCashPct = accountValue ? (excessCashResult.excessCash / accountValue) * 100 : 0;
 
     const cashOnlyPct = accountValue ? (summary.cash / accountValue) * 100 : 0;
-    const cashDriftPct = cashOnlyPct - ratioConfig.cashPct * 100;
+    const cashDriftPct = cashOnlyPct - cashPct * 100;
     const holdingsDriftPct = holdingsPct - excessCashResult.idealHoldingsPct;
     const cashComponentDriftPct = cashComponentPct - excessCashResult.idealCashPct;
 
@@ -443,5 +447,6 @@ export async function buildClientRegistry(
     rows,
     summary: { totalClients, totalAum, totalExcessCash, totalExcessCashCount, marginShortfalls, alertsTriggered },
     actionQueue,
+    diagnostics: diagnostics.items,
   };
 }

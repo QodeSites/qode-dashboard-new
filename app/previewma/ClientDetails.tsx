@@ -219,16 +219,6 @@ function OverviewTab({ data, tagFilter }: { data: ClientDashboardResponse; tagFi
           </div>
         ))}
       </div>
-
-      <details className="mt-8 rounded-lg border border-logo-green/10 bg-white/60 group">
-        <summary className="flex items-center justify-between cursor-pointer px-4 py-3 text-sm font-medium text-card-text">
-          <span>📋 Raw Mastersheet Data</span>
-          <ChevronDown className="h-4 w-4 text-card-text-secondary transition-transform group-open:rotate-180" />
-        </summary>
-        <div className="px-4 pb-4 text-sm text-card-text-secondary">
-          {tagEntries.length} system tags loaded for this client.
-        </div>
-      </details>
     </div>
   );
 }

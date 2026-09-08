@@ -7,6 +7,7 @@ import {
   computeDebtEquityCombined,
 } from "@/lib/cash-margin/debt-equity";
 import { parseCashMarginBody } from "@/lib/cash-margin/request-utils";
+import { PROP_STRATEGY } from "@/lib/cash-margin/tags";
 
 /**
  * "DEBT TO EQUITY RATIO" for one client (qcode).
@@ -24,10 +25,9 @@ import { parseCashMarginBody } from "@/lib/cash-margin/request-utils";
  * POST /api/internal/cash-margin/debt-equity
  * body: { qcode: string, asOfDate?: string }
  *
- * `asOfDate` (YYYY-MM-DD) is TEMPORARY -- for verifying against frozen
- * managed_accounts_analysis Excels by pinning the mastersheet read to a
- * historical date instead of always-latest. Remove once done (see
- * lib/cash-margin/mastersheet.ts's loadMastersheet).
+ * `asOfDate` (YYYY-MM-DD) pins the mastersheet read in this response to a
+ * historical date instead of always-latest (see
+ * lib/cash-margin/mastersheet.ts's loadMastersheet). Omit for "latest."
  */
 export const dynamic = "force-dynamic";
 
@@ -41,10 +41,14 @@ export async function POST(request: Request) {
   const qcode = data.qcode as string;
 
   try {
+    // Mandate selection must honour asOfDate -- see system-breakup/route.ts.
+    const referenceDate = asOfDate ?? new Date();
     const mandates = await prisma.client_strategy_configs.findMany({
       where: {
         qcode,
-        OR: [{ effective_to: null }, { effective_to: { gte: new Date() } }],
+        strategy: { not: PROP_STRATEGY },
+        effective_from: { lte: referenceDate },
+        OR: [{ effective_to: null }, { effective_to: { gte: referenceDate } }],
       },
       select: {
         account_name: true,
