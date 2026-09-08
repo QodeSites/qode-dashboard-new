@@ -9,22 +9,61 @@ import { useSearchParams } from "next/navigation";
 interface Props { qcode?: string; clientName?: string; }
 
 interface ClientListEntry { qcode: string; account_name: string; strategy: string; }
+
+// Recursive node — Account Summary's equitySleeves and System Breakup's rows
+// both share this "arbitrary depth, don't hardcode" tree shape.
+interface EquitySleeveNode {
+  configKey: string;
+  label: string;
+  depth: number;
+  value: number | null;
+  pct: number | null;
+  children: EquitySleeveNode[];
+}
+
 interface SummaryRow { label: string; value: number; pct: number; }
 interface AccountSummaryScoped {
-  accountValue: number; holdings: number; liquidcase: number; cash: number; rows: SummaryRow[];
+  accountValue: number;
+  mutualFunds: number;
+  equityStock: number;
+  bondStock: number;
+  liquidcase: number;
+  cash: number;
+  holdings: number;
+  cashPlusLiquidcase: number;
+  rows: SummaryRow[]; // fixed 8-row list
+  equitySleeves: EquitySleeveNode[]; // dynamic — [] if no split configured
 }
-interface SystemBreakupBookRow {
-  label: string; subPct: number | null; systemPct: number; targetVal: number; currentVal: number;
-  diffVal: number; targetPct: number; currentPct: number; diffPct: number;
+
+interface SystemBreakupRowNode {
+  configKey: string;
+  label: string;
+  depth: number;
+  subPct: number | null;
+  systemPct: number;
+  targetVal: number | null;
+  currentVal: number | null;
+  diffVal: number | null;
+  targetPct: number | null;
+  currentPct: number | null;
+  diffPct: number | null;
+  children: SystemBreakupRowNode[];
 }
-interface SystemBreakupBook { rows: SystemBreakupBookRow[]; }
+interface SystemBreakupBook { rows: SystemBreakupRowNode[]; }
 interface SystemBreakupScoped { equityBook: SystemBreakupBook; derivativeBook: SystemBreakupBook; }
+
 interface MarginLine { system: string; cashComponent: number | null; nonCashComponent: number | null; cash: number | null; }
 interface MarginTotals { cc: number | null; ncc: number | null; cash: number | null; }
+interface PutProtectionDebug {
+  momentumVal: number; lowVolVal: number; protectedVal: number; contractValue: number;
+  niftyLotSize: number; niftyLtp: number; avgPricePerQty: number; lotsRequired: number; putProtectionCash: number;
+}
 interface MarginScoped {
   lines: MarginLine[]; required: MarginTotals; available: MarginTotals | null;
   excessShortfall: MarginTotals | null; marginFetchOk: boolean;
+  putProtectionDebug?: PutProtectionDebug; // explicitly temporary per the contract doc
 }
+
 interface DebtEquityScoped {
   equityMf: number; debtMf: number; hybridMf: number; mfTotal: number;
   liquidcase: number; debtStock: number; equityStock: number; stockTotal: number; cash: number;
@@ -33,15 +72,22 @@ interface DebtEquityScoped {
 }
 interface TierRefRow {
   strategy: string; psarMultiplier: number; longOptPct: number; drawdownMarginPct: number;
-  lcPct: number; cashPct: number; equityPct: number; derivativePct: number;
+  lcPct: number; cashPct: number; equityPct: number; debtPct: number; putProtectionPct: number; // was "derivativePct"
 }
+interface GlobalConfig { niftyLotSize: number; avgPricePerQty: number; }
+
 interface Page2Response {
   qcode: string; accountName: string; strategies: string[]; mastersheetDate: string | null;
   accountSummary: { combined: AccountSummaryScoped; byStrategy: Record<string, AccountSummaryScoped> };
   systemBreakup: { combined: SystemBreakupScoped; byStrategy: Record<string, SystemBreakupScoped> };
-  marginRequirements: { combined: MarginScoped; byStrategy: Record<string, MarginScoped> };
+  marginRequirements: {
+    marginFetchOk: boolean;
+    globalConfig: GlobalConfig;
+    combined: MarginScoped;
+    byStrategy: Record<string, MarginScoped>;
+  };
   debtEquity: { combined: DebtEquityScoped; byStrategy: Record<string, DebtEquityScoped> };
-  inputs: { tierReference: TierRefRow[] };
+  inputs: { globalConfig: GlobalConfig; tierReference: TierRefRow[] };
 }
 interface TopBarResponse {
   tier: string;
@@ -65,15 +111,21 @@ function fmtInr(v: number | null | undefined) {
   if (abs >= 1e5) return `${sign}₹${(abs / 1e5).toFixed(2)} L`;
   return `${sign}₹${Math.round(abs).toLocaleString("en-IN")}`;
 }
+// Every *Pct field in this contract is already percent-scale (0-100).
 function fmtPct(v: number | null | undefined) {
   if (v === null || v === undefined || !isFinite(v)) return "—";
   return `${v.toFixed(2)}%`;
 }
-function DiffInr({ v }: { v: number }) {
+function DiffInr({ v }: { v: number | null }) {
+  if (v === null) return <span className="text-card-text-secondary">—</span>;
   return <span className={v >= 0 ? "text-green-700 font-semibold" : "text-red-600 font-semibold"}>{fmtInr(v)}</span>;
 }
-function DiffPct({ v }: { v: number }) {
+function DiffPct({ v }: { v: number | null }) {
+  if (v === null) return <span className="text-card-text-secondary">—</span>;
   return <span className={v >= 0 ? "text-green-700 font-semibold" : "text-red-600 font-semibold"}>{v >= 0 ? "+" : ""}{v.toFixed(2)}%</span>;
+}
+function flattenTree<T extends { children: T[] }>(nodes: T[]): T[] {
+  return nodes.flatMap((n) => [n, ...flattenTree(n.children)]);
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
@@ -119,17 +171,20 @@ function SubSH({ children }: { children: React.ReactNode }) {
 
 // ─── Input params config ──────────────────────────────────────────────────────
 
-const PCT_KEYS = ["longOptPct", "drawdownMarginPct", "lcPct", "cashPct", "equityPct", "derivativePct"];
+// Renamed derivativePct -> debtPct (contract field rename). Added
+// putProtectionPct since it's now a real tierReference field too.
+const PCT_KEYS = ["longOptPct", "drawdownMarginPct", "lcPct", "cashPct", "equityPct", "debtPct", "putProtectionPct"];
 const RAW_KEYS = ["psarMultiplier"];
 
 const PARAM_ROWS = [
-  { label: "PSAR Multiplier",     key: "psarMultiplier",    unit: "×" },
-  { label: "Long Options (%)",    key: "longOptPct",        unit: "%" },
-  { label: "Drawdown Margin (%)", key: "drawdownMarginPct", unit: "%" },
-  { label: "Liquid Case (%)",     key: "lcPct",             unit: "%" },
-  { label: "Cash (%)",            key: "cashPct",           unit: "%" },
-  { label: "Equity Book (%)",     key: "equityPct",         unit: "%" },
-  { label: "Derivative Book (%)", key: "derivativePct",     unit: "%" },
+  { label: "PSAR Multiplier",     key: "psarMultiplier",     unit: "×" },
+  { label: "Long Options (%)",    key: "longOptPct",         unit: "%" },
+  { label: "Drawdown Margin (%)", key: "drawdownMarginPct",  unit: "%" },
+  { label: "Liquid Case (%)",     key: "lcPct",              unit: "%" },
+  { label: "Cash (%)",            key: "cashPct",            unit: "%" },
+  { label: "Equity Book (%)",     key: "equityPct",          unit: "%" },
+  { label: "Debt Book (%)",       key: "debtPct",            unit: "%" },
+  { label: "Put Protection (%)",  key: "putProtectionPct",   unit: "%" },
 ];
 
 function initOverrides(tierRef: TierRefRow[]): Record<string, Record<string, string>> {
@@ -142,10 +197,40 @@ function initOverrides(tierRef: TierRefRow[]): Record<string, Record<string, str
       lcPct:             String(t.lcPct),
       cashPct:           String(t.cashPct),
       equityPct:         String(t.equityPct),
-      derivativePct:     String(t.derivativePct),
+      debtPct:           String(t.debtPct),
+      putProtectionPct:  String(t.putProtectionPct),
     };
   });
   return init;
+}
+
+// ─── Recursive Account Summary equity sleeve table ─────────────────────────
+
+function EquitySleeveTable({ nodes }: { nodes: EquitySleeveNode[] }) {
+  if (nodes.length === 0) return null;
+  const flat = flattenTree(nodes);
+  return (
+    <table className="w-full text-xs mt-3">
+      <thead>
+        <tr className="bg-primary-bg/40 text-card-text-secondary">
+          <th className="px-2 py-1.5 text-left font-medium">Sleeve</th>
+          <th className="px-2 py-1.5 text-right font-medium">Value</th>
+          <th className="px-2 py-1.5 text-right font-medium">% of AV</th>
+        </tr>
+      </thead>
+      <tbody>
+        {flat.map((n, i) => (
+          <tr key={`${n.configKey}-${i}`} className="border-t border-logo-green/5">
+            <td className="px-2 py-1.5 text-card-text-secondary italic" style={{ paddingLeft: `${8 + n.depth * 14}px` }}>
+              {n.depth > 0 && "↳ "}{n.label}
+            </td>
+            <td className="px-2 py-1.5 text-right italic text-card-text-secondary">{fmtInr(n.value)}</td>
+            <td className="px-2 py-1.5 text-right italic text-card-text-secondary">{fmtPct(n.pct)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -281,13 +366,19 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
     { name: "Cash",       value: (summaryCombined.cash       / summaryCombined.accountValue) * 100, color: "#DABD38" },
   ];
 
+  // System Breakup rows are now a recursive tree — flatten with a "strategy"
+  // tag attached, keeping your existing stacked-table layout (Total + each
+  // strategy's rows all in one table), but driven by depth, not fixed labels.
+  function flattenWithStrategy(strategyLabel: string, nodes: SystemBreakupRowNode[]) {
+    return flattenTree(nodes).map((n) => ({ strategy: strategyLabel, ...n }));
+  }
   const equityRows = [
-    ...page2.systemBreakup.combined.equityBook.rows.map((r) => ({ strategy: "Total", ...r })),
-    ...strategies.flatMap((s) => page2.systemBreakup.byStrategy[s].equityBook.rows.map((r) => ({ strategy: s, ...r }))),
+    ...flattenWithStrategy("Total", page2.systemBreakup.combined.equityBook.rows),
+    ...strategies.flatMap((s) => flattenWithStrategy(s, page2.systemBreakup.byStrategy[s].equityBook.rows)),
   ];
   const derivativeRows = [
-    ...page2.systemBreakup.combined.derivativeBook.rows.map((r) => ({ strategy: "Total", ...r })),
-    ...strategies.flatMap((s) => page2.systemBreakup.byStrategy[s].derivativeBook.rows.map((r) => ({ strategy: s, ...r }))),
+    ...flattenWithStrategy("Total", page2.systemBreakup.combined.derivativeBook.rows),
+    ...strategies.flatMap((s) => flattenWithStrategy(s, page2.systemBreakup.byStrategy[s].derivativeBook.rows)),
   ];
 
   function marginTotal(l: MarginLine) {
@@ -295,6 +386,7 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
   }
   function sumTotals(t: MarginTotals | null) {
     if (!t) return null;
+    if (t.cc === null && t.ncc === null && t.cash === null) return null;
     return (t.cc ?? 0) + (t.ncc ?? 0) + (t.cash ?? 0);
   }
 
@@ -360,17 +452,18 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
                           {s.rows.map((r) => {
                             const isTotal    = r.label === "Account Value";
                             const isSubtotal = r.label === "Holdings" || r.label === "Cash + Liquidcase";
-                            const isSubRow   = ["Gold", "Low Vol", "Momentum"].includes(r.label);
                             return (
                               <tr key={r.label} className={`border-t border-logo-green/5 ${isTotal ? "bg-primary-bg/40" : isSubtotal ? "bg-primary-bg/20 border-y border-logo-green/15" : ""}`}>
-                                <td className={`px-2 py-1.5 ${isTotal ? "font-bold text-card-text" : isSubtotal ? "font-semibold text-card-text" : isSubRow ? "pl-5 italic text-card-text-secondary" : "text-card-text-secondary"}`}>{r.label}</td>
-                                <td className={`px-2 py-1.5 text-right whitespace-nowrap ${isTotal ? "font-bold text-card-text" : isSubtotal ? "font-semibold text-card-text" : isSubRow ? "italic text-card-text-secondary" : "text-card-text"}`}>{fmtInr(r.value)}</td>
-                                <td className={`px-2 py-1.5 text-right ${isTotal ? "font-bold text-card-text" : isSubtotal ? "font-semibold text-card-text" : isSubRow ? "italic text-card-text-secondary" : "text-card-text-secondary"}`}>{fmtPct(r.pct)}</td>
+                                <td className={`px-2 py-1.5 ${isTotal ? "font-bold text-card-text" : isSubtotal ? "font-semibold text-card-text" : "text-card-text-secondary"}`}>{r.label}</td>
+                                <td className={`px-2 py-1.5 text-right whitespace-nowrap ${isTotal ? "font-bold text-card-text" : isSubtotal ? "font-semibold text-card-text" : "text-card-text"}`}>{fmtInr(r.value)}</td>
+                                <td className={`px-2 py-1.5 text-right ${isTotal ? "font-bold text-card-text" : isSubtotal ? "font-semibold text-card-text" : "text-card-text-secondary"}`}>{fmtPct(r.pct)}</td>
                               </tr>
                             );
                           })}
                         </tbody>
                       </table>
+                      {/* New: dynamic equity sleeve breakdown (Gold/Momentum/Low Vol etc.) — moved out of rows[] in the new contract */}
+                      <EquitySleeveTable nodes={s.equitySleeves} />
                     </div>
                   );
                 })}
@@ -452,7 +545,7 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
             </div>
           </div>
 
-          {/* ── SECTION 4: System Breakup ── */}
+          {/* ── SECTION 4: System Breakup (recursive rows, arbitrary depth) ── */}
           <div className="bg-white rounded-xl border border-logo-green/10 overflow-hidden">
             <SH>System Breakup : Absolute</SH>
             <div className="p-4 space-y-5">
@@ -474,7 +567,9 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
                     {equityRows.map((row, i) => (
                       <tr key={i} className="border-t border-logo-green/5">
                         <td className="px-3 py-1.5 text-card-text-secondary text-[13px]">{row.strategy}</td>
-                        <td className="px-3 py-1.5 text-card-text">{row.label}</td>
+                        <td className="px-3 py-1.5 text-card-text" style={{ paddingLeft: `${12 + row.depth * 14}px` }}>
+                          {row.depth > 0 && "↳ "}{row.label}
+                        </td>
                         <td className="px-3 py-1.5 text-right text-card-text-secondary">{row.subPct !== null ? fmtPct(row.subPct) : "—"}</td>
                         <td className="px-3 py-1.5 text-right text-card-text-secondary">{fmtPct(row.systemPct)}</td>
                         <td className="px-3 py-1.5 text-right text-card-text-secondary">{fmtInr(row.targetVal)}</td>
@@ -497,8 +592,8 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
                     {equityRows.map((row, i) => (
                       <tr key={i} className="border-t border-logo-green/5">
                         <td className="px-3 py-1.5 text-card-text-secondary">{row.strategy} {row.label}</td>
-                        <td className="px-3 py-1.5 text-right text-card-text-secondary">{fmtPct(row.targetPct)}</td>
-                        <td className="px-3 py-1.5 text-right text-card-text">{fmtPct(row.currentPct)}</td>
+                        <td className="px-3 py-1.5 text-right text-card-text-secondary">{row.targetPct !== null ? fmtPct(row.targetPct) : "—"}</td>
+                        <td className="px-3 py-1.5 text-right text-card-text">{row.currentPct !== null ? fmtPct(row.currentPct) : "—"}</td>
                         <td className="px-3 py-1.5 text-right"><DiffPct v={row.diffPct} /></td>
                       </tr>
                     ))}
@@ -524,7 +619,9 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
                     {derivativeRows.map((row, i) => (
                       <tr key={i} className="border-t border-logo-green/5">
                         <td className="px-3 py-1.5 text-card-text-secondary text-[13px]">{row.strategy}</td>
-                        <td className="px-3 py-1.5 text-card-text">{row.label}</td>
+                        <td className="px-3 py-1.5 text-card-text" style={{ paddingLeft: `${12 + row.depth * 14}px` }}>
+                          {row.depth > 0 && "↳ "}{row.label}
+                        </td>
                         <td className="px-3 py-1.5 text-right text-card-text-secondary">{row.subPct !== null ? fmtPct(row.subPct) : "—"}</td>
                         <td className="px-3 py-1.5 text-right text-card-text-secondary">{fmtPct(row.systemPct)}</td>
                         <td className="px-3 py-1.5 text-right text-card-text-secondary">{fmtInr(row.targetVal)}</td>
@@ -547,8 +644,8 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
                     {derivativeRows.map((row, i) => (
                       <tr key={i} className="border-t border-logo-green/5">
                         <td className="px-3 py-1.5 text-card-text-secondary">{row.strategy} {row.label}</td>
-                        <td className="px-3 py-1.5 text-right text-card-text-secondary">{fmtPct(row.targetPct)}</td>
-                        <td className="px-3 py-1.5 text-right text-card-text">{fmtPct(row.currentPct)}</td>
+                        <td className="px-3 py-1.5 text-right text-card-text-secondary">{row.targetPct !== null ? fmtPct(row.targetPct) : "—"}</td>
+                        <td className="px-3 py-1.5 text-right text-card-text">{row.currentPct !== null ? fmtPct(row.currentPct) : "—"}</td>
                         <td className="px-3 py-1.5 text-right"><DiffPct v={row.diffPct} /></td>
                       </tr>
                     ))}
@@ -667,6 +764,10 @@ export default function CashMarginClientPageV2({ qcode: qcodeProp, clientName }:
                   ))}
                 </tbody>
               </table>
+
+              <div className="mt-3 text-[10px] text-card-text-secondary">
+                Global config: Nifty lot size {page2.inputs.globalConfig.niftyLotSize}, avg price/qty {page2.inputs.globalConfig.avgPricePerQty}
+              </div>
 
               {/* Apply button */}
               <div className="flex items-center gap-3 mt-4 pt-4 border-t border-logo-green/10">

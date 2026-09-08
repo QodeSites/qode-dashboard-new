@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import dummyData from "./dummyAlert.json";
+
 
 // ─── Types matching the real API response ─────────────────────────────────
 

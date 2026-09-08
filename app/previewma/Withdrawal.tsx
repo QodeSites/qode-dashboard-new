@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Sidebar } from "./Sidebar";
-import { AlertTriangle, Loader2, Search, Settings2, XCircle } from "lucide-react";
+import { AlertTriangle, ChevronRight, Loader2, Search, Settings2, XCircle } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -26,14 +26,35 @@ function isActiveStrategy(s: ClientStrategyEntry) {
 type Source = "all_profits" | "specific" | "fees" | "excess_cash";
 type RatioType = "current" | "ideal" | "model";
 
+interface EquityGroupLeaf {
+  config_key: string;
+  label: string;
+  ltp_symbol: string;
+  console_symbol: string;
+  value: number;
+}
+interface EquityGroup {
+  config_key: string;
+  label: string;
+  total: number;
+  leaves: EquityGroupLeaf[];
+}
+interface LiquidGroup {
+  config_key: string;
+  label: string;
+  total: number;
+  leaves: EquityGroupLeaf[];
+}
+
 interface SnapshotRow {
   account_name: string;
   strategy: string;
   account_value: number;
-  gold: number;
-  momentum: number;
-  lowvol: number;
+  equity_groups: EquityGroup[]; // dynamic — no longer hardcoded Gold/Momentum/Low Vol
+  equity_book_total: number;
+  liquid_group: LiquidGroup;
   mutual_funds: number;
+  bond_stock_holdings: number;
   holdings: number;
   has_equity_split: boolean;
   liquidcase: number;
@@ -47,15 +68,28 @@ interface SnapshotRow {
   snapshot_below_floor: boolean | null;
 }
 
-interface WithdrawSleeve {
+type WithdrawDirection = "Sell" | "Deposit" | "Withdraw" | "None";
+
+interface WithdrawInstrument {
   particular: string;
   current_value: number;
   new_value: number;
-  change_amount: number; // positive = leaves this sleeve (Sell), negative = added (Deposit)
-  direction: "Sell" | "Deposit" | "None";
+  change_amount: number;
+  direction: WithdrawDirection;
   ltp: number | null;
   quantity: number | null;
   new_pct: number;
+}
+interface WithdrawSleeve {
+  particular: string; // dynamic — matches whatever equity_groups/liquid_group/Cash the API returns
+  current_value: number;
+  new_value: number;
+  change_amount: number;
+  direction: WithdrawDirection;
+  new_pct: number;
+  ltp?: number | null; // only present on sleeves with no instruments (e.g. Cash)
+  quantity?: number | null;
+  instruments?: WithdrawInstrument[]; // present on equity/liquidcase-type sleeves
 }
 interface WithdrawalView {
   new_account_value: number;
@@ -74,7 +108,7 @@ interface WithdrawalResponse {
   cash_frozen_unavailable_reason: string | null;
 }
 
-// ─── Color tokens (same as Deployment.tsx) ─────────────────────────────────
+// ─── Color tokens ───────────────────────────────────────────────────────────
 
 const DV = {
   headerGreen: "#1F4E3D",
@@ -127,41 +161,27 @@ function signedTextClass(n: number | null) {
   return n < 0 ? "text-red-600" : n > 0 ? "text-[#1F7A4D]" : "text-[#8a8a7a]";
 }
 
+// Deployment sleeves use addition_target sign directly; Withdrawal instead
+// carries an explicit `direction` string — this maps that to the same
+// positive/negative convention DeltaText expects. "Sell" and "Withdraw"
+// both mean money left the sleeve (shown negative/red); "Deposit" means
+// money was added (shown positive/green); "None" is unchanged.
+function directionSign(direction: WithdrawDirection) {
+  if (direction === "Sell" || direction === "Withdraw") return -1;
+  if (direction === "Deposit") return 1;
+  return 0;
+}
+
 function DeltaText({ value }: { value: number }) {
   const cls = value < 0 ? "text-red-600" : value > 0 ? "text-[#1F7A4D]" : "text-[#8a8a7a]";
   return <span className={`font-semibold ${cls}`}>{value > 0 ? "+" : ""}{inr(value)}</span>;
 }
 
-// ─── Flag pill row ──────────────────────────────────────────────────────────
 
-function FlagPillRow({
-  cashDrift, holdingsDrift, cashComponentDrift, belowFloor,
-}: {
-  cashDrift: number | null; holdingsDrift: number | null; cashComponentDrift: number | null; belowFloor: boolean | null;
-}) {
-  const flags = [
-    { label: `Cash Drift ${pct(cashDrift)}`, ok: cashDrift === null || Math.abs(cashDrift) < 0.05 },
-    { label: `Holdings Drift ${pct(holdingsDrift)}`, ok: holdingsDrift === null || Math.abs(holdingsDrift) < 0.05 },
-    { label: `Cash Component Drift ${pct(cashComponentDrift)}`, ok: cashComponentDrift === null || Math.abs(cashComponentDrift) < 0.05 },
-    { label: belowFloor ? "Below Floor" : "Above Floor", ok: !belowFloor },
-  ];
-  return (
-    <div className="flex flex-wrap gap-2 mb-5">
-      {flags.map((f, i) => (
-        <span
-          key={i}
-          className={`bg-white border rounded-full px-3.5 py-1.5 text-xs font-semibold ${
-            f.ok ? "border-[#1F7A4D] text-[#1F7A4D]" : "border-[#B99B3D] text-[#8a6d1a]"
-          }`}
-        >
-          {f.label}
-        </span>
-      ))}
-    </div>
-  );
-}
 
 // ─── Scenario card wrapper ──────────────────────────────────────────────────
+
+
 
 function ScenarioCard({
   title, variant = "green", children,
@@ -224,35 +244,95 @@ function StatBox({ label, value, colorClass }: { label: string; value: string; c
   );
 }
 
-// ─── Sleeve table (adapted for change_amount/direction) ────────────────────
+// ─── Sleeve table — expandable to show underlying instruments ─────────────
 
 function WithdrawSleeveTable({ sleeves }: { sleeves: WithdrawSleeve[] }) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  function toggle(particular: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(particular) ? next.delete(particular) : next.add(particular);
+      return next;
+    });
+  }
+
+  const totalCurrent = sleeves.reduce((sum, s) => sum + s.current_value, 0);
+  const totalChange = sleeves.reduce((sum, s) => sum + directionSign(s.direction) * Math.abs(s.change_amount), 0);
+  const totalNew = sleeves.reduce((sum, s) => sum + s.new_value, 0);
+
+  // current_pct isn't provided by the API (only new_pct is) — derive it
+  // against the pre-scenario account value (totalCurrent) for consistency
+  // with how new_pct is scaled.
+  function currentPct(currentValue: number) {
+    return totalCurrent > 0 ? (currentValue / totalCurrent) * 100 : 0;
+  }
+
   return (
     <table className="w-full text-[13px]">
       <thead>
         <tr>
           <th className="text-left font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Particulars</th>
           <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Current</th>
-          <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Δ Change</th>
-          <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>New Value</th>
+          <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Current %</th>
+          <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>New</th>
           <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>New %</th>
+          <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Δ Change</th>
           <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>LTP</th>
           <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Qty</th>
         </tr>
       </thead>
       <tbody>
+        <tr className="border-b-2 border-logo-green/20 font-bold" style={{ background: DV.highlightCyan }}>
+          <td className="px-3 py-2">Account Value</td>
+          <td className="px-3 py-2 text-right">{inr(totalCurrent)}</td>
+          <td className="px-3 py-2 text-right">100.00%</td>
+          <td className="px-3 py-2 text-right">{inr(totalNew)}</td>
+          <td className="px-3 py-2 text-right">100.00%</td>
+          <td className="px-3 py-2 text-right"><DeltaText value={totalChange} /></td>
+          <td className="px-3 py-2 text-right">—</td>
+          <td className="px-3 py-2 text-right">—</td>
+        </tr>
         {sleeves.map((s, i) => {
-          const displayDelta = s.direction === "Sell" ? -Math.abs(s.change_amount) : s.direction === "Deposit" ? Math.abs(s.change_amount) : 0;
+          const hasInstruments = !!s.instruments && s.instruments.length > 0;
+          const isOpen = expanded.has(s.particular);
+          const displayDelta = directionSign(s.direction) * Math.abs(s.change_amount);
           return (
-            <tr key={i} className="border-b border-[#EDECE3] last:border-0">
-              <td className="px-3 py-1.5 font-medium">{s.particular}</td>
-              <td className="px-3 py-1.5 text-right">{inr(s.current_value)}</td>
-              <td className="px-3 py-1.5 text-right"><DeltaText value={displayDelta} /></td>
-              <td className="px-3 py-1.5 text-right font-semibold" style={{ background: DV.highlightCyan2 }}>{inr(s.new_value)}</td>
-              <td className="px-3 py-1.5 text-right">{pct(s.new_pct)}</td>
-              <td className="px-3 py-1.5 text-right">{s.ltp !== null ? inr(s.ltp) : "—"}</td>
-              <td className="px-3 py-1.5 text-right">{s.quantity !== null ? s.quantity.toLocaleString("en-IN") : "—"}</td>
-            </tr>
+            <Fragment key={i}>
+              <tr className="border-b border-[#EDECE3] last:border-0">
+                <td className="px-3 py-1.5 font-medium">
+                  {hasInstruments ? (
+                    <button type="button" onClick={() => toggle(s.particular)} className="inline-flex items-center gap-1 hover:underline">
+                      <ChevronRight className={`h-3 w-3 transition-transform ${isOpen ? "rotate-90" : ""}`} />
+                      {s.particular}
+                    </button>
+                  ) : (
+                    s.particular
+                  )}
+                </td>
+                <td className="px-3 py-1.5 text-right">{inr(s.current_value)}</td>
+                <td className="px-3 py-1.5 text-right">{pct(currentPct(s.current_value))}</td>
+                <td className="px-3 py-1.5 text-right font-semibold" style={{ background: DV.highlightCyan2 }}>{inr(s.new_value)}</td>
+                <td className="px-3 py-1.5 text-right">{pct(s.new_pct)}</td>
+                <td className="px-3 py-1.5 text-right"><DeltaText value={displayDelta} /></td>
+                <td className="px-3 py-1.5 text-right">{s.ltp != null ? inr(s.ltp) : "—"}</td>
+                <td className="px-3 py-1.5 text-right">{s.quantity != null ? s.quantity.toLocaleString("en-IN") : "—"}</td>
+              </tr>
+              {hasInstruments && isOpen && s.instruments!.map((ins, j) => {
+                const insDelta = directionSign(ins.direction) * Math.abs(ins.change_amount);
+                return (
+                  <tr key={`${i}-${j}`} className="border-b border-[#EDECE3] last:border-0 bg-[#FAFAF4]">
+                    <td className="px-3 py-1 pl-8 text-[12px] text-[#6b6b5f]">{ins.particular}</td>
+                    <td className="px-3 py-1 text-right text-[12px] text-[#6b6b5f]">{inr(ins.current_value)}</td>
+                    <td className="px-3 py-1 text-right text-[12px] text-[#6b6b5f]">{pct(currentPct(ins.current_value))}</td>
+                    <td className="px-3 py-1 text-right text-[12px] text-[#6b6b5f]">{inr(ins.new_value)}</td>
+                    <td className="px-3 py-1 text-right text-[12px] text-[#6b6b5f]">{pct(ins.new_pct)}</td>
+                    <td className="px-3 py-1 text-right text-[12px]"><DeltaText value={insDelta} /></td>
+                    <td className="px-3 py-1 text-right text-[12px] text-[#6b6b5f]">{ins.ltp != null ? inr(ins.ltp) : "—"}</td>
+                    <td className="px-3 py-1 text-right text-[12px] text-[#6b6b5f]">{ins.quantity != null ? ins.quantity.toLocaleString("en-IN") : "—"}</td>
+                  </tr>
+                );
+              })}
+            </Fragment>
           );
         })}
       </tbody>
@@ -270,22 +350,22 @@ function AccountImpact({ current, updated }: { current: Record<string, number>; 
   const badgeCls = Math.abs(avDelta) < 1 ? "bg-[#EFEFE6] text-[#77776a]" : avDelta > 0 ? "bg-[#E3F3EA] text-[#1F7A4D]" : "bg-[#FBEAEA] text-[#B23A3A]";
   const badgeText = Math.abs(avDelta) < 1 ? "No Change" : `${avDelta > 0 ? "+" : ""}${inr(avDelta, 0)}`;
 
-  function buildBar(vals: Record<string, number>, total: number) {
-    return keys.map((k) => {
-      const v = vals[k] ?? 0;
-      const p = total > 0 ? (v / total) * 100 : 0;
-      const label = p >= 8 ? pct(v / total, 0) : "";
-      return (
-        <div
-          key={k}
-          className="h-full flex items-center justify-center text-[10px] font-semibold text-white overflow-hidden whitespace-nowrap transition-[width] duration-200"
-          style={{ width: `${p.toFixed(2)}%`, background: segmentColor(k) }}
-        >
-          {label}
-        </div>
-      );
-    });
-  }
+function buildBar(vals: Record<string, number>, total: number) {
+  return keys.map((k) => {
+    const v = vals[k] ?? 0;
+    const p = total > 0 ? (v / total) * 100 : 0;
+    const label = p >= 8 ? pct(v / total, 2) : "";
+    return (
+      <div
+        key={k}
+        className="h-full flex items-center justify-center text-[10px] font-semibold text-white overflow-hidden whitespace-nowrap transition-[width] duration-200"
+        style={{ width: `${p.toFixed(2)}%`, background: segmentColor(k) }}
+      >
+        {label}
+      </div>
+    );
+  });
+}
 
   return (
     <div>
@@ -473,7 +553,7 @@ const VIEW_TABS: { value: ViewTab; label: string }[] = [
 export default function WithdrawalPage() {
   const [clients, setClients] = useState<ClientRecord[]>([]);
   useEffect(() => {
-    fetch("/api/internal/clients", { credentials: "include" })
+    fetch("/api/internal/settings/pairs/grouped", { credentials: "include" })
       .then((r) => r.json()).then(setClients).catch(() => setClients([]));
   }, []);
 
@@ -552,7 +632,7 @@ export default function WithdrawalPage() {
           <h1 className="font-serif text-2xl text-logo-green">Withdrawal</h1>
         </div>
 
-        <div className="px-8 py-6 space-y-6 max-w-auto">
+        <div className="px-8 py-6 space-y-6 max-w-6xl">
           {/* Request form */}
           <div className="bg-white rounded-xl border border-logo-green/10 overflow-hidden">
             <SH>Withdrawal Request</SH>
@@ -663,6 +743,19 @@ export default function WithdrawalPage() {
 
           {result && activeSnapshot && (
             <>
+              {/* Topbar-style summary */}
+              <div className="rounded-md text-white px-6 py-4 flex items-center justify-between flex-wrap gap-4" style={{ background: DV.headerGreen }}>
+                <h2 className="text-[19px] font-semibold">Cash & Margin — Client Snapshot</h2>
+                <div className="flex gap-7 text-[13px]">
+                  <div><span className="block uppercase tracking-wide text-[10px] opacity-75 mb-0.5">Client</span><span className="text-[15px] font-semibold">{accountName}</span></div>
+                  <div><span className="block uppercase tracking-wide text-[10px] opacity-75 mb-0.5">Strategy</span><span className="text-[15px] font-semibold">{strategy}</span></div>
+                  <div><span className="block uppercase tracking-wide text-[10px] opacity-75 mb-0.5">Account Value</span><span className="text-[15px] font-semibold">{inr(activeSnapshot.account_value, 0)}</span></div>
+                </div>
+              </div>
+
+
+   
+
               {/* Current Account Split (always visible) */}
               <CurrentAccountSplit snapshot={activeSnapshot} />
 
@@ -671,6 +764,8 @@ export default function WithdrawalPage() {
                 <StatBox label="Excess Cash" value={inr(activeSnapshot.excess_cash, 0)} colorClass={signedTextClass(activeSnapshot.excess_cash)} />
                 <StatBox label="Cash Drift" value={pct(activeSnapshot.cash_drift)} colorClass={signedTextClass(activeSnapshot.cash_drift)} />
                 <StatBox label="Holdings Drift" value={pct(activeSnapshot.holdings_drift)} colorClass={signedTextClass(activeSnapshot.holdings_drift)} />
+                <StatBox label="Cash Component Drift" value={pct(activeSnapshot.cash_component_drift)} colorClass={signedTextClass(activeSnapshot.cash_component_drift)} />
+
               </div>
 
               {/* Account Snapshot table (all strategies + combined) */}

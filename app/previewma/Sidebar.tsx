@@ -9,7 +9,7 @@ import { getAlertSummary } from "./alert";
 type ActivePage = "p1" | "p2"| "p4"|"p5"|"p6";
 
 export function Sidebar({ active }: { active: ActivePage }) {
-  const { totalOpen } = getAlertSummary();
+  const { totalOpen } = getAlertSummary([]);
 
   const navItems: {
     key: ActivePage;

@@ -15,6 +15,7 @@ interface ClientRow {
   accountValue: number;
   cash: number;
   cashPct: number;
+  cashOnlyPct:number
   excessCash: number;
   excessCashPct: number;
   cashDriftPct:number

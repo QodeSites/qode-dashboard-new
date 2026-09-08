@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, BarChart3, CreditCard, LogOut } from "lucide-react";
+import { ArrowRight, BarChart3, CreditCard, LogOut, Settings } from "lucide-react";
 import { signOut } from "next-auth/react";
+import { GlobalConfigModal } from "@/app/previewma/GlobalConfigModal";
 
 interface AppCardConfig {
   title: string;
@@ -101,11 +103,19 @@ function AppCard({ app }: { app: AppCardConfig }) {
 }
 
 export function ManagedAccountsLanding() {
+  const [configOpen, setConfigOpen] = useState(false);
+
   return (
-          
     <div className="min-h-screen bg-primary-bg px-4 sm:px-6 py-16 sm:py-20">
-      {/* Logout — fixed top right */}
-      <div className="fixed top-4 right-4 z-50">
+      {/* Global Config + Logout — fixed top right */}
+      <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+        <button
+          onClick={() => setConfigOpen(true)}
+          className="rounded-lg border border-logo-green/20 bg-white px-4 py-2 text-sm font-medium text-logo-green hover:bg-primary-bg/50 transition-colors flex items-center gap-2 shadow-sm"
+        >
+          <Settings className="h-3.5 w-3.5" />
+          Global Config
+        </button>
         <button
           onClick={async () => {
             await signOut({ redirect: false });
@@ -127,8 +137,8 @@ export function ManagedAccountsLanding() {
           </span>
           <span className="h-px w-10 bg-card-text-secondary/30" />
         </div>
-        {/* Logo */}
 
+        {/* Logo */}
         <h1 className="font-serif text-5xl sm:text-6xl text-center text-logo-green mb-6">
           Qode
         </h1>
@@ -160,6 +170,8 @@ export function ManagedAccountsLanding() {
           ))}
         </div>
       </div>
+
+      {configOpen && <GlobalConfigModal onClose={() => setConfigOpen(false)} />}
     </div>
   );
 }

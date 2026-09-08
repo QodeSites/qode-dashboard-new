@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Sidebar } from "./Sidebar";
-import { AlertTriangle, Loader2, Search, Settings2 } from "lucide-react";
+import { AlertTriangle, ChevronRight, Loader2, Search, Settings2 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -25,19 +25,40 @@ function isActiveStrategy(s: ClientStrategyEntry) {
 
 type RatioType = "current" | "ideal" | "model";
 
+interface EquityGroupLeaf {
+  config_key: string;
+  label: string;
+  ltp_symbol: string;
+  console_symbol: string;
+  value: number;
+}
+interface EquityGroup {
+  config_key: string;
+  label: string;
+  total: number;
+  leaves: EquityGroupLeaf[];
+}
+interface LiquidGroup {
+  config_key: string;
+  label: string;
+  total: number;
+  leaves: EquityGroupLeaf[];
+}
+
 interface SnapshotRow {
   account_name: string;
   strategy: string;
   account_value: number;
-  gold: number;
-  momentum: number;
-  lowvol: number;
+  equity_groups: EquityGroup[]; // dynamic — [] when has_equity_split is false
+  equity_book_total: number;
+  liquid_group: LiquidGroup;
   mutual_funds: number;
+  bond_stock_holdings: number;
   holdings: number;
   has_equity_split: boolean;
-  liquidcase: number;
+  liquid_component_total: number; // was "liquidcase" — renamed in the new contract
   cash: number;
-  cash_plus_liquidcase: number;
+  cash_plus_liquid_component: number; // was "cash_plus_liquidcase" — renamed
   excess_cash: number;
   excess_cash_pct: number;
   cash_drift: number | null;
@@ -46,6 +67,15 @@ interface SnapshotRow {
   snapshot_below_floor: boolean | null;
 }
 
+interface DeploySleeveInstrument {
+  particular: string;
+  current_value: number;
+  addition_target: number;
+  addition_actual: number;
+  new_value: number;
+  ltp: number | null;
+  quantity: number | null;
+}
 interface DeploySleeve {
   particular: string;
   current_value: number;
@@ -54,6 +84,8 @@ interface DeploySleeve {
   new_value: number;
   ltp: number | null;
   quantity: number | null;
+  instruments?: DeploySleeveInstrument[]; // present on Liquidcase-type sleeves
+  split_source?: string;
 }
 
 interface AdditionalCashRequired {
@@ -72,6 +104,10 @@ interface AdditionalHoldingsRequired {
   undeployed_stock_value: number | null;
   stock_deployed: number | null;
   remaining_gap_after_stock: number | null;
+  // New "partial" variant — parallel to excess_cash_deployment's full/partial.
+  // Type only for now — no UI built for this yet.
+  partial_new_account_value?: number;
+  partial_sleeves?: DeploySleeve[];
 }
 interface ExcessCashDeployment {
   amount_available: number;
@@ -155,13 +191,13 @@ function segmentColor(particular: string) {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function inr(n: number | null | undefined, decimals = 2) {
-  if (n === null || n === undefined || !isFinite(n)) return "";
+  if (n === null || n === undefined || !isFinite(n)) return "—";
   const neg = n < 0;
   const num = Math.abs(n).toLocaleString("en-IN", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
   return (neg ? "-₹" : "₹") + num;
 }
 function pct(n: number | null | undefined, decimals = 2) {
-  if (n === null || n === undefined || !isFinite(n)) return "";
+  if (n === null || n === undefined || !isFinite(n)) return "—";
   return (n * 100).toFixed(decimals) + "%";
 }
 function numFromInput(v: string) {
@@ -176,34 +212,6 @@ function signedTextClass(n: number | null) {
 function DeltaText({ value }: { value: number }) {
   const cls = value < 0 ? "text-red-600" : value > 0 ? "text-[#1F7A4D]" : "text-[#8a8a7a]";
   return <span className={`font-semibold ${cls}`}>{value > 0 ? "+" : ""}{inr(value)}</span>;
-}
-
-// ─── Flag pill row ──────────────────────────────────────────────────────────
-
-function FlagPillRow({
-  cashDrift, holdingsDrift, cashComponentDrift, belowFloor,
-}: {
-  cashDrift: number | null; holdingsDrift: number | null; cashComponentDrift: number | null; belowFloor: boolean | null;
-}) {
-  const flags = [
-    { label: `Cash Drift ${pct(cashDrift)}`, ok: cashDrift === null || Math.abs(cashDrift) < 0.05 },
-    { label: `Holdings Drift ${pct(holdingsDrift)}`, ok: holdingsDrift === null || Math.abs(holdingsDrift) < 0.05 },
-    { label: `Cash Component Drift ${pct(cashComponentDrift)}`, ok: cashComponentDrift === null || Math.abs(cashComponentDrift) < 0.05 },
-    { label: belowFloor ? "Below Floor" : "Above Floor", ok: !belowFloor },
-  ];
-  return (
-    <div className="flex flex-wrap gap-2 mb-5">
-      {flags.map((f, i) => (
-        <span
-          key={i}
-          className={`bg-white border rounded-full px-3.5 py-1.5 text-xs font-semibold ${f.ok ? "border-[#1F7A4D] text-[#1F7A4D]" : "border-[#B99B3D] text-[#8a6d1a]"
-            }`}
-        >
-          {f.label}
-        </span>
-      ))}
-    </div>
-  );
 }
 
 // ─── Scenario card wrapper ──────────────────────────────────────────────────
@@ -233,7 +241,7 @@ function CurrentAccountSplit({ snapshot }: { snapshot: SnapshotRow }) {
     { label: "Account Value", val: av, pctVal: 1, highlight: true },
     { label: "Holdings", val: snapshot.holdings, pctVal: av > 0 ? snapshot.holdings / av : 0 },
     { label: "Mutual Funds", val: snapshot.mutual_funds, pctVal: av > 0 ? snapshot.mutual_funds / av : 0 },
-    { label: "Liquidcase", val: snapshot.liquidcase, pctVal: av > 0 ? snapshot.liquidcase / av : 0 },
+    { label: "Liquidcase", val: snapshot.liquid_component_total, pctVal: av > 0 ? snapshot.liquid_component_total / av : 0 },
     { label: "Cash", val: snapshot.cash, pctVal: av > 0 ? snapshot.cash / av : 0 },
   ];
   return (
@@ -269,39 +277,120 @@ function StatBox({ label, value, colorClass }: { label: string; value: string; c
   );
 }
 
-// ─── Sleeve table ───────────────────────────────────────────────────────────
+// ─── Sleeve table — Account Value row on top, expandable instruments, Current/Current%/New/New% columns ──
 
-function SleeveGridTable({ sleeves, showTargetColumn = false }: { sleeves: DeploySleeve[]; showTargetColumn?: boolean }) {
+function SleeveGridTable({
+  sleeves, showTargetColumn = false, holdingsBaseline = 0,
+}: {
+  sleeves: DeploySleeve[]; showTargetColumn?: boolean;
+  holdingsBaseline?: number; // pass this when `sleeves` doesn't cover Holdings at all
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  function toggle(particular: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(particular) ? next.delete(particular) : next.add(particular);
+      return next;
+    });
+  }
+
+  const hasHoldingsSleeve = sleeves.some((s) => s.particular !== "Liquidcase" && s.particular !== "Cash");
+  const displaySleeves: DeploySleeve[] = hasHoldingsSleeve || holdingsBaseline === 0
+    ? sleeves
+    : [
+        { particular: "Holdings", current_value: holdingsBaseline, addition_target: 0, addition_actual: 0, new_value: holdingsBaseline, ltp: null, quantity: null },
+        ...sleeves,
+      ];
+
+  const totalCurrent = displaySleeves.reduce((sum, s) => sum + s.current_value, 0);
+  const totalTarget = displaySleeves.reduce((sum, s) => sum + s.addition_target, 0);
+  const totalActual = displaySleeves.reduce((sum, s) => sum + s.addition_actual, 0);
+  const totalNew = displaySleeves.reduce((sum, s) => sum + s.new_value, 0);
+
+  function currentPctFraction(currentValue: number) {
+    return totalCurrent > 0 ? currentValue / totalCurrent : 0;
+  }
+  function newPctFraction(newValue: number) {
+    return totalNew > 0 ? newValue / totalNew : 0;
+  }
+
   return (
     <table className="w-full text-[13px]">
       <thead>
         <tr>
           <th className="text-left font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Particulars</th>
-          <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Value</th>
-          <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Target Value</th>
-          <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>(%)</th>
+          <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Current</th>
+          <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Current %</th>
+          {showTargetColumn && (
+            <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Target</th>
+          )}
+          <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>New</th>
+          <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>New %</th>
+          <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>
+            {showTargetColumn ? "Δ Actual" : "Δ Target"}
+          </th>
           <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>LTP</th>
           <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Qty</th>
         </tr>
       </thead>
       <tbody>
-        {sleeves.map((s, i) => {
-          const pctVal = s.new_value > 0 && s.addition_target > 0 ? s.addition_target / s.new_value : null;
+        <tr className="border-b-2 border-logo-green/20 font-bold" style={{ background: DV.highlightCyan }}>
+          <td className="px-3 py-2">Account Value</td>
+          <td className="px-3 py-2 text-right">{inr(totalCurrent)}</td>
+          <td className="px-3 py-2 text-right">100.00%</td>
+          {showTargetColumn && <td className="px-3 py-2 text-right">{inr(totalTarget)}</td>}
+          <td className="px-3 py-2 text-right" style={{ background: DV.highlightCyan2 }}>{inr(totalNew)}</td>
+          <td className="px-3 py-2 text-right">100.00%</td>
+          <td className="px-3 py-2 text-right"><DeltaText value={totalActual} /></td>
+          <td className="px-3 py-2 text-right">—</td>
+          <td className="px-3 py-2 text-right">—</td>
+        </tr>
+        {displaySleeves.map((s, i) => {
+          const hasInstruments = !!s.instruments && s.instruments.length > 0;
+          const isOpen = expanded.has(s.particular);
           return (
-            <tr key={i} className="border-b border-[#EDECE3] last:border-0">
-              <td className="px-3 py-1.5 font-medium">{s.particular}</td>
-              <td className="px-3 py-1.5 text-right">{inr(s.current_value)}</td>
-              <td className="px-3 py-1.5 text-right">{inr(s.addition_target)}</td>
-              <td className="px-3 py-1.5 text-right">{pctVal !== null ? pct(pctVal) : ""}</td>
-              <td className="px-3 py-1.5 text-right">{s.ltp !== null ? inr(s.ltp) : ""}</td>
-              <td className="px-3 py-1.5 text-right">{s.quantity !== null ? s.quantity.toLocaleString("en-IN") : ""}</td>
-            </tr>
+            <Fragment key={i}>
+              <tr className="border-b border-[#EDECE3] last:border-0">
+                <td className="px-3 py-1.5 font-medium">
+                  {hasInstruments ? (
+                    <button type="button" onClick={() => toggle(s.particular)} className="inline-flex items-center gap-1 hover:underline">
+                      <ChevronRight className={`h-3 w-3 transition-transform ${isOpen ? "rotate-90" : ""}`} />
+                      {s.particular}
+                    </button>
+                  ) : (
+                    s.particular
+                  )}
+                </td>
+                <td className="px-3 py-1.5 text-right">{inr(s.current_value)}</td>
+                <td className="px-3 py-1.5 text-right">{pct(currentPctFraction(s.current_value), 2)}</td>
+                {showTargetColumn && <td className="px-3 py-1.5 text-right">{inr(s.addition_target)}</td>}
+                <td className="px-3 py-1.5 text-right font-semibold" style={{ background: DV.highlightCyan2 }}>{inr(s.new_value)}</td>
+                <td className="px-3 py-1.5 text-right">{pct(newPctFraction(s.new_value), 2)}</td>
+                <td className="px-3 py-1.5 text-right"><DeltaText value={s.addition_actual} /></td>
+                <td className="px-3 py-1.5 text-right">{s.ltp !== null ? inr(s.ltp) : "—"}</td>
+                <td className="px-3 py-1.5 text-right">{s.quantity !== null ? s.quantity.toLocaleString("en-IN") : "—"}</td>
+              </tr>
+              {hasInstruments && isOpen && s.instruments!.map((ins, j) => (
+                <tr key={`${i}-${j}`} className="border-b border-[#EDECE3] last:border-0 bg-[#FAFAF4]">
+                  <td className="px-3 py-1 pl-8 text-[12px] text-[#6b6b5f]">{ins.particular}</td>
+                  <td className="px-3 py-1 text-right text-[12px] text-[#6b6b5f]">{inr(ins.current_value)}</td>
+                  <td className="px-3 py-1 text-right text-[12px] text-[#6b6b5f]">{pct(currentPctFraction(ins.current_value), 2)}</td>
+                  {showTargetColumn && <td className="px-3 py-1 text-right text-[12px] text-[#6b6b5f]">{inr(ins.addition_target)}</td>}
+                  <td className="px-3 py-1 text-right text-[12px] text-[#6b6b5f]">{inr(ins.new_value)}</td>
+                  <td className="px-3 py-1 text-right text-[12px] text-[#6b6b5f]">{pct(newPctFraction(ins.new_value), 2)}</td>
+                  <td className="px-3 py-1 text-right text-[12px]"><DeltaText value={ins.addition_actual} /></td>
+                  <td className="px-3 py-1 text-right text-[12px] text-[#6b6b5f]">{ins.ltp !== null ? inr(ins.ltp) : "—"}</td>
+                  <td className="px-3 py-1 text-right text-[12px] text-[#6b6b5f]">{ins.quantity !== null ? ins.quantity.toLocaleString("en-IN") : "—"}</td>
+                </tr>
+              ))}
+            </Fragment>
           );
         })}
       </tbody>
     </table>
   );
 }
+
 // ─── Account Impact visual ──────────────────────────────────────────────────
 
 function AccountImpact({ current, updated }: { current: Record<string, number>; updated: Record<string, number> }) {
@@ -314,9 +403,9 @@ function AccountImpact({ current, updated }: { current: Record<string, number>; 
 
   function buildBar(vals: Record<string, number>, total: number) {
     return keys.map((k) => {
-      const v = vals[k] ?? 0;
+      const v = vals[k] ?? current[k] ?? 0;
       const p = total > 0 ? (v / total) * 100 : 0;
-      const label = p >= 8 ? pct(v / total, 0) : "";
+      const label = p >= 8 ? pct(v / total, 2) : "";
       return (
         <div
           key={k}
@@ -387,8 +476,9 @@ function RadioPair<T extends string>({ options, value, onChange }: { options: { 
       {options.map((o) => (
         <button
           key={o.value} type="button" onClick={() => onChange(o.value)}
-          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${value === o.value ? "bg-white text-logo-green shadow-sm" : "text-card-text-secondary hover:text-card-text"
-            }`}
+          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+            value === o.value ? "bg-white text-logo-green shadow-sm" : "text-card-text-secondary hover:text-card-text"
+          }`}
         >
           {o.label}
         </button>
@@ -479,12 +569,9 @@ function ResultCard({ label, value }: { label: string; value: string }) {
 function NewClientPanel({ clients }: { clients: ClientRecord[] }) {
   const [strategy, setStrategy] = useState("QAW++");
   const isQAW = strategy.startsWith("QAW");
-  const isQYE = strategy.startsWith("QYE");
-  const [qyeInputType, setQyeInputType] = useState<"account_value" | "holdings" | "cash">("account_value");
   const [ratioType, setRatioType] = useState<RatioType>("ideal");
   const [accountValue, setAccountValue] = useState(0);
   const [referenceQcode, setReferenceQcode] = useState<string | null>(null);
-  const [clientName, setClientName] = useState("");
 
   const qawClients = useMemo(
     () => clients.filter((c) => c.strategies.some((s) => isActiveStrategy(s) && s.strategy.startsWith("QAW"))),
@@ -495,94 +582,63 @@ function NewClientPanel({ clients }: { clients: ClientRecord[] }) {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<D0Response | null>(null);
 
- async function handleSubmit() {
-  if (accountValue <= 0) return;
-  if (isQAW && ratioType === "current" && !referenceQcode) return;
-
-  const body: Record<string, unknown> = { strategy };
-
-  if (isQYE) {
-    body.input_mode = qyeInputType;
-    body.value = accountValue;
-  } else {
-    // QAW
-    body.account_value = accountValue;
-    body.ratio_type = ratioType;
-    if (ratioType === "current") {
-      body.reference_qcode = referenceQcode;
+  async function handleSubmit() {
+    if (accountValue <= 0) return;
+    const body: Record<string, unknown> = { strategy, account_value: accountValue };
+    if (isQAW) {
+      body.ratio_type = ratioType;
+      if (ratioType === "current") {
+        if (!referenceQcode) return;
+        body.reference_qcode = referenceQcode;
+      }
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/internal/cash-margin/deployment", {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      setResult(await res.json());
+    } catch (e: any) {
+      setError(e?.message || "Failed to compute deployment.");
+      setResult(null);
+    } finally {
+      setLoading(false);
     }
   }
-
-  setLoading(true);
-  setError(null);
-  try {
-    const res = await fetch("/api/internal/cash-margin/deployment", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(`Request failed (${res.status})`);
-    setResult(await res.json());
-  } catch (e: any) {
-    setError(e?.message || "Failed to compute deployment.");
-    setResult(null);
-  } finally {
-    setLoading(false);
-  }
-}
 
   return (
     <>
       <div className="bg-white rounded-xl border border-logo-green/10 overflow-hidden">
         <SH>New Client Deployment</SH>
         <div className="p-5">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
-  <label className="block">
-    <span className="block text-xs font-medium text-card-text-secondary mb-1.5">Strategy</span>
-    <select value={strategy} onChange={(e) => setStrategy(e.target.value)}
-      className="w-full px-3 py-2 text-sm rounded-lg border border-logo-green/20 outline-none focus:border-logo-green/40 bg-white">
-      {["QAW+", "QAW++", "QYE+", "QYE++"].map((s) => <option key={s} value={s}>{s}</option>)}
-    </select>
-  </label>
-
-  <label className="block">
-    <span className="block text-xs font-medium text-card-text-secondary mb-1.5">Client Name (for export)</span>
-    <input type="text" value={clientName} onChange={(e) => setClientName(e.target.value)}
-      placeholder="Enter client name…"
-      className="w-full px-3 py-2 text-sm rounded-lg border border-logo-green/20 outline-none focus:border-logo-green/40 bg-white" />
-  </label>
-
-  {isQYE && (
-    <label className="block">
-      <span className="block text-xs font-medium text-card-text-secondary mb-1.5">Input Type</span>
-      <select value={qyeInputType} onChange={(e) => setQyeInputType(e.target.value as "account_value" | "holdings" | "cash")}
-        className="w-full px-3 py-2 text-sm rounded-lg border border-logo-green/20 outline-none focus:border-logo-green/40 bg-white">
-        <option value="account_value">Account Value</option>
-        <option value="holdings">Holdings Value</option>
-        <option value="cash">Cash Value</option>
-      </select>
-    </label>
-  )}
-
-  <NumberField
-    label={isQYE ? (qyeInputType === "account_value" ? "Account Value" : qyeInputType === "holdings" ? "Holdings Value" : "Cash Value") : "Account Value"}
-    value={accountValue}
-    onChange={setAccountValue}
-  />
-
-  {isQAW && (
-    <label className="block">
-      <span className="block text-xs font-medium text-card-text-secondary mb-1.5">Ratio Type</span>
-      <select value={ratioType} onChange={(e) => setRatioType(e.target.value as RatioType)}
-        className="w-full px-3 py-2 text-sm rounded-lg border border-logo-green/20 outline-none focus:border-logo-green/40 bg-white">
-        <option value="ideal">Ideal (40/40/20)</option>
-        <option value="model">Model</option>
-        <option value="current">Current — copy a real client</option>
-      </select>
-    </label>
-  )}
-</div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+            <label className="block">
+              <span className="block text-xs font-medium text-card-text-secondary mb-1.5">Strategy</span>
+              <select
+                value={strategy} onChange={(e) => setStrategy(e.target.value)}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-logo-green/20 outline-none focus:border-logo-green/40 bg-white"
+              >
+                {["QAW+", "QAW++", "QYE+", "QYE++"].map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+            <NumberField label="Account Value" value={accountValue} onChange={setAccountValue} />
+            {isQAW && (
+              <label className="block">
+                <span className="block text-xs font-medium text-card-text-secondary mb-1.5">Ratio Type</span>
+                <select
+                  value={ratioType} onChange={(e) => setRatioType(e.target.value as RatioType)}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-logo-green/20 outline-none focus:border-logo-green/40 bg-white"
+                >
+                  <option value="ideal">Ideal (40/40/20)</option>
+                  <option value="model">Model</option>
+                  <option value="current">Current — copy a real client</option>
+                </select>
+              </label>
+            )}
+          </div>
 
           {isQAW && ratioType === "current" && (
             <div className="mb-5">
@@ -602,47 +658,44 @@ function NewClientPanel({ clients }: { clients: ClientRecord[] }) {
           {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
         </div>
       </div>
-{result && (
-  <div className="bg-white rounded-xl border border-logo-green/10 overflow-hidden">
-    <SH>Deployment Split — {result.strategy} ({result.ratio_type})</SH>
-    <div className="p-5">
-      <ResultCard label="Account Value" value={inr(result.account_value)} />
-      <div className="overflow-x-auto rounded-lg border border-logo-green/10 mt-4">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="bg-primary-bg/40 text-card-text-secondary">
-              <th className="px-3 py-2 text-left font-medium">Particular</th>
-              <th className="px-3 py-2 text-right font-medium">Target %</th>
-              <th className="px-3 py-2 text-right font-medium">Target Value</th>
-              <th className="px-3 py-2 text-right font-medium">Actual Value</th>
-              <th className="px-3 py-2 text-right font-medium">LTP</th>
-              <th className="px-3 py-2 text-right font-medium">Qty</th>
-            </tr>
-          </thead>
-          <tbody>
-            {result.sleeves.map((s, i) => {
-              const isHeader = s.particular === "Equity - Stock";
-              return (
-                <tr key={i} className={`border-t border-logo-green/5 ${isHeader ? "bg-primary-bg/30 font-semibold" : ""}`}>
-                  <td className={`px-3 py-2 text-card-text whitespace-nowrap ${isHeader ? "font-semibold" : "font-medium"}`}>{s.particular}</td>
-                  <td className="px-3 py-2 text-right text-card-text-secondary whitespace-nowrap">{pct(s.target_pct)}</td>
-                  <td className="px-3 py-2 text-right text-card-text-secondary whitespace-nowrap">{inr(s.target_value)}</td>
-                  <td className="px-3 py-2 text-right text-card-text whitespace-nowrap">{inr(s.actual_value)}</td>
-                  <td className="px-3 py-2 text-right text-card-text-secondary whitespace-nowrap">
-                    {s.ltp !== null ? inr(s.ltp) : ""}
-                  </td>
-                  <td className="px-3 py-2 text-right text-card-text-secondary whitespace-nowrap">
-                    {s.quantity !== null ? s.quantity.toLocaleString("en-IN") : ""}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-)}
+
+      {result && (
+        <div className="bg-white rounded-xl border border-logo-green/10 overflow-hidden">
+          <SH>Deployment Split — {result.strategy} ({result.ratio_type})</SH>
+          <div className="p-5">
+            <ResultCard label="Account Value" value={inr(result.account_value)} />
+            <div className="overflow-x-auto rounded-lg border border-logo-green/10 mt-4">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-primary-bg/40 text-card-text-secondary">
+                    <th className="px-3 py-2 text-left font-medium">Particular</th>
+                    <th className="px-3 py-2 text-right font-medium">Target %</th>
+                    <th className="px-3 py-2 text-right font-medium">Target Value</th>
+                    <th className="px-3 py-2 text-right font-medium">Actual Value</th>
+                    <th className="px-3 py-2 text-right font-medium">LTP / Qty</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.sleeves.map((s, i) => {
+                    const isHeader = s.particular === "Equity - Stock";
+                    return (
+                      <tr key={i} className={`border-t border-logo-green/5 ${isHeader ? "bg-primary-bg/30 font-semibold" : ""}`}>
+                        <td className={`px-3 py-2 text-card-text whitespace-nowrap ${isHeader ? "font-semibold" : "font-medium"}`}>{s.particular}</td>
+                        <td className="px-3 py-2 text-right text-card-text-secondary whitespace-nowrap">{pct(s.target_pct)}</td>
+                        <td className="px-3 py-2 text-right text-card-text-secondary whitespace-nowrap">{inr(s.target_value)}</td>
+                        <td className="px-3 py-2 text-right text-card-text whitespace-nowrap">{inr(s.actual_value)}</td>
+                        <td className="px-3 py-2 text-right text-card-text-secondary whitespace-nowrap">
+                          {s.ltp !== null ? `${s.ltp.toFixed(2)} × ${s.quantity}` : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -721,7 +774,7 @@ function ExistingClientPanel({ clients }: { clients: ClientRecord[] }) {
   }
 
   const baseline: Record<string, number> = result
-    ? { Holdings: result.snapshot.holdings, "Mutual Funds": result.snapshot.mutual_funds, Liquidcase: result.snapshot.liquidcase, Cash: result.snapshot.cash }
+    ? { Holdings: result.snapshot.holdings, "Mutual Funds": result.snapshot.mutual_funds, Liquidcase: result.snapshot.liquid_component_total, Cash: result.snapshot.cash }
     : { Holdings: 0, "Mutual Funds": 0, Liquidcase: 0, Cash: 0 };
 
   return (
@@ -819,14 +872,26 @@ function ExistingClientPanel({ clients }: { clients: ClientRecord[] }) {
 
       {result && (
         <>
+          {/* Topbar-style summary */}
+          <div className="rounded-md text-white px-6 py-4 flex items-center justify-between flex-wrap gap-4" style={{ background: DV.headerGreen }}>
+            <h2 className="text-[19px] font-semibold">Cash & Margin — Client Snapshot</h2>
+            <div className="flex gap-7 text-[13px]">
+              <div><span className="block uppercase tracking-wide text-[10px] opacity-75 mb-0.5">Client</span><span className="text-[15px] font-semibold">{accountName}</span></div>
+              <div><span className="block uppercase tracking-wide text-[10px] opacity-75 mb-0.5">Strategy</span><span className="text-[15px] font-semibold">{result.snapshot.strategy}</span></div>
+              <div><span className="block uppercase tracking-wide text-[10px] opacity-75 mb-0.5">Account Value</span><span className="text-[15px] font-semibold">{inr(result.snapshot.account_value, 0)}</span></div>
+            </div>
+          </div>
+
           {/* Current Account Split (always visible) */}
           <CurrentAccountSplit snapshot={result.snapshot} />
 
           {/* Stat boxes (always visible) */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
             <StatBox label="Excess Cash" value={inr(result.snapshot.excess_cash, 0)} colorClass={signedTextClass(result.snapshot.excess_cash)} />
+            <StatBox label="Excess Cash %" value={pct(result.snapshot.excess_cash_pct)} colorClass={signedTextClass(result.snapshot.excess_cash_pct)} />
             <StatBox label="Cash Drift" value={pct(result.snapshot.cash_drift)} colorClass={signedTextClass(result.snapshot.cash_drift)} />
             <StatBox label="Holdings Drift" value={pct(result.snapshot.holdings_drift)} colorClass={signedTextClass(result.snapshot.holdings_drift)} />
+            <StatBox label="Cash Component Drift" value={pct(result.snapshot.cash_component_drift)} colorClass={signedTextClass(result.snapshot.cash_component_drift)} />
           </div>
 
           {/* Scenario tabs — always all 6, each shows a "Not available" fallback if its data is missing */}
@@ -851,25 +916,63 @@ function ExistingClientPanel({ clients }: { clients: ClientRecord[] }) {
                   <table className="w-full text-[13px]">
                     <thead><tr>
                       <th className="text-left font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Sleeve</th>
+                      <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Current</th>
+                      <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Current %</th>
                       <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Ideal</th>
+                      <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Ideal %</th>
                       <th className="text-right font-semibold px-3 py-1.5 text-[12px]" style={{ background: DV.goldLight, color: "#4a3d10" }}>Δ Inflow</th>
                     </tr></thead>
                     <tbody>
-                      <tr className="border-b border-[#EDECE3]">
-                        <td className="px-3 py-1.5">Liquidcase</td>
-                        <td className="px-3 py-1.5 text-right">{inr(result.additional_cash_required.liquidcase_ideal)}</td>
-                        <td className="px-3 py-1.5 text-right"><DeltaText value={result.additional_cash_required.liquidcase_inflow} /></td>
-                      </tr>
-                      <tr>
-                        <td className="px-3 py-1.5">Cash</td>
-                        <td className="px-3 py-1.5 text-right">{inr(result.additional_cash_required.cash_ideal)}</td>
-                        <td className="px-3 py-1.5 text-right"><DeltaText value={result.additional_cash_required.cash_inflow} /></td>
-                      </tr>
+                      {(() => {
+                        const curHoldings = result.snapshot.holdings;
+                        const curMf = result.snapshot.mutual_funds;
+                        const curLc = result.snapshot.liquid_component_total;
+                        const curCash = result.snapshot.cash;
+                        const curTotal = curHoldings + curMf + curLc + curCash;
+                        const idealTotal = curHoldings + curMf + result.additional_cash_required.liquidcase_ideal + result.additional_cash_required.cash_ideal;
+                        const cpct = (v: number) => (curTotal > 0 ? v / curTotal : 0);
+                        const ipct = (v: number) => (idealTotal > 0 ? v / idealTotal : 0);
+                        return (
+                          <>
+                            <tr className="border-b-2 border-logo-green/20 font-bold" style={{ background: DV.highlightCyan }}>
+                              <td className="px-3 py-2">Account Value</td>
+                              <td className="px-3 py-2 text-right">{inr(curTotal)}</td>
+                              <td className="px-3 py-2 text-right">100.00%</td>
+                              <td className="px-3 py-2 text-right" style={{ background: DV.highlightCyan2 }}>{inr(idealTotal)}</td>
+                              <td className="px-3 py-2 text-right">100.00%</td>
+                              <td className="px-3 py-2 text-right">
+                                <DeltaText value={result.additional_cash_required.liquidcase_inflow + result.additional_cash_required.cash_inflow} />
+                              </td>
+                            </tr>
+                            <tr className="border-b border-[#EDECE3]">
+                              <td className="px-3 py-1.5">Liquidcase</td>
+                              <td className="px-3 py-1.5 text-right">{inr(curLc)}</td>
+                              <td className="px-3 py-1.5 text-right">{pct(cpct(curLc), 2)}</td>
+                              <td className="px-3 py-1.5 text-right">{inr(result.additional_cash_required.liquidcase_ideal)}</td>
+                              <td className="px-3 py-1.5 text-right">{pct(ipct(result.additional_cash_required.liquidcase_ideal), 2)}</td>
+                              <td className="px-3 py-1.5 text-right"><DeltaText value={result.additional_cash_required.liquidcase_inflow} /></td>
+                            </tr>
+                            <tr>
+                              <td className="px-3 py-1.5">Cash</td>
+                              <td className="px-3 py-1.5 text-right">{inr(curCash)}</td>
+                              <td className="px-3 py-1.5 text-right">{pct(cpct(curCash), 2)}</td>
+                              <td className="px-3 py-1.5 text-right">{inr(result.additional_cash_required.cash_ideal)}</td>
+                              <td className="px-3 py-1.5 text-right">{pct(ipct(result.additional_cash_required.cash_ideal), 2)}</td>
+                              <td className="px-3 py-1.5 text-right"><DeltaText value={result.additional_cash_required.cash_inflow} /></td>
+                            </tr>
+                          </>
+                        );
+                      })()}
                     </tbody>
                   </table>
                   <AccountImpact
                     current={baseline}
-                    updated={{ Liquidcase: result.additional_cash_required.liquidcase_ideal, Cash: result.additional_cash_required.cash_ideal }}
+                    updated={{
+                      Holdings: baseline.Holdings,
+                      "Mutual Funds": baseline["Mutual Funds"],
+                      Liquidcase: result.additional_cash_required.liquidcase_ideal,
+                      Cash: result.additional_cash_required.cash_ideal,
+                    }}
                   />
                 </ScenarioCard>
               ) : (
@@ -894,7 +997,7 @@ function ExistingClientPanel({ clients }: { clients: ClientRecord[] }) {
                       )}
                     </tbody>
                   </table>
-                  <SleeveGridTable sleeves={result.additional_holdings_required.sleeves} />
+                  <SleeveGridTable sleeves={result.additional_holdings_required.sleeves} holdingsBaseline={result.snapshot.holdings} />
                   <div className="text-[11px] text-[#6b6b5f] px-3.5 py-2.5 bg-[#FAFAF4] border-t border-dashed border-[#C9C9B8]">
                     Remaining gap after deploying undeployed stock is carried into Holdings by default. LTP/Qty apply only to Liquidcase — everything else moves by value.
                   </div>
@@ -913,7 +1016,7 @@ function ExistingClientPanel({ clients }: { clients: ClientRecord[] }) {
             {activeTab === "excess-full" && (
               result.excess_cash_deployment.full ? (
                 <ScenarioCard title={`Excess Cash Deployment — Full (${inr(result.excess_cash_deployment.full.amount_deployed)})`} variant="gold">
-                  <SleeveGridTable sleeves={result.excess_cash_deployment.full.sleeves} />
+                  <SleeveGridTable sleeves={result.excess_cash_deployment.full.sleeves} holdingsBaseline={result.snapshot.holdings} />
                   <AccountImpact
                     current={baseline}
                     updated={Object.fromEntries(result.excess_cash_deployment.full.sleeves.map((s) => [s.particular, s.new_value]))}
@@ -931,7 +1034,7 @@ function ExistingClientPanel({ clients }: { clients: ClientRecord[] }) {
             {activeTab === "excess-partial" && (
               result.excess_cash_deployment.partial ? (
                 <ScenarioCard title={`Excess Cash Deployment — Partial (${inr(result.excess_cash_deployment.partial.amount_deployed)})`} variant="gold">
-                  <SleeveGridTable sleeves={result.excess_cash_deployment.partial.sleeves} />
+                  <SleeveGridTable sleeves={result.excess_cash_deployment.partial.sleeves} holdingsBaseline={result.snapshot.holdings} />
                   <AccountImpact
                     current={baseline}
                     updated={Object.fromEntries(result.excess_cash_deployment.partial.sleeves.map((s) => [s.particular, s.new_value]))}
@@ -953,9 +1056,9 @@ function ExistingClientPanel({ clients }: { clients: ClientRecord[] }) {
                       <tr><td className="px-3 py-1.5 font-bold">Excess Over Ideal → to Liquidcase</td><td className="px-3 py-1.5 text-right font-semibold" style={{ background: DV.highlightCyan }}>{inr(result.liquid_case_from_excess_cash.excess_cash_over_ideal)}</td></tr>
                     </tbody>
                   </table>
-                  <SleeveGridTable sleeves={result.liquid_case_from_excess_cash.sleeves} />
+                  <SleeveGridTable sleeves={result.liquid_case_from_excess_cash.sleeves} holdingsBaseline={result.snapshot.holdings} />
                   <AccountImpact
-                    current={{ Liquidcase: result.snapshot.liquidcase, Cash: result.snapshot.cash }}
+                    current={{ Holdings: result.snapshot.holdings, Liquidcase: result.snapshot.liquid_component_total, Cash: result.snapshot.cash }}
                     updated={Object.fromEntries(result.liquid_case_from_excess_cash.sleeves.map((s) => [s.particular, s.new_value]))}
                   />
                 </ScenarioCard>
@@ -969,7 +1072,7 @@ function ExistingClientPanel({ clients }: { clients: ClientRecord[] }) {
             {activeTab === "specific" && (
               result.specific_deployment ? (
                 <ScenarioCard title={`Specific Deployment (${inr(result.specific_deployment.amount, 0)})`} variant="gold">
-                  <SleeveGridTable sleeves={result.specific_deployment.sleeves} showTargetColumn />
+                  <SleeveGridTable sleeves={result.specific_deployment.sleeves} showTargetColumn holdingsBaseline={result.snapshot.holdings} />
                   <div className="text-[11px] text-[#6b6b5f] px-3.5 py-2.5 bg-[#FAFAF4] border-t border-dashed border-[#C9C9B8]">
                     Deploying {inr(result.specific_deployment.amount, 0)} → New Account Value {inr(result.specific_deployment.new_account_value, 0)}
                   </div>
@@ -1013,7 +1116,7 @@ export default function DeploymentPage() {
           <h1 className="font-serif text-2xl text-logo-green">Deployment</h1>
         </div>
 
-        <div className="px-8 py-6 space-y-6 max-w-auto">
+        <div className="px-8 py-6 space-y-6 max-w-6xl">
           <RadioPair
             value={mode}
             onChange={setMode}
