@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { prismaWrite } from "@/lib/prisma-write";
 import { PortfolioApi } from "@/app/lib/sarla-utils";
 import { Prisma } from "@prisma/client";
 
@@ -129,7 +130,7 @@ export async function updateAccountAUMs(): Promise<void> {
   console.log("Updating Account AUMs...");
 
   // 🔥 0. TRUNCATE TABLE FIRST
-  await prisma.$executeRaw(
+  await prismaWrite.$executeRaw(
     Prisma.sql`TRUNCATE TABLE account_aum`
   );
 
@@ -192,7 +193,7 @@ if (tagMap.length > 0) {
   const updates = accounts.map((acc) => {
     const aum = valueMap.get(acc.qcode) || 0;
 
-    return prisma.account_aum.upsert({
+    return prismaWrite.account_aum.upsert({
       where: { qcode: acc.qcode },
       update: {
         aum,
@@ -221,7 +222,7 @@ if (tagMap.length > 0) {
     );
     if (sarla) {
       specialUpdates.push(
-        prisma.account_aum.upsert({
+        prismaWrite.account_aum.upsert({
           where: { qcode: "QAC00041" },
           update: {
             aum: sarla.portfolioValue,
@@ -250,7 +251,7 @@ if (tagMap.length > 0) {
 
     if (satidham_qaw_pp && satidham_qye_pp) {
       specialUpdates.push(
-        prisma.account_aum.upsert({
+        prismaWrite.account_aum.upsert({
           where: { qcode: "QAC00046" },
           update: {
             aum: satidham_qaw_pp.portfolioValue + satidham_qye_pp.portfolioValue,

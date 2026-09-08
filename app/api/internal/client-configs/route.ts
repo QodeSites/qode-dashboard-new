@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { prismaWrite } from "@/lib/prisma-write";
 import { requireInternal } from "@/app/lib/admin-utils";
 
 export async function GET(req: Request) {
@@ -29,7 +30,7 @@ export async function POST(req: Request) {
   if (error) return error;
 
   const body = await req.json();
-  const created = await prisma.client_strategy_configs.create({
+  const created = await prismaWrite.client_strategy_configs.create({
     data: {
       ...body,
       effective_from: new Date(body.effective_from),
@@ -49,7 +50,7 @@ export async function PATCH(req: Request) {
   }
 
   const { created_at: _c, updated_at: _u, accounts: _a, ...data } = rest;
-  const updated = await prisma.client_strategy_configs.update({
+  const updated = await prismaWrite.client_strategy_configs.update({
     where: { id: parseInt(id) },
     data: {
       ...data,
@@ -77,6 +78,6 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: "id is required" }, { status: 400 });
   }
 
-  await prisma.client_strategy_configs.delete({ where: { id: parseInt(id) } });
+  await prismaWrite.client_strategy_configs.delete({ where: { id: parseInt(id) } });
   return NextResponse.json({ deleted: parseInt(id) });
 }

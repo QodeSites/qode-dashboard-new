@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { prismaWrite } from "@/lib/prisma-write";
 import { requireInternal } from "@/app/lib/admin-utils";
 
 export async function GET() {
@@ -24,7 +25,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const created = await prisma.strategy_defaults.create({ data: body });
+  const created = await prismaWrite.strategy_defaults.create({ data: body });
   return NextResponse.json(created, { status: 201 });
 }
 
@@ -41,7 +42,7 @@ export async function PATCH(req: Request) {
   }
 
   const { updated_at: _u, ...rest } = data;
-  const updated = await prisma.strategy_defaults.update({
+  const updated = await prismaWrite.strategy_defaults.update({
     where: { strategy_name },
     data: rest,
   });
@@ -60,6 +61,6 @@ export async function DELETE(req: Request) {
     );
   }
 
-  await prisma.strategy_defaults.delete({ where: { strategy_name } });
+  await prismaWrite.strategy_defaults.delete({ where: { strategy_name } });
   return NextResponse.json({ deleted: strategy_name });
 }

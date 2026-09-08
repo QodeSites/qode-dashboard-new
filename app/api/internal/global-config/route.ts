@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { prismaWrite } from "@/lib/prisma-write";
 import { requireInternal } from "@/app/lib/admin-utils";
 
 export async function GET() {
@@ -24,7 +25,7 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: "value is required" }, { status: 400 });
   }
 
-  const updated = await prisma.global_config.update({
+  const updated = await prismaWrite.global_config.update({
     where: { key },
     data: { value: String(value), updated_by: updated_by ?? null },
   });

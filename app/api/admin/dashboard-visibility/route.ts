@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { prismaWrite } from "@/lib/prisma-write";
 import { requireAdmin } from "@/app/lib/admin-utils";
 import { isPageKey } from "@/app/lib/page-visibility";
 
@@ -50,9 +51,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid password" }, { status: 403 });
   }
 
-  await prisma.$transaction(
+  await prismaWrite.$transaction(
     targetIcodes.map((ic) =>
-      prisma.dashboard_visibility.upsert({
+      prismaWrite.dashboard_visibility.upsert({
         where: { icode_page: { icode: ic, page } },
         update: { dashboard_visible, updated_at: new Date() },
         create: { icode: ic, page, dashboard_visible },
