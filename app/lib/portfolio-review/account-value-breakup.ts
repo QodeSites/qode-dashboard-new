@@ -49,14 +49,21 @@ export interface AccountValueBreakupResult {
 
 export async function computeAccountValueBreakup(
   override?: SplitOverride,
+  referenceDate: Date = new Date(),
 ): Promise<AccountValueBreakupResult> {
   const pairs = await fetchStrategyPairs("exposure_tag_suffix");
   if (pairs.length === 0) return { accounts: [], equity_breakup: [] };
 
-  const [valueMap, splitMap] = await Promise.all([
+  const [valueMap, { splits: splitMap, diagnostics }] = await Promise.all([
     fetchLatestTagValues(pairs),
-    resolveSplitConfigs(pairs),
+    resolveSplitConfigs(pairs, referenceDate),
   ]);
+  if (diagnostics.length > 0) {
+    console.warn(
+      `computeAccountValueBreakup: ${diagnostics.length} ratio diagnostic(s)`,
+      diagnostics,
+    );
+  }
 
   if (override) {
     const key = `${override.qcode}|${override.strategy}`;

@@ -22,8 +22,12 @@ import {
   fetchStrategyPairs,
   fetchTagData,
   fetchSystemTags,
+  fetchPnlSnapshot,
 } from "@/app/lib/portfolio-review/tags";
-import type { StrategyPair } from "@/app/lib/portfolio-review/tags";
+import type {
+  StrategyPair,
+  PnlSnapshotEntry,
+} from "@/app/lib/portfolio-review/tags";
 import {
   resolveSplitConfigs,
   fetchLatestTagValues,
@@ -86,8 +90,8 @@ import type {
 // app/lib/portfolio-review/*.
 export type { MonthlyReturn, YearlyReturn, Ratios, TagMetrics };
 export { buildTagMetrics };
-export type { StrategyPair };
-export { fetchTagData, fetchSystemTags };
+export type { StrategyPair, PnlSnapshotEntry };
+export { fetchTagData, fetchSystemTags, fetchPnlSnapshot };
 export type { SplitConfig, SplitOverride };
 export { resolveSplitConfigs, fetchLatestTagValues };
 export type { BenchmarkResult, CaptureRatios, ExtraRatios };

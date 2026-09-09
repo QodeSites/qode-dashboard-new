@@ -27,6 +27,9 @@ export async function GET() {
     );
     if (!hasActive) continue;
 
+    // Solo Prop client — tags carry no strategy prefix, same discriminator as client-dashboard
+    const isSoloProp = rows.length === 1 && rows[0].strategy === "Prop";
+
     // combined.effective_from = oldest date across ALL configs
     const minFrom = rows.reduce<Date>(
       (min, r) => (r.effective_from < min ? r.effective_from : min),
@@ -51,18 +54,26 @@ export async function GET() {
           effective_to: r.effective_to
             ? r.effective_to.toISOString().split("T")[0]
             : null,
-          profit_tag: `${r.strategy} ${r.profit_tag_suffix}`,
-          exposure_tag: `${r.strategy} ${r.exposure_tag_suffix}`,
+          profit_tag: isSoloProp
+            ? r.profit_tag_suffix
+            : `${r.strategy} ${r.profit_tag_suffix}`,
+          exposure_tag: isSoloProp
+            ? r.exposure_tag_suffix
+            : `${r.strategy} ${r.exposure_tag_suffix}`,
         })),
         {
           id: null,
           strategy: "combined",
           effective_from: minFrom.toISOString().split("T")[0],
           effective_to: null,
-          profit_tag: "Qode Total Portfolio",
-          exposure_tag: hasZerodha
-            ? "Zerodha Total Portfolio"
-            : "Total Portfolio Exposure",
+          profit_tag: isSoloProp
+            ? rows[0].profit_tag_suffix
+            : "Qode Total Portfolio",
+          exposure_tag: isSoloProp
+            ? rows[0].exposure_tag_suffix
+            : hasZerodha
+              ? "Zerodha Total Portfolio"
+              : "Total Portfolio Exposure",
         },
       ],
     });
