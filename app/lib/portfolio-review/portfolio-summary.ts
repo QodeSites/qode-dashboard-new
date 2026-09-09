@@ -19,6 +19,8 @@ export interface InvestorAum {
 export interface PortfolioSummaryResult {
   total_investors: number;
   total_aum: number;
+  avg_aum_per_investor: number;
+  new_this_quarter: number;
   mom: {
     prev_aum: number;
     prev_date: string;
@@ -93,12 +95,24 @@ function computeMom(
   };
 }
 
+function getQuarterRange(date: Date): { start: string; end: string } {
+  const q = Math.floor(date.getUTCMonth() / 3);
+  const start = new Date(Date.UTC(date.getUTCFullYear(), q * 3, 1));
+  const end = new Date(Date.UTC(date.getUTCFullYear(), q * 3 + 3, 0));
+  return {
+    start: start.toISOString().split("T")[0],
+    end: end.toISOString().split("T")[0],
+  };
+}
+
 export async function computePortfolioSummary(): Promise<PortfolioSummaryResult> {
   const pairs = await fetchStrategyPairs("exposure_tag_suffix");
   if (pairs.length === 0) {
     return {
       total_investors: 0,
       total_aum: 0,
+      avg_aum_per_investor: 0,
+      new_this_quarter: 0,
       mom: null,
       investors: [],
       aum_daily: [],
@@ -174,9 +188,24 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
       : trimTrailingZeros(series);
   }
 
+  const total_aum = activeInvestors.reduce((s, inv) => s + inv.aum, 0);
+
+  const earliestSinceByClient = new Map<string, string>();
+  for (const inv of activeInvestors) {
+    const cur = earliestSinceByClient.get(inv.qcode);
+    if (!cur || inv.since < cur) earliestSinceByClient.set(inv.qcode, inv.since);
+  }
+  const { start: qStart, end: qEnd } = getQuarterRange(new Date());
+  const new_this_quarter = [...earliestSinceByClient.values()].filter(
+    (since) => since >= qStart && since <= qEnd,
+  ).length;
+
   return {
     total_investors: activeClients.size,
-    total_aum: activeInvestors.reduce((s, inv) => s + inv.aum, 0),
+    total_aum,
+    avg_aum_per_investor:
+      activeClients.size > 0 ? total_aum / activeClients.size : 0,
+    new_this_quarter,
     mom: computeMom(aum_daily),
     investors,
     aum_daily,
