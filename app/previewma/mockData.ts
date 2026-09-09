@@ -385,13 +385,13 @@ export const PORTFOLIO_SUMMARY = {
 };
 
 export const TOP_TABS = [
-  { key: "client-dashboards", label: "Client Dashboards", icon: "user" },
-  { key: "comparison", label: "Comparison", icon: "trending", },
   { key: "portfolio-summary", label: "Portfolio Summary", icon: "pin" },
-  { key: "strategy-breakup", label: "Strategy-wise Client Breakup", icon: "file" },
-  { key: "account-value", label: "Account Value Breakup", icon: "briefcase" },
-  { key: "sub-strategy", label: "Sub-Strategy Performance", icon: "bar-chart" },
   { key: "strategy-monthly", label: "Strategy-wise Monthly Returns", icon: "trending" },
+  { key: "client-dashboards", label: "Client Dashboards", icon: "user" },
+  { key: "account-value", label: "Account Value Breakup", icon: "briefcase" },
+  { key: "comparison", label: "Comparison", icon: "trending", },
+  { key: "strategy-breakup", label: "Strategy-wise Client Breakup", icon: "file" },
+  { key: "sub-strategy", label: "Sub-Strategy Performance", icon: "bar-chart" },
 ] as const;
 
 export type TopTabKey = (typeof TOP_TABS)[number]["key"];

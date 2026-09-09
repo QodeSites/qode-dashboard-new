@@ -113,6 +113,7 @@ export interface StrategyBreakupRow {
   strategy: string;
   inception_date: string;
   since_inception: number;
+  xirr:number,
   benchmark_return: number;
   max_drawdown: number;
   current_drawdown: number;

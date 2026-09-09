@@ -13,25 +13,6 @@ import {
 import { SearchableSelect } from "./Searchableselect";
 import { ClientDetail } from "./ClientDetails";
 
-// A tag name is treated as "Individual" if it ends in one or more digits
-// (e.g. BNPsar2, NLONG14, SLONG21) — these are per-leg/sub-account tags.
-// Everything else (LONG, PSAR, Qode Total Portfolio, Bond Stock Holdings, ...)
-// is an "Aggregate" tag. This mirrors how the real tag names are structured;
-// there is no separate endpoint for "all possible tags", so this list only
-// ever contains tag names actually seen in a loaded client dashboard.
-export function classifyTags(tagNames: string[]): { aggregate: string[]; individual: string[] } {
-  const aggregate: string[] = [];
-  const individual: string[] = [];
-  for (const name of tagNames) {
-    if (/\d+$/.test(name)) {
-      individual.push(name);
-    } else {
-      aggregate.push(name);
-    }
-  }
-  return { aggregate: aggregate.sort(), individual: individual.sort() };
-}
-
 interface ClientDashboardsTabProps {
   riskFreeRate: number;
   onTagsLoaded?: (tagNames: string[]) => void;
@@ -39,6 +20,8 @@ interface ClientDashboardsTabProps {
   fetchTrigger?: number;
   selectedTagFilter: string[];
   onTagFilterDefault?: (profitTag: string) => void;
+  tagOptions: string[]; // flat, combined list — no Aggregate/Individual split
+  onTagsChange: (tags: string[]) => void;
 }
 
 export function ClientDashboardsTab({
@@ -48,6 +31,8 @@ export function ClientDashboardsTab({
   fetchTrigger = 0,
   selectedTagFilter,
   onTagFilterDefault,
+  tagOptions,
+  onTagsChange,
 }: ClientDashboardsTabProps) {
   const [clients, setClients] = useState<ClientListItem[]>([]);
   const [clientsLoading, setClientsLoading] = useState(true);
@@ -61,7 +46,6 @@ export function ClientDashboardsTab({
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
 
-  // Load the client list once on mount.
   useEffect(() => {
     let cancelled = false;
     setClientsLoading(true);
@@ -96,7 +80,6 @@ export function ClientDashboardsTab({
     };
   }, []);
 
-  // Fetch the dashboard payload whenever the selected client or strategy changes.
   useEffect(() => {
     if (!selectedQcode || !selectedStrategy) return;
     let cancelled = false;
@@ -133,8 +116,6 @@ export function ClientDashboardsTab({
     sublabel: c.qcode,
   }));
 
-  // A client with only one real strategy (+ the synthetic "combined") should
-  // not show "combined" as an option — just show and auto-select the real one.
   const realStrategies = (selectedClient?.strategies || []).filter(
     (s) => s.strategy !== "combined"
   );
@@ -152,10 +133,8 @@ export function ClientDashboardsTab({
     const client = clients.find((c) => c.qcode === qcode);
     const real = (client?.strategies || []).filter((s) => s.strategy !== "combined");
     if (real.length === 1) {
-      // Only one real strategy — auto-select it, skip combined
       setSelectedStrategy(real[0].strategy);
     } else {
-      // Multiple strategies — default to combined
       const combined = client?.strategies.find((s) => s.strategy === "combined");
       setSelectedStrategy(combined ? "combined" : client?.strategies[0]?.strategy || null);
     }
@@ -240,7 +219,12 @@ export function ClientDashboardsTab({
       )}
 
       {!dashboardLoading && !dashboardError && dashboardData && (
-        <ClientDetail data={dashboardData} tagFilter={selectedTagFilter} />
+        <ClientDetail
+          data={dashboardData}
+          tagFilter={selectedTagFilter}
+          tagOptions={tagOptions}
+          onTagsChange={onTagsChange}
+        />
       )}
     </div>
   );

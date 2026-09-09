@@ -15,6 +15,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { UnderlineTabs } from "./UnderlineTabs";
+import { MultiSelectDropdown } from "./MultiselectDropdown";
 import type { ClientDashboardResponse, TagDetail } from "./api";
 
 function fmtPct(value: number | null | undefined, digits = 2) {
@@ -80,7 +81,14 @@ const PRIMARY_TAG_HINTS = [
   "Total Portfolio Value",
 ];
 
-function OverviewTab({ data, tagFilter }: { data: ClientDashboardResponse; tagFilter: string[] }) {
+function OverviewTab({
+  data, tagFilter, tagOptions, onTagsChange,
+}: {
+  data: ClientDashboardResponse;
+  tagFilter: string[];
+  tagOptions: string[];
+  onTagsChange: (tags: string[]) => void;
+}) {
   const [showInr, setShowInr] = useState(false);
   const { tags, profit_tag, benchmark } = data;
 
@@ -184,6 +192,18 @@ function OverviewTab({ data, tagFilter }: { data: ClientDashboardResponse; tagFi
       </div>
 
       <SectionHeader icon={<span className="text-xs">📈</span>}>Return Tables</SectionHeader>
+
+      {/* New: single combined tag dropdown, replaces the old Settings-sidebar
+          Aggregate/Individual/Both tag-mode radio + two separate multiselects. */}
+      <div className="mb-5 max-w-md">
+        <MultiSelectDropdown
+          label="System Tags"
+          options={tagOptions}
+          selected={tagFilter}
+          onChange={onTagsChange}
+        />
+      </div>
+
       <div className="space-y-8">
         {tagEntries.map(([name, tag]) => (
           <div key={name}>
@@ -773,9 +793,14 @@ function ChartsTab({
   );
 }
 
-
-
-export function ClientDetail({ data, tagFilter }: { data: ClientDashboardResponse; tagFilter: string[] }) {
+export function ClientDetail({
+  data, tagFilter, tagOptions, onTagsChange,
+}: {
+  data: ClientDashboardResponse;
+  tagFilter: string[];
+  tagOptions: string[];
+  onTagsChange: (tags: string[]) => void;
+}) {
   const [subTab, setSubTab] = useState("overview");
 
   const tabs = useMemo(
@@ -805,7 +830,9 @@ export function ClientDetail({ data, tagFilter }: { data: ClientDashboardRespons
       <UnderlineTabs tabs={tabs} active={subTab} onChange={setSubTab} size="sm" />
 
       <div className="pt-5">
-        {subTab === "overview" && <OverviewTab data={data} tagFilter={tagFilter} />}
+        {subTab === "overview" && (
+          <OverviewTab data={data} tagFilter={tagFilter} tagOptions={tagOptions} onTagsChange={onTagsChange} />
+        )}
         {subTab === "analysis" && <AnalysisTab data={data} tagFilter={tagFilter} />}
         {subTab === "charts" && <ChartsTab data={data} tagFilter={tagFilter} />}
       </div>
