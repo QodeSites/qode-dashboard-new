@@ -80,7 +80,7 @@ export function StatsCards({
   const statItems = [
     {
       name: labels.amountDeposited,
-      value: `₹ ${parseFloat(stats.amountDeposited).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      value: `₹ ${Math.max(parseFloat(stats.amountDeposited), 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       change: "",
       changeType: "neutral",
       showNote: false,
