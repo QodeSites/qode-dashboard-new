@@ -1175,6 +1175,8 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   returnViewType={returnViewType}
   setReturnViewType={setReturnViewType}
   totalFees={isTotalPortfolio ? SARLA_TOTAL_FEES_SUM : undefined}
+  icode={effectiveIcode}
+  scheme={selectedStrategy}
 />
         {!isTotalPortfolio && (
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
@@ -1263,6 +1265,8 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   isActive={isActive}
   returnViewType={returnViewType}
   setReturnViewType={setReturnViewType}
+  icode={effectiveIcode}
+  scheme={selectedStrategy}
 />
         {!isTotalPortfolio && (
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
@@ -1356,6 +1360,9 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           returnViewType={returnViewType}
           setReturnViewType={setReturnViewType}
           hasNavBasedTotalPortfolio={effectiveNavBased}
+          icode={effectiveIcode}
+          qcode={bifurcatedClient?.qcode}
+          scheme={selectedStrategy}
         />
         {(!isTotalPortfolio || effectiveNavBased) && (
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
@@ -1586,6 +1593,8 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
   isActive={isActive}
   returnViewType={returnViewType}
   setReturnViewType={setReturnViewType}
+  icode={effectiveIcode}
+  scheme={selectedStrategy}
 />
                         <RevenueChart
                           equityCurve={filteredEquityCurve}
@@ -1636,6 +1645,12 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                         isActive={metadata?.isActive ?? true}
                         returnViewType={returnViewType}
                         setReturnViewType={setReturnViewType}
+                        icode={effectiveIcode}
+                        qcode={selectedAccount ?? undefined}
+                        strategy={
+                          accounts.find((acc) => acc.qcode === selectedAccount)?.strategy
+                        }
+                        scheme={strategyName}
                       />
                       <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
                         <div className="flex-1 min-w-0 sm:w-5/6">

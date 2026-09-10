@@ -3,6 +3,7 @@
 import * as React from "react";
 import { ArrowUpIcon, ArrowDownIcon } from "@heroicons/react/24/outline";
 import { Tooltip } from "../components/ui/tooltip";
+import zeroAmountInvestedAccounts from "@/app/config/zero-amount-invested-accounts.json";
 
 interface Stats {
   amountDeposited: string;
@@ -33,6 +34,15 @@ interface StatsCardsProps {
   setReturnViewType?: (type: "percent" | "cash") => void; // Add this prop
   totalFees?: number;
   hasNavBasedTotalPortfolio?: boolean;
+  // Amount Invested is forced to Rs 0 for accounts listed in
+  // app/config/zero-amount-invested-accounts.json. qcode identifies the
+  // account where it's known; icode is the fallback for the Sarla/Satidham
+  // views, which render by client rather than by account. strategy/scheme
+  // let a list entry target one scheme of a multi-scheme account.
+  icode?: string | null;
+  qcode?: string;
+  strategy?: string | null;
+  scheme?: string | null;
 }
 
 export function StatsCards({
@@ -44,6 +54,10 @@ export function StatsCards({
   setReturnViewType, // Use the prop instead of local state
   totalFees,
   hasNavBasedTotalPortfolio = false,
+  icode,
+  qcode,
+  strategy,
+  scheme,
 }: StatsCardsProps) {
   // Remove the local useState - we now use props
   // const [returnViewType, setReturnViewType] = useState<"percent" | "cash">(isTotalPortfolio ? "cash" : "percent");
@@ -77,10 +91,26 @@ export function StatsCards({
 
   const labels = getCardLabels(accountType, broker);
 
+  const showZeroAmountInvested = zeroAmountInvestedAccounts.some((a) => {
+    // Match on qcode when the view knows which account it is showing;
+    // otherwise fall back to icode, for the client-level Sarla/Satidham views.
+    const accountMatches = qcode ? a.qcode === qcode : a.icode === icode;
+    if (!accountMatches) return false;
+    // strategy/scheme only narrow the match when the list entry names one
+    // and this view knows its own value.
+    if (a.strategy && strategy && a.strategy !== strategy) return false;
+    if (a.scheme && scheme && a.scheme !== scheme) return false;
+    return true;
+  });
+
+  const amountDeposited = showZeroAmountInvested
+    ? 0
+    : Math.max(parseFloat(stats.amountDeposited), 0);
+
   const statItems = [
     {
       name: labels.amountDeposited,
-      value: `₹ ${Math.max(parseFloat(stats.amountDeposited), 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      value: `₹ ${amountDeposited.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       change: "",
       changeType: "neutral",
       showNote: false,
