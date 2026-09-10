@@ -1,9 +1,13 @@
 import { round, MS, mean, std } from "@/lib/utils";
 import { MONTHS } from "@/app/lib/portfolio-review/returns";
 import type { MonthlyReturn } from "@/app/lib/portfolio-review/returns";
+import { solveXirr } from "@/app/lib/portfolio-review/xirr";
 
 export interface BenchmarkResult {
+  start_date: string;
+  end_date: string;
   since_inception: number | null;
+  xirr: number | null;
   max_drawdown: number | null;
   current_drawdown: number | null;
   series: { date: string; nav: number; drawdown: number }[];
@@ -72,8 +76,20 @@ export function computeBenchmarkMetrics(
     };
   });
 
+  // Single hypothetical buy-and-hold flow (buy at ref.date, mark-to-market
+  // at last.date) — the benchmark has no real dated cash flows, so this is
+  // the closest equivalent to solveXirr's money-weighted return.
+  const xirr = solveXirr(
+    [{ date: new Date(ref.date), amount: refPrice }],
+    new Date(last.date),
+    last.nav,
+  );
+
   return {
+    start_date: ref.date,
+    end_date: last.date,
     since_inception: round(si, 4),
+    xirr,
     max_drawdown: round(maxDD, 4),
     current_drawdown: series[series.length - 1].drawdown,
     series,
