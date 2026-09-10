@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { NIFTY_INDEX_API_URL } from "@/lib/external-apis";
 
 interface Bse500DataPoint {
   date: string;
@@ -47,7 +46,7 @@ export function useBse500Data(equityCurve: EquityCurvePoint[], adjustStartDateBy
         }
 
         const response = await fetch(
-          NIFTY_INDEX_API_URL,
+          "/api/index-nav",
           {
             method: "POST",
             headers: {

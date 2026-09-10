@@ -13,7 +13,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import StockTable from "@/components/StockTable";
 import { ImpersonationBanner } from "@/components/admin/ImpersonationBanner";
-import { NIFTY_INDEX_API_URL } from "@/lib/external-apis";
 import { Download } from "lucide-react";
 import { buildPortfolioReportHTML } from "@/components/buildPortfolioReportHTML";
 import { generateExcelReport } from "@/components/generateExcelReport";
@@ -260,7 +259,7 @@ async function fetchBenchmarkReturns(
     const fetchStartDate = fetchStartDateObj.toISOString().split('T')[0];
 
     const response = await fetch(
-      NIFTY_INDEX_API_URL,
+      "/api/index-nav",
       {
         method: "POST",
         headers: {
