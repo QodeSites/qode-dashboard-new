@@ -7,6 +7,7 @@ import {
   fetchPnlSnapshot,
   buildTagMetrics,
 } from "@/app/lib/internal-utils";
+import { solveXirr, fetchBulkXirrInputs } from "@/app/lib/portfolio-review/xirr";
 
 export async function POST(req: Request) {
   const { error } = await requireInternal();
@@ -91,11 +92,18 @@ export async function POST(req: Request) {
   // Determine profit_tag and benchmark start date based on requested strategy
   let profitTag: string;
   let benchmarkStart: Date;
+  // Tag to source real cash flows from for XIRR (see xirr.ts) — null means
+  // "don't compute XIRR for this request." Left null for the multi-strategy
+  // "combined" view: pooling cash flows correctly across several strategies'
+  // exposure tags into one XIRR is a separate, not-yet-built piece of work,
+  // not something to guess at here.
+  let exposureTag: string | null = null;
 
   if (effectiveStrategy === "combined") {
     if (isSoloProp) {
       profitTag = configs[0].profit_tag_suffix; // unprefixed — Prop tags carry no strategy prefix
       benchmarkStart = configs[0].effective_from;
+      exposureTag = configs[0].exposure_tag_suffix; // also unprefixed, same reasoning
     } else {
       profitTag = "Qode Total Portfolio";
       benchmarkStart = configs.reduce<Date>(
@@ -116,6 +124,7 @@ export async function POST(req: Request) {
     }
     profitTag = `${effectiveStrategy} ${match.profit_tag_suffix}`;
     benchmarkStart = match.effective_from;
+    exposureTag = `${effectiveStrategy} ${match.exposure_tag_suffix}`;
   }
 
   // Parallel: targeted DB query + Nifty fetch, both cut off at asOf when given
@@ -145,10 +154,23 @@ export async function POST(req: Request) {
     }
   }
 
+  // Whole-account XIRR, computed once for the request and shown on every
+  // tag's metrics — same "repeat per row" pattern as sub-strategy
+  // performance's total_xirr, since a deposit isn't attributable to one
+  // tag any more than it's attributable to one sleeve.
+  let xirr: number | null = null;
+  if (exposureTag) {
+    const xirrMap = await fetchBulkXirrInputs([{ qcode, tag: exposureTag }], asOf ?? undefined);
+    const xirrInputs = xirrMap.get(`${qcode}|${exposureTag}`);
+    if (xirrInputs) {
+      xirr = solveXirr(xirrInputs.flows, xirrInputs.asOfDate, xirrInputs.finalValue);
+    }
+  }
+
   // Build metrics for every tag
   const tags: Record<string, ReturnType<typeof buildTagMetrics>> = {};
   for (const [tag, nav] of Object.entries(tagData)) {
-    tags[tag] = buildTagMetrics(nav, rfr);
+    tags[tag] = buildTagMetrics(nav, rfr, xirr);
   }
 
   // pnl_on not given → profit tag's OWN latest date, not the global dataAsOf.

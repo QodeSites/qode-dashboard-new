@@ -39,6 +39,8 @@ export interface TagMetrics {
   end_date: string;
   since_inception: number | null;
   since_inception_pnl: number;
+  cagr: number | null;
+  xirr: number | null;
   max_drawdown: number | null;
   current_drawdown: number | null;
   ratios: Ratios;
@@ -48,6 +50,13 @@ export interface TagMetrics {
   series: { date: string; nav: number; drawdown: number }[];
 }
 
+/**
+ * <1yr/≥1yr branching return: plain absolute below 1yr tenure, CAGR once
+ * tenure crosses a year. Unchanged/untouched — TagMetrics.since_inception
+ * keeps exactly this value, same as every other consumer of this function
+ * (Calmar in calcRatios, StrategyBreakupRow, StrategyMonthlyRow, etc.).
+ * `cagr` below is purely additive, not a replacement for this field.
+ */
 export function calcSinceInception(nav: NavPoint[]): number | null {
   if (nav.length < 2) return null;
   const days =
@@ -61,6 +70,20 @@ export function calcSinceInception(nav: NavPoint[]): number | null {
     days < 365 ? endNav / baseNav - 1 : (endNav / startNav) ** (365 / days) - 1,
     4,
   );
+}
+
+/** Compound Annual Growth Rate, always annualized regardless of tenure —
+ * new, additive field alongside since_inception (which stays as-is above).
+ * For <1yr tenure this will look inflated (annualizing a short period
+ * always does); that's expected for a metric explicitly labeled CAGR. */
+export function calcCagr(nav: NavPoint[]): number | null {
+  if (nav.length < 2) return null;
+  const days =
+    (nav[nav.length - 1].date.getTime() - nav[0].date.getTime()) / MS;
+  const startNav = nav[0].nav;
+  const endNav = nav[nav.length - 1].nav;
+  if (endNav <= 0 || startNav <= 0 || days <= 0) return null;
+  return round((endNav / startNav) ** (365 / days) - 1, 4);
 }
 
 export function calcMaxDrawdown(nav: NavPoint[]): number | null {
@@ -251,7 +274,11 @@ export function calcRatios(
   };
 }
 
-export function buildTagMetrics(nav: NavPoint[], rfr: number): TagMetrics {
+export function buildTagMetrics(
+  nav: NavPoint[],
+  rfr: number,
+  xirr: number | null = null,
+): TagMetrics {
   const monthly = calcMonthlyReturns(nav);
   const quarterly = calcQuarterlyReturns(monthly);
   const yearly = calcYearlyReturns(monthly);
@@ -260,6 +287,8 @@ export function buildTagMetrics(nav: NavPoint[], rfr: number): TagMetrics {
     end_date: nav[nav.length - 1].date.toISOString().split("T")[0],
     since_inception: calcSinceInception(nav),
     since_inception_pnl: calcSiPnl(nav),
+    cagr: calcCagr(nav),
+    xirr,
     max_drawdown: calcMaxDrawdown(nav),
     current_drawdown: calcCurrentDrawdown(nav),
     ratios: calcRatios(nav, monthly, rfr),
