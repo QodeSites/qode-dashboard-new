@@ -37,8 +37,11 @@ interface StatsCardsProps {
   // Amount Invested is forced to Rs 0 for accounts listed in
   // app/config/zero-amount-invested-accounts.json. qcode identifies the
   // account where it's known; icode is the fallback for the Sarla/Satidham
-  // views, which render by client rather than by account. strategy/scheme
-  // let a list entry target one scheme of a multi-scheme account.
+  // views, which render by client rather than by account. A list entry
+  // declaring strategy and/or scheme must match this view's value exactly
+  // (hard match) to narrow to one scheme of a multi-scheme account — an
+  // undeclared field is simply not part of that entry's match, not a
+  // wildcard.
   icode?: string | null;
   qcode?: string;
   strategy?: string | null;
@@ -96,10 +99,15 @@ export function StatsCards({
     // otherwise fall back to icode, for the client-level Sarla/Satidham views.
     const accountMatches = qcode ? a.qcode === qcode : a.icode === icode;
     if (!accountMatches) return false;
-    // strategy/scheme only narrow the match when the list entry names one
-    // and this view knows its own value.
-    if (a.strategy && strategy && a.strategy !== strategy) return false;
-    if (a.scheme && scheme && a.scheme !== scheme) return false;
+    // Hard match: a field is only ever compared when the list entry declares
+    // it, and when declared it must equal this view's value exactly — no
+    // wildcarding a missing/differing value as "matches anyway". A
+    // multi-scheme account's entry must name its scheme or every scheme of
+    // that account would zero out; leaving a field off an entry means this
+    // render path never varies on it (e.g. a single-scheme account has no
+    // second scheme to confuse it with).
+    if ("strategy" in a && a.strategy !== strategy) return false;
+    if ("scheme" in a && a.scheme !== scheme) return false;
     return true;
   });
 
