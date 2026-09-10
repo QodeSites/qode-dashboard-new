@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { NIFTY_INDEX_API_URL } from "@/lib/external-apis";
 
 interface Bse500DataPoint {
   date: string;
@@ -46,7 +47,7 @@ export function useBse500Data(equityCurve: EquityCurvePoint[], adjustStartDateBy
         }
 
         const response = await fetch(
-          "https://qode360-backend.qodeinvest.com/api/v1/returns/indices/?downloadNav=true",
+          NIFTY_INDEX_API_URL,
           {
             method: "POST",
             headers: {

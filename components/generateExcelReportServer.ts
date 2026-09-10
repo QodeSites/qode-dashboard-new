@@ -8,6 +8,7 @@
 
 import * as XLSX from "xlsx-js-style";
 import JSZip from "jszip";
+import { NIFTY_INDEX_API_URL } from "@/lib/external-apis";
 
 // ============================================================================
 // Types (duplicated from generateExcelReport.ts — do not import from there
@@ -479,7 +480,7 @@ export async function fetchBenchmarkForDateRange(
     const fetchStartStr = fetchStart.toISOString().split("T")[0];
 
     const response = await fetch(
-      "https://qode360-backend.qodeinvest.com/api/v1/returns/indices/?downloadNav=true",
+      NIFTY_INDEX_API_URL,
       {
         method: "POST",
         headers: { "Content-Type": "application/json", accept: "application/json" },
