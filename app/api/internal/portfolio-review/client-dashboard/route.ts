@@ -18,6 +18,7 @@ export async function POST(req: Request) {
     strategy?: string;
     risk_free_rate?: number;
     as_of?: string;
+    start_date?: string;
     pnl_on?: string;
   };
   try {
@@ -41,6 +42,21 @@ export async function POST(req: Request) {
     if (isNaN(asOf.getTime())) {
       return NextResponse.json(
         { error: "Invalid as_of date" },
+        { status: 400 },
+      );
+    }
+  }
+
+  // Windowed XIRR only — does NOT filter the NAV series (since_inception,
+  // cagr, drawdowns, monthly returns stay full-history for now; only the
+  // xirr field below respects this window). See portfolio-review-formulas.md
+  // if that scope ever needs widening to the other metrics too.
+  let windowStart: Date | null = null;
+  if (body.start_date) {
+    windowStart = new Date(body.start_date);
+    if (isNaN(windowStart.getTime())) {
+      return NextResponse.json(
+        { error: "Invalid start_date" },
         { status: 400 },
       );
     }
@@ -160,7 +176,11 @@ export async function POST(req: Request) {
   // tag any more than it's attributable to one sleeve.
   let xirr: number | null = null;
   if (exposureTag) {
-    const xirrMap = await fetchBulkXirrInputs([{ qcode, tag: exposureTag }], asOf ?? undefined);
+    const xirrMap = await fetchBulkXirrInputs(
+      [{ qcode, tag: exposureTag }],
+      asOf ?? undefined,
+      windowStart ?? undefined,
+    );
     const xirrInputs = xirrMap.get(`${qcode}|${exposureTag}`);
     if (xirrInputs) {
       xirr = solveXirr(xirrInputs.flows, xirrInputs.asOfDate, xirrInputs.finalValue);
