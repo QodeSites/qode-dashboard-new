@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { NIFTY_INDEX_API_URL as NIFTY_URL } from "@/lib/external-apis";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -392,9 +393,6 @@ export function buildTagMetrics(nav: NavPoint[], rfr: number): TagMetrics {
 }
 
 // ── Nifty 50 Benchmark ──────────────────────────────────────────────────────
-
-const NIFTY_URL =
-  "https://qode360-backend.qodeinvest.com/api/v1/returns/indices/?downloadNav=true";
 
 // raw price fetch only — no metrics math, so it can be shared across many
 // clients' date ranges with a single external call instead of one per client

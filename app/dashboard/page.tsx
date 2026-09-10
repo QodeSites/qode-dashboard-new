@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import StockTable from "@/components/StockTable";
 import { ImpersonationBanner } from "@/components/admin/ImpersonationBanner";
+import { NIFTY_INDEX_API_URL } from "@/lib/external-apis";
 import { Download } from "lucide-react";
 import { buildPortfolioReportHTML } from "@/components/buildPortfolioReportHTML";
 import { generateExcelReport } from "@/components/generateExcelReport";
@@ -259,7 +260,7 @@ async function fetchBenchmarkReturns(
     const fetchStartDate = fetchStartDateObj.toISOString().split('T')[0];
 
     const response = await fetch(
-      "https://qode360-backend.qodeinvest.com/api/v1/returns/indices/?downloadNav=true",
+      NIFTY_INDEX_API_URL,
       {
         method: "POST",
         headers: {
