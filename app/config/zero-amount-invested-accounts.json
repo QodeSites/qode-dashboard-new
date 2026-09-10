@@ -1,0 +1,233 @@
+[
+  {
+    "icode": "QUS0001",
+    "qcode": "QAC00022",
+    "account": "Deepti Parikh",
+    "strategy": "QYE++",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00067",
+    "qcode": "QAC00040",
+    "account": "Shilpa Poddar",
+    "strategy": "QYE++",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00068",
+    "qcode": "QAC00043",
+    "account": "Vikram Trading Company",
+    "strategy": "QYE++",
+    "scheme": null
+  },
+  {
+    "icode": "QUS0007",
+    "qcode": "QAC00041",
+    "account": "Sarla Performance Fibers",
+    "strategy": "QYE+",
+    "scheme": "Total Portfolio"
+  },
+  {
+    "icode": "QUS0007",
+    "qcode": "QAC00041",
+    "account": "Sarla Performance Fibers",
+    "strategy": "QYE+",
+    "scheme": "Scheme B"
+  },
+  {
+    "icode": "QUS0007",
+    "qcode": "QAC00041",
+    "account": "Sarla Performance Fibers",
+    "strategy": "QYE+",
+    "scheme": "Scheme QAW"
+  },
+  {
+    "icode": "QUS0007",
+    "qcode": "QAC00041",
+    "account": "Sarla Performance Fibers",
+    "strategy": "QYE+",
+    "scheme": "Scheme A"
+  },
+  {
+    "icode": "QUS0007",
+    "qcode": "QAC00041",
+    "account": "Sarla Performance Fibers",
+    "strategy": "QYE+",
+    "scheme": "Scheme C"
+  },
+  {
+    "icode": "QUS0007",
+    "qcode": "QAC00041",
+    "account": "Sarla Performance Fibers",
+    "strategy": "QYE+",
+    "scheme": "Scheme D"
+  },
+  {
+    "icode": "QUS0007",
+    "qcode": "QAC00041",
+    "account": "Sarla Performance Fibers",
+    "strategy": "QYE+",
+    "scheme": "Scheme E"
+  },
+  {
+    "icode": "QUS0007",
+    "qcode": "QAC00041",
+    "account": "Sarla Performance Fibers",
+    "strategy": "QYE+",
+    "scheme": "Scheme F"
+  },
+  {
+    "icode": "QUS00073",
+    "qcode": "QAC00055",
+    "account": "Krishnan Iyer HUF",
+    "strategy": "QAW++",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00074",
+    "qcode": "QAC00056",
+    "account": "Bharat Shah",
+    "strategy": "QYE+",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00079",
+    "qcode": "QAC00064",
+    "account": "Mangesh Hirve",
+    "strategy": "QYE++",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00081",
+    "qcode": "QAC00066",
+    "account": "Satidham Industries Private Limited",
+    "strategy": "QAW++",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00085",
+    "qcode": "QAC00071",
+    "account": "Arwani Research Services Pvt Ltd",
+    "strategy": "QYE++",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00086",
+    "qcode": "QAC00072",
+    "account": "Suresh Somani",
+    "strategy": "QYE++",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00088",
+    "qcode": "QAC00074",
+    "account": "Ashit Jhaveri",
+    "strategy": "QYE+",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00097",
+    "qcode": "QAC00083",
+    "account": "Ashwin Agarwal",
+    "strategy": "QYE++",
+    "scheme": null
+  },
+  {
+    "icode": "QUS0010",
+    "qcode": "QAC00046",
+    "account": "Satidham Industries",
+    "strategy": null,
+    "scheme": null
+  },
+  {
+    "icode": "QUS0010",
+    "qcode": "QAC00070",
+    "account": "sati",
+    "strategy": "QAW++",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00110",
+    "qcode": "QAC00096",
+    "account": "Deepali Shukla",
+    "strategy": "QYE++",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00115",
+    "qcode": "QAC00101",
+    "account": "Bakul Shah",
+    "strategy": "QYE+",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00122",
+    "qcode": "QAC00108",
+    "account": "Anand Damani",
+    "strategy": "QYE++",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00124",
+    "qcode": "QAC00110",
+    "account": "Ashok Jogani HUF",
+    "strategy": "QAW+",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00125",
+    "qcode": "QAC00111",
+    "account": "Kanu Doshi",
+    "strategy": "QYE+",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00126",
+    "qcode": "QAC00112",
+    "account": "Raj Goshar",
+    "strategy": "QYE++",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00131",
+    "qcode": "QAC00117",
+    "account": "Harsh Mehta",
+    "strategy": "QYE+",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00132",
+    "qcode": "QAC00118",
+    "account": "Raghvendra Singh",
+    "strategy": "QYE+",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00134",
+    "qcode": "QAC00120",
+    "account": "Sanjay Mehta",
+    "strategy": "QYE+",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00135",
+    "qcode": "QAC00121",
+    "account": "Monica Mehta",
+    "strategy": "QYE+",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00142",
+    "qcode": "QAC00127",
+    "account": "Priyanka Mittle",
+    "strategy": "QYE+",
+    "scheme": null
+  },
+  {
+    "icode": "QUS00148",
+    "qcode": "QAC00133",
+    "account": "Anantroop Financial Advisory Services Private Limited",
+    "strategy": "QYE+",
+    "scheme": null
+  }
+]
