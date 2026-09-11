@@ -100,19 +100,87 @@ export interface XirrInputs {
  * StrategyPair). Deliberately self-contained per tag rather than mixing
  * flows from one tag with a value from another, so there's no dependency
  * on whether the two tags' portfolio_value figures track each other.
+ *
+ * `start`, when given, computes a WINDOWED XIRR rather than full-history:
+ * the account's actual value at/before `start` is injected as a synthetic
+ * opening deposit on that date, and only real flows strictly after `start`
+ * are included. Without this, filtering flows to a window would drop the
+ * account's true opening balance and produce a wrong (or unsolvable) rate
+ * — see the "windowed XIRR" discussion. Omitting `start` preserves the
+ * exact original full-history behavior, unchanged, for existing callers.
  */
 export async function fetchBulkXirrInputs(
   pairs: { qcode: string; tag: string }[],
   end?: Date,
+  start?: Date,
 ): Promise<Map<string, XirrInputs>> {
   if (pairs.length === 0) return new Map();
-  const params: any[] = [pairs.map((p) => p.qcode), pairs.map((p) => p.tag)];
+  const qcodes = pairs.map((p) => p.qcode);
+  const tags = pairs.map((p) => p.tag);
+
+  const result = new Map<string, XirrInputs>();
+
+  if (start) {
+    // Opening value: latest row at/before `start`, per pair — becomes the
+    // synthetic "deposit" that opens the window.
+    const openingRows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT DISTINCT ON (b.qcode, b.system_tag)
+         b.qcode, b.system_tag, b.date, b.portfolio_value
+       FROM bifurcated_master_sheet_test b
+       JOIN unnest($1::text[], $2::text[]) AS v(qcode, tag)
+         ON b.qcode = v.qcode AND b.system_tag = v.tag
+       WHERE b.portfolio_value IS NOT NULL AND b.date <= $3
+       ORDER BY b.qcode, b.system_tag, b.date DESC`,
+      qcodes, tags, start,
+    );
+    for (const row of openingRows) {
+      const key = `${row.qcode}|${row.system_tag}`;
+      const openingValue = Number(row.portfolio_value) || 0;
+      result.set(key, {
+        flows: [{ date: start, amount: openingValue }],
+        asOfDate: start,
+        finalValue: openingValue,
+      });
+    }
+    // Real flows strictly after `start` (and up to `end`, if given) — the
+    // opening row itself is never double-counted since this is `> start`.
+    const params: any[] = [qcodes, tags, start];
+    let dateClause = " AND b.date > $3";
+    if (end) {
+      params.push(end);
+      dateClause += ` AND b.date <= $${params.length}`;
+    }
+    const flowRows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT b.qcode, b.system_tag, b.date, b.capital_in_out, b.portfolio_value
+       FROM bifurcated_master_sheet_test b
+       JOIN unnest($1::text[], $2::text[]) AS v(qcode, tag)
+         ON b.qcode = v.qcode AND b.system_tag = v.tag
+       WHERE b.portfolio_value IS NOT NULL${dateClause}
+       ORDER BY b.qcode, b.system_tag, b.date ASC`,
+      ...params,
+    );
+    for (const row of flowRows) {
+      const key = `${row.qcode}|${row.system_tag}`;
+      const entry = result.get(key);
+      if (!entry) continue; // no opening value found (account didn't exist before `start`) — can't window this
+      const date = row.date instanceof Date ? row.date : new Date(row.date);
+      const amount = Number(row.capital_in_out) || 0;
+      if (amount !== 0) entry.flows.push({ date, amount });
+      if (date >= entry.asOfDate) {
+        entry.asOfDate = date;
+        entry.finalValue = Number(row.portfolio_value) || 0;
+      }
+    }
+    return result;
+  }
+
+  // Full-history path — unchanged from before `start` existed.
+  const params: any[] = [qcodes, tags];
   let dateClause = "";
   if (end) {
     params.push(end);
     dateClause = ` AND b.date <= $${params.length}`;
   }
-
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `SELECT b.qcode, b.system_tag, b.date, b.capital_in_out, b.portfolio_value
      FROM bifurcated_master_sheet_test b
@@ -122,8 +190,6 @@ export async function fetchBulkXirrInputs(
      ORDER BY b.qcode, b.system_tag, b.date ASC`,
     ...params,
   );
-
-  const result = new Map<string, XirrInputs>();
   for (const row of rows) {
     const key = `${row.qcode}|${row.system_tag}`;
     if (!result.has(key)) {

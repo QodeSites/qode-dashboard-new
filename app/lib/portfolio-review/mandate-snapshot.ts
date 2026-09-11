@@ -1,6 +1,12 @@
 import { prisma } from "@/lib/prisma";
-import { toNum } from "@/app/lib/portfolio-review/tags";
 import type { StrategyPair } from "@/app/lib/portfolio-review/tags";
+import { loadRatioCatalog } from "@/app/lib/portfolio-review/ratio-catalog";
+import {
+  loadResolvedRatios,
+  resolveChainValue,
+  Diagnostics,
+} from "@/app/lib/portfolio-review/ratio-resolver";
+import type { Diagnostic } from "@/app/lib/portfolio-review/ratio-resolver";
 
 export interface SplitConfig {
   equity_pct: number | null;
@@ -25,36 +31,76 @@ export interface SplitOverride extends Partial<SplitConfig> {
   strategy: string;
 }
 
+export interface ResolveSplitConfigsResult {
+  splits: Map<string, SplitConfig>;
+  /** Captured for logging only — not (yet) surfaced in any API response. */
+  diagnostics: Diagnostic[];
+}
+
+/**
+ * Resolves each pair's split ratios from the dynamic config system
+ * (config_catalog + strategy_config_defaults + client_config_values) instead
+ * of the old flat *_pct columns on client_strategy_configs / strategy_defaults.
+ * See app/lib/portfolio-review/ratio-resolver.ts for the resolution rule.
+ *
+ * `referenceDate` pins every row to "as of" that date — pass `new Date()`
+ * for today's config, matching what the old undated flat columns always
+ * implicitly meant.
+ *
+ * gold_model_pct / momentum_model_pct / lowvol_model_pct have no equivalent
+ * in config_catalog (no "model" ratio_type here — Portfolio Review never
+ * reads it, unlike Cash-Margin) and were already always null in practice;
+ * they resolve to null unconditionally, same as before.
+ */
 export async function resolveSplitConfigs(
   pairs: StrategyPair[],
-): Promise<Map<string, SplitConfig>> {
-  const defaults = await prisma.strategy_defaults.findMany();
-  const defaultMap = new Map(defaults.map((d) => [d.strategy_name, d]));
+  referenceDate: Date,
+): Promise<ResolveSplitConfigsResult> {
+  const catalog = await loadRatioCatalog();
+  const diagnostics = new Diagnostics();
 
-  const result = new Map<string, SplitConfig>();
-  for (const pair of pairs) {
-    const def = defaultMap.get(pair.strategy);
-    result.set(`${pair.qcode}|${pair.strategy}`, {
-      equity_pct: pair.equity_pct ?? toNum(def?.equity_pct),
-      debt_pct: pair.debt_pct ?? toNum(def?.debt_pct),
-      lc_pct: pair.lc_pct ?? toNum(def?.lc_pct),
-      cash_pct: pair.cash_pct ?? toNum(def?.cash_pct),
-      gold_pct: pair.gold_pct ?? toNum(def?.gold_pct),
-      lowvol_pct: pair.lowvol_pct ?? toNum(def?.lowvol_pct),
-      momentum_pct: pair.momentum_pct ?? toNum(def?.momentum_pct),
-      psar_leverage: pair.psar_leverage ?? toNum(def?.psar_leverage),
-      psar_multiplier: pair.psar_multiplier ?? toNum(def?.psar_multiplier),
-      long_opt_pct: pair.long_opt_pct ?? toNum(def?.long_opt_pct),
-      gold_model_pct: pair.gold_model_pct ?? toNum(def?.gold_model_pct),
-      momentum_model_pct:
-        pair.momentum_model_pct ?? toNum(def?.momentum_model_pct),
-      lowvol_model_pct: pair.lowvol_model_pct ?? toNum(def?.lowvol_model_pct),
-      cash_pct_healthy: pair.cash_pct_healthy ?? toNum(def?.cash_pct_healthy),
-      liquidcase_pct_gate:
-        pair.liquidcase_pct_gate ?? toNum(def?.liquidcase_pct_gate),
-    });
-  }
-  return result;
+  const splits = new Map<string, SplitConfig>();
+
+  // One resolve per pair — fine at today's pair counts (~60); revisit with a
+  // batched loader if this ever becomes a hot path.
+  await Promise.all(
+    pairs.map(async (pair) => {
+      const ratios = await loadResolvedRatios(
+        pair.strategy,
+        pair.qcode,
+        referenceDate,
+      );
+
+      const chain = (
+        configKey: string,
+        ratioType: "value" | "ideal",
+        stopAtKey: string | null = null,
+      ) =>
+        resolveChainValue(catalog, configKey, ratioType, ratios, diagnostics, stopAtKey);
+
+      splits.set(`${pair.qcode}|${pair.strategy}`, {
+        equity_pct: chain("equity_pct", "value"),
+        debt_pct: chain("debt_pct", "value"),
+        lc_pct: chain("lc_pct", "value"),
+        cash_pct: chain("cash_pct", "value"),
+        // "ideal" fraction of equity_book only — must not walk further up to
+        // equity_book's own parent (equity_pct). See resolveChainValue's header.
+        gold_pct: chain("gold", "ideal", "equity_book"),
+        lowvol_pct: chain("lowvol", "ideal", "equity_book"),
+        momentum_pct: chain("momentum", "ideal", "equity_book"),
+        psar_leverage: chain("psar_leverage", "value"),
+        psar_multiplier: chain("psar_multiplier", "value"),
+        long_opt_pct: chain("long_opt_pct", "value"),
+        gold_model_pct: null,
+        momentum_model_pct: null,
+        lowvol_model_pct: null,
+        cash_pct_healthy: chain("cash_pct_healthy", "value"),
+        liquidcase_pct_gate: chain("liquidcase_pct_gate", "value"),
+      });
+    }),
+  );
+
+  return { splits, diagnostics: diagnostics.items };
 }
 
 const COMPONENT_TAGS = [

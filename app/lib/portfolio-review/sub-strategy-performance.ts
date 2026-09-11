@@ -108,7 +108,16 @@ export async function computeSubStrategyPerformance(
   if (pairs.length === 0)
     return { start_date: startDate, end_date: endDate, rows: [] };
 
-  const splitMap = await resolveSplitConfigs(pairs);
+  const { splits: splitMap, diagnostics } = await resolveSplitConfigs(
+    pairs,
+    end ?? new Date(),
+  );
+  if (diagnostics.length > 0) {
+    console.warn(
+      `computeSubStrategyPerformance: ${diagnostics.length} ratio diagnostic(s)`,
+      diagnostics,
+    );
+  }
 
   const queries: { qcode: string; tag: string }[] = [];
   for (const pair of pairs) {
@@ -208,7 +217,16 @@ export async function computeSubStrategyDailyPnl(
     .filter((p): p is StrategyPair => p != null);
   if (pairs.length === 0) return [];
 
-  const splitMap = await resolveSplitConfigs(pairs);
+  const { splits: splitMap, diagnostics } = await resolveSplitConfigs(
+    pairs,
+    end ?? new Date(),
+  );
+  if (diagnostics.length > 0) {
+    console.warn(
+      `computeSubStrategyDailyPnl: ${diagnostics.length} ratio diagnostic(s)`,
+      diagnostics,
+    );
+  }
 
   const queries: { qcode: string; tag: string }[] = [];
   const combos: { pair: StrategyPair; sec: SubStrategySectionDef }[] = [];
