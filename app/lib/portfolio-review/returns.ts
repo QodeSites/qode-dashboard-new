@@ -72,6 +72,20 @@ export function calcSinceInception(nav: NavPoint[]): number | null {
   );
 }
 
+/** Pure absolute since-inception return — ((endNav/baseNav) - 1), never
+ * annualized/CAGR'd regardless of tenure. Distinct from calcSinceInception
+ * above, which branches to CAGR past 1yr; this one is for callers that
+ * explicitly want "Since Inception (Absolute)" as its own column alongside
+ * XIRR, not a tenure-dependent blend of the two. */
+export function calcSinceInceptionAbsolute(nav: NavPoint[]): number | null {
+  if (nav.length < 1) return null;
+  const baseNav =
+    nav[0].prev_nav != null && nav[0].prev_nav > 0 ? nav[0].prev_nav : 100;
+  const endNav = nav[nav.length - 1].nav;
+  if (endNav <= 0 || baseNav <= 0) return null;
+  return round(endNav / baseNav - 1, 4);
+}
+
 /** Compound Annual Growth Rate, always annualized regardless of tenure —
  * new, additive field alongside since_inception (which stays as-is above).
  * For <1yr tenure this will look inflated (annualizing a short period

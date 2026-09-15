@@ -630,6 +630,32 @@ function writeSubStrategyGrid(
     bySection.get(r.section)!.push(r);
   }
 
+  // Print order comes from the ACTUAL rows present, not a fixed label list
+  // — `section` text varies per client (e.g. "PSAR 2x" vs "PSAR 2.5x" for
+  // an Ashok Jogani-style exception), so it can never be matched against a
+  // static set. Order by each row's stable `section_family` (its position
+  // in SUB_STRATEGY_SECTION_ORDER; a family not in that list — a generic,
+  // catalog-driven section like DMA — sorts after all of them,
+  // alphabetically among themselves) then by `section_value` ascending
+  // within a family (1x block before 2x before 2.5x).
+  const distinctSections = [...bySection.entries()].map(([label, secRows]) => ({
+    label,
+    family: secRows[0].section_family,
+    value: secRows[0].section_value,
+  }));
+  distinctSections.sort((a, b) => {
+    const ai = SUB_STRATEGY_SECTION_ORDER.indexOf(a.family);
+    const bi = SUB_STRATEGY_SECTION_ORDER.indexOf(b.family);
+    const aFamilyRank = ai === -1 ? SUB_STRATEGY_SECTION_ORDER.length : ai;
+    const bFamilyRank = bi === -1 ? SUB_STRATEGY_SECTION_ORDER.length : bi;
+    if (aFamilyRank !== bFamilyRank) return aFamilyRank - bFamilyRank;
+    if (aFamilyRank === SUB_STRATEGY_SECTION_ORDER.length && a.family !== b.family) {
+      return a.family.localeCompare(b.family); // unranked (generic) families: alphabetical
+    }
+    return (a.value ?? 0) - (b.value ?? 0);
+  });
+  const sectionOrder = distinctSections.map((s) => s.label);
+
   const hasRange = !!(range?.start || range?.end);
   let row = 1;
   if (hasRange) {
@@ -643,7 +669,7 @@ function writeSubStrategyGrid(
     row = 3;
   }
 
-  for (const section of SUB_STRATEGY_SECTION_ORDER) {
+  for (const section of sectionOrder) {
     const secRows = bySection.get(section);
     if (!secRows || secRows.length === 0) continue;
 

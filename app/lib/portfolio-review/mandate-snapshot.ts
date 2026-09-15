@@ -24,6 +24,16 @@ export interface SplitConfig {
   lowvol_model_pct: number | null;
   cash_pct_healthy: number | null;
   liquidcase_pct_gate: number | null;
+  /** True when this client has a client_config_values override for
+   *  psar_multiplier that differs from the strategy's default — e.g. an
+   *  Ashok Jogani HUF-style client on 2.5x while the strategy default is
+   *  2x. Drives the "exception" footnote in Sub-Strategy Performance;
+   *  applies to PSAR/NPSAR/SPSAR since they all share this one value. */
+  psar_is_exception: boolean;
+  psar_standard_value: number | null;
+  /** Same idea for long_opt_pct, applying to LONG/NLONG/SLONG. */
+  long_opt_is_exception: boolean;
+  long_opt_standard_value: number | null;
 }
 
 export interface SplitOverride extends Partial<SplitConfig> {
@@ -33,6 +43,25 @@ export interface SplitOverride extends Partial<SplitConfig> {
 
 export interface ResolveSplitConfigsResult {
   splits: Map<string, SplitConfig>;
+  /** Every config_catalog row parented under 'sub_strategy_sections' whose
+   *  own resolved "value" is non-null for a given pair, keyed by
+   *  `${qcode}|${strategy}` -> `{ configKey -> { value, label, tagSuffix } }`.
+   *  This is the generic, catalog-driven side of the sub-strategy tree —
+   *  a brand-new config_catalog row here (config_key + tag_suffix + label,
+   *  parent_key = 'sub_strategy_sections') plus per-client
+   *  client_config_values rows is all a future flag-type strategy needs;
+   *  nothing here names "dma" or "overnight_hedge" specifically. Excludes
+   *  psar_leverage/psar_multiplier/long_opt_pct even though they are also
+   *  reparented under 'sub_strategy_sections' now (for tree consistency) —
+   *  those three have tag_suffix = NULL in config_catalog (they were never
+   *  given one) and always have real tier-formatting logic in
+   *  sub-strategy-performance.ts, so this map only includes catalog rows
+   *  that HAVE a tag_suffix, which naturally excludes them without this
+   *  code needing to name them. */
+  genericSections: Map<
+    string,
+    Map<string, { value: number; label: string; tagSuffix: string }>
+  >;
   /** Captured for logging only — not (yet) surfaced in any API response. */
   diagnostics: Diagnostic[];
 }
@@ -59,7 +88,20 @@ export async function resolveSplitConfigs(
   const catalog = await loadRatioCatalog();
   const diagnostics = new Diagnostics();
 
+  // The generic, catalog-driven sub-strategy sections (DMA, Overnight Hedge,
+  // and anything added later the same way) — every config_catalog row
+  // parented under 'sub_strategy_sections' that also has a tag_suffix.
+  // psar_leverage/psar_multiplier/long_opt_pct are reparented here too (for
+  // tree consistency) but have tag_suffix = NULL, so this filter naturally
+  // excludes them without needing to name them — they keep their existing
+  // tier-formatting handling in sub-strategy-performance.ts instead.
+  const genericCatalogRows = await prisma.config_catalog.findMany({
+    where: { parent_key: "sub_strategy_sections", tag_suffix: { not: null } },
+    select: { config_key: true, label: true, tag_suffix: true },
+  });
+
   const splits = new Map<string, SplitConfig>();
+  const genericSections: ResolveSplitConfigsResult["genericSections"] = new Map();
 
   // One resolve per pair — fine at today's pair counts (~60); revisit with a
   // batched loader if this ever becomes a hot path.
@@ -77,6 +119,13 @@ export async function resolveSplitConfigs(
         stopAtKey: string | null = null,
       ) =>
         resolveChainValue(catalog, configKey, ratioType, ratios, diagnostics, stopAtKey);
+
+      // psar_multiplier/long_opt_pct have no parent "value" row of their own
+      // to multiply through (sub_strategy_sections is a pure grouping node),
+      // so their own resolved value IS the chain value — safe to read the
+      // override/default detail directly off the own key.
+      const psarDetail = ratios.getDetail("psar_multiplier", "value");
+      const longOptDetail = ratios.getDetail("long_opt_pct", "value");
 
       splits.set(`${pair.qcode}|${pair.strategy}`, {
         equity_pct: chain("equity_pct", "value"),
@@ -96,11 +145,32 @@ export async function resolveSplitConfigs(
         lowvol_model_pct: null,
         cash_pct_healthy: chain("cash_pct_healthy", "value"),
         liquidcase_pct_gate: chain("liquidcase_pct_gate", "value"),
+        psar_is_exception: psarDetail.isOverride && psarDetail.value !== psarDetail.defaultValue,
+        psar_standard_value: psarDetail.defaultValue,
+        long_opt_is_exception: longOptDetail.isOverride && longOptDetail.value !== longOptDetail.defaultValue,
+        long_opt_standard_value: longOptDetail.defaultValue,
       });
+
+      const resolvedGeneric = new Map<
+        string,
+        { value: number; label: string; tagSuffix: string }
+      >();
+      for (const row of genericCatalogRows) {
+        const value = chain(row.config_key, "value");
+        if (value === null) continue;
+        resolvedGeneric.set(row.config_key, {
+          value,
+          label: row.label,
+          tagSuffix: row.tag_suffix!,
+        });
+      }
+      if (resolvedGeneric.size > 0) {
+        genericSections.set(`${pair.qcode}|${pair.strategy}`, resolvedGeneric);
+      }
     }),
   );
 
-  return { splits, diagnostics: diagnostics.items };
+  return { splits, genericSections, diagnostics: diagnostics.items };
 }
 
 const COMPONENT_TAGS = [
