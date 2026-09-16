@@ -45,12 +45,28 @@ export class Diagnostics {
   }
 }
 
+export interface RatioDetail {
+  value: number | null;
+  /** True when `value` came from a client_config_values row rather than
+   *  strategy_config_defaults — i.e. this client has a custom override for
+   *  this key (e.g. a client on psar_multiplier=2.5 while the strategy
+   *  default is 2). */
+  isOverride: boolean;
+  /** The strategy_config_defaults value for this key, regardless of what
+   *  won — null if the strategy has no default row for it. Lets a caller
+   *  build "runs at X instead of the usual Y" without a second query. */
+  defaultValue: number | null;
+}
+
 export interface ResolvedRatios {
   strategy: string;
   qcode: string;
   /** Resolved OWN row for a key (before any parent-chain multiply), or null
    *  when nothing is configured. */
   get(configKey: string, ratioType: RatioType): number | null;
+  /** Same resolution as `get`, plus whether it came from a client-specific
+   *  override and what the strategy default is — see RatioDetail. */
+  getDetail(configKey: string, ratioType: RatioType): RatioDetail;
 }
 
 interface DatedValue {
@@ -107,7 +123,19 @@ export async function loadResolvedRatios(
     return hit ? hit.value : null;
   };
 
-  return { strategy, qcode, get };
+  const getDetail = (configKey: string, ratioType: RatioType): RatioDetail => {
+    const k = cacheKey(configKey, ratioType);
+    const override = overrides.get(k);
+    const def = defaults.get(k);
+    const isOverride = override !== undefined;
+    return {
+      value: isOverride ? override.value : (def?.value ?? null),
+      isOverride,
+      defaultValue: def?.value ?? null,
+    };
+  };
+
+  return { strategy, qcode, get, getDetail };
 }
 
 /**
