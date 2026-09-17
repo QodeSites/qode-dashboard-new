@@ -9,9 +9,12 @@ export const fetchCache = "force-no-store";
 
 /**
  * GET /api/admin/download-all-excels/holdings
- * GET /api/admin/download-all-excels/holdings?icode=QUS0007   ← single client
+ * GET /api/admin/download-all-excels/holdings?icode=QUS0007        ← single client
+ * GET /api/admin/download-all-excels/holdings?icodes=QUS0007,QUS0008  ← explicit batch
  *
  * Admin-only. Returns a .zip with only the "holdings" Excels.
+ * The UI chunks the full client list into batches via `icodes` so no single
+ * request runs long enough to hit a reverse-proxy timeout.
  */
 export async function GET(request: Request) {
   const { error } = await requireAdmin();
@@ -19,9 +22,13 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const icodeFilter = searchParams.get("icode");
+  const icodesParam = searchParams.get("icodes");
+  const icodesFilter = icodesParam
+    ? icodesParam.split(",").map((s) => s.trim()).filter(Boolean)
+    : undefined;
 
   try {
-    const clients = await fetchAdminExportClients(icodeFilter);
+    const clients = await fetchAdminExportClients(icodeFilter, icodesFilter);
     const { zipBuffer, totalFiles, errors } = await buildHoldingsZipForClients(clients);
 
     if (totalFiles === 0) {
