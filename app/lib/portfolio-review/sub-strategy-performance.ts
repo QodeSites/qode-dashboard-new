@@ -13,6 +13,12 @@ import type { MonthlyReturn, YearlyReturn } from "@/app/lib/portfolio-review/ret
 import { solveXirr, fetchBulkXirrInputs } from "@/app/lib/portfolio-review/xirr";
 import type { NavPoint } from "@/app/lib/internal-utils";
 import { round } from "@/lib/utils";
+import {
+  computeSubStrategyPerformanceProp,
+  computeSubStrategyDailyPnlProp,
+} from "@/app/lib/portfolio-review/sub-strategy-performance-prop";
+
+export type AccountType = "managed" | "prop";
 
 /**
  * Tier-bearing families (Long Options / PSAR and their N/S directional
@@ -107,6 +113,15 @@ export interface SubStrategyPerformanceResult {
 }
 
 export async function computeSubStrategyPerformance(
+  end?: Date,
+  start?: Date,
+  accountType: AccountType = "managed",
+): Promise<SubStrategyPerformanceResult> {
+  if (accountType === "prop") return computeSubStrategyPerformanceProp(end, start);
+  return computeSubStrategyPerformanceManaged(end, start);
+}
+
+async function computeSubStrategyPerformanceManaged(
   end?: Date,
   start?: Date,
 ): Promise<SubStrategyPerformanceResult> {
@@ -282,6 +297,18 @@ function calcDailyReturns(nav: NavPoint[]): DailyPnlPoint[] {
 }
 
 export async function computeSubStrategyDailyPnl(
+  selections: DailyPnlSelection[],
+  sections: string[],
+  end?: Date,
+  start?: Date,
+  accountType: AccountType = "managed",
+): Promise<DailyPnlSeries[]> {
+  if (accountType === "prop")
+    return computeSubStrategyDailyPnlProp(selections, sections, end, start);
+  return computeSubStrategyDailyPnlManaged(selections, sections, end, start);
+}
+
+async function computeSubStrategyDailyPnlManaged(
   selections: DailyPnlSelection[],
   sections: string[],
   end?: Date,

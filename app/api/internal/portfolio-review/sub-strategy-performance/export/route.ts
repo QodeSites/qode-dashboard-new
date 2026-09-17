@@ -10,7 +10,7 @@ export async function POST(req: Request) {
   const { error } = await requireInternal();
   if (error) return error;
 
-  let body: { start_date?: string; end_date?: string } = {};
+  let body: { start_date?: string; end_date?: string; account_type?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -28,8 +28,22 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  if (
+    body.account_type !== undefined &&
+    body.account_type !== "managed" &&
+    body.account_type !== "prop"
+  ) {
+    return NextResponse.json(
+      { error: "account_type must be 'managed' or 'prop'" },
+      { status: 400 },
+    );
+  }
 
-  const result = await computeSubStrategyPerformance(end, start);
+  const result = await computeSubStrategyPerformance(
+    end,
+    start,
+    body.account_type === "prop" ? "prop" : "managed",
+  );
   const buffer = await buildSubStrategyWorkbook(result.rows, {
     start: body.start_date ?? null,
     end: body.end_date ?? null,

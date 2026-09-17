@@ -5,6 +5,10 @@ export async function fetchBulkNavSeries(
   pairs: { qcode: string; tag: string }[],
   end?: Date,
   start?: Date,
+  // Prop reads from master_sheet_test directly (bare tags, no strategy
+  // prefix, no bifurcation step) — see sub-strategy-performance-prop.ts.
+  // Not user input; always one of these two literals, so safe to inline.
+  table: "bifurcated_master_sheet_test" | "master_sheet_test" = "bifurcated_master_sheet_test",
 ): Promise<Map<string, NavPoint[]>> {
   const params: any[] = [pairs.map((p) => p.qcode), pairs.map((p) => p.tag)];
   let dateClause = "";
@@ -19,7 +23,7 @@ export async function fetchBulkNavSeries(
 
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `SELECT b.qcode, b.system_tag, b.date, b.nav, b.prev_nav, b.drawdown, b.pnl
-     FROM bifurcated_master_sheet_test b
+     FROM ${table} b
      JOIN unnest($1::text[], $2::text[]) AS v(qcode, tag)
        ON b.qcode = v.qcode AND b.system_tag = v.tag
      WHERE b.nav IS NOT NULL${dateClause}
