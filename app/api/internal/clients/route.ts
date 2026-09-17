@@ -2,9 +2,21 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireInternal } from "@/app/lib/admin-utils";
 
-export async function GET() {
+export async function GET(req: Request) {
   const { error } = await requireInternal();
   if (error) return error;
+
+  const accountTypeParam = new URL(req.url).searchParams.get("account_type");
+  if (
+    accountTypeParam !== null &&
+    accountTypeParam !== "managed" &&
+    accountTypeParam !== "prop"
+  ) {
+    return NextResponse.json(
+      { error: "account_type must be 'managed' or 'prop'" },
+      { status: 400 },
+    );
+  }
 
   const configs = await prisma.client_strategy_configs.findMany({
     orderBy: [{ qcode: "asc" }, { effective_from: "asc" }],
@@ -29,6 +41,9 @@ export async function GET() {
 
     // Solo Prop client — tags carry no strategy prefix, same discriminator as client-dashboard
     const isSoloProp = rows.length === 1 && rows[0].strategy === "Prop";
+
+    if (accountTypeParam === "prop" && !isSoloProp) continue;
+    if (accountTypeParam === "managed" && isSoloProp) continue;
 
     // combined.effective_from = oldest date across ALL configs
     const minFrom = rows.reduce<Date>(

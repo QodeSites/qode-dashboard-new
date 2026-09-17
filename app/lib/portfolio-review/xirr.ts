@@ -113,6 +113,8 @@ export async function fetchBulkXirrInputs(
   pairs: { qcode: string; tag: string }[],
   end?: Date,
   start?: Date,
+  // See fetchBulkNavSeries's `table` param — same reasoning, Prop-only.
+  table: "bifurcated_master_sheet_test" | "master_sheet_test" = "bifurcated_master_sheet_test",
 ): Promise<Map<string, XirrInputs>> {
   if (pairs.length === 0) return new Map();
   const qcodes = pairs.map((p) => p.qcode);
@@ -126,7 +128,7 @@ export async function fetchBulkXirrInputs(
     const openingRows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT DISTINCT ON (b.qcode, b.system_tag)
          b.qcode, b.system_tag, b.date, b.portfolio_value
-       FROM bifurcated_master_sheet_test b
+       FROM ${table} b
        JOIN unnest($1::text[], $2::text[]) AS v(qcode, tag)
          ON b.qcode = v.qcode AND b.system_tag = v.tag
        WHERE b.portfolio_value IS NOT NULL AND b.date <= $3
@@ -152,7 +154,7 @@ export async function fetchBulkXirrInputs(
     }
     const flowRows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT b.qcode, b.system_tag, b.date, b.capital_in_out, b.portfolio_value
-       FROM bifurcated_master_sheet_test b
+       FROM ${table} b
        JOIN unnest($1::text[], $2::text[]) AS v(qcode, tag)
          ON b.qcode = v.qcode AND b.system_tag = v.tag
        WHERE b.portfolio_value IS NOT NULL${dateClause}
@@ -183,7 +185,7 @@ export async function fetchBulkXirrInputs(
   }
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `SELECT b.qcode, b.system_tag, b.date, b.capital_in_out, b.portfolio_value
-     FROM bifurcated_master_sheet_test b
+     FROM ${table} b
      JOIN unnest($1::text[], $2::text[]) AS v(qcode, tag)
        ON b.qcode = v.qcode AND b.system_tag = v.tag
      WHERE b.portfolio_value IS NOT NULL${dateClause}
