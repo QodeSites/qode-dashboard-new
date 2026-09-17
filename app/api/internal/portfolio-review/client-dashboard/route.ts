@@ -104,6 +104,9 @@ export async function POST(req: Request) {
   // both mean "just show this client's one config row's own tags"
   const isSoloProp = configs.length === 1 && configs[0].strategy === "Prop";
   const effectiveStrategy = isSoloProp ? "combined" : strategy;
+  // Prop reads from master_sheet_test (bare tags, no bifurcation pipeline
+  // run for these accounts yet) — see nav-series.ts's `table` param.
+  const table = isSoloProp ? "master_sheet_test" : "bifurcated_master_sheet_test";
 
   // Determine profit_tag and benchmark start date based on requested strategy
   let profitTag: string;
@@ -150,6 +153,7 @@ export async function POST(req: Request) {
       effectiveStrategy,
       isSoloProp ? [] : allPrefixes,
       asOf ?? undefined,
+      table,
     ),
     fetchBenchmark(benchmarkStart, asOf ?? new Date()),
   ]);
@@ -180,6 +184,7 @@ export async function POST(req: Request) {
       [{ qcode, tag: exposureTag }],
       asOf ?? undefined,
       windowStart ?? undefined,
+      table,
     );
     const xirrInputs = xirrMap.get(`${qcode}|${exposureTag}`);
     if (xirrInputs) {
@@ -207,7 +212,7 @@ export async function POST(req: Request) {
     : null;
 
   const pnlSnapshot = resolvedPnlOn
-    ? await fetchPnlSnapshot(qcode, profitTag, resolvedPnlOn)
+    ? await fetchPnlSnapshot(qcode, profitTag, resolvedPnlOn, table)
     : null;
 
   return NextResponse.json({

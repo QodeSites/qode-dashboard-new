@@ -92,6 +92,8 @@ export async function fetchTagData(
   strategy: string,
   allPrefixes: string[],
   asOf?: Date,
+  // See fetchBulkNavSeries's `table` param — same reasoning, Prop-only.
+  table: "bifurcated_master_sheet_test" | "master_sheet_test" = "bifurcated_master_sheet_test",
 ): Promise<Record<string, NavPoint[]>> {
   let rows: any[];
 
@@ -101,7 +103,7 @@ export async function fetchTagData(
       const params: any[] = asOf ? [qcode, asOf] : [qcode];
       rows = await prisma.$queryRawUnsafe<any[]>(
         `SELECT system_tag, date, nav, prev_nav, drawdown, pnl, portfolio_value
-         FROM bifurcated_master_sheet_test
+         FROM ${table}
          WHERE qcode = $1 AND nav IS NOT NULL${dateClause}
          ORDER BY system_tag, date ASC`,
         ...params,
@@ -116,7 +118,7 @@ export async function fetchTagData(
       if (asOf) params.push(asOf);
       rows = await prisma.$queryRawUnsafe<any[]>(
         `SELECT system_tag, date, nav, prev_nav, drawdown, pnl, portfolio_value
-         FROM bifurcated_master_sheet_test
+         FROM ${table}
          WHERE qcode = $1 AND nav IS NOT NULL AND ${excludes}${dateClause}
          ORDER BY system_tag, date ASC`,
         ...params,
@@ -129,7 +131,7 @@ export async function fetchTagData(
       : [qcode, `${strategy} %`];
     rows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT system_tag, date, nav, prev_nav, drawdown, pnl, portfolio_value
-       FROM bifurcated_master_sheet_test
+       FROM ${table}
        WHERE qcode = $1 AND nav IS NOT NULL
          AND system_tag LIKE $2${dateClause}
        ORDER BY system_tag, date ASC`,
@@ -150,9 +152,10 @@ export async function fetchPnlSnapshot(
   qcode: string,
   tag: string,
   dateStr: string, // "YYYY-MM-DD" — plain string, not Date, avoids driver timezone rounding on the exact match
+  table: "bifurcated_master_sheet_test" | "master_sheet_test" = "bifurcated_master_sheet_test",
 ): Promise<PnlSnapshotEntry | null> {
   const rows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT pnl, daily_p_l FROM bifurcated_master_sheet_test
+    `SELECT pnl, daily_p_l FROM ${table}
      WHERE qcode = $1 AND date = $2::date AND system_tag = $3
      LIMIT 1`,
     qcode,
@@ -177,6 +180,7 @@ async function fetchClientStrategies(qcode: string): Promise<string[]> {
 export async function fetchSystemTags(
   qcode: string,
   strategy: string,
+  table: "bifurcated_master_sheet_test" | "master_sheet_test" = "bifurcated_master_sheet_test",
 ): Promise<string[]> {
   let rows: { system_tag: string }[];
 
@@ -185,7 +189,7 @@ export async function fetchSystemTags(
     if (allPrefixes.length === 0) {
       rows = await prisma.$queryRawUnsafe<{ system_tag: string }[]>(
         `SELECT DISTINCT system_tag
-         FROM bifurcated_master_sheet_test
+         FROM ${table}
          WHERE qcode = $1
          ORDER BY system_tag`,
         qcode,
@@ -196,7 +200,7 @@ export async function fetchSystemTags(
         .join(" AND ");
       rows = await prisma.$queryRawUnsafe<{ system_tag: string }[]>(
         `SELECT DISTINCT system_tag
-         FROM bifurcated_master_sheet_test
+         FROM ${table}
          WHERE qcode = $1 AND ${excludes}
          ORDER BY system_tag`,
         qcode,
@@ -206,7 +210,7 @@ export async function fetchSystemTags(
   } else {
     rows = await prisma.$queryRawUnsafe<{ system_tag: string }[]>(
       `SELECT DISTINCT system_tag
-       FROM bifurcated_master_sheet_test
+       FROM ${table}
        WHERE qcode = $1 AND system_tag LIKE $2
        ORDER BY system_tag`,
       qcode,
