@@ -1,3 +1,4 @@
+import { prisma } from "@/lib/prisma";
 import { fetchBulkNavSeries } from "@/app/lib/portfolio-review/nav-series";
 import {
   fetchNiftyRawSeries,
@@ -7,6 +8,33 @@ import { buildTagMetrics } from "@/app/lib/portfolio-review/returns";
 import type { TagMetrics } from "@/app/lib/portfolio-review/returns";
 import { fetchBulkXirrInputs, solveXirr } from "@/app/lib/portfolio-review/xirr";
 import type { NavPoint } from "@/app/lib/internal-utils";
+
+const PROP_TABLE = "master_sheet_test" as const;
+
+/**
+ * Solo Prop accounts store their data in master_sheet_test with bare
+ * (unprefixed) tags, not bifurcated_master_sheet_test — same discriminator
+ * (`isSoloProp`) used by /api/internal/clients and
+ * sub-strategy-performance-prop.ts. Compare must fetch each qcode from its
+ * own table since the two are never mixed in one query.
+ */
+async function resolvePropQcodes(qcodes: string[]): Promise<Set<string>> {
+  if (qcodes.length === 0) return new Set();
+  const configs = await prisma.client_strategy_configs.findMany({
+    where: { qcode: { in: qcodes } },
+    select: { qcode: true, strategy: true },
+  });
+  const grouped = new Map<string, string[]>();
+  for (const c of configs) {
+    if (!grouped.has(c.qcode)) grouped.set(c.qcode, []);
+    grouped.get(c.qcode)!.push(c.strategy);
+  }
+  const propQcodes = new Set<string>();
+  for (const [qcode, strategies] of grouped) {
+    if (strategies.length === 1 && strategies[0] === "Prop") propQcodes.add(qcode);
+  }
+  return propQcodes;
+}
 
 const SCHEDULE_RUNS_URL = "https://research.qodeinvest.com/api/schedule-runs";
 const LIVE_RUN_BASE_URL = "https://research.qodeinvest.com/api/live-runs";
@@ -281,9 +309,22 @@ export async function computeCompare(
   for (const s of selections) uniquePairs.set(`${s.qcode}|${s.system_tag}`, s);
   const unique = [...uniquePairs.values()];
 
-  const seriesMap = await fetchBulkNavSeries(
-    unique.map((s) => ({ qcode: s.qcode, tag: s.system_tag })),
-  );
+  const propQcodes = await resolvePropQcodes([...new Set(unique.map((s) => s.qcode))]);
+  const propSelections = unique.filter((s) => propQcodes.has(s.qcode));
+  const managedSelections = unique.filter((s) => !propQcodes.has(s.qcode));
+
+  const [managedSeries, propSeries] = await Promise.all([
+    fetchBulkNavSeries(
+      managedSelections.map((s) => ({ qcode: s.qcode, tag: s.system_tag })),
+    ),
+    fetchBulkNavSeries(
+      propSelections.map((s) => ({ qcode: s.qcode, tag: s.system_tag })),
+      undefined,
+      undefined,
+      PROP_TABLE,
+    ),
+  ]);
+  const seriesMap = new Map([...managedSeries, ...propSeries]);
 
   // XIRR is money-weighted (needs real cash flows + a final valuation, not
   // just the NAV curve), computed per selected (qcode, system_tag) line —
@@ -291,11 +332,20 @@ export async function computeCompare(
   // when rebasing, full history otherwise. `start` here also doubles as
   // fetchBulkXirrInputs' windowed-XIRR opening balance so the rate reflects
   // exactly the rebased period, not the line's whole lifetime.
-  const xirrInputsMap = await fetchBulkXirrInputs(
-    unique.map((s) => ({ qcode: s.qcode, tag: s.system_tag })),
-    rebasing ? rebaseTo : undefined,
-    rebasing ? rebaseFrom : undefined,
-  );
+  const [managedXirrInputs, propXirrInputs] = await Promise.all([
+    fetchBulkXirrInputs(
+      managedSelections.map((s) => ({ qcode: s.qcode, tag: s.system_tag })),
+      rebasing ? rebaseTo : undefined,
+      rebasing ? rebaseFrom : undefined,
+    ),
+    fetchBulkXirrInputs(
+      propSelections.map((s) => ({ qcode: s.qcode, tag: s.system_tag })),
+      rebasing ? rebaseTo : undefined,
+      rebasing ? rebaseFrom : undefined,
+      PROP_TABLE,
+    ),
+  ]);
+  const xirrInputsMap = new Map([...managedXirrInputs, ...propXirrInputs]);
   const xirrMap = new Map<string, number | null>();
   for (const [key, inputs] of xirrInputsMap) {
     xirrMap.set(
