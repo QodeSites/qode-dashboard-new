@@ -184,7 +184,18 @@ export async function fetchSystemTags(
 ): Promise<string[]> {
   let rows: { system_tag: string }[];
 
-  if (strategy === "combined") {
+  // Prop tags are always bare, never strategy-prefixed (see
+  // sub-strategy-performance-prop.ts) — the "{strategy} %" LIKE filter below
+  // would match nothing for them, so list every tag for the qcode instead.
+  if (table === "master_sheet_test") {
+    rows = await prisma.$queryRawUnsafe<{ system_tag: string }[]>(
+      `SELECT DISTINCT system_tag
+       FROM ${table}
+       WHERE qcode = $1
+       ORDER BY system_tag`,
+      qcode,
+    );
+  } else if (strategy === "combined") {
     const allPrefixes = await fetchClientStrategies(qcode);
     if (allPrefixes.length === 0) {
       rows = await prisma.$queryRawUnsafe<{ system_tag: string }[]>(
