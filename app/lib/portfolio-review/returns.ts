@@ -39,6 +39,7 @@ export interface TagMetrics {
   end_date: string;
   since_inception: number | null;
   since_inception_pnl: number;
+  since_inception_absolute: number | null;
   cagr: number | null;
   xirr: number | null;
   max_drawdown: number | null;
@@ -301,6 +302,7 @@ export function buildTagMetrics(
     end_date: nav[nav.length - 1].date.toISOString().split("T")[0],
     since_inception: calcSinceInception(nav),
     since_inception_pnl: calcSiPnl(nav),
+    since_inception_absolute: calcSinceInceptionAbsolute(nav),
     cagr: calcCagr(nav),
     xirr,
     max_drawdown: calcMaxDrawdown(nav),

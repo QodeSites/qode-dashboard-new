@@ -5,6 +5,7 @@ import {
 } from "@/app/lib/portfolio-review/benchmark";
 import { buildTagMetrics } from "@/app/lib/portfolio-review/returns";
 import type { TagMetrics } from "@/app/lib/portfolio-review/returns";
+import { fetchBulkXirrInputs, solveXirr } from "@/app/lib/portfolio-review/xirr";
 import type { NavPoint } from "@/app/lib/internal-utils";
 
 const SCHEDULE_RUNS_URL = "https://research.qodeinvest.com/api/schedule-runs";
@@ -284,6 +285,25 @@ export async function computeCompare(
     unique.map((s) => ({ qcode: s.qcode, tag: s.system_tag })),
   );
 
+  // XIRR is money-weighted (needs real cash flows + a final valuation, not
+  // just the NAV curve), computed per selected (qcode, system_tag) line —
+  // same windowing as the rest of this function: the shared rebase window
+  // when rebasing, full history otherwise. `start` here also doubles as
+  // fetchBulkXirrInputs' windowed-XIRR opening balance so the rate reflects
+  // exactly the rebased period, not the line's whole lifetime.
+  const xirrInputsMap = await fetchBulkXirrInputs(
+    unique.map((s) => ({ qcode: s.qcode, tag: s.system_tag })),
+    rebasing ? rebaseTo : undefined,
+    rebasing ? rebaseFrom : undefined,
+  );
+  const xirrMap = new Map<string, number | null>();
+  for (const [key, inputs] of xirrInputsMap) {
+    xirrMap.set(
+      key,
+      solveXirr(inputs.flows, inputs.asOfDate, inputs.finalValue),
+    );
+  }
+
   const built = new Map<
     string,
     { nav: NavPoint[] | null; metrics: Omit<TagMetrics, "ratios"> | null }
@@ -300,7 +320,11 @@ export async function computeCompare(
       built.set(key, { nav: null, metrics: null });
       continue;
     }
-    const { ratios: _ratios, ...metrics } = buildTagMetrics(nav, 0);
+    const { ratios: _ratios, ...metrics } = buildTagMetrics(
+      nav,
+      0,
+      xirrMap.get(key) ?? null,
+    );
     built.set(key, { nav, metrics });
     if (rebasing) {
       rebasedNav.set(key, rebaseNavToWindow(nav, rebaseFrom!, rebaseTo!));
@@ -378,7 +402,11 @@ export async function computeCompare(
           skip_reason: "inception_after_rebase_from" as const,
         };
       }
-      const { ratios: _ratios, ...metrics } = buildTagMetrics(nav, 0);
+      const { ratios: _ratios, ...metrics } = buildTagMetrics(
+        nav,
+        0,
+        xirrMap.get(key) ?? null,
+      );
       return {
         qcode: s.qcode,
         system_tag: s.system_tag,
