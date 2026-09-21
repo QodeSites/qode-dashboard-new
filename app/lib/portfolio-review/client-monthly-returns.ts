@@ -13,6 +13,9 @@ import type { MonthlyReturn, YearlyReturn } from "@/app/lib/portfolio-review/ret
 const PROP_TABLE = "master_sheet_test" as const;
 const MANAGED_TABLE = "bifurcated_master_sheet_test" as const;
 
+// Self-referential — a breakdown row can itself carry a further breakdown,
+// so any future nesting (e.g. sub-strategy-within-strategy) is representable
+// without a schema change here.
 export interface ClientStrategyBreakdownRow {
   strategy: string;
   monthly: MonthlyReturn[];
@@ -21,6 +24,7 @@ export interface ClientStrategyBreakdownRow {
   max_drawdown: number | null;
   current_drawdown: number | null;
   since_inception_absolute: number | null;
+  strategy_breakdown: ClientStrategyBreakdownRow[];
 }
 
 export interface ClientMonthlyRow {
@@ -45,6 +49,16 @@ interface ClientGroup {
     profit_tag_suffix: string;
     exposure_tag_suffix: string;
   }[];
+}
+
+// A node in the tag tree that feeds a row's returns — the root node for a
+// client (combined tags) and each breakdown entry are the same shape, so one
+// recursive resolver can compute both.
+interface ReturnsNode {
+  label: string;
+  profitTag: string;
+  exposureTag: string;
+  children: ReturnsNode[];
 }
 
 async function fetchClientGroups(
@@ -104,6 +118,91 @@ function combinedTags(group: ClientGroup): { profitTag: string; exposureTag: str
   };
 }
 
+// Builds the root node (combined tags) plus one child per strategy config —
+// today that's the only level below the root, but resolveNode() below walks
+// `children` recursively so an extra level just means adding children here.
+function buildRootNode(group: ClientGroup): ReturnsNode {
+  const { profitTag, exposureTag } = combinedTags(group);
+  const isMulti = group.configs.length > 1;
+  return {
+    label: group.account_name,
+    profitTag,
+    exposureTag,
+    children: isMulti
+      ? group.configs.map((c) => ({
+          label: c.strategy,
+          profitTag: `${c.strategy} ${c.profit_tag_suffix}`,
+          exposureTag: `${c.strategy} ${c.exposure_tag_suffix}`,
+          children: [],
+        }))
+      : [],
+  };
+}
+
+function flattenNode(qcode: string, node: ReturnsNode): { qcode: string; tag: string }[] {
+  return [
+    { qcode, tag: node.profitTag },
+    ...node.children.flatMap((c) => flattenNode(qcode, c)),
+  ];
+}
+function flattenNodeExposure(
+  qcode: string,
+  node: ReturnsNode,
+): { qcode: string; tag: string }[] {
+  return [
+    { qcode, tag: node.exposureTag },
+    ...node.children.flatMap((c) => flattenNodeExposure(qcode, c)),
+  ];
+}
+
+type NavSeriesMap = Awaited<ReturnType<typeof fetchBulkNavSeries>>;
+type XirrInputsMap = Awaited<ReturnType<typeof fetchBulkXirrInputs>>;
+
+interface ResolvedReturns {
+  monthly: MonthlyReturn[];
+  yearly: YearlyReturn[];
+  xirr: number | null;
+  max_drawdown: number | null;
+  current_drawdown: number | null;
+  since_inception_absolute: number | null;
+  strategy_breakdown: ClientStrategyBreakdownRow[];
+}
+
+// Recursively resolves a node's own metrics, then its children's — a node
+// without NAV data (and thus no own metrics) is dropped from the breakdown
+// entirely, same as its children.
+function resolveNode(
+  qcode: string,
+  node: ReturnsNode,
+  navMap: NavSeriesMap,
+  xirrMap: XirrInputsMap,
+): ResolvedReturns | null {
+  const nav = navMap.get(`${qcode}|${node.profitTag}`);
+  if (!nav || nav.length === 0) return null;
+
+  const xirrInputs = xirrMap.get(`${qcode}|${node.exposureTag}`);
+  const monthly = calcMonthlyReturns(nav);
+
+  const strategy_breakdown: ClientStrategyBreakdownRow[] = [];
+  for (const child of node.children) {
+    const resolved = resolveNode(qcode, child, navMap, xirrMap);
+    if (!resolved) continue;
+    strategy_breakdown.push({ strategy: child.label, ...resolved });
+  }
+
+  return {
+    monthly,
+    yearly: calcYearlyReturns(monthly),
+    xirr: xirrInputs
+      ? solveXirr(xirrInputs.flows, xirrInputs.asOfDate, xirrInputs.finalValue)
+      : null,
+    max_drawdown: calcMaxDrawdown(nav),
+    current_drawdown: calcCurrentDrawdown(nav),
+    since_inception_absolute: calcSinceInceptionAbsolute(nav),
+    strategy_breakdown,
+  };
+}
+
 export async function computeClientMonthlyReturns(
   accountType: "managed" | "prop" = "managed",
 ): Promise<ClientMonthlyRow[]> {
@@ -111,97 +210,29 @@ export async function computeClientMonthlyReturns(
   if (groups.length === 0) return [];
 
   const table = accountType === "prop" ? PROP_TABLE : MANAGED_TABLE;
+  const roots = new Map(groups.map((g) => [g.qcode, buildRootNode(g)]));
 
-  const combinedPairs = groups.map((g) => {
-    const { profitTag, exposureTag } = combinedTags(g);
-    return { qcode: g.qcode, profitTag, exposureTag };
-  });
-  const breakdownPairs = groups
-    .filter((g) => g.configs.length > 1)
-    .flatMap((g) =>
-      g.configs.map((c) => ({
-        qcode: g.qcode,
-        strategy: c.strategy,
-        profitTag: `${c.strategy} ${c.profit_tag_suffix}`,
-        exposureTag: `${c.strategy} ${c.exposure_tag_suffix}`,
-      })),
-    );
+  const profitPairs = groups.flatMap((g) => flattenNode(g.qcode, roots.get(g.qcode)!));
+  const exposurePairs = groups.flatMap((g) =>
+    flattenNodeExposure(g.qcode, roots.get(g.qcode)!),
+  );
 
-  const [combinedSeriesMap, breakdownSeriesMap] = await Promise.all([
-    fetchBulkNavSeries(
-      combinedPairs.map((p) => ({ qcode: p.qcode, tag: p.profitTag })),
-      undefined,
-      undefined,
-      table,
-    ),
-    fetchBulkNavSeries(
-      breakdownPairs.map((p) => ({ qcode: p.qcode, tag: p.profitTag })),
-      undefined,
-      undefined,
-      table,
-    ),
-  ]);
-  const [combinedXirrMap, breakdownXirrMap] = await Promise.all([
-    fetchBulkXirrInputs(
-      combinedPairs.map((p) => ({ qcode: p.qcode, tag: p.exposureTag })),
-      undefined,
-      undefined,
-      table,
-    ),
-    fetchBulkXirrInputs(
-      breakdownPairs.map((p) => ({ qcode: p.qcode, tag: p.exposureTag })),
-      undefined,
-      undefined,
-      table,
-    ),
+  const [navMap, xirrMap] = await Promise.all([
+    fetchBulkNavSeries(profitPairs, undefined, undefined, table),
+    fetchBulkXirrInputs(exposurePairs, undefined, undefined, table),
   ]);
 
   const rows: ClientMonthlyRow[] = [];
   for (const group of groups) {
-    const { profitTag, exposureTag } = combinedTags(group);
-    const nav = combinedSeriesMap.get(`${group.qcode}|${profitTag}`);
-    if (!nav || nav.length === 0) continue;
-
-    const xirrInputs = combinedXirrMap.get(`${group.qcode}|${exposureTag}`);
-    const monthly = calcMonthlyReturns(nav);
-    const isMulti = group.configs.length > 1;
-
-    const strategy_breakdown: ClientStrategyBreakdownRow[] = [];
-    if (isMulti) {
-      for (const c of group.configs) {
-        const pTag = `${c.strategy} ${c.profit_tag_suffix}`;
-        const eTag = `${c.strategy} ${c.exposure_tag_suffix}`;
-        const sNav = breakdownSeriesMap.get(`${group.qcode}|${pTag}`);
-        if (!sNav || sNav.length === 0) continue;
-        const sXirrInputs = breakdownXirrMap.get(`${group.qcode}|${eTag}`);
-        const sMonthly = calcMonthlyReturns(sNav);
-        strategy_breakdown.push({
-          strategy: c.strategy,
-          monthly: sMonthly,
-          yearly: calcYearlyReturns(sMonthly),
-          xirr: sXirrInputs
-            ? solveXirr(sXirrInputs.flows, sXirrInputs.asOfDate, sXirrInputs.finalValue)
-            : null,
-          max_drawdown: calcMaxDrawdown(sNav),
-          current_drawdown: calcCurrentDrawdown(sNav),
-          since_inception_absolute: calcSinceInceptionAbsolute(sNav),
-        });
-      }
-    }
+    const root = roots.get(group.qcode)!;
+    const resolved = resolveNode(group.qcode, root, navMap, xirrMap);
+    if (!resolved) continue;
 
     rows.push({
       qcode: group.qcode,
       account_name: group.account_name,
-      is_multi_strategy: isMulti,
-      monthly,
-      yearly: calcYearlyReturns(monthly),
-      xirr: xirrInputs
-        ? solveXirr(xirrInputs.flows, xirrInputs.asOfDate, xirrInputs.finalValue)
-        : null,
-      max_drawdown: calcMaxDrawdown(nav),
-      current_drawdown: calcCurrentDrawdown(nav),
-      since_inception_absolute: calcSinceInceptionAbsolute(nav),
-      strategy_breakdown,
+      is_multi_strategy: group.configs.length > 1,
+      ...resolved,
     });
   }
 
