@@ -77,6 +77,11 @@ import type {
 } from "@/app/lib/portfolio-review/sub-strategy-performance";
 import { computeStrategyMonthlyReturns } from "@/app/lib/portfolio-review/strategy-monthly-returns";
 import type { StrategyMonthlyRow } from "@/app/lib/portfolio-review/strategy-monthly-returns";
+import { computeClientMonthlyReturns } from "@/app/lib/portfolio-review/client-monthly-returns";
+import type {
+  ClientMonthlyRow,
+  ClientStrategyBreakdownRow,
+} from "@/app/lib/portfolio-review/client-monthly-returns";
 import { computeCompare } from "@/app/lib/portfolio-review/compare";
 import type {
   CompareSelection,
@@ -113,6 +118,8 @@ export type {
 export { computeSubStrategyPerformance, computeSubStrategyDailyPnl };
 export type { StrategyMonthlyRow };
 export { computeStrategyMonthlyReturns };
+export type { ClientMonthlyRow, ClientStrategyBreakdownRow };
+export { computeClientMonthlyReturns };
 export type { CompareSelection, CompareResult, BacktestSeries, CompareOutput };
 export { computeCompare };
 

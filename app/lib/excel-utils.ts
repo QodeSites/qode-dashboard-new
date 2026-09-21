@@ -7,6 +7,7 @@ import type {
   MonthlyReturn,
   YearlyReturn,
   StrategyMonthlyRow,
+  ClientMonthlyRow,
   DailyPnlSeries,
   DailyPnlPoint,
 } from "./internal-utils";
@@ -875,6 +876,85 @@ export function buildStrategyMonthlyWorkbook(
   const rsWs = wb.addWorksheet("₹ Returns");
   const rsWidths = new ColumnWidthTracker();
   writeStrategyMonthlyGrid(
+    rsWs,
+    rows,
+    (m) => m.pnl_inr,
+    (y) => y.pnl_inr,
+    writeColoredMoneyCell,
+    rsWidths,
+  );
+  rsWidths.apply(rsWs);
+
+  return wb;
+}
+
+function writeClientMonthlyGrid(
+  ws: ExcelJS.Worksheet,
+  rows: ClientMonthlyRow[],
+  valueOf: (m: MonthlyReturn) => number,
+  totalOf: (y: YearlyReturn) => number,
+  writeCell: (cell: ExcelJS.Cell, value: number | null) => void,
+  widths: ColumnWidthTracker,
+): void {
+  writeTitle(
+    ws,
+    "Client-wise Monthly & Yearly Returns",
+    1,
+    2 + MONTHLY_RETURNS_HEADERS.length,
+  );
+
+  let row = 3;
+  const sorted = [...rows].sort((a, b) => a.account_name.localeCompare(b.account_name));
+  for (const r of sorted) {
+    const label = r.is_multi_strategy
+      ? `${r.account_name} (Multi-Strategy)`
+      : r.account_name;
+    writeSectionHeader(ws, row, label, MONTHLY_RETURNS_HEADERS, widths);
+    row++;
+
+    row = writeClientYearRows(
+      ws,
+      row,
+      { account_name: r.account_name, strategy: "Combined", monthly: r.monthly, yearly: r.yearly },
+      valueOf,
+      totalOf,
+      writeCell,
+      widths,
+    );
+
+    for (const b of r.strategy_breakdown) {
+      row = writeClientYearRows(
+        ws,
+        row,
+        { account_name: r.account_name, strategy: b.strategy, monthly: b.monthly, yearly: b.yearly },
+        valueOf,
+        totalOf,
+        writeCell,
+        widths,
+      );
+    }
+    row += 1; // blank row between clients
+  }
+}
+
+export function buildClientMonthlyWorkbook(rows: ClientMonthlyRow[]): ExcelJS.Workbook {
+  const wb = new ExcelJS.Workbook();
+
+  const pctWs = wb.addWorksheet("% Returns");
+  const pctWidths = new ColumnWidthTracker();
+  writeClientMonthlyGrid(
+    pctWs,
+    rows,
+    (m) => m.return_pct / 100,
+    (y) => y.return_pct / 100,
+    writePctCell,
+    pctWidths,
+  );
+  pctWidths.apply(pctWs);
+
+  const rsWs = wb.addWorksheet("₹ Returns");
+  const rsWidths = new ColumnWidthTracker();
+  writeClientMonthlyGrid(
     rsWs,
     rows,
     (m) => m.pnl_inr,
