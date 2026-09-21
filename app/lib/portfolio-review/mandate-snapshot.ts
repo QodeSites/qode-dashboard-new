@@ -62,6 +62,17 @@ export interface ResolveSplitConfigsResult {
     string,
     Map<string, { value: number; label: string; tagSuffix: string }>
   >;
+  /** Equity-book sleeves (config_catalog rows parented under 'equity_book'
+   *  that have a tag_suffix — gold/lowvol/momentum today) whose own "ideal"
+   *  value exists for a given pair, keyed `${qcode}|${strategy}` ->
+   *  `{ configKey -> { value, label, tagSuffix } }`. Catalog-driven, so a new
+   *  sleeve row needs no code change. Missing values are silently skipped
+   *  here (no diagnostics) — the fixed gold_pct/lowvol_pct/momentum_pct chain
+   *  above already reports them. */
+  equitySleeves: Map<
+    string,
+    Map<string, { value: number; label: string; tagSuffix: string }>
+  >;
   /** Captured for logging only — not (yet) surfaced in any API response. */
   diagnostics: Diagnostic[];
 }
@@ -100,8 +111,14 @@ export async function resolveSplitConfigs(
     select: { config_key: true, label: true, tag_suffix: true },
   });
 
+  const sleeveCatalogRows = await prisma.config_catalog.findMany({
+    where: { parent_key: "equity_book", tag_suffix: { not: null } },
+    select: { config_key: true, label: true, tag_suffix: true },
+  });
+
   const splits = new Map<string, SplitConfig>();
   const genericSections: ResolveSplitConfigsResult["genericSections"] = new Map();
+  const equitySleeves: ResolveSplitConfigsResult["equitySleeves"] = new Map();
 
   // One resolve per pair — fine at today's pair counts (~60); revisit with a
   // batched loader if this ever becomes a hot path.
@@ -167,10 +184,27 @@ export async function resolveSplitConfigs(
       if (resolvedGeneric.size > 0) {
         genericSections.set(`${pair.qcode}|${pair.strategy}`, resolvedGeneric);
       }
+
+      const resolvedSleeves = new Map<
+        string,
+        { value: number; label: string; tagSuffix: string }
+      >();
+      for (const row of sleeveCatalogRows) {
+        const value = ratios.get(row.config_key, "ideal");
+        if (value === null) continue;
+        resolvedSleeves.set(row.config_key, {
+          value,
+          label: row.label,
+          tagSuffix: row.tag_suffix!,
+        });
+      }
+      if (resolvedSleeves.size > 0) {
+        equitySleeves.set(`${pair.qcode}|${pair.strategy}`, resolvedSleeves);
+      }
     }),
   );
 
-  return { splits, genericSections, diagnostics: diagnostics.items };
+  return { splits, genericSections, equitySleeves, diagnostics: diagnostics.items };
 }
 
 const COMPONENT_TAGS = [

@@ -130,7 +130,9 @@ async function computeSubStrategyPerformanceManaged(
     : new Date().toISOString().split("T")[0];
   const startDate = start ? start.toISOString().split("T")[0] : null;
 
-  const pairs = await fetchStrategyPairs("profit_tag_suffix");
+  const pairs = (await fetchStrategyPairs("profit_tag_suffix")).filter(
+    (p) => p.strategy !== "Prop",
+  );
   if (pairs.length === 0)
     return { start_date: startDate, end_date: endDate, rows: [] };
 
@@ -140,7 +142,7 @@ async function computeSubStrategyPerformanceManaged(
   );
   if (diagnostics.length > 0) {
     console.warn(
-      `computeSubStrategyPerformance: ${diagnostics.length} ratio diagnostic(s)`,
+      `computeSubStrategyPerformance:${diagnostics.length} ratio diagnostic(s)`,
       diagnostics,
     );
   }

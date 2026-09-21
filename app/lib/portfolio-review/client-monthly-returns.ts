@@ -10,8 +10,15 @@ import {
 } from "@/app/lib/portfolio-review/returns";
 import type { MonthlyReturn, YearlyReturn } from "@/app/lib/portfolio-review/returns";
 
+import { fetchStrategyPairs } from "@/app/lib/portfolio-review/tags";
+import { resolveSplitConfigs } from "@/app/lib/portfolio-review/mandate-snapshot";
+
 const PROP_TABLE = "master_sheet_test" as const;
 const MANAGED_TABLE = "bifurcated_master_sheet_test" as const;
+
+// Per `${qcode}|${strategy}`: equity-book sleeves (label + tag from
+// config_catalog) that have an "ideal" value for that strategy.
+type SleeveMap = Awaited<ReturnType<typeof resolveSplitConfigs>>["equitySleeves"];
 
 // Self-referential — a breakdown row can itself carry a further breakdown,
 // so any future nesting (e.g. sub-strategy-within-strategy) is representable
@@ -118,10 +125,9 @@ function combinedTags(group: ClientGroup): { profitTag: string; exposureTag: str
   };
 }
 
-// Builds the root node (combined tags) plus one child per strategy config —
-// today that's the only level below the root, but resolveNode() below walks
-// `children` recursively so an extra level just means adding children here.
-function buildRootNode(group: ClientGroup): ReturnsNode {
+// Builds the root node (combined tags), one child per strategy config, and
+// under each strategy the Gold/Momentum/Low Vol sleeves the resolver allows.
+function buildRootNode(group: ClientGroup, sleeves: SleeveMap | null): ReturnsNode {
   const { profitTag, exposureTag } = combinedTags(group);
   const isMulti = group.configs.length > 1;
   return {
@@ -129,12 +135,22 @@ function buildRootNode(group: ClientGroup): ReturnsNode {
     profitTag,
     exposureTag,
     children: isMulti
-      ? group.configs.map((c) => ({
-          label: c.strategy,
-          profitTag: `${c.strategy} ${c.profit_tag_suffix}`,
-          exposureTag: `${c.strategy} ${c.exposure_tag_suffix}`,
-          children: [],
-        }))
+      ? group.configs.map((c) => {
+          const strategySleeves = sleeves?.get(`${group.qcode}|${c.strategy}`);
+          return {
+            label: c.strategy,
+            profitTag: `${c.strategy} ${c.profit_tag_suffix}`,
+            exposureTag: `${c.strategy} ${c.exposure_tag_suffix}`,
+            children: strategySleeves
+              ? [...strategySleeves.values()].map((s) => ({
+                  label: s.label,
+                  profitTag: `${c.strategy} ${s.tagSuffix}`,
+                  exposureTag: `${c.strategy} ${s.tagSuffix}`,
+                  children: [],
+                }))
+              : [],
+          };
+        })
       : [],
   };
 }
@@ -210,7 +226,15 @@ export async function computeClientMonthlyReturns(
   if (groups.length === 0) return [];
 
   const table = accountType === "prop" ? PROP_TABLE : MANAGED_TABLE;
-  const roots = new Map(groups.map((g) => [g.qcode, buildRootNode(g)]));
+  let sleeves: SleeveMap | null = null;
+  if (accountType === "managed") {
+    const qcodes = new Set(groups.map((g) => g.qcode));
+    const pairs = (await fetchStrategyPairs("profit_tag_suffix")).filter(
+      (p) => qcodes.has(p.qcode) && p.strategy !== "Prop",
+    );
+    sleeves = (await resolveSplitConfigs(pairs, new Date())).equitySleeves;
+  }
+  const roots = new Map(groups.map((g) => [g.qcode, buildRootNode(g, sleeves)]));
 
   const profitPairs = groups.flatMap((g) => flattenNode(g.qcode, roots.get(g.qcode)!));
   const exposurePairs = groups.flatMap((g) =>
