@@ -121,12 +121,12 @@ export async function GET(req: Request) {
 
     const equityRows = asOf
       ? await prisma.bifurcated_equity_holding_test.findMany({
-          where: { qcode, date: asOf },
+          where: { qcode, date: asOf, quantity: { gt: 0 } },
         })
       : [];
     const mfRows = asOf
       ? await prisma.bifurcated_mutual_fund_holding_sheet_test.findMany({
-          where: { qcode, as_of_date: asOf },
+          where: { qcode, as_of_date: asOf, quantity: { gt: 0 } },
         })
       : [];
 

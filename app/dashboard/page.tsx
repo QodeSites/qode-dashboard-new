@@ -103,6 +103,7 @@ interface Account {
   account_name: string;
   account_type: string;
   broker: string;
+  strategy?: string | null;
 }
 
 interface Metadata {
