@@ -350,7 +350,7 @@ function InvestorAumTable({ investors, totalAum }: {
       {/* Header row */}
       <div
         className="grid bg-logo-green text-white text-sm font-semibold"
-        style={{ gridTemplateColumns: INVESTOR_GRID_COLS ,minWidth: 688 }}
+        style={{ gridTemplateColumns: INVESTOR_GRID_COLS, minWidth: 688 }}
       >
         <div className="px-4 py-2.5">#</div>
         <div className="px-4 py-2.5 cursor-pointer select-none hover:bg-logo-green/80" onClick={() => handleSort("name")}>
@@ -379,7 +379,7 @@ function InvestorAumTable({ investors, totalAum }: {
             <div key={client.account_name} className="pdf-row-group">
               <div
                 className="grid items-center border-t border-logo-green/5 bg-white hover:bg-primary-bg/20 transition-colors text-sm"
-                style={{ gridTemplateColumns: INVESTOR_GRID_COLS,minWidth: 688  }}
+                style={{ gridTemplateColumns: INVESTOR_GRID_COLS, minWidth: 688 }}
               >
                 <div className="px-4 py-2.5 text-card-text-secondary">{i + 1}</div>
                 <div className="px-4 py-2.5 font-semibold text-card-text">{client.account_name}</div>
@@ -405,7 +405,7 @@ function InvestorAumTable({ investors, totalAum }: {
                 <div
                   key={`${client.account_name}-${strat.strategy}`}
                   className="grid items-center border-t border-logo-green/5 bg-primary-bg/30 text-xs"
-                  style={{ gridTemplateColumns: INVESTOR_GRID_COLS ,minWidth: 688 }}
+                  style={{ gridTemplateColumns: INVESTOR_GRID_COLS, minWidth: 688 }}
                 >
                   <div className="px-4 py-2" />
                   <div className="px-4 py-2 text-card-text-secondary pl-8">↳ {strat.account_name}</div>
@@ -426,7 +426,7 @@ function InvestorAumTable({ investors, totalAum }: {
         {/* Total row */}
         <div
           className="grid items-center bg-logo-green text-sm"
-          style={{ gridTemplateColumns: INVESTOR_GRID_COLS ,minWidth: 688 }}
+          style={{ gridTemplateColumns: INVESTOR_GRID_COLS, minWidth: 688 }}
         >
           <div className="px-4 py-3 font-semibold text-white" style={{ gridColumn: "1 / span 4" }}>Total</div>
           <div className="px-4 py-3 text-right font-bold text-white">{fmtCr(totalAum)}</div>
@@ -438,7 +438,7 @@ function InvestorAumTable({ investors, totalAum }: {
 }
 
 function PortfolioSummaryInner({ data }: { data: PortfolioSummaryResponse }) {
-  const { total_investors, total_aum, mom, investors, aum_daily, strategy_aum_daily } = data;
+  const { total_investors, total_aum, avg_aum_per_investor, new_this_quarter, mom, investors, aum_daily, strategy_aum_daily } = data;
 
   const [aumView, setAumView] = useState<"chart" | "table">("chart");
   const [aumFreq, setAumFreq] = useState("Daily");
@@ -452,7 +452,7 @@ function PortfolioSummaryInner({ data }: { data: PortfolioSummaryResponse }) {
     const html2pdf = (await import("html2pdf.js")).default;
 
     setIsExporting(true);
-     await document.fonts.ready;
+    await document.fonts.ready;
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
     try {
@@ -547,30 +547,30 @@ function PortfolioSummaryInner({ data }: { data: PortfolioSummaryResponse }) {
   }, [strategyBreakdown, strategyInvestorCount]);
 
   const totalStrategyInstances = useMemo(
-  () => investorsDonut.reduce((sum, d) => sum + d.count, 0),
-  [investorsDonut]
-);
+    () => investorsDonut.reduce((sum, d) => sum + d.count, 0),
+    [investorsDonut]
+  );
 
-const investorAumDonut = useMemo(() => {
-  const byClient = new Map<string, { name: string; total: number; strategies: Map<string, number> }>();
+  const investorAumDonut = useMemo(() => {
+    const byClient = new Map<string, { name: string; total: number; strategies: Map<string, number> }>();
 
-  activeInvestors.forEach((inv) => {
-    if (!byClient.has(inv.qcode)) {
-      byClient.set(inv.qcode, { name: inv.account_name, total: 0, strategies: new Map() });
-    }
-    const c = byClient.get(inv.qcode)!;
-    c.total += inv.aum;
-    c.strategies.set(inv.strategy, (c.strategies.get(inv.strategy) || 0) + inv.aum);
-  });
-
-  return Array.from(byClient.values())
-    .sort((a, b) => b.total - a.total)
-    .map((c) => {
-      const dominantStrategy = Array.from(c.strategies.entries())
-        .sort((a, b) => b[1] - a[1])[0][0];
-      return { name: c.name, value: c.total, color: stratColor(dominantStrategy) };
+    activeInvestors.forEach((inv) => {
+      if (!byClient.has(inv.qcode)) {
+        byClient.set(inv.qcode, { name: inv.account_name, total: 0, strategies: new Map() });
+      }
+      const c = byClient.get(inv.qcode)!;
+      c.total += inv.aum;
+      c.strategies.set(inv.strategy, (c.strategies.get(inv.strategy) || 0) + inv.aum);
     });
-}, [activeInvestors]);
+
+    return Array.from(byClient.values())
+      .sort((a, b) => b.total - a.total)
+      .map((c) => {
+        const dominantStrategy = Array.from(c.strategies.entries())
+          .sort((a, b) => b[1] - a[1])[0][0];
+        return { name: c.name, value: c.total, color: stratColor(dominantStrategy) };
+      });
+  }, [activeInvestors]);
 
   return (
     <div ref={printRef} className="print-area">
@@ -589,205 +589,215 @@ const investorAumDonut = useMemo(() => {
             <p className="text-sm text-card-text-secondary">
               Executive overview · All figures as of latest available data
             </p>
-            </div>
-            <button
-              onClick={handleDownloadPdf}
-              disabled={isExporting}
-              data-html2canvas-ignore="true"
-              className="inline-flex items-center gap-2 rounded-lg bg-logo-green px-4 py-2 text-sm font-medium text-white hover:bg-logo-green/90 disabled:opacity-60 transition-colors flex-shrink-0"
-            >
-              {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              {isExporting ? "Preparing PDF…" : "Download PDF"}
-            </button>
           </div>
+          <button
+            onClick={handleDownloadPdf}
+            disabled={isExporting}
+            data-html2canvas-ignore="true"
+            className="inline-flex items-center gap-2 rounded-lg bg-logo-green px-4 py-2 text-sm font-medium text-white hover:bg-logo-green/90 disabled:opacity-60 transition-colors flex-shrink-0"
+          >
+            {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {isExporting ? "Preparing PDF…" : "Download PDF"}
+          </button>
+        </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-2 pdf-section">
-            <div className="rounded-xl bg-white border border-logo-green/10 border-t-4 border-t-logo-green p-5 overflow-hidden">
-              <div className="text-[0.65rem] font-semibold uppercase tracking-wide text-card-text-secondary mb-2">Total Investors</div>
-              <div className="text-3xl font-bold text-card-text">{total_investors}</div>
-              <div className="text-xs text-card-text-secondary mt-1">Active clients</div>
-            </div>
-            <div className="rounded-xl bg-white border border-logo-green/10 border-t-4 border-t-button-text p-5 overflow-hidden">
-              <div className="text-[0.65rem] font-semibold uppercase tracking-wide text-card-text-secondary mb-2">Total AUM</div>
-              <div className="text-3xl mb-5 font-serif font-bold text-card-text">{fmtCr(total_aum)}</div>
-              <div className="flex items-center gap-2 mt-1.5">
-                <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-xs font-bold leading-none ${momPositive ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
-                  {momPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                  {momPositive ? "+" : ""}{(mom.change_pct * 100).toFixed(2)}%
-                </span>
-                <span className="text-xs text-card-text-secondary">vs {fmtDate(mom.prev_date)} ({fmtCr(mom.prev_aum)})</span>
-              </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-2 pdf-section">
+          <div className="rounded-xl bg-white border border-logo-green/10 border-t-4 border-t-logo-green p-5 overflow-hidden">
+            <div className="text-[0.65rem] font-semibold uppercase tracking-wide text-card-text-secondary mb-2">Total Investors</div>
+            <div className="text-3xl font-bold text-card-text">{total_investors}</div>
+            <div className="text-xs text-card-text-secondary mt-1">Active clients</div>
+          </div>
+          <div className="rounded-xl bg-white border border-logo-green/10 border-t-4 border-t-button-text p-5 overflow-hidden">
+            <div className="text-[0.65rem] font-semibold uppercase tracking-wide text-card-text-secondary mb-2">Total AUM</div>
+            <div className="text-3xl mb-5 font-serif font-bold text-card-text">{fmtCr(total_aum)}</div>
+            <div className="flex items-center gap-2 mt-1.5">
+              <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-xs font-bold leading-none ${momPositive ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                {momPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                {momPositive ? "+" : ""}{(mom.change_pct * 100).toFixed(2)}%
+              </span>
+              <span className="text-xs text-card-text-secondary">vs {fmtDate(mom.prev_date)} ({fmtCr(mom.prev_aum)})</span>
             </div>
           </div>
-
-          {/* AUM Over Time */}
-          <SectionHeader>AUM Over Time</SectionHeader>
-          <div className="grid grid-cols-1 sm:grid-cols-[140px_1fr] gap-5 mb-4 pdf-section">
-            <ViewToggle value={aumView} onChange={(v) => {
-              setAumView(v);
-              if (v === "table" && aumFreq === "Daily") setAumFreq("Monthly");
-            }} />
-            <FreqToggle
-              options={aumView === "chart" ? ["Daily", "Monthly", "Quarterly"] : ["Monthly", "Quarterly"]}
-              value={aumFreq}
-              onChange={setAumFreq}
-            />
+          <div className="rounded-xl bg-white border border-logo-green/10 border-t-4 border-t-[#4A9D7A] p-5 overflow-hidden">
+            <div className="text-[0.65rem] font-semibold uppercase tracking-wide text-card-text-secondary mb-2">Avg. AUM / Investor</div>
+            <div className="text-3xl font-serif font-bold text-card-text">{fmtCr(avg_aum_per_investor)}</div>
+            <div className="text-xs text-card-text-secondary mt-1">Across {total_investors} active clients</div>
           </div>
-          {aumView === "chart" ? (
-            <div className="overflow-x-auto p-3 bg-white rounded-lg border border-logo-green/10 pdf-section">
-              <div className="text-sm font-semibold text-card-text mb-3">Portfolio AUM — {aumFreq}</div>
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={aumLineSeries}>
-                  <CartesianGrid stroke="#E8E4D4" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#555" }} minTickGap={40} tickFormatter={(d) => aumFreq === "Daily" ? fmtDate(d) : d} />
-                  <YAxis tick={{ fontSize: 10, fill: "#555" }} tickFormatter={(v) => `₹${v.toFixed(0)}Cr`} width={65} />
-                  <Tooltip labelFormatter={(d) => aumFreq === "Daily" ? fmtDate(d) : d} formatter={(v: number) => [fmtCr(v * 1e7), "AUM"]} />
-                  <Line type="monotone" dataKey="aum" stroke="#02422B" strokeWidth={2.5} dot={false} name="Total AUM" isAnimationActive={!isExporting} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <AumTable series={aum_daily} freq={aumFreq} />
-          )}
-
-          {/* Strategy-wise AUM Breakup */}
-          <SectionHeader>Strategy-wise AUM Breakup</SectionHeader>
-          <div className="grid grid-cols-1 sm:grid-cols-[140px_1fr] gap-5 mb-4 pdf-section">
-            <ViewToggle value={strategyView} onChange={(v) => {
-              setStrategyView(v);
-              if (v === "table" && strategyFreq === "Daily") setStrategyFreq("Monthly");
-            }} />
-            <FreqToggle
-              options={strategyView === "chart" ? ["Daily", "Monthly", "Quarterly"] : ["Monthly", "Quarterly"]}
-              value={strategyFreq}
-              onChange={setStrategyFreq}
-            />
+          <div className="rounded-xl bg-white border border-logo-green/10 border-t-4 border-t-[#DABD38] p-5 overflow-hidden">
+            <div className="text-[0.65rem] font-semibold uppercase tracking-wide text-card-text-secondary mb-2">New This Quarter</div>
+            <div className="text-3xl font-bold text-card-text">{new_this_quarter}</div>
+            <div className="text-xs text-card-text-secondary mt-1">New investors</div>
           </div>
-          {strategyView === "chart" ? (
-            <div className="rounded-lg border border-logo-green/10 bg-white p-4 pdf-section">
-              <div className="text-sm font-semibold text-card-text mb-3">AUM by Strategy — {strategyFreq}</div>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={strategyLineSeries}>
-                  <CartesianGrid stroke="#E8E4D4" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#555" }} minTickGap={50} tickFormatter={(d) => strategyFreq === "Daily" ? fmtDate(d) : d} />
-                  <YAxis tick={{ fontSize: 10, fill: "#555" }} tickFormatter={(v) => `₹${v.toFixed(0)}Cr`} width={65} />
-                  <Tooltip labelFormatter={(d) => strategyFreq === "Daily" ? fmtDate(d) : d} formatter={(v: number, name: string) => [v != null ? fmtCr(v * 1e7) : "—", name]} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  {strategies.map((s) => (
-                    <Line key={s} type="monotone" dataKey={s} stroke={stratColor(s)} strokeWidth={2.2} dot={false} connectNulls isAnimationActive={!isExporting} />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <StrategyAumTables strategyAumDaily={strategy_aum_daily} freq={strategyFreq} />
-          )}
+        </div>
 
-          {/* Strategy Breakdown — forced onto its own page, non-responsive
+        {/* AUM Over Time */}
+        <SectionHeader>AUM Over Time</SectionHeader>
+        <div className="grid grid-cols-1 sm:grid-cols-[140px_1fr] gap-5 mb-4 pdf-section">
+          <ViewToggle value={aumView} onChange={(v) => {
+            setAumView(v);
+            if (v === "table" && aumFreq === "Daily") setAumFreq("Monthly");
+          }} />
+          <FreqToggle
+            options={aumView === "chart" ? ["Daily", "Monthly", "Quarterly"] : ["Monthly", "Quarterly"]}
+            value={aumFreq}
+            onChange={setAumFreq}
+          />
+        </div>
+        {aumView === "chart" ? (
+          <div className="overflow-x-auto p-3 bg-white rounded-lg border border-logo-green/10 pdf-section">
+            <div className="text-sm font-semibold text-card-text mb-3">Portfolio AUM — {aumFreq}</div>
+            <ResponsiveContainer width="100%" height={280}>
+              <LineChart data={aumLineSeries}>
+                <CartesianGrid stroke="#E8E4D4" vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#555" }} minTickGap={40} tickFormatter={(d) => aumFreq === "Daily" ? fmtDate(d) : d} />
+                <YAxis tick={{ fontSize: 10, fill: "#555" }} tickFormatter={(v) => `₹${v.toFixed(0)}Cr`} width={65} />
+                <Tooltip labelFormatter={(d) => aumFreq === "Daily" ? fmtDate(d) : d} formatter={(v: number) => [fmtCr(v * 1e7), "AUM"]} />
+                <Line type="monotone" dataKey="aum" stroke="#02422B" strokeWidth={2.5} dot={false} name="Total AUM" isAnimationActive={!isExporting} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <AumTable series={aum_daily} freq={aumFreq} />
+        )}
+
+        {/* Strategy-wise AUM Breakup */}
+        <SectionHeader>Strategy-wise AUM Breakup</SectionHeader>
+        <div className="grid grid-cols-1 sm:grid-cols-[140px_1fr] gap-5 mb-4 pdf-section">
+          <ViewToggle value={strategyView} onChange={(v) => {
+            setStrategyView(v);
+            if (v === "table" && strategyFreq === "Daily") setStrategyFreq("Monthly");
+          }} />
+          <FreqToggle
+            options={strategyView === "chart" ? ["Daily", "Monthly", "Quarterly"] : ["Monthly", "Quarterly"]}
+            value={strategyFreq}
+            onChange={setStrategyFreq}
+          />
+        </div>
+        {strategyView === "chart" ? (
+          <div className="rounded-lg border border-logo-green/10 bg-white p-4 pdf-section">
+            <div className="text-sm font-semibold text-card-text mb-3">AUM by Strategy — {strategyFreq}</div>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={strategyLineSeries}>
+                <CartesianGrid stroke="#E8E4D4" vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#555" }} minTickGap={50} tickFormatter={(d) => strategyFreq === "Daily" ? fmtDate(d) : d} />
+                <YAxis tick={{ fontSize: 10, fill: "#555" }} tickFormatter={(v) => `₹${v.toFixed(0)}Cr`} width={65} />
+                <Tooltip labelFormatter={(d) => strategyFreq === "Daily" ? fmtDate(d) : d} formatter={(v: number, name: string) => [v != null ? fmtCr(v * 1e7) : "—", name]} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                {strategies.map((s) => (
+                  <Line key={s} type="monotone" dataKey={s} stroke={stratColor(s)} strokeWidth={2.2} dot={false} connectNulls isAnimationActive={!isExporting} />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <StrategyAumTables strategyAumDaily={strategy_aum_daily} freq={strategyFreq} />
+        )}
+
+        {/* Strategy Breakdown — forced onto its own page, non-responsive
               auto-fit grid so it doesn't depend on media-query evaluation
               inside html2canvas's capture. */}
-          <div className="pdf-page-break">
-            <SectionHeader>Strategy Breakdown</SectionHeader>
-            <div className="grid gap-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
-              <div className="rounded-lg border border-logo-green/10 bg-white p-4 pdf-section">
-                <div className="text-sm font-semibold text-card-text mb-2">AUM — Strategy Wise</div>
+        <div className="pdf-page-break">
+          <SectionHeader>Strategy Breakdown</SectionHeader>
+          <div className="grid gap-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+            <div className="rounded-lg border border-logo-green/10 bg-white p-4 pdf-section">
+              <div className="text-sm font-semibold text-card-text mb-2">AUM — Strategy Wise</div>
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie data={strategyBreakdown} dataKey="aum" nameKey="name" cx="50%" cy="50%" outerRadius={80}
+                    label={({ name, pct }) => `${name} ${pct.toFixed(1)}%`} labelLine={false} fontSize={11}
+                    isAnimationActive={!isExporting}>
+                    {strategyBreakdown.map((s) => <Cell key={s.name} fill={stratColor(s.name)} />)}
+                  </Pie>
+                  <Tooltip formatter={(v: number) => fmtCr(v)} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="rounded-lg border border-logo-green/10 bg-white p-4 pdf-section">
+              <div className="text-sm font-semibold text-card-text mb-2">No. of Investors — Strategy Wise</div>
+              <div className="relative">
                 <ResponsiveContainer width="100%" height={220}>
                   <PieChart>
-                    <Pie data={strategyBreakdown} dataKey="aum" nameKey="name" cx="50%" cy="50%" outerRadius={80}
-                      label={({ name, pct }) => `${name} ${pct.toFixed(1)}%`} labelLine={false} fontSize={11}
+                    <Pie data={investorsDonut} dataKey="count" nameKey="strategy" cx="50%" cy="50%"
+                      innerRadius={45} outerRadius={80}
+                      label={({ strategy, count }) => `${strategy} ${count}`} labelLine={false} fontSize={11}
                       isAnimationActive={!isExporting}>
-                      {strategyBreakdown.map((s) => <Cell key={s.name} fill={stratColor(s.name)} />)}
+                      {investorsDonut.map((e) => <Cell key={e.strategy} fill={e.color} />)}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <div className="text-2xl font-bold text-card-text">{totalStrategyInstances}</div>
+                  <div className="text-[0.65rem] text-card-text-secondary uppercase tracking-wide">Investors</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-logo-green/10 bg-white p-4 pdf-section">
+              <div className="text-sm font-semibold text-card-text mb-2">Month-over-Month: {fmtDate(mom.prev_date)} vs Latest</div>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={[
+                  { label: fmtDate(mom.prev_date), AUM: mom.prev_aum / 1e7 },
+                  { label: "Latest", AUM: total_aum / 1e7 },
+                ]}>
+                  <CartesianGrid stroke="#E8E4D4" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#555" }} />
+                  <YAxis tick={{ fontSize: 10, fill: "#555" }} tickFormatter={(v) => `₹${v.toFixed(0)}Cr`} width={65} />
+                  <Tooltip formatter={(v: number) => fmtCr(v * 1e7)} />
+                  <Bar dataKey="AUM" radius={[4, 4, 0, 0]} isAnimationActive={!isExporting}>
+                    <Cell fill="#DABD38" /><Cell fill="#02422B" />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
+        {/* Investor Detail — same treatment: own page, auto-fit grid. */}
+        <div className="pdf-page-break">
+          <SectionHeader>Investor Detail</SectionHeader>
+          <div className="grid gap-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
+            <div className="rounded-lg border border-logo-green/10 bg-white p-4 pdf-section">
+              <div className="text-sm font-semibold text-card-text mb-2">Investor-wise AUM Breakup</div>
+              <div className="relative">
+                <ResponsiveContainer width="100%" height={280}>
+                  <PieChart>
+                    <Pie data={investorAumDonut} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={100}
+                      isAnimationActive={!isExporting}>
+                      {investorAumDonut.map((e, i) => <Cell key={i} fill={e.color} fillOpacity={1 - (i / investorAumDonut.length) * 0.5} />)}
                     </Pie>
                     <Tooltip formatter={(v: number) => fmtCr(v)} />
                   </PieChart>
                 </ResponsiveContainer>
-              </div>
-
-              <div className="rounded-lg border border-logo-green/10 bg-white p-4 pdf-section">
-                <div className="text-sm font-semibold text-card-text mb-2">No. of Investors — Strategy Wise</div>
-                <div className="relative">
-                  <ResponsiveContainer width="100%" height={220}>
-                    <PieChart>
-                      <Pie data={investorsDonut} dataKey="count" nameKey="strategy" cx="50%" cy="50%"
-                        innerRadius={45} outerRadius={80}
-                        label={({ strategy, count }) => `${strategy} ${count}`} labelLine={false} fontSize={11}
-                        isAnimationActive={!isExporting}>
-                        {investorsDonut.map((e) => <Cell key={e.strategy} fill={e.color} />)}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <div className="text-2xl font-bold text-card-text">{totalStrategyInstances}</div>
-                    <div className="text-[0.65rem] text-card-text-secondary uppercase tracking-wide">Investors</div>
-                  </div>
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <div className="text-xl font-bold text-card-text">{fmtCr(total_aum)}</div>
+                  <div className="text-[0.65rem] text-card-text-secondary uppercase tracking-wide">Total AUM</div>
                 </div>
               </div>
+            </div>
 
-              <div className="rounded-lg border border-logo-green/10 bg-white p-4 pdf-section">
-                <div className="text-sm font-semibold text-card-text mb-2">Month-over-Month: {fmtDate(mom.prev_date)} vs Latest</div>
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={[
-                    { label: fmtDate(mom.prev_date), AUM: mom.prev_aum / 1e7 },
-                    { label: "Latest", AUM: total_aum / 1e7 },
-                  ]}>
-                    <CartesianGrid stroke="#E8E4D4" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#555" }} />
-                    <YAxis tick={{ fontSize: 10, fill: "#555" }} tickFormatter={(v) => `₹${v.toFixed(0)}Cr`} width={65} />
-                    <Tooltip formatter={(v: number) => fmtCr(v * 1e7)} />
-                    <Bar dataKey="AUM" radius={[4, 4, 0, 0]} isAnimationActive={!isExporting}>
-                      <Cell fill="#DABD38" /><Cell fill="#02422B" />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+            <div className="rounded-lg border border-logo-green/10 bg-white p-4 pdf-section">
+              <div className="text-sm font-semibold text-card-text mb-2">Number of Investors Added by Month.</div>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={firstInvestmentByMonth}>
+                  <CartesianGrid stroke="#E8E4D4" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 9, fill: "#555" }} angle={-25} textAnchor="end" height={50} />
+                  <YAxis tick={{ fontSize: 10, fill: "#555" }} width={28} allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#02422B" radius={[4, 4, 0, 0]} isAnimationActive={!isExporting} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
-
-          {/* Investor Detail — same treatment: own page, auto-fit grid. */}
-          <div className="pdf-page-break">
-            <SectionHeader>Investor Detail</SectionHeader>
-            <div className="grid gap-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
-              <div className="rounded-lg border border-logo-green/10 bg-white p-4 pdf-section">
-                <div className="text-sm font-semibold text-card-text mb-2">Investor-wise AUM Breakup</div>
-                <div className="relative">
-                  <ResponsiveContainer width="100%" height={280}>
-                    <PieChart>
-                      <Pie data={investorAumDonut} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={100}
-                        isAnimationActive={!isExporting}>
-                        {investorAumDonut.map((e, i) => <Cell key={i} fill={e.color} fillOpacity={1 - (i / investorAumDonut.length) * 0.5} />)}
-                      </Pie>
-                      <Tooltip formatter={(v: number) => fmtCr(v)} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <div className="text-xl font-bold text-card-text">{fmtCr(total_aum)}</div>
-                    <div className="text-[0.65rem] text-card-text-secondary uppercase tracking-wide">Total AUM</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-logo-green/10 bg-white p-4 pdf-section">
-                <div className="text-sm font-semibold text-card-text mb-2">Number of Investors Added by Month.</div>
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={firstInvestmentByMonth}>
-                    <CartesianGrid stroke="#E8E4D4" vertical={false} />
-                    <XAxis dataKey="month" tick={{ fontSize: 9, fill: "#555" }} angle={-25} textAnchor="end" height={50} />
-                    <YAxis tick={{ fontSize: 10, fill: "#555" }} width={28} allowDecimals={false} />
-                    <Tooltip />
-                    <Bar dataKey="count" fill="#02422B" radius={[4, 4, 0, 0]} isAnimationActive={!isExporting} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
-
-          {/* Investor AUM Table */}
-          <SectionHeader>Investor AUM Table</SectionHeader>
-          <InvestorAumTable investors={activeInvestors} totalAum={total_aum} />
         </div>
-      </div>
-    );
-  }
 
-  export default PortfolioSummary;
+        {/* Investor AUM Table */}
+        <SectionHeader>Investor AUM Table</SectionHeader>
+        <InvestorAumTable investors={activeInvestors} totalAum={total_aum} />
+      </div>
+    </div>
+  );
+}
+
+export default PortfolioSummary;

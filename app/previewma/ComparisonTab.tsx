@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { Loader2, Plus, X, ChevronDown } from "lucide-react";
+import { Loader2, Plus, X, ChevronDown, AlertTriangle } from "lucide-react";
 import {
   LineChart, Line, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -19,6 +19,9 @@ interface CompareMetrics {
   end_date: string;
   since_inception: number;
   since_inception_pnl: number;
+  since_inception_absolute: number;
+  cagr: number;
+  xirr: number;
   max_drawdown: number;
   current_drawdown: number;
   monthly: { year: number; month: string; return_pct: number; pnl_inr: number }[];
@@ -30,18 +33,20 @@ interface CompareMetrics {
 interface CompareResult {
   qcode: string;
   system_tag: string;
-  metrics: CompareMetrics;
+  metrics: CompareMetrics | null; // null when skip_reason is set (e.g. no data in the rebase window)
   benchmark_overview: {
     since_inception: number;
     max_drawdown: number;
     current_drawdown: number;
-  };
+  } | null;
+  skip_reason: string | null;
 }
 
 interface CompareResponse {
   benchmark_series: { date: string; nav: number; drawdown: number }[];
   backtest_series: { system_tag: string; series: { date: string; nav: number; drawdown: number }[] }[];
   results: CompareResult[];
+  rebase_window: { from: string; to: string } | null;
 }
 
 interface SelectionRow {
@@ -73,7 +78,10 @@ function emptyRow(): SelectionRow {
 function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "2-digit" });
 }
-function fmtPct(v: number) { return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`; }
+function fmtPct(v: number | null | undefined) {
+  if (v === null || v === undefined || !isFinite(v)) return "—";
+  return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
+}
 
 // Derive benchmark drawdown from NAV series
 function deriveDrawdown(series: { date: string; nav: number }[]) {
@@ -94,7 +102,6 @@ function TagMultiSelect({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -251,6 +258,10 @@ export function ComparisonTab() {
   const [returnFreq, setReturnFreq] = useState<"monthly" | "quarterly" | "yearly">("monthly");
   const [showBacktest, setShowBacktest] = useState(false);
 
+  // "Normalize base date" — rebases every selected line + the benchmark to
+  // 100 as of rebase_from. Leaving both blank sends full history (unrebased).
+  const [rebaseFrom, setRebaseFrom] = useState("");
+  const [rebaseTo, setRebaseTo] = useState("");
 
   useEffect(() => { fetchClients().then(setClients).catch(() => { }); }, []);
 
@@ -276,11 +287,15 @@ export function ComparisonTab() {
     setLoading(true);
     setError(null);
     try {
+      const body: Record<string, unknown> = { selections };
+      if (rebaseFrom) body.rebase_from = rebaseFrom;
+      if (rebaseTo) body.rebase_to = rebaseTo;
+
       const res = await fetch("/api/internal/portfolio-review/compare", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ selections }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`Request failed (${res.status})`);
       const data: CompareResponse = await res.json();
@@ -292,12 +307,15 @@ export function ComparisonTab() {
     }
   }
 
-  // Build chart data — one key per result tag
+  // Build chart data — one key per result tag. Skipped (null-metrics) results
+  // contribute no series data, but still get a line entry (see allLines) so
+  // their absence is visible rather than silently missing.
   const chartData = useMemo(() => {
     if (!compareData) return [];
     const dateMap = new Map<string, Record<string, number | null>>();
 
     compareData.results.forEach((r) => {
+      if (!r.metrics) return; // skipped — no series to plot
       r.metrics.series.forEach((p) => {
         if (!dateMap.has(p.date)) dateMap.set(p.date, {});
         const row = dateMap.get(p.date)!;
@@ -337,15 +355,17 @@ export function ComparisonTab() {
   }, [compareData, compareNifty, showBacktest]);
 
   function lightenHex(hex: string, amount: number) {
-   const num = parseInt(hex.replace("#", ""), 16);
-  const r = (num >> 16) & 0xff;
-  const g = (num >> 8) & 0xff;
-  const b = num & 0xff;
-  const mix = (c: number) => Math.round(c * (1 - amount));
-  return `#${[mix(r), mix(g), mix(b)].map((c) => c.toString(16).padStart(2, "0")).join("")}`;
-}
+    const num = parseInt(hex.replace("#", ""), 16);
+    const r = (num >> 16) & 0xff;
+    const g = (num >> 8) & 0xff;
+    const b = num & 0xff;
+    const mix = (c: number) => Math.round(c * (1 - amount));
+    return `#${[mix(r), mix(g), mix(b)].map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+  }
 
-  // All lines for charts
+  // All lines for charts — skipped results still get a color-matched entry
+  // in the legend so it's visible that a selection was requested but has
+  // no plottable data, rather than just silently disappearing.
   const allLines = useMemo(() => {
     if (!compareData) return [];
     const lines = compareData.results.map((r, i) => {
@@ -353,42 +373,48 @@ export function ComparisonTab() {
       const clientName = client?.account_name || r.qcode;
       return {
         key: `${r.qcode}__${r.system_tag}`,
-        label: `${clientName} ${r.system_tag}`,
+        label: `${clientName} ${r.system_tag}${r.metrics ? "" : " (no data)"}`,
         color: CHART_COLORS[i % CHART_COLORS.length],
         isNifty: false,
         isBacktest: false,
       };
     });
     if (compareNifty) lines.push({ key: "Nifty50", label: "Nifty50", color: "#6B7280", isNifty: true, isBacktest: false });
-if (showBacktest && compareData.backtest_series) {
-  compareData.backtest_series.forEach((bt, i) => {
-    const matchIdx = compareData.results.findIndex((r) => r.system_tag === bt.system_tag);
-    const baseColor = matchIdx >= 0
-      ? CHART_COLORS[matchIdx % CHART_COLORS.length]
-      : CHART_COLORS[(compareData.results.length + i) % CHART_COLORS.length];
-    lines.push({
-      key: `backtest__${bt.system_tag}`,
-      label: `${bt.system_tag} (Backtest)`,
-      color: lightenHex(baseColor, 0.45), // 45% toward white — distinct but still related to matched line
-      isNifty: false,
-      isBacktest: true,
-    });
-  });
-}
+    if (showBacktest && compareData.backtest_series) {
+      compareData.backtest_series.forEach((bt, i) => {
+        const matchIdx = compareData.results.findIndex((r) => r.system_tag === bt.system_tag);
+        const baseColor = matchIdx >= 0
+          ? CHART_COLORS[matchIdx % CHART_COLORS.length]
+          : CHART_COLORS[(compareData.results.length + i) % CHART_COLORS.length];
+        lines.push({
+          key: `backtest__${bt.system_tag}`,
+          label: `${bt.system_tag} (Backtest)`,
+          color: lightenHex(baseColor, 0.45),
+          isNifty: false,
+          isBacktest: true,
+        });
+      });
+    }
     return lines;
-  }, [compareData, compareNifty, clients]);
+  }, [compareData, compareNifty, showBacktest, clients]);
 
-  // One row-group per tag (client name + tag as label)
+  // One row-group per tag — skipped results get an empty `years` array so
+  // the Returns table simply shows nothing for them instead of crashing.
   const monthlyGroups = useMemo(() => {
     if (!compareData) return [];
     return compareData.results.map((r) => {
       const client = clients.find((c) => c.qcode === r.qcode);
       const clientName = client?.account_name || r.qcode;
       const label = `${clientName} ${r.system_tag}`;
-      const years = Array.from(new Set(r.metrics.monthly.map((m) => m.year))).sort() as number[];
+      const years = r.metrics ? (Array.from(new Set(r.metrics.monthly.map((m) => m.year))).sort() as number[]) : [];
       return { label, result: r, years };
     });
   }, [compareData, clients]);
+
+  const skippedResults = useMemo(
+    () => compareData?.results.filter((r) => !r.metrics) ?? [],
+    [compareData]
+  );
 
   return (
     <div>
@@ -408,6 +434,34 @@ if (showBacktest && compareData.backtest_series) {
             />
           ))}
         </div>
+
+        {/* Normalize base date — rebase_from / rebase_to */}
+        <div className="flex items-center gap-3 mt-4 pt-4 border-t border-logo-green/10">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold uppercase tracking-wide text-card-text-secondary">Rebase From</label>
+            <input
+              type="date" value={rebaseFrom} onChange={(e) => setRebaseFrom(e.target.value)}
+              className="rounded-lg border border-logo-green/20 bg-white px-3 py-2 text-sm text-card-text focus:outline-none focus:border-logo-green/40"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold uppercase tracking-wide text-card-text-secondary">Rebase To</label>
+            <input
+              type="date" value={rebaseTo} onChange={(e) => setRebaseTo(e.target.value)}
+              className="rounded-lg border border-logo-green/20 bg-white px-3 py-2 text-sm text-card-text focus:outline-none focus:border-logo-green/40"
+            />
+          </div>
+          {(rebaseFrom || rebaseTo) && (
+            <button
+              type="button"
+              onClick={() => { setRebaseFrom(""); setRebaseTo(""); }}
+              className="text-xs text-card-text-secondary hover:text-logo-green self-end pb-2.5"
+            >
+              ✕ Clear (full history)
+            </button>
+          )}
+        </div>
+
         <div className="flex items-center gap-3 mt-4">
           {rows.length < 5 && (
             <button type="button" onClick={() => setRows((p) => [...p, emptyRow()])}
@@ -445,6 +499,31 @@ if (showBacktest && compareData.backtest_series) {
 
       {compareData && (
         <>
+          {compareData.rebase_window && (
+            <p className="text-xs text-card-text-secondary mb-4">
+              Rebased to 100 as of {compareData.rebase_window.from} → {compareData.rebase_window.to}
+            </p>
+          )}
+
+          {skippedResults.length > 0 && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 mb-5">
+              <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium">Some selections have no data in this window:</p>
+                <ul className="mt-1 space-y-0.5">
+                  {skippedResults.map((r) => {
+                    const client = clients.find((c) => c.qcode === r.qcode);
+                    return (
+                      <li key={`${r.qcode}-${r.system_tag}`}>
+                        {client?.account_name || r.qcode} — {r.system_tag} ({r.skip_reason || "no data"})
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            </div>
+          )}
+
           {/* Overview table — one row per tag, grouped by client */}
           <div className="bg-white rounded-lg border border-logo-green/10 mb-6 overflow-x-auto">
             <table className="w-full text-sm">
@@ -455,6 +534,7 @@ if (showBacktest && compareData.backtest_series) {
                   <th className="px-4 py-2.5 text-left font-medium">Start Date</th>
                   <th className="px-4 py-2.5 text-left font-medium">End Date</th>
                   <th className="px-4 py-2.5 text-right font-medium">Since Inception</th>
+                  <th className="px-4 py-2.5 text-right font-medium">XIRR</th>
                   <th className="px-4 py-2.5 text-right font-medium">Since Inception P&L</th>
                   <th className="px-4 py-2.5 text-right font-medium">Max Drawdown</th>
                   <th className="px-4 py-2.5 text-right font-medium">Current Drawdown</th>
@@ -470,6 +550,27 @@ if (showBacktest && compareData.backtest_series) {
                     const color = CHART_COLORS[rowIndex >= 0 ? rowIndex : i % CHART_COLORS.length];
                     const isNewClient = r.qcode !== prevQcode;
                     prevQcode = r.qcode;
+
+                    if (!r.metrics) {
+                      return (
+                        <tr key={`${r.qcode}-${r.system_tag}`}
+                          className={`border-t ${isNewClient && i > 0 ? "border-t-2 border-logo-green/20" : "border-logo-green/5"}`}>
+                          <td className="px-4 py-2.5 font-medium text-card-text whitespace-nowrap">
+                            {isNewClient ? (
+                              <span className="flex items-center gap-2">
+                                <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ background: color }} />
+                                {name}
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-2.5 text-card-text-secondary whitespace-nowrap">{r.system_tag}</td>
+                          <td colSpan={7} className="px-4 py-2.5 text-amber-700 italic text-xs">
+                            No data available ({r.skip_reason || "unknown reason"})
+                          </td>
+                        </tr>
+                      );
+                    }
+
                     return (
                       <tr key={`${r.qcode}-${r.system_tag}`}
                         className={`border-t ${isNewClient && i > 0 ? "border-t-2 border-logo-green/20" : "border-logo-green/5"} hover:bg-primary-bg/20 transition-colors`}>
@@ -486,6 +587,9 @@ if (showBacktest && compareData.backtest_series) {
                         <td className="px-4 py-2.5 text-card-text-secondary">{r.metrics.end_date}</td>
                         <td className={`px-4 py-2.5 text-right font-semibold ${r.metrics.since_inception >= 0 ? "text-green-700 bg-green-50" : "text-red-600 bg-red-50"}`}>
                           {fmtPct(r.metrics.since_inception * 100)}
+                        </td>
+                        <td className={`px-4 py-2.5 text-right font-semibold ${r.metrics.xirr >= 0 ? "text-green-700 bg-green-50" : "text-red-600 bg-red-50"}`}>
+                          {fmtPct(r.metrics.xirr * 100)}
                         </td>
                         <td className={`px-4 py-2.5 text-right font-semibold ${r.metrics.since_inception_pnl >= 0 ? "text-green-700 bg-green-50" : "text-red-600 bg-red-50"}`}>
                           {r.metrics.since_inception_pnl >= 0 ? "+" : ""}₹{Math.abs(r.metrics.since_inception_pnl).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
@@ -597,8 +701,18 @@ if (showBacktest && compareData.backtest_series) {
                   </tr>
                 </thead>
                 <tbody>
-                  {monthlyGroups.map(({ label, result: r, years }, gi) => (
-                    years.map((yr, yi) => (
+                  {monthlyGroups.map(({ label, result: r, years }, gi) => {
+                    if (!r.metrics || years.length === 0) {
+                      return (
+                        <tr key={`${r.qcode}-${r.system_tag}`} className={gi > 0 ? "border-t-2 border-logo-green/20" : ""}>
+                          <td className="px-3 py-2 font-medium text-card-text whitespace-nowrap" title={label}>{label}</td>
+                          <td colSpan={returnFreq === "monthly" ? 14 : returnFreq === "quarterly" ? 6 : 3} className="px-3 py-2 text-amber-700 italic text-xs">
+                            No data available
+                          </td>
+                        </tr>
+                      );
+                    }
+                    return years.map((yr, yi) => (
                       <tr key={`${r.qcode}-${r.system_tag}-${yr}`}
                         className={`border-t ${yi === 0 && gi > 0 ? "border-t-2 border-logo-green/20" : "border-logo-green/5"}`}>
                         <td className="px-3 py-2 font-medium text-card-text">
@@ -609,7 +723,7 @@ if (showBacktest && compareData.backtest_series) {
                         <td className="px-3 py-2 text-card-text-secondary">{yr}</td>
 
                         {returnFreq === "monthly" && MONTHS.map((mName) => {
-                          const m = r.metrics.monthly.find((m) => m.year === yr && m.month === mName);
+                          const m = r.metrics!.monthly.find((m) => m.year === yr && m.month === mName);
                           const v = m?.return_pct ?? null;
                           const tagSuffix = r.system_tag.split(" ").slice(-1)[0];
                           return (
@@ -623,7 +737,7 @@ if (showBacktest && compareData.backtest_series) {
                         })}
 
                         {returnFreq === "quarterly" && ["Q1", "Q2", "Q3", "Q4"].map((q) => {
-                          const qt = r.metrics.quarterly.find((qt) => qt.year === yr && qt.quarter === q);
+                          const qt = r.metrics!.quarterly.find((qt) => qt.year === yr && qt.quarter === q);
                           const v = qt?.return_pct ?? null;
                           const tagSuffix = r.system_tag.split(" ").slice(-1)[0];
                           return (
@@ -638,7 +752,7 @@ if (showBacktest && compareData.backtest_series) {
 
                         <td className="px-3 py-2 text-right">
                           {(() => {
-                            const tot = r.metrics.yearly.find((y) => y.year === yr);
+                            const tot = r.metrics!.yearly.find((y) => y.year === yr);
                             const tagSuffix = r.system_tag.split(" ").slice(-1)[0];
                             return (
                               <div className={`flex items-center justify-end gap-1 font-semibold ${!tot ? "text-card-text-secondary/30" : tot.return_pct >= 0 ? "text-green-700" : "text-red-600"}`}>
@@ -649,8 +763,8 @@ if (showBacktest && compareData.backtest_series) {
                           })()}
                         </td>
                       </tr>
-                    ))
-                  ))}
+                    ));
+                  })}
                 </tbody>
               </table>
             </div>

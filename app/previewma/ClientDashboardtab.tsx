@@ -14,17 +14,19 @@ import { SearchableSelect } from "./Searchableselect";
 import { ClientDetail } from "./ClientDetails";
 
 interface ClientDashboardsTabProps {
+  accountType: "managed" | "prop";
   riskFreeRate: number;
   onTagsLoaded?: (tagNames: string[]) => void;
   onClientsLoaded?: (count: number) => void;
   fetchTrigger?: number;
   selectedTagFilter: string[];
   onTagFilterDefault?: (profitTag: string) => void;
-  tagOptions: string[]; // flat, combined list — no Aggregate/Individual split
+  tagOptions: string[];
   onTagsChange: (tags: string[]) => void;
 }
 
 export function ClientDashboardsTab({
+  accountType,
   riskFreeRate,
   onTagsLoaded,
   onClientsLoaded,
@@ -40,18 +42,23 @@ export function ClientDashboardsTab({
 
   const [selectedQcode, setSelectedQcode] = useState<string | null>(null);
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
-  const [asOf, setAsOf] = useState<string>("");   // empty = latest
+  const [startDate, setStartDate] = useState<string>(""); // empty = full history (windows XIRR only)
+  const [asOf, setAsOf] = useState<string>("");   // empty = latest ("End Date")
+  const [pnlOn, setPnlOn] = useState<string>(""); // empty = latest available date
 
   const [dashboardData, setDashboardData] = useState<ClientDashboardResponse | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
 
+  // Re-fetch the client list whenever the Managed/Prop toggle changes.
   useEffect(() => {
     let cancelled = false;
     setClientsLoading(true);
     setClientsError(null);
+    setSelectedQcode(null); // clear stale selection from the other mode
+    setSelectedStrategy(null);
 
-    fetchClients()
+    fetchClients(accountType)
       .then((list) => {
         if (cancelled) return;
         setClients(list);
@@ -78,7 +85,7 @@ export function ClientDashboardsTab({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [accountType]);
 
   useEffect(() => {
     if (!selectedQcode || !selectedStrategy) return;
@@ -86,7 +93,14 @@ export function ClientDashboardsTab({
     setDashboardLoading(true);
     setDashboardError(null);
 
-    fetchClientDashboard(selectedQcode, selectedStrategy, riskFreeRate, asOf || undefined)
+    fetchClientDashboard(
+      selectedQcode,
+      selectedStrategy,
+      riskFreeRate,
+      asOf || undefined,
+      startDate || undefined,
+      pnlOn || undefined
+    )
       .then((data) => {
         if (cancelled) return;
         setDashboardData(data);
@@ -106,7 +120,7 @@ export function ClientDashboardsTab({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedQcode, selectedStrategy, fetchTrigger, asOf]);
+  }, [selectedQcode, selectedStrategy, fetchTrigger, asOf, startDate, pnlOn]);
 
   const selectedClient = clients.find((c) => c.qcode === selectedQcode);
 
@@ -163,7 +177,7 @@ export function ClientDashboardsTab({
 
   return (
     <div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 max-w-3xl">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 max-w-4xl">
         <SearchableSelect
           label="Client"
           placeholder="Select a client"
@@ -181,7 +195,27 @@ export function ClientDashboardsTab({
         />
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-semibold uppercase tracking-wide text-card-text-secondary">
-            As of Date
+            Start Date
+          </label>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="w-full rounded-lg border border-logo-green/20 bg-white px-3 py-2.5 text-sm text-card-text focus:outline-none focus:border-logo-green/40"
+          />
+          {startDate && (
+            <button
+              type="button"
+              onClick={() => setStartDate("")}
+              className="text-xs text-card-text-secondary hover:text-logo-green text-left"
+            >
+              ✕ Clear (full history)
+            </button>
+          )}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold uppercase tracking-wide text-card-text-secondary">
+            End Date
           </label>
           <input
             type="date"
@@ -200,6 +234,12 @@ export function ClientDashboardsTab({
           )}
         </div>
       </div>
+
+      {clients.length === 0 && (
+        <p className="text-sm text-card-text-secondary italic py-8 text-center">
+          No {accountType === "prop" ? "Prop" : "Managed"} clients found.
+        </p>
+      )}
 
       {dashboardLoading && (
         <div className="flex items-center justify-center gap-2 py-16 text-card-text-secondary">
@@ -224,6 +264,8 @@ export function ClientDashboardsTab({
           tagFilter={selectedTagFilter}
           tagOptions={tagOptions}
           onTagsChange={onTagsChange}
+          pnlOn={pnlOn}
+          onPnlOnChange={setPnlOn}
         />
       )}
     </div>
