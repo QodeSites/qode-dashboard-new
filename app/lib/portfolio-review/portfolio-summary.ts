@@ -2,6 +2,9 @@ import { prisma } from "@/lib/prisma";
 import { round, isActive } from "@/lib/utils";
 import { fetchStrategyPairs } from "@/app/lib/portfolio-review/tags";
 
+// ₹ — below this, a pair's latest balance is treated as fully withdrawn.
+const CLOSED_AUM_THRESHOLD = 1;
+
 export interface AumPoint {
   date: string;
   aum: number;
@@ -125,20 +128,27 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
      FROM bifurcated_master_sheet_test b
      JOIN unnest($1::text[], $2::text[]) AS v(qcode, tag)
        ON b.qcode = v.qcode AND b.system_tag = v.tag
-     WHERE b.portfolio_value IS NOT NULL AND b.portfolio_value > 0
+     WHERE b.portfolio_value IS NOT NULL
      ORDER BY b.qcode, b.system_tag, b.date ASC`,
     pairs.map((p) => p.qcode),
     pairs.map((p) => p.tag),
   );
 
+  // Non-positive rows are kept AFTER the first real balance (a full
+  // withdrawal leaves ~0 or negative dust; dropping that row would freeze
+  // the series at the pre-withdrawal value via forward-fill), but dropped
+  // BEFORE it so `since` stays the first day with an actual balance.
   const seriesMap = new Map<string, SeriesPoint[]>();
   for (const row of rows) {
     const key = `${row.qcode}|${row.system_tag}`;
+    const raw = Number(row.portfolio_value) || 0;
+    const list = seriesMap.get(key);
+    if (!list && raw <= 0) continue;
     const d = row.date instanceof Date ? row.date : new Date(row.date);
-    if (!seriesMap.has(key)) seriesMap.set(key, []);
+    if (!list) seriesMap.set(key, []);
     seriesMap.get(key)!.push({
       date: d.toISOString().split("T")[0],
-      value: Number(row.portfolio_value) || 0,
+      value: Math.max(0, raw),
     });
   }
 
@@ -175,7 +185,11 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
     for (const p of series) dateSet.add(p.date);
   const dates = [...dateSet].sort();
 
-  const activeInvestors = investors.filter((inv) => isActive(inv.until, today));
+  // A pair with no effective_to but a ~0 balance has been fully withdrawn —
+  // not an active investor, even though its config row is still open.
+  const activeInvestors = investors.filter(
+    (inv) => isActive(inv.until, today) && inv.aum >= CLOSED_AUM_THRESHOLD,
+  );
   const activeClients = new Set(activeInvestors.map((inv) => inv.qcode));
   const activeStrategies = new Set(activeInvestors.map((inv) => inv.strategy));
 
