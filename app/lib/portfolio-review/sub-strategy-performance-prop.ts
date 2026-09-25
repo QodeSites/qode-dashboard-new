@@ -29,7 +29,7 @@ interface PropPair {
   exposure_tag_suffix: string;
 }
 
-interface PropCatalogLeaf {
+export interface PropCatalogLeaf {
   label: string;
   tag_suffix: string;
 }
@@ -41,7 +41,7 @@ async function fetchPropPairs(): Promise<PropPair[]> {
   });
 }
 
-async function fetchPropCatalog(): Promise<PropCatalogLeaf[]> {
+export async function fetchPropCatalog(): Promise<PropCatalogLeaf[]> {
   const rows = await prisma.config_catalog.findMany({
     where: { parent_key: PROP_CATALOG_PARENT, tag_suffix: { not: null } },
     select: { label: true, tag_suffix: true },

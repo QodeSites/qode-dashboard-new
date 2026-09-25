@@ -32,7 +32,7 @@ export type AccountType = "managed" | "prop";
  * unit/format string per family is. Gating is presence-only: no separate
  * tier-matching, since existsField already IS the tier value.
  */
-interface SubStrategySectionDef {
+export interface SubStrategySectionDef {
   tag: string;
   existsField: "long_opt_pct" | "psar_multiplier" | "gold_pct" | "lowvol_pct" | "momentum_pct";
   labelFor: (value: number) => string;
@@ -42,7 +42,7 @@ const fixedLabel = (label: string) => () => label;
 const pctLabel = (base: string) => (value: number) => `${base} (${round(value * 100, 2)}%)`;
 const leverageLabel = (base: string) => (value: number) => `${base} ${value}x`;
 
-const SUB_STRATEGY_SECTIONS: SubStrategySectionDef[] = [
+export const SUB_STRATEGY_SECTIONS: SubStrategySectionDef[] = [
   { tag: "LONG", existsField: "long_opt_pct", labelFor: pctLabel("Long Options") },
   { tag: "NLONG", existsField: "long_opt_pct", labelFor: pctLabel("NLONG") },
   { tag: "SLONG", existsField: "long_opt_pct", labelFor: pctLabel("SLONG") },

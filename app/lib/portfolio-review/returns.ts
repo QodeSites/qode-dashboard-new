@@ -101,6 +101,80 @@ export function calcCagr(nav: NavPoint[]): number | null {
   return round((endNav / startNav) ** (365 / days) - 1, 4);
 }
 
+export interface TrailingReturns {
+  one_month: number | null;
+  three_month: number | null;
+  six_month: number | null;
+  one_year: number | null;
+  two_year: number | null;
+  three_year: number | null;
+  four_year: number | null;
+  five_year: number | null;
+  since_inception: number | null;
+}
+
+const TRAILING_PERIODS: {
+  key: Exclude<keyof TrailingReturns, "since_inception">;
+  days: number;
+}[] = [
+  { key: "one_month", days: 30 },
+  { key: "three_month", days: 90 },
+  { key: "six_month", days: 180 },
+  { key: "one_year", days: 365 },
+  { key: "two_year", days: 730 },
+  { key: "three_year", days: 1095 },
+  { key: "four_year", days: 1460 },
+  { key: "five_year", days: 1825 },
+];
+
+/**
+ * Point-in-time trailing returns as of the NAV series' last date — same
+ * <1yr absolute / ≥1yr CAGR convention as calcSinceInception (and the
+ * frontend's own trailing-returns-table.tsx). A period whose window would
+ * start before the series' first point (not enough history yet) is left
+ * null rather than approximated from a shorter window.
+ */
+export function calcTrailingReturns(nav: NavPoint[]): TrailingReturns {
+  const result: TrailingReturns = {
+    one_month: null,
+    three_month: null,
+    six_month: null,
+    one_year: null,
+    two_year: null,
+    three_year: null,
+    four_year: null,
+    five_year: null,
+    since_inception: calcSinceInception(nav),
+  };
+  if (nav.length < 2) return result;
+
+  const end = nav[nav.length - 1];
+  const firstDate = nav[0].date;
+
+  const navAtOrBefore = (target: Date): number | null => {
+    let candidate: NavPoint | null = null;
+    for (const p of nav) {
+      if (p.date.getTime() > target.getTime()) break;
+      candidate = p;
+    }
+    return candidate ? candidate.nav : null;
+  };
+
+  for (const period of TRAILING_PERIODS) {
+    const windowStart = new Date(end.date.getTime() - period.days * MS);
+    if (windowStart.getTime() < firstDate.getTime()) continue;
+    const startNav = navAtOrBefore(windowStart);
+    if (startNav == null || startNav <= 0 || end.nav <= 0) continue;
+    result[period.key] = round(
+      period.days < 365
+        ? end.nav / startNav - 1
+        : (end.nav / startNav) ** (365 / period.days) - 1,
+      4,
+    );
+  }
+  return result;
+}
+
 export function calcMaxDrawdown(nav: NavPoint[]): number | null {
   if (nav.length === 0) return null;
   return round(Math.min(...nav.map((p) => p.drawdown)) / 100, 4);
