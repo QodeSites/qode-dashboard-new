@@ -45,11 +45,11 @@ export function MultiSelectDropdown({
   }, [open]);
 
   const filtered = useMemo(
-    () => options.filter((o) => o.toLowerCase().includes(query.toLowerCase())),
+    () => options?.filter((o) => o.toLowerCase().includes(query.toLowerCase())),
     [options, query]
   );
 
-  const allSelected = options.length > 0 && options.every((o) => selected.includes(o));
+  const allSelected = options?.length > 0 && options?.every((o) => selected.includes(o));
 
   const toggleOption = (opt: string) => {
     onChange(selected.includes(opt) ? selected.filter((s) => s !== opt) : [...selected, opt]);
@@ -146,7 +146,7 @@ export function MultiSelectDropdown({
               <span className="font-medium">Select all</span>
             </button>
 
-            {filtered.length === 0 ? (
+            {filtered?.length === 0 ? (
               <div className="px-3.5 py-6 text-center text-sm text-card-text-secondary">No tags found.</div>
             ) : (
               filtered.map((opt) => {

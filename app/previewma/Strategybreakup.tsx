@@ -20,6 +20,17 @@ function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+// ─── Global Rule: XIRR (>=1yr) / Absolute (<1yr) ───────────────────────────
+// XIRR is only meaningful once there's at least a year of history — on a
+// short window it gets misleadingly compressed/inflated by annualization.
+// Below 1yr we show "—" with an explanatory tooltip instead of a raw number.
+
+const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
+
+function periodYears(inceptionDate: string, asOfDate: string) {
+  return (new Date(asOfDate).getTime() - new Date(inceptionDate).getTime()) / MS_PER_YEAR;
+}
+
 // ─── Optional ratio columns config ───────────────────────────────────────────
 
 const RATIO_COLUMNS = [
@@ -132,10 +143,12 @@ function StrategyTable({
   strategy,
   rows,
   selectedRatios,
+  asOfDate,
 }: {
   strategy: string;
   rows: StrategyBreakupRow[];
   selectedRatios: RatioKey[];
+  asOfDate: string;
 }) {
   const sorted = useMemo(
     () => [...rows].sort((a, b) => a.account_name.localeCompare(b.account_name)),
@@ -159,6 +172,7 @@ function StrategyTable({
               <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Client</th>
               <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Inception Date</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Return Since Inception</th>
+              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">XIRR</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Benchmark Return</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Max Drawdown</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Current Drawdown</th>
@@ -172,42 +186,60 @@ function StrategyTable({
             </tr>
           </thead>
           <tbody>
-            {sorted.map((row) => (
-              <tr key={`${row.qcode}-${row.strategy}`} className="border-t border-logo-green/5 hover:bg-primary-bg/20 transition-colors">
-                <td className="px-4 py-2.5 text-card-text font-medium whitespace-nowrap">
-                  {row.account_name} {row.strategy}
-                </td>
-                <td className="px-4 py-2.5 text-card-text-secondary whitespace-nowrap">
-                  {fmtDate(row.inception_date)}
-                </td>
-                <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${returnClass(row.since_inception)}`}>
-                  {fmtPct(row.since_inception)}
-                </td>
-                <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${returnClass(row.benchmark_return)}`}>
-                  {fmtPct(row.benchmark_return)}
-                </td>
-                <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${drawdownClass(row.max_drawdown)}`}>
-                  {fmtPct(row.max_drawdown)}
-                </td>
-                <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${drawdownClass(row.current_drawdown)}`}>
-                  {fmtPct(row.current_drawdown)}
-                </td>
-                <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${captureClass(row.upside_capture)}`}>
-                  {row.upside_capture === null ? "—" : fmtPct(row.upside_capture)}
-                </td>
-                <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${captureClass(row.downside_capture)}`}>
-                  {row.downside_capture === null ? "—" : fmtPct(row.downside_capture)}
-                </td>
-                {selectedCols.map((col) => {
-                  const v = row[col.key as keyof StrategyBreakupRow] as number | null;
-                  return (
-                    <td key={col.key} className="px-4 py-2.5 text-right text-card-text-secondary whitespace-nowrap">
-                      {v === null ? "—" : col.fmt(v)}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+            {sorted.map((row) => {
+              const years = periodYears(row.inception_date, asOfDate);
+              const xirrApplicable = years >= 1;
+              const xirrNote = xirrApplicable
+                ? null
+                : `Less than 1 year of history (${years.toFixed(1)}y) — XIRR not applicable.`;
+
+              return (
+                <tr key={`${row.qcode}-${row.strategy}`} className="border-t border-logo-green/5 hover:bg-primary-bg/20 transition-colors">
+                  <td className="px-4 py-2.5 text-card-text font-medium whitespace-nowrap">
+                    {row.account_name} {row.strategy}
+                  </td>
+                  <td className="px-4 py-2.5 text-card-text-secondary whitespace-nowrap">
+                    {fmtDate(row.inception_date)}
+                  </td>
+                  {/* Return Since Inception — was incorrectly rendering row.xirr here */}
+                  <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${returnClass(row.since_inception)}`}>
+                    {fmtPct(row.since_inception)}
+                  </td>
+                  {/* XIRR — gated by the Global Rule (>=1yr only), was incorrectly rendering row.since_inception here */}
+                  <td
+                    className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${
+                      xirrApplicable ? returnClass(row.xirr ?? 0) : "text-card-text-secondary/50 bg-transparent"
+                    }`}
+                    title={xirrNote ?? undefined}
+                  >
+                    {xirrApplicable ? fmtPct(row.xirr) : "—"}
+                  </td>
+                  <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${returnClass(row.benchmark_return)}`}>
+                    {fmtPct(row.benchmark_return)}
+                  </td>
+                  <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${drawdownClass(row.max_drawdown)}`}>
+                    {fmtPct(row.max_drawdown)}
+                  </td>
+                  <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${drawdownClass(row.current_drawdown)}`}>
+                    {fmtPct(row.current_drawdown)}
+                  </td>
+                  <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${captureClass(row.upside_capture)}`}>
+                    {row.upside_capture === null ? "—" : fmtPct(row.upside_capture)}
+                  </td>
+                  <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${captureClass(row.downside_capture)}`}>
+                    {row.downside_capture === null ? "—" : fmtPct(row.downside_capture)}
+                  </td>
+                  {selectedCols.map((col) => {
+                    const v = row[col.key as keyof StrategyBreakupRow] as number | null;
+                    return (
+                      <td key={col.key} className="px-4 py-2.5 text-right text-card-text-secondary whitespace-nowrap">
+                        {v === null ? "—" : col.fmt(v)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -315,7 +347,7 @@ export function StrategyBreakup({ riskFreeRate = 0.065, fetchTrigger = 0 }: Stra
   }
 
   return (
-     <div>
+    <div>
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div className="flex items-center gap-2.5 border-l-[3px] border-logo-green pl-3.5 py-1">
           <span className="text-xs font-bold uppercase tracking-wide text-logo-green">
@@ -360,6 +392,7 @@ export function StrategyBreakup({ riskFreeRate = 0.065, fetchTrigger = 0 }: Stra
           strategy={strategy}
           rows={rows}
           selectedRatios={selectedRatios}
+          asOfDate={endDate}
         />
       ))}
     </div>

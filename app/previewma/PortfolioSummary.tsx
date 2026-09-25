@@ -350,7 +350,7 @@ function InvestorAumTable({ investors, totalAum }: {
       {/* Header row */}
       <div
         className="grid bg-logo-green text-white text-sm font-semibold"
-        style={{ gridTemplateColumns: INVESTOR_GRID_COLS ,minWidth: 688 }}
+        style={{ gridTemplateColumns: INVESTOR_GRID_COLS, minWidth: 688 }}
       >
         <div className="px-4 py-2.5">#</div>
         <div className="px-4 py-2.5 cursor-pointer select-none hover:bg-logo-green/80" onClick={() => handleSort("name")}>
@@ -379,7 +379,7 @@ function InvestorAumTable({ investors, totalAum }: {
             <div key={client.account_name} className="pdf-row-group">
               <div
                 className="grid items-center border-t border-logo-green/5 bg-white hover:bg-primary-bg/20 transition-colors text-sm"
-                style={{ gridTemplateColumns: INVESTOR_GRID_COLS,minWidth: 688  }}
+                style={{ gridTemplateColumns: INVESTOR_GRID_COLS, minWidth: 688 }}
               >
                 <div className="px-4 py-2.5 text-card-text-secondary">{i + 1}</div>
                 <div className="px-4 py-2.5 font-semibold text-card-text">{client.account_name}</div>
@@ -405,7 +405,7 @@ function InvestorAumTable({ investors, totalAum }: {
                 <div
                   key={`${client.account_name}-${strat.strategy}`}
                   className="grid items-center border-t border-logo-green/5 bg-primary-bg/30 text-xs"
-                  style={{ gridTemplateColumns: INVESTOR_GRID_COLS ,minWidth: 688 }}
+                  style={{ gridTemplateColumns: INVESTOR_GRID_COLS, minWidth: 688 }}
                 >
                   <div className="px-4 py-2" />
                   <div className="px-4 py-2 text-card-text-secondary pl-8">↳ {strat.account_name}</div>
@@ -426,7 +426,7 @@ function InvestorAumTable({ investors, totalAum }: {
         {/* Total row */}
         <div
           className="grid items-center bg-logo-green text-sm"
-          style={{ gridTemplateColumns: INVESTOR_GRID_COLS ,minWidth: 688 }}
+          style={{ gridTemplateColumns: INVESTOR_GRID_COLS, minWidth: 688 }}
         >
           <div className="px-4 py-3 font-semibold text-white" style={{ gridColumn: "1 / span 4" }}>Total</div>
           <div className="px-4 py-3 text-right font-bold text-white">{fmtCr(totalAum)}</div>
@@ -438,7 +438,7 @@ function InvestorAumTable({ investors, totalAum }: {
 }
 
 function PortfolioSummaryInner({ data }: { data: PortfolioSummaryResponse }) {
-  const { total_investors, total_aum, mom, investors, aum_daily, strategy_aum_daily } = data;
+  const { total_investors, total_aum, avg_aum_per_investor, new_this_quarter, mom, investors, aum_daily, strategy_aum_daily } = data;
 
   const [aumView, setAumView] = useState<"chart" | "table">("chart");
   const [aumFreq, setAumFreq] = useState("Daily");
@@ -452,7 +452,7 @@ function PortfolioSummaryInner({ data }: { data: PortfolioSummaryResponse }) {
     const html2pdf = (await import("html2pdf.js")).default;
 
     setIsExporting(true);
-     await document.fonts.ready;
+    await document.fonts.ready;
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
     try {
@@ -547,30 +547,30 @@ function PortfolioSummaryInner({ data }: { data: PortfolioSummaryResponse }) {
   }, [strategyBreakdown, strategyInvestorCount]);
 
   const totalStrategyInstances = useMemo(
-  () => investorsDonut.reduce((sum, d) => sum + d.count, 0),
-  [investorsDonut]
-);
+    () => investorsDonut.reduce((sum, d) => sum + d.count, 0),
+    [investorsDonut]
+  );
 
-const investorAumDonut = useMemo(() => {
-  const byClient = new Map<string, { name: string; total: number; strategies: Map<string, number> }>();
+  const investorAumDonut = useMemo(() => {
+    const byClient = new Map<string, { name: string; total: number; strategies: Map<string, number> }>();
 
-  activeInvestors.forEach((inv) => {
-    if (!byClient.has(inv.qcode)) {
-      byClient.set(inv.qcode, { name: inv.account_name, total: 0, strategies: new Map() });
-    }
-    const c = byClient.get(inv.qcode)!;
-    c.total += inv.aum;
-    c.strategies.set(inv.strategy, (c.strategies.get(inv.strategy) || 0) + inv.aum);
-  });
-
-  return Array.from(byClient.values())
-    .sort((a, b) => b.total - a.total)
-    .map((c) => {
-      const dominantStrategy = Array.from(c.strategies.entries())
-        .sort((a, b) => b[1] - a[1])[0][0];
-      return { name: c.name, value: c.total, color: stratColor(dominantStrategy) };
+    activeInvestors.forEach((inv) => {
+      if (!byClient.has(inv.qcode)) {
+        byClient.set(inv.qcode, { name: inv.account_name, total: 0, strategies: new Map() });
+      }
+      const c = byClient.get(inv.qcode)!;
+      c.total += inv.aum;
+      c.strategies.set(inv.strategy, (c.strategies.get(inv.strategy) || 0) + inv.aum);
     });
-}, [activeInvestors]);
+
+    return Array.from(byClient.values())
+      .sort((a, b) => b.total - a.total)
+      .map((c) => {
+        const dominantStrategy = Array.from(c.strategies.entries())
+          .sort((a, b) => b[1] - a[1])[0][0];
+        return { name: c.name, value: c.total, color: stratColor(dominantStrategy) };
+      });
+  }, [activeInvestors]);
 
   return (
     <div ref={printRef} className="print-area">
@@ -601,7 +601,7 @@ const investorAumDonut = useMemo(() => {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-2 pdf-section">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-2 pdf-section">
           <div className="rounded-xl bg-white border border-logo-green/10 border-t-4 border-t-logo-green p-5 overflow-hidden">
             <div className="text-[0.65rem] font-semibold uppercase tracking-wide text-card-text-secondary mb-2">Total Investors</div>
             <div className="text-3xl font-bold text-card-text">{total_investors}</div>
@@ -617,6 +617,16 @@ const investorAumDonut = useMemo(() => {
               </span>
               <span className="text-xs text-card-text-secondary">vs {fmtDate(mom.prev_date)} ({fmtCr(mom.prev_aum)})</span>
             </div>
+          </div>
+          <div className="rounded-xl bg-white border border-logo-green/10 border-t-4 border-t-[#4A9D7A] p-5 overflow-hidden">
+            <div className="text-[0.65rem] font-semibold uppercase tracking-wide text-card-text-secondary mb-2">Avg. AUM / Investor</div>
+            <div className="text-3xl font-serif font-bold text-card-text">{fmtCr(avg_aum_per_investor)}</div>
+            <div className="text-xs text-card-text-secondary mt-1">Across {total_investors} active clients</div>
+          </div>
+          <div className="rounded-xl bg-white border border-logo-green/10 border-t-4 border-t-[#DABD38] p-5 overflow-hidden">
+            <div className="text-[0.65rem] font-semibold uppercase tracking-wide text-card-text-secondary mb-2">New This Quarter</div>
+            <div className="text-3xl font-bold text-card-text">{new_this_quarter}</div>
+            <div className="text-xs text-card-text-secondary mt-1">New investors</div>
           </div>
         </div>
 
@@ -684,8 +694,8 @@ const investorAumDonut = useMemo(() => {
         )}
 
         {/* Strategy Breakdown — forced onto its own page, non-responsive
-            auto-fit grid so it doesn't depend on media-query evaluation
-            inside html2canvas's capture. */}
+              auto-fit grid so it doesn't depend on media-query evaluation
+              inside html2canvas's capture. */}
         <div className="pdf-page-break">
           <SectionHeader>Strategy Breakdown</SectionHeader>
           <div className="grid gap-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>

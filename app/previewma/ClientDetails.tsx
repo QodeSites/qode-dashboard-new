@@ -15,6 +15,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { UnderlineTabs } from "./UnderlineTabs";
+import { MultiSelectDropdown } from "./MultiselectDropdown";
 import type { ClientDashboardResponse, TagDetail } from "./api";
 
 function fmtPct(value: number | null | undefined, digits = 2) {
@@ -62,6 +63,38 @@ function MiniCard({ label, value, accent }: { label: string; value: React.ReactN
   );
 }
 
+// Replaces the old Nifty 50 MiniCard — Nifty 50's since-inception comparison
+// now lives as a static row in the Since Inception table below instead.
+function DayPnlCard({
+  pnlOn, onPnlOnChange, pnlSnapshot, showInr,
+}: {
+  pnlOn: string;
+  onPnlOnChange: (v: string) => void;
+  pnlSnapshot: { pnl_inr: number; pnl_pct: number } | null;
+  showInr: boolean;
+}) {
+  return (
+    <div className="rounded-xl bg-white border border-logo-green/10 px-3 py-3 text-center shadow-sm border-t-2 border-t-button-text">
+      <div className="text-[0.62rem] font-semibold uppercase tracking-wide text-card-text-secondary mb-1.5">
+        Day P&amp;L
+      </div>
+      <input
+        type="date"
+        value={pnlOn}
+        onChange={(e) => onPnlOnChange(e.target.value)}
+        className="w-full mb-1.5 rounded border border-logo-green/20 px-1.5 py-1 text-[0.65rem] text-card-text text-center focus:outline-none focus:border-logo-green/40"
+      />
+      {pnlSnapshot === null ? (
+        <div className="text-xs text-card-text-secondary/60 italic">No data</div>
+      ) : showInr ? (
+        <div className="text-sm font-bold text-card-text">{fmtInr(pnlSnapshot.pnl_inr)}</div>
+      ) : (
+        pctBadge(pnlSnapshot.pnl_pct)
+      )}
+    </div>
+  );
+}
+
 function SectionHeader({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2.5 border-l-[3px] border-logo-green pl-3.5 py-1 my-6">
@@ -80,9 +113,18 @@ const PRIMARY_TAG_HINTS = [
   "Total Portfolio Value",
 ];
 
-function OverviewTab({ data, tagFilter }: { data: ClientDashboardResponse; tagFilter: string[] }) {
+function OverviewTab({
+  data, tagFilter, tagOptions, onTagsChange, pnlOn, onPnlOnChange,
+}: {
+  data: ClientDashboardResponse;
+  tagFilter: string[];
+  tagOptions: string[];
+  onTagsChange: (tags: string[]) => void;
+  pnlOn: string;
+  onPnlOnChange: (v: string) => void;
+}) {
   const [showInr, setShowInr] = useState(false);
-  const { tags, profit_tag, benchmark } = data;
+  const { tags, profit_tag, benchmark, pnl_snapshot } = data;
 
   const primaryTag = tags[profit_tag] || tags[PRIMARY_TAG_HINTS.find((t) => tags[t]) || ""];
   const tagEntries = useMemo(() => {
@@ -136,7 +178,7 @@ function OverviewTab({ data, tagFilter }: { data: ClientDashboardResponse; tagFi
         />
         <MiniCard label="Max Drawdown" value={pctBadge(primaryTag?.max_drawdown)} />
         <MiniCard label="Current Drawdown" value={pctBadge(primaryTag?.current_drawdown)} />
-        <MiniCard label="Nifty 50" value={pctBadge(benchmark?.since_inception)} accent />
+        <DayPnlCard pnlOn={pnlOn} onPnlOnChange={onPnlOnChange} pnlSnapshot={pnl_snapshot} showInr={showInr} />
       </div>
 
       <SectionHeader icon={<span className="text-xs">📋</span>}>
@@ -152,6 +194,7 @@ function OverviewTab({ data, tagFilter }: { data: ClientDashboardResponse; tagFi
               <th className="px-4 py-2.5 font-medium text-right">
                 {showInr ? "Since Inception P&L" : "Since Inception"}
               </th>
+              <th className="px-4 py-2.5 font-medium text-right">XIRR</th>
               <th className="px-4 py-2.5 font-medium text-right">Max Drawdown</th>
               <th className="px-4 py-2.5 font-medium text-right">Current Drawdown</th>
             </tr>
@@ -171,6 +214,17 @@ function OverviewTab({ data, tagFilter }: { data: ClientDashboardResponse; tagFi
                 >
                   {showInr ? fmtInr(tag.since_inception_pnl) : fmtPct(tag.since_inception)}
                 </td>
+                <td
+                  className={`px-4 py-2.5 text-right font-semibold ${
+                    tag.xirr === null
+                      ? "text-card-text-secondary/50"
+                      : tag.xirr >= 0
+                      ? "text-green-700 bg-green-50"
+                      : "text-red-700 bg-red-50"
+                  }`}
+                >
+                  {tag.xirr === null ? "—" : fmtPct(tag.xirr)}
+                </td>
                 <td className="px-4 py-2.5 text-right font-semibold text-red-700 bg-red-50">
                   {fmtPct(tag.max_drawdown)}
                 </td>
@@ -179,11 +233,39 @@ function OverviewTab({ data, tagFilter }: { data: ClientDashboardResponse; tagFi
                 </td>
               </tr>
             ))}
+            {/* Static Nifty 50 benchmark row */}
+            <tr className="border-t-2 border-logo-green/20 bg-primary-bg/30">
+              <td className="px-4 py-2.5 text-card-text font-bold">Nifty 50</td>
+              <td className="px-4 py-2.5 text-card-text-secondary">{benchmark.start_date}</td>
+              <td className="px-4 py-2.5 text-card-text-secondary">{benchmark.end_date}</td>
+              <td
+                className={`px-4 py-2.5 text-right font-bold ${
+                  showInr ? "text-card-text-secondary/50" : benchmark.since_inception >= 0 ? "text-green-700 bg-green-50" : "text-red-700 bg-red-50"
+                }`}
+              >
+                {showInr ? "— (index)" : fmtPct(benchmark.since_inception)}
+              </td>
+              <td className={`px-4 py-2.5 text-right font-bold ${benchmark.xirr >= 0 ? "text-green-700 bg-green-50" : "text-red-700 bg-red-50"}`}>
+                {fmtPct(benchmark.xirr)}
+              </td>
+              <td className="px-4 py-2.5 text-right font-bold text-red-700 bg-red-50">{fmtPct(benchmark.max_drawdown)}</td>
+              <td className="px-4 py-2.5 text-right font-bold text-red-700 bg-red-50">{fmtPct(benchmark.current_drawdown)}</td>
+            </tr>
           </tbody>
         </table>
       </div>
 
       <SectionHeader icon={<span className="text-xs">📈</span>}>Return Tables</SectionHeader>
+
+      <div className="mb-5 max-w-md">
+        <MultiSelectDropdown
+          label="System Tags"
+          options={tagOptions}
+          selected={tagFilter}
+          onChange={onTagsChange}
+        />
+      </div>
+
       <div className="space-y-8">
         {tagEntries.map(([name, tag]) => (
           <div key={name}>
@@ -286,9 +368,6 @@ function AnalysisTab({ data, tagFilter }: { data: ClientDashboardResponse; tagFi
   const { tags } = data;
   const tagNames = useMemo(() => Object.keys(tags), [tags]);
 
-  // The "All Tags — Ratio Summary" table respects the active tag filter.
-  // The individual strategy picker (above the single-ratio table) still
-  // shows all tags so you can analyse any tag independently.
   const filteredTagNames = useMemo(
     () => (tagFilter.length === 0 ? tagNames : tagNames.filter((n) => tagFilter.includes(n))),
     [tagNames, tagFilter]
@@ -454,7 +533,6 @@ const CHART_COLORS = [
   "#1D4ED8", "#B91C1C", "#7C3AED", "#0891B2", "#065F46",
 ];
 
-// Derive drawdown series from NAV: running peak → (nav - peak) / peak
 function deriveDrawdown(series: { date: string; nav: number }[]): { date: string; drawdownPct: number }[] {
   let peak = -Infinity;
   return series.map((p) => {
@@ -473,7 +551,6 @@ function ChartsTab({
   const { tags, benchmark } = data;
   const allTagNames = useMemo(() => Object.keys(tags), [tags]);
 
-  // Start with tagFilter as the default selection; user can add/remove from here.
   const [selectedTags, setSelectedTags] = useState<string[]>(
     () => (tagFilter.length > 0 ? tagFilter.filter((t) => tags[t]) : allTagNames.slice(0, 3))
   );
@@ -489,7 +566,6 @@ function ChartsTab({
     );
   }
 
-  // Build a unified date-indexed dataset for multi-line comparison charts.
   const comparisonData = useMemo(() => {
     const dateMap = new Map<string, Record<string, number | null>>();
 
@@ -535,13 +611,9 @@ function ChartsTab({
   const fmtDate = (d: string) =>
     new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
 
-  // Custom tooltip for the composite drawdown chart
-
   return (
     <div>
-      {/* Controls */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-5">
-        {/* Strategies */}
         <div>
           <div className="text-sm font-medium text-card-text mb-1.5">Strategies</div>
           <div className="flex flex-wrap gap-1.5 rounded-lg border border-logo-green/20 bg-white p-2 min-h-[42px]">
@@ -578,7 +650,6 @@ function ChartsTab({
           </div>
         </div>
 
-        {/* Chart types */}
         <div>
           <div className="text-sm font-medium text-card-text mb-1.5">Chart types</div>
           <div className="flex flex-wrap gap-1.5 rounded-lg border border-logo-green/20 bg-white p-2 min-h-[42px]">
@@ -627,7 +698,6 @@ function ChartsTab({
         </p>
       )}
 
-      {/* NAV Time Series */}
       {selectedChartTypes.includes("NAV Time Series") && selectedTags.length > 0 && (
         <div className="bg-white rounded-lg border border-logo-green/10 p-4 mb-5">
           <div className="text-sm font-semibold text-card-text mb-3">NAV Time Series</div>
@@ -648,7 +718,6 @@ function ChartsTab({
         </div>
       )}
 
-      {/* Cumulative Return */}
       {selectedChartTypes.includes("Cumulative Return") && selectedTags.length > 0 && (
         <div className="bg-white rounded-lg border border-logo-green/10 p-4 mb-5">
           <div className="text-sm font-semibold text-card-text mb-3">Cumulative Return (%)</div>
@@ -669,7 +738,6 @@ function ChartsTab({
         </div>
       )}
 
-      {/* Drawdown — single AreaChart, all strategies as filled areas, no lines */}
       {selectedChartTypes.includes("Drawdown") && selectedTags.length > 0 && (
         <div className="bg-white rounded-lg border border-logo-green/10 p-4 mb-5">
           <div className="text-sm font-semibold text-card-text mb-3">Drawdown (%)</div>
@@ -716,7 +784,6 @@ function ChartsTab({
         </div>
       )}
 
-      {/* Monthly Returns Heatmap — single combined table, one row-group per strategy */}
       {selectedChartTypes.includes("Monthly Returns Heatmap") && selectedTags.length > 0 && (
         <div className="bg-white rounded-lg border border-logo-green/10 p-4">
           <div className="text-sm font-semibold text-card-text mb-3">Monthly Returns Heatmap</div>
@@ -773,9 +840,16 @@ function ChartsTab({
   );
 }
 
-
-
-export function ClientDetail({ data, tagFilter }: { data: ClientDashboardResponse; tagFilter: string[] }) {
+export function ClientDetail({
+  data, tagFilter, tagOptions, onTagsChange, pnlOn, onPnlOnChange,
+}: {
+  data: ClientDashboardResponse;
+  tagFilter: string[];
+  tagOptions: string[];
+  onTagsChange: (tags: string[]) => void;
+  pnlOn: string;
+  onPnlOnChange: (v: string) => void;
+}) {
   const [subTab, setSubTab] = useState("overview");
 
   const tabs = useMemo(
@@ -805,7 +879,16 @@ export function ClientDetail({ data, tagFilter }: { data: ClientDashboardRespons
       <UnderlineTabs tabs={tabs} active={subTab} onChange={setSubTab} size="sm" />
 
       <div className="pt-5">
-        {subTab === "overview" && <OverviewTab data={data} tagFilter={tagFilter} />}
+        {subTab === "overview" && (
+          <OverviewTab
+            data={data}
+            tagFilter={tagFilter}
+            tagOptions={tagOptions}
+            onTagsChange={onTagsChange}
+            pnlOn={pnlOn}
+            onPnlOnChange={onPnlOnChange}
+          />
+        )}
         {subTab === "analysis" && <AnalysisTab data={data} tagFilter={tagFilter} />}
         {subTab === "charts" && <ChartsTab data={data} tagFilter={tagFilter} />}
       </div>
