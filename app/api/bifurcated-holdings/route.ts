@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { authorizeHoldingsRequest } from "@/app/lib/bifurcated-auth";
 import { prisma } from "@/lib/prisma";
+import { getClosedStrategies, isStrategyClosed } from "@/app/lib/account-status";
 
 interface Holding {
   symbol: string;
@@ -167,7 +168,23 @@ export async function GET(req: Request) {
       strategy: r.strategy || undefined,
     }));
 
-    const allHoldings: Holding[] = [...stockHoldings, ...mfHoldings];
+    // Closed strategies (account_strategy_status) are dropped from the view. If
+    // nothing is left, "Data as of" shows the closed date (when set) instead of the snapshot date.
+    const closedStrategies = await getClosedStrategies(qcode);
+    const allHoldings: Holding[] = [...stockHoldings, ...mfHoldings].filter(
+      (h) => !isStrategyClosed(closedStrategies, h.strategy)
+    );
+    const closed =
+      closedStrategies.length > 0 && allHoldings.length === 0
+        ? {
+            closedDate:
+              closedStrategies
+                .map((c) => c.closedDate)
+                .filter((d): d is string => !!d)
+                .sort()
+                .pop() ?? null,
+          }
+        : null;
     const holdingsSummary = processHoldingsSummary(allHoldings);
 
     const availableStrategies = Array.from(
@@ -180,7 +197,11 @@ export async function GET(req: Request) {
       {
         holdingsSummary,
         availableStrategies,
-        dataAsOfDate: asOf ? asOf.toISOString() : null,
+        dataAsOfDate: closed?.closedDate
+          ? new Date(closed.closedDate).toISOString()
+          : asOf
+            ? asOf.toISOString()
+            : null,
       },
       { status: 200 }
     );

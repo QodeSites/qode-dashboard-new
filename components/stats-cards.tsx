@@ -46,7 +46,17 @@ interface StatsCardsProps {
   qcode?: string;
   strategy?: string | null;
   scheme?: string | null;
+  // True when this view's strategy is closed in account_strategy_status.
+  // Additive to the JSON list above: either source zeroes Amount Invested.
+  isClosed?: boolean;
 }
+
+// Rounds to 2 decimals and turns -0 / tiny negatives (e.g. -0.001) into a plain 0,
+// so the card never renders "₹ -0.00".
+const toDisplayAmount = (n: number): number => {
+  const rounded = Math.round(n * 100) / 100;
+  return rounded === 0 ? 0 : rounded;
+};
 
 export function StatsCards({
   stats,
@@ -61,6 +71,7 @@ export function StatsCards({
   qcode,
   strategy,
   scheme,
+  isClosed = false,
 }: StatsCardsProps) {
   // Remove the local useState - we now use props
   // const [returnViewType, setReturnViewType] = useState<"percent" | "cash">(isTotalPortfolio ? "cash" : "percent");
@@ -94,7 +105,7 @@ export function StatsCards({
 
   const labels = getCardLabels(accountType, broker);
 
-  const showZeroAmountInvested = zeroAmountInvestedAccounts.some((a) => {
+  const showZeroAmountInvested = isClosed || zeroAmountInvestedAccounts.some((a) => {
     // Match on qcode when the view knows which account it is showing;
     // otherwise fall back to icode, for the client-level Sarla/Satidham views.
     const accountMatches = qcode ? a.qcode === qcode : a.icode === icode;
@@ -118,14 +129,14 @@ export function StatsCards({
   const statItems = [
     {
       name: labels.amountDeposited,
-      value: `₹ ${amountDeposited.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      value: `₹ ${toDisplayAmount(amountDeposited).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       change: "",
       changeType: "neutral",
       showNote: false,
     },
     {
       name: labels.currentExposure,
-      value: `₹ ${parseFloat(stats.currentExposure).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      value: `₹ ${toDisplayAmount(parseFloat(stats.currentExposure)).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       change: "",
       changeType: "neutral",
       showNote: false,
