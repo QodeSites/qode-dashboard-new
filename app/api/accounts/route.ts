@@ -26,6 +26,7 @@ export async function GET() {
         account_name: true,
         account_type: true,
         broker: true,
+        strategy: true,
       },
     });
 

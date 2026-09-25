@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
+import { isStrategyInList } from "@/app/lib/strategy-match";
 import { findByIcode } from "@/app/lib/bifurcated-clients-registry";
 import { useRouter } from "next/navigation";
 import { StatsCards } from "@/components/stats-cards";
@@ -103,6 +104,7 @@ interface Account {
   account_name: string;
   account_type: string;
   broker: string;
+  strategy?: string | null;
 }
 
 interface Metadata {
@@ -437,6 +439,27 @@ export default function Portfolio() {
   const accountCode = urlParams?.get("accountCode") || "AC5";
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
+  const [closedStrategies, setClosedStrategies] = useState<string[]>([]);
+  const closedLookupQcode =
+    isSarla || isSatidham
+      ? null
+      : bifurcatedClient
+        ? bifurcatedClient.qcode
+        : selectedAccount;
+  useEffect(() => {
+    setClosedStrategies([]);
+    if (!closedLookupQcode) return;
+    let cancelled = false;
+    fetch(`/api/account-status?qcode=${encodeURIComponent(closedLookupQcode)}`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && Array.isArray(d?.closedStrategies)) setClosedStrategies(d.closedStrategies);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [closedLookupQcode]);
   const [viewMode, setViewMode] = useState<"consolidated" | "individual">("consolidated");
   const [stats, setStats] = useState<(Stats | PmsStats) | { stats: Stats | PmsStats; metadata: Account & { strategyName: string; isActive: boolean } }[] | null>(null);
   const [metadata, setMetadata] = useState<Metadata | null>(null);
@@ -1363,6 +1386,7 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
           icode={effectiveIcode}
           qcode={bifurcatedClient?.qcode}
           scheme={selectedStrategy}
+          isClosed={!isTotalPortfolio && isStrategyInList(closedStrategies, selectedStrategy)}
         />
         {(!isTotalPortfolio || effectiveNavBased) && (
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
@@ -1651,6 +1675,14 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
                           accounts.find((acc) => acc.qcode === selectedAccount)?.strategy
                         }
                         scheme={strategyName}
+                        isClosed={
+                          isSingleStrategyBifurcated
+                            ? closedStrategies.length > 0
+                            : isStrategyInList(
+                                closedStrategies,
+                                accounts.find((acc) => acc.qcode === selectedAccount)?.strategy
+                              )
+                        }
                       />
                       <div className="flex flex-col sm:flex-row gap-4 w-full max-w-full overflow-hidden">
                         <div className="flex-1 min-w-0 sm:w-5/6">

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Decimal } from "@prisma/client/runtime/library";
+import { getClosedStrategies, isStrategyClosed } from "@/app/lib/account-status";
 
 // Sarla (QUS0007) Total Portfolio quarterly management fees (₹). Used to derive
 // Net = Gross - Fees for the Gross/Net toggle on-screen and in Excel exports.
@@ -3886,7 +3887,10 @@ if (scheme === "Scheme PMS QAW") {
 
     const processedMutualFundHoldings = Array.from(isinMap.values());
 
-    return [...processedEquityHoldings, ...processedMutualFundHoldings];
+    const closedStrategies = await getClosedStrategies(qcode);
+    return [...processedEquityHoldings, ...processedMutualFundHoldings].filter(
+      (h) => !isStrategyClosed(closedStrategies, h.strategy)
+    );
   }
 
   static processHoldingsSummary(holdings: Holding[]): HoldingsSummary {
