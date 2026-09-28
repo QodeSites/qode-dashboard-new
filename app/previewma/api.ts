@@ -204,6 +204,30 @@ export interface AccountValueOverride {
   momentum_pct?: number;
 }
 
+export interface TrailingReturns {
+  one_month: number | null;
+  three_month: number | null;
+  six_month: number | null;
+  one_year: number | null;
+  two_year: number | null;
+  three_year: number | null;
+  four_year: number | null;
+  five_year: number | null;
+  since_inception: number | null;
+}
+
+
+
+export interface ReturnsMetrics {
+  monthly: { year: number; month: string; return_pct: number; pnl_inr: number }[];
+  yearly: { year: number; return_pct: number; pnl_inr: number }[];
+  xirr: number | null; 
+  max_drawdown: number | null; 
+  current_drawdown: number | null; 
+  since_inception_absolute: number | null; 
+  trailing_returns: TrailingReturns | null; 
+}
+
 // ─── Sub-Strategy Performance ─────────────────────────────────────────────────
 
 export interface SubStrategyEntry {
@@ -349,10 +373,25 @@ export async function fetchSystemTags(qcode: string, strategy: string): Promise<
 
 export { ApiError };
 
+
+
+
+export interface ClientReturnsBreakdownNode extends ReturnsMetrics {
+  strategy: string;
+  strategy_breakdown: ClientReturnsBreakdownNode[]; 
+}
+
+export interface ClientReturnsRow extends ReturnsMetrics {
+  qcode: string;
+  account_name: string;
+  is_multi_strategy: boolean;
+  strategy_breakdown: ClientReturnsBreakdownNode[];
+}
+
 export async function fetchClientMonthlyReturns(
   accountType: "managed" | "prop" = "managed"
-): Promise<StrategyMonthlyEntry[]> {
-  return apiFetch<StrategyMonthlyEntry[]>("/api/internal/portfolio-review/client-monthly-returns", {
+): Promise<ClientReturnsRow[]> {
+  return apiFetch<ClientReturnsRow[]>("/api/internal/portfolio-review/client-monthly-returns", {
     method: "POST",
     body: JSON.stringify({ account_type: accountType }),
   });
