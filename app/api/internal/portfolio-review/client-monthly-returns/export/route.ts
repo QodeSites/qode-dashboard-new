@@ -3,11 +3,17 @@ import { computeClientMonthlyReturns } from "@/app/lib/internal-utils";
 import { buildClientMonthlyWorkbook } from "@/app/lib/excel-utils";
 import { requireInternal } from "@/app/lib/admin-utils";
 
-export async function GET(req: Request) {
+export async function POST(req: Request) {
   const { error } = await requireInternal();
   if (error) return error;
 
-  const accountTypeParam = new URL(req.url).searchParams.get("account_type");
+  let body: { account_type?: string } = {};
+  try {
+    body = await req.json();
+  } catch {
+    // no body sent — fine, account_type is optional (defaults to "managed")
+  }
+  const accountTypeParam = body.account_type ?? null;
   if (
     accountTypeParam !== null &&
     accountTypeParam !== "managed" &&

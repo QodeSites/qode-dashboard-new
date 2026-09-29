@@ -8,10 +8,12 @@ import type {
   YearlyReturn,
   StrategyMonthlyRow,
   ClientMonthlyRow,
+  ClientStrategyBreakdownRow,
   DailyPnlSeries,
   DailyPnlPoint,
 } from "./internal-utils";
 import { SUB_STRATEGY_SECTION_ORDER } from "./internal-utils";
+import type { TrailingReturns } from "./portfolio-review/returns";
 
 // brand palette — pulled from the reference exports, shared by every report
 export const XL_COLORS = {
@@ -590,7 +592,10 @@ interface ExtraSummaryCol {
   write: (cell: ExcelJS.Cell, v: number | null) => void;
 }
 
-// writes one client's rows (one per year) starting at `row`, returns next free row
+// writes one client's rows (one per year) starting at `row`, returns next free row.
+// `depth` indents/de-emphasizes nested breakdown rows (0 = client/strategy
+// row, 1+ = a strategy's own system-tag legs) so a multi-level tree stays
+// readable instead of all rows looking like flat siblings.
 function writeClientYearRows(
   ws: ExcelJS.Worksheet,
   row: number,
@@ -600,8 +605,9 @@ function writeClientYearRows(
   writeCell: (cell: ExcelJS.Cell, value: number | null) => void,
   widths: ColumnWidthTracker,
   extraCols?: ExtraSummaryCol[],
+  depth = 0,
 ): number {
-  const clientLabel = `${r.account_name} ${r.strategy}`;
+  const clientLabel = depth > 0 ? `${"  ".repeat(depth - 1)}↳ ${r.strategy}` : `${r.account_name} ${r.strategy}`;
   const monthMap = new Map(
     r.monthly.map((m) => [`${m.year}-${m.month.slice(0, 3)}`, m]),
   );
@@ -612,9 +618,12 @@ function writeClientYearRows(
     const yearCell = dr.getCell(3);
     if (i === 0) {
       nameCell.value = clientLabel;
-      nameCell.font = { bold: true };
-      nameCell.fill = fill(XL_COLORS.sectionHeader);
-      yearCell.fill = fill(XL_COLORS.sectionHeader);
+      nameCell.font = { bold: depth === 0 };
+      nameCell.alignment = { indent: depth };
+      if (depth === 0) {
+        nameCell.fill = fill(XL_COLORS.sectionHeader);
+        yearCell.fill = fill(XL_COLORS.sectionHeader);
+      }
       widths.see(2, clientLabel);
     }
     yearCell.value = y.year;
@@ -922,6 +931,126 @@ export function buildStrategyMonthlyWorkbook(
   return wb;
 }
 
+// same trailing-period keys/order as Clientwisereturns.tsx's TRAILING_COLS,
+// minus since-inception (already its own summary column, see TrailingReturns)
+const TRAILING_PERIOD_COLS: { key: keyof TrailingReturns; label: string }[] = [
+  { key: "one_month", label: "1M" },
+  { key: "three_month", label: "3M" },
+  { key: "six_month", label: "6M" },
+  { key: "one_year", label: "1Y" },
+  { key: "two_year", label: "2Y" },
+  { key: "three_year", label: "3Y" },
+  { key: "four_year", label: "4Y" },
+  { key: "five_year", label: "5Y" },
+];
+
+// client-wise sheet additionally surfaces a per-client/per-strategy summary
+// block (since inception, XIRR, drawdowns, trailing returns) once per row —
+// each sheet only gets the columns matching its own unit, same split as the
+// strategy-wise monthly grid above
+const CLIENT_MONTHLY_PCT_HEADERS = [
+  ...MONTHLY_RETURNS_HEADERS,
+  "Since Inception",
+  "XIRR",
+  "Max DD",
+  "Current DD",
+  ...TRAILING_PERIOD_COLS.map((c) => c.label),
+];
+const CLIENT_MONTHLY_MONEY_HEADERS = [
+  ...MONTHLY_RETURNS_HEADERS,
+  "SI P&L (₹)",
+  ...TRAILING_PERIOD_COLS.map((c) => c.label),
+];
+
+function clientSummaryExtraCols(
+  r: Pick<
+    ClientMonthlyRow | ClientStrategyBreakdownRow,
+    "xirr" | "max_drawdown" | "current_drawdown" | "since_inception_absolute" | "since_inception_pnl" | "trailing_returns"
+  >,
+  variant: "pct" | "money",
+): ExtraSummaryCol[] {
+  if (variant === "pct") {
+    return [
+      { value: r.since_inception_absolute, write: writePctCell },
+      { value: r.xirr, write: writePctCell },
+      { value: r.max_drawdown, write: writePctCell },
+      { value: r.current_drawdown, write: writePctCell },
+      ...TRAILING_PERIOD_COLS.map((c) => ({
+        value: r.trailing_returns[c.key].pct,
+        write: writePctCell,
+      })),
+    ];
+  }
+  return [
+    { value: r.since_inception_pnl, write: writeColoredMoneyCell },
+    ...TRAILING_PERIOD_COLS.map((c) => ({
+      value: r.trailing_returns[c.key].pnl_inr,
+      write: writeColoredMoneyCell,
+    })),
+  ];
+}
+
+// A breakdown node can itself carry a further breakdown (e.g. strategy ->
+// its own system-tag legs like LONG/PSAR/Liquidcase) — same self-referential
+// shape resolveNode() builds in client-monthly-returns.ts. Walking it
+// recursively (instead of only the first level) is what makes the deeper
+// legs show up in the export at all, matching the UI's expandable tree.
+type ClientNodeLike = Pick<
+  ClientStrategyBreakdownRow,
+  | "monthly"
+  | "yearly"
+  | "xirr"
+  | "max_drawdown"
+  | "current_drawdown"
+  | "since_inception_absolute"
+  | "since_inception_pnl"
+  | "trailing_returns"
+  | "strategy_breakdown"
+>;
+
+function writeClientNodeRows(
+  ws: ExcelJS.Worksheet,
+  row: number,
+  accountName: string,
+  label: string,
+  depth: number,
+  node: ClientNodeLike,
+  valueOf: (m: MonthlyReturn) => number,
+  totalOf: (y: YearlyReturn) => number,
+  writeCell: (cell: ExcelJS.Cell, value: number | null) => void,
+  widths: ColumnWidthTracker,
+  variant: "pct" | "money",
+): number {
+  row = writeClientYearRows(
+    ws,
+    row,
+    { account_name: accountName, strategy: label, monthly: node.monthly, yearly: node.yearly },
+    valueOf,
+    totalOf,
+    writeCell,
+    widths,
+    clientSummaryExtraCols(node, variant),
+    depth,
+  );
+
+  for (const child of node.strategy_breakdown) {
+    row = writeClientNodeRows(
+      ws,
+      row,
+      accountName,
+      child.strategy,
+      depth + 1,
+      child,
+      valueOf,
+      totalOf,
+      writeCell,
+      widths,
+      variant,
+    );
+  }
+  return row;
+}
+
 function writeClientMonthlyGrid(
   ws: ExcelJS.Worksheet,
   rows: ClientMonthlyRow[],
@@ -929,13 +1058,11 @@ function writeClientMonthlyGrid(
   totalOf: (y: YearlyReturn) => number,
   writeCell: (cell: ExcelJS.Cell, value: number | null) => void,
   widths: ColumnWidthTracker,
+  variant: "pct" | "money",
 ): void {
-  writeTitle(
-    ws,
-    "Client-wise Monthly & Yearly Returns",
-    1,
-    2 + MONTHLY_RETURNS_HEADERS.length,
-  );
+  const headers = variant === "pct" ? CLIENT_MONTHLY_PCT_HEADERS : CLIENT_MONTHLY_MONEY_HEADERS;
+
+  writeTitle(ws, "Client-wise Monthly & Yearly Returns", 1, 2 + headers.length);
 
   let row = 3;
   const sorted = [...rows].sort((a, b) => a.account_name.localeCompare(b.account_name));
@@ -943,30 +1070,22 @@ function writeClientMonthlyGrid(
     const label = r.is_multi_strategy
       ? `${r.account_name} (Multi-Strategy)`
       : r.account_name;
-    writeSectionHeader(ws, row, label, MONTHLY_RETURNS_HEADERS, widths);
+    writeSectionHeader(ws, row, label, headers, widths);
     row++;
 
-    row = writeClientYearRows(
+    row = writeClientNodeRows(
       ws,
       row,
-      { account_name: r.account_name, strategy: "Combined", monthly: r.monthly, yearly: r.yearly },
+      r.account_name,
+      "Combined",
+      0,
+      r,
       valueOf,
       totalOf,
       writeCell,
       widths,
+      variant,
     );
-
-    for (const b of r.strategy_breakdown) {
-      row = writeClientYearRows(
-        ws,
-        row,
-        { account_name: r.account_name, strategy: b.strategy, monthly: b.monthly, yearly: b.yearly },
-        valueOf,
-        totalOf,
-        writeCell,
-        widths,
-      );
-    }
     row += 1; // blank row between clients
   }
 }
@@ -983,6 +1102,7 @@ export function buildClientMonthlyWorkbook(rows: ClientMonthlyRow[]): ExcelJS.Wo
     (y) => y.return_pct / 100,
     writePctCell,
     pctWidths,
+    "pct",
   );
   pctWidths.apply(pctWs);
 
@@ -995,6 +1115,7 @@ export function buildClientMonthlyWorkbook(rows: ClientMonthlyRow[]): ExcelJS.Wo
     (y) => y.pnl_inr,
     writeColoredMoneyCell,
     rsWidths,
+    "money",
   );
   rsWidths.apply(rsWs);
 

@@ -7,6 +7,7 @@ import {
   calcMaxDrawdown,
   calcCurrentDrawdown,
   calcSinceInceptionAbsolute,
+  calcSiPnl,
   calcTrailingReturns,
 } from "@/app/lib/portfolio-review/returns";
 import type { MonthlyReturn, YearlyReturn, TrailingReturns } from "@/app/lib/portfolio-review/returns";
@@ -40,6 +41,7 @@ export interface ClientStrategyBreakdownRow {
   max_drawdown: number | null;
   current_drawdown: number | null;
   since_inception_absolute: number | null;
+  since_inception_pnl: number | null;
   trailing_returns: TrailingReturns;
   strategy_breakdown: ClientStrategyBreakdownRow[];
 }
@@ -54,6 +56,7 @@ export interface ClientMonthlyRow {
   max_drawdown: number | null;
   current_drawdown: number | null;
   since_inception_absolute: number | null;
+  since_inception_pnl: number | null;
   trailing_returns: TrailingReturns;
   strategy_breakdown: ClientStrategyBreakdownRow[];
 }
@@ -161,8 +164,12 @@ function buildSystemTagChildren(
     for (const sec of SUB_STRATEGY_SECTIONS) {
       const value = split[sec.existsField];
       if (value == null) continue;
+      // This page shows the bare tag ("LONG (1.5%)") rather than the
+      // shared "Long Options (1.5%)" label used elsewhere (Sub-Strategy
+      // Performance) — scoped here only, doesn't touch the shared label.
+      const label = sec.labelFor(value).replace(/^Long Options\b/, "LONG");
       children.push({
-        label: sec.labelFor(value),
+        label,
         profitTag: `${strategy} ${sec.tag}`,
         exposureTag: `${strategy} ${sec.tag}`,
         children: [],
@@ -186,7 +193,9 @@ function buildSystemTagChildren(
   }
 
   children.push({
-    label: LIQUIDCASE_TAG,
+    // Display label only — the underlying tag stays "Liquidcase Stock
+    // Holdings" (LIQUIDCASE_TAG), matching the DB's master_sheet system_tag.
+    label: "Liquidcase",
     profitTag: `${strategy} ${LIQUIDCASE_TAG}`,
     exposureTag: `${strategy} ${LIQUIDCASE_TAG}`,
     children: [],
@@ -198,8 +207,12 @@ function buildSystemTagChildren(
 // Builds the root node (combined tags) and one child per strategy config,
 // each carrying its own system-tag children. Prop is structurally different
 // from Managed — bare tags, no strategy prefix, its own catalog
-// (prop_sub_strategy_sections) — so a solo-Prop group's child is built from
-// propLeaves instead of the Managed splits/genericSections machinery.
+// (prop_sub_strategy_sections). A solo-Prop group has exactly one config
+// ("Prop") whose tags are identical to the root's own combinedTags() (a
+// solo-Prop root has no separate rollup tag — see combinedTags), so that
+// config would only add a redundant "Prop" node showing the same NAV data
+// twice before reaching the real leaves. Skipped here: propLeaves become
+// the root's direct children instead.
 function buildRootNode(
   group: ClientGroup,
   splits: SplitConfigMap | null,
@@ -208,36 +221,37 @@ function buildRootNode(
 ): ReturnsNode {
   const { profitTag, exposureTag } = combinedTags(group);
   const strategyCount = group.configs.length;
+
+  if (group.isSoloProp) {
+    return {
+      label: group.account_name,
+      profitTag,
+      exposureTag,
+      children: (propLeaves ?? []).map((leaf) => ({
+        label: leaf.label,
+        profitTag: leaf.tag_suffix,
+        exposureTag: leaf.tag_suffix,
+        children: [],
+      })),
+    };
+  }
+
   return {
     label: group.account_name,
     profitTag,
     exposureTag,
-    children: group.configs.map((c) =>
-      group.isSoloProp
-        ? {
-            label: c.strategy,
-            profitTag: c.profit_tag_suffix,
-            exposureTag: c.exposure_tag_suffix,
-            children: (propLeaves ?? []).map((leaf) => ({
-              label: leaf.label,
-              profitTag: leaf.tag_suffix,
-              exposureTag: leaf.tag_suffix,
-              children: [],
-            })),
-          }
-        : {
-            label: c.strategy,
-            profitTag: `${c.strategy} ${c.profit_tag_suffix}`,
-            exposureTag: `${c.strategy} ${c.exposure_tag_suffix}`,
-            children: buildSystemTagChildren(
-              group.qcode,
-              c.strategy,
-              strategyCount,
-              splits?.get(`${group.qcode}|${c.strategy}`),
-              genericSections?.get(`${group.qcode}|${c.strategy}`),
-            ),
-          },
-    ),
+    children: group.configs.map((c) => ({
+      label: c.strategy,
+      profitTag: `${c.strategy} ${c.profit_tag_suffix}`,
+      exposureTag: `${c.strategy} ${c.exposure_tag_suffix}`,
+      children: buildSystemTagChildren(
+        group.qcode,
+        c.strategy,
+        strategyCount,
+        splits?.get(`${group.qcode}|${c.strategy}`),
+        genericSections?.get(`${group.qcode}|${c.strategy}`),
+      ),
+    })),
   };
 }
 
@@ -266,6 +280,7 @@ interface ResolvedReturns {
   max_drawdown: number | null;
   current_drawdown: number | null;
   since_inception_absolute: number | null;
+  since_inception_pnl: number | null;
   trailing_returns: TrailingReturns;
   strategy_breakdown: ClientStrategyBreakdownRow[];
 }
@@ -305,6 +320,7 @@ function resolveNode(
     max_drawdown: calcMaxDrawdown(nav),
     current_drawdown: calcCurrentDrawdown(nav),
     since_inception_absolute: calcSinceInceptionAbsolute(nav),
+    since_inception_pnl: calcSiPnl(nav),
     trailing_returns: calcTrailingReturns(nav),
     strategy_breakdown,
   };

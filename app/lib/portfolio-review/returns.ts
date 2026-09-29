@@ -101,20 +101,27 @@ export function calcCagr(nav: NavPoint[]): number | null {
   return round((endNav / startNav) ** (365 / days) - 1, 4);
 }
 
+export interface TrailingReturnPoint {
+  pct: number | null;
+  pnl_inr: number | null;
+}
+
+// since-inception is intentionally not part of this set — it's already a
+// first-class field alongside trailing_returns on every row (since_inception /
+// since_inception_absolute), so repeating it here was pure duplication.
 export interface TrailingReturns {
-  one_month: number | null;
-  three_month: number | null;
-  six_month: number | null;
-  one_year: number | null;
-  two_year: number | null;
-  three_year: number | null;
-  four_year: number | null;
-  five_year: number | null;
-  since_inception: number | null;
+  one_month: TrailingReturnPoint;
+  three_month: TrailingReturnPoint;
+  six_month: TrailingReturnPoint;
+  one_year: TrailingReturnPoint;
+  two_year: TrailingReturnPoint;
+  three_year: TrailingReturnPoint;
+  four_year: TrailingReturnPoint;
+  five_year: TrailingReturnPoint;
 }
 
 const TRAILING_PERIODS: {
-  key: Exclude<keyof TrailingReturns, "since_inception">;
+  key: keyof TrailingReturns;
   days: number;
 }[] = [
   { key: "one_month", days: 30 },
@@ -132,19 +139,21 @@ const TRAILING_PERIODS: {
  * <1yr absolute / ≥1yr CAGR convention as calcSinceInception (and the
  * frontend's own trailing-returns-table.tsx). A period whose window would
  * start before the series' first point (not enough history yet) is left
- * null rather than approximated from a shorter window.
+ * null rather than approximated from a shorter window. `pnl_inr` is the
+ * rupee P&L actually booked inside that window (sum of each NAV point's
+ * own `pnl` after the window's start), alongside the existing % figure.
  */
 export function calcTrailingReturns(nav: NavPoint[]): TrailingReturns {
+  const empty: TrailingReturnPoint = { pct: null, pnl_inr: null };
   const result: TrailingReturns = {
-    one_month: null,
-    three_month: null,
-    six_month: null,
-    one_year: null,
-    two_year: null,
-    three_year: null,
-    four_year: null,
-    five_year: null,
-    since_inception: calcSinceInception(nav),
+    one_month: { ...empty },
+    three_month: { ...empty },
+    six_month: { ...empty },
+    one_year: { ...empty },
+    two_year: { ...empty },
+    three_year: { ...empty },
+    four_year: { ...empty },
+    five_year: { ...empty },
   };
   if (nav.length < 2) return result;
 
@@ -160,17 +169,28 @@ export function calcTrailingReturns(nav: NavPoint[]): TrailingReturns {
     return candidate ? candidate.nav : null;
   };
 
+  const pnlAfter = (target: Date): number =>
+    parseFloat(
+      nav
+        .filter((p) => p.date.getTime() > target.getTime())
+        .reduce((s, p) => s + p.pnl, 0)
+        .toFixed(2),
+    );
+
   for (const period of TRAILING_PERIODS) {
     const windowStart = new Date(end.date.getTime() - period.days * MS);
     if (windowStart.getTime() < firstDate.getTime()) continue;
     const startNav = navAtOrBefore(windowStart);
     if (startNav == null || startNav <= 0 || end.nav <= 0) continue;
-    result[period.key] = round(
-      period.days < 365
-        ? end.nav / startNav - 1
-        : (end.nav / startNav) ** (365 / period.days) - 1,
-      4,
-    );
+    result[period.key] = {
+      pct: round(
+        period.days < 365
+          ? end.nav / startNav - 1
+          : (end.nav / startNav) ** (365 / period.days) - 1,
+        4,
+      ),
+      pnl_inr: pnlAfter(windowStart),
+    };
   }
   return result;
 }
