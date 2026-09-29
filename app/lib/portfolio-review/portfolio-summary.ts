@@ -12,6 +12,12 @@ export interface AumPoint {
 
 export interface InvestorAum {
   qcode: string;
+  // Client identifier (qcode's owner in pooled_account_users) — lets the
+  // frontend dedupe by CLIENT instead of by ACCOUNT when a client has more
+  // than one qcode, e.g. for "Number of Investors Added by Month" (a second
+  // account opened by an existing client isn't a fresh investor). null only
+  // if a qcode somehow has no pooled_account_users row.
+  icode: string | null;
   account_name: string;
   strategy: string;
   since: string;
@@ -152,6 +158,15 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
     });
   }
 
+  // qcode -> icode, one row per qcode (pooled_account_users has a unique
+  // [qcode, icode] pair and every qcode observed so far maps to exactly one
+  // owner) — used only to let the frontend dedupe investors by client.
+  const owners = await prisma.pooled_account_users.findMany({
+    where: { qcode: { in: pairs.map((p) => p.qcode) } },
+    select: { qcode: true, icode: true },
+  });
+  const icodeByQcode = new Map(owners.map((o) => [o.qcode, o.icode]));
+
   const investors: InvestorAum[] = [];
   const allSeries: { series: SeriesPoint[]; until: string | null }[] = [];
   const strategySeries = new Map<
@@ -166,6 +181,7 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
 
     investors.push({
       qcode: pair.qcode,
+      icode: icodeByQcode.get(pair.qcode) ?? null,
       account_name: pair.account_name,
       strategy: pair.strategy,
       since: series[0].date,
