@@ -27,6 +27,14 @@ function fmtInr(v: number) {
   return `${sign}₹${(abs / 1e5).toFixed(2)}L`;
 }
 
+// xirr/drawdowns/since-inception come back as fractions (0.15 = 15%),
+// unlike monthly return_pct which is already *100 — scale here before display
+function fmtPctOrDash(v: number | null | undefined) {
+  if (v === null || v === undefined) return "—";
+  const pct = v * 100;
+  return `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
+}
+
 // Cell background + text color matching the screenshots
 function cellClass(v: number | null) {
   if (v === null) return "";
@@ -42,6 +50,11 @@ interface ClientYearRow {
   year: number;
   months: (number | null)[];
   total: number | null;
+  sinceInception: number | null;
+  sinceInceptionPnl: number | null;
+  xirr: number | null;
+  maxDrawdown: number | null;
+  currentDrawdown: number | null;
 }
 
 function StrategyTable({
@@ -101,6 +114,11 @@ function StrategyTable({
           year,
           months,
           total,
+          sinceInception: yi === 0 ? entry.since_inception ?? null : null,
+          sinceInceptionPnl: yi === 0 ? entry.since_inception_pnl ?? null : null,
+          xirr: yi === 0 ? entry.xirr ?? null : null,
+          maxDrawdown: yi === 0 ? entry.max_drawdown ?? null : null,
+          currentDrawdown: yi === 0 ? entry.current_drawdown ?? null : null,
         });
       });
     });
@@ -125,6 +143,11 @@ function StrategyTable({
                 <th key={m} className="px-3 py-2.5 text-right font-medium">{MONTH_SHORT[m]}</th>
               ))}
               <th className="px-4 py-2.5 text-right font-medium">Total</th>
+              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Since Inception</th>
+              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">SI P&amp;L (₹)</th>
+              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">XIRR</th>
+              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Max DD</th>
+              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Current DD</th>
             </tr>
           </thead>
           <tbody>
@@ -165,6 +188,21 @@ function StrategyTable({
                     }`}
                   >
                     {row.total === null ? "—" : showInr ? fmtInr(row.total) : fmtPct(row.total)}
+                  </td>
+                  <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap text-xs ${row.isFirstRow ? cellClass(row.sinceInception) : ""}`}>
+                    {row.isFirstRow ? fmtPctOrDash(row.sinceInception) : ""}
+                  </td>
+                  <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap text-xs ${row.isFirstRow ? cellClass(row.sinceInceptionPnl) : ""}`}>
+                    {row.isFirstRow ? (row.sinceInceptionPnl === null ? "—" : fmtInr(row.sinceInceptionPnl)) : ""}
+                  </td>
+                  <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap text-xs ${row.isFirstRow ? cellClass(row.xirr) : ""}`}>
+                    {row.isFirstRow ? fmtPctOrDash(row.xirr) : ""}
+                  </td>
+                  <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap text-xs ${row.isFirstRow ? cellClass(row.maxDrawdown) : ""}`}>
+                    {row.isFirstRow ? fmtPctOrDash(row.maxDrawdown) : ""}
+                  </td>
+                  <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap text-xs ${row.isFirstRow ? cellClass(row.currentDrawdown) : ""}`}>
+                    {row.isFirstRow ? fmtPctOrDash(row.currentDrawdown) : ""}
                   </td>
                 </tr>
               );

@@ -5,6 +5,8 @@ import {
   calcYearlyReturns,
   calcMaxDrawdown,
   calcCurrentDrawdown,
+  calcSinceInception,
+  calcSiPnl,
 } from "@/app/lib/portfolio-review/returns";
 import type { MonthlyReturn, YearlyReturn } from "@/app/lib/portfolio-review/returns";
 import { solveXirr, fetchBulkXirrInputs } from "@/app/lib/portfolio-review/xirr";
@@ -15,6 +17,8 @@ export interface StrategyMonthlyRow {
   strategy: string;
   monthly: MonthlyReturn[];
   yearly: YearlyReturn[];
+  since_inception: number | null;
+  since_inception_pnl: number | null;
   xirr: number | null;
   max_drawdown: number | null;
   current_drawdown: number | null;
@@ -46,6 +50,8 @@ export async function computeStrategyMonthlyReturns(): Promise<
       strategy: pair.strategy,
       monthly,
       yearly: calcYearlyReturns(monthly),
+      since_inception: calcSinceInception(nav),
+      since_inception_pnl: calcSiPnl(nav),
       xirr: xirrInputs
         ? solveXirr(xirrInputs.flows, xirrInputs.asOfDate, xirrInputs.finalValue)
         : null,

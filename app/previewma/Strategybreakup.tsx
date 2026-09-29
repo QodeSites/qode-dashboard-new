@@ -20,6 +20,14 @@ function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+function fmtInr(v: number | null) {
+  if (v === null || v === undefined) return "—";
+  const abs = Math.abs(v);
+  const sign = v < 0 ? "-" : "+";
+  if (abs >= 1e7) return `${sign}₹${(abs / 1e7).toFixed(2)}Cr`;
+  return `${sign}₹${(abs / 1e5).toFixed(2)}L`;
+}
+
 // ─── Global Rule: XIRR (>=1yr) / Absolute (<1yr) ───────────────────────────
 // XIRR is only meaningful once there's at least a year of history — on a
 // short window it gets misleadingly compressed/inflated by annualization.
@@ -172,6 +180,7 @@ function StrategyTable({
               <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Client</th>
               <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Inception Date</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Return Since Inception</th>
+              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">SI P&amp;L (₹)</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">XIRR</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Benchmark Return</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Max Drawdown</th>
@@ -204,6 +213,9 @@ function StrategyTable({
                   {/* Return Since Inception — was incorrectly rendering row.xirr here */}
                   <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${returnClass(row.since_inception)}`}>
                     {fmtPct(row.since_inception)}
+                  </td>
+                  <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${row.since_inception_pnl === null ? "text-card-text-secondary/50" : returnClass(row.since_inception_pnl)}`}>
+                    {fmtInr(row.since_inception_pnl)}
                   </td>
                   {/* XIRR — gated by the Global Rule (>=1yr only), was incorrectly rendering row.since_inception here */}
                   <td

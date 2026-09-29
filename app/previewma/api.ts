@@ -126,6 +126,7 @@ export interface StrategyBreakupRow {
   strategy: string;
   inception_date: string;
   since_inception: number;
+  since_inception_pnl: number | null;
   xirr: number;
   benchmark_return: number;
   max_drawdown: number;
@@ -256,6 +257,11 @@ export interface StrategyMonthlyEntry {
   strategy: string;
   monthly: { year: number; month: string; return_pct: number; pnl_inr: number }[];
   yearly: { year: number; return_pct: number; pnl_inr: number }[];
+  since_inception?: number | null;
+  since_inception_pnl?: number | null;
+  xirr?: number | null;
+  max_drawdown?: number | null;
+  current_drawdown?: number | null;
 }
 
 // ─── Shared fetch infrastructure ─────────────────────────────────────────────

@@ -192,7 +192,7 @@ export function writeSectionHeader(
   r.height = HEADER_ROW_HEIGHT;
 }
 
-type ColKind = "pct" | "ratio";
+type ColKind = "pct" | "ratio" | "money";
 interface Col {
   header: string;
   kind: ColKind;
@@ -205,6 +205,12 @@ const COLUMNS: Col[] = [
     kind: "pct",
     get: (r) => r.since_inception,
   },
+  {
+    header: "SI P&L (₹)",
+    kind: "money",
+    get: (r) => r.since_inception_pnl,
+  },
+  { header: "XIRR", kind: "pct", get: (r) => r.xirr },
   { header: "Benchmark Return", kind: "pct", get: (r) => r.benchmark_return },
   { header: "Max Drawdown", kind: "pct", get: (r) => r.max_drawdown },
   { header: "Current Drawdown", kind: "pct", get: (r) => r.current_drawdown },
@@ -270,8 +276,9 @@ export function buildStrategyBreakupWorkbook(
         const cell = dr.getCell(c);
         const value = col.get(r);
         if (col.kind === "pct") writePctCell(cell, value);
+        else if (col.kind === "money") writeColoredMoneyCell(cell, value);
         else writeRatioCell(cell, value);
-        widths.see(c, value != null ? "+00.00%" : "—");
+        widths.see(c, value != null ? (col.kind === "money" ? "+₹00.00L" : "+00.00%") : "—");
       });
       row++;
     }
@@ -574,6 +581,15 @@ interface MonthlyGridRow {
   yearly: YearlyReturn[];
 }
 
+// one extra per-client summary stat (Since Inception, XIRR, a drawdown, …)
+// written once, on the client's first year row, right after "Total" — each
+// sheet passes only the columns whose unit matches that sheet (% vs ₹), so a
+// percentage sheet never shows a rupee figure or vice versa
+interface ExtraSummaryCol {
+  value: number | null;
+  write: (cell: ExcelJS.Cell, v: number | null) => void;
+}
+
 // writes one client's rows (one per year) starting at `row`, returns next free row
 function writeClientYearRows(
   ws: ExcelJS.Worksheet,
@@ -583,6 +599,7 @@ function writeClientYearRows(
   totalOf: (y: YearlyReturn) => number,
   writeCell: (cell: ExcelJS.Cell, value: number | null) => void,
   widths: ColumnWidthTracker,
+  extraCols?: ExtraSummaryCol[],
 ): number {
   const clientLabel = `${r.account_name} ${r.strategy}`;
   const monthMap = new Map(
@@ -611,6 +628,11 @@ function writeClientYearRows(
     const totalCell = dr.getCell(4 + MONTHS.length);
     writeCell(totalCell, totalOf(y));
     totalCell.font = { bold: true };
+
+    if (extraCols && i === 0) {
+      const base = 4 + MONTHS.length + 1;
+      extraCols.forEach((col, ci) => col.write(dr.getCell(base + ci), col.value));
+    }
     row++;
   });
   return row;
@@ -809,6 +831,21 @@ const MONTHLY_RETURNS_HEADERS = [
   "Total",
 ];
 
+// strategy-wise sheet additionally surfaces a per-client summary block once
+// per client — each sheet only gets the columns matching its own unit, so
+// the % sheet never shows a rupee figure and vice versa
+const STRATEGY_MONTHLY_PCT_HEADERS = [
+  ...MONTHLY_RETURNS_HEADERS,
+  "Since Inception",
+  "XIRR",
+  "Max DD",
+  "Current DD",
+];
+const STRATEGY_MONTHLY_MONEY_HEADERS = [
+  ...MONTHLY_RETURNS_HEADERS,
+  "SI P&L (₹)",
+];
+
 function writeStrategyMonthlyGrid(
   ws: ExcelJS.Worksheet,
   rows: StrategyMonthlyRow[],
@@ -816,13 +853,12 @@ function writeStrategyMonthlyGrid(
   totalOf: (y: YearlyReturn) => number,
   writeCell: (cell: ExcelJS.Cell, value: number | null) => void,
   widths: ColumnWidthTracker,
+  variant: "pct" | "money",
 ): void {
-  writeTitle(
-    ws,
-    "Strategy-wise Client Monthly & Yearly Returns",
-    1,
-    2 + MONTHLY_RETURNS_HEADERS.length,
-  );
+  const headers =
+    variant === "pct" ? STRATEGY_MONTHLY_PCT_HEADERS : STRATEGY_MONTHLY_MONEY_HEADERS;
+
+  writeTitle(ws, "Strategy-wise Client Monthly & Yearly Returns", 1, 2 + headers.length);
 
   const byStrategy = new Map<string, StrategyMonthlyRow[]>();
   for (const r of rows) {
@@ -832,25 +868,21 @@ function writeStrategyMonthlyGrid(
 
   let row = 3;
   for (const strategy of [...byStrategy.keys()].sort()) {
-    writeSectionHeader(
-      ws,
-      row,
-      `${strategy} Clients`,
-      MONTHLY_RETURNS_HEADERS,
-      widths,
-    );
+    writeSectionHeader(ws, row, `${strategy} Clients`, headers, widths);
     row++;
 
     for (const r of byStrategy.get(strategy)!) {
-      row = writeClientYearRows(
-        ws,
-        row,
-        r,
-        valueOf,
-        totalOf,
-        writeCell,
-        widths,
-      );
+      const extraCols: ExtraSummaryCol[] =
+        variant === "pct"
+          ? [
+              { value: r.since_inception, write: writePctCell },
+              { value: r.xirr, write: writePctCell },
+              { value: r.max_drawdown, write: writePctCell },
+              { value: r.current_drawdown, write: writePctCell },
+            ]
+          : [{ value: r.since_inception_pnl, write: writeColoredMoneyCell }];
+
+      row = writeClientYearRows(ws, row, r, valueOf, totalOf, writeCell, widths, extraCols);
     }
     row += 2; // blank row between buckets
   }
@@ -870,6 +902,7 @@ export function buildStrategyMonthlyWorkbook(
     (y) => y.return_pct / 100,
     writePctCell,
     pctWidths,
+    "pct",
   );
   pctWidths.apply(pctWs);
 
@@ -882,6 +915,7 @@ export function buildStrategyMonthlyWorkbook(
     (y) => y.pnl_inr,
     writeColoredMoneyCell,
     rsWidths,
+    "money",
   );
   rsWidths.apply(rsWs);
 
