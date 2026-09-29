@@ -14,6 +14,19 @@ export function isActive(until: string | null, today: string): boolean {
   return !until || until >= today;
 }
 
+// Display-only formatter: "YYYY-MM-DD" -> "DD-MM-YYYY". Only for fields
+// rendered as plain text on the frontend (e.g. TagMetrics.start_date/
+// end_date, BenchmarkMetrics.start_date/end_date, client-dashboard's
+// data_as_of) — never for a `series[].date`/`inception_date`/`effective_to`
+// value, since those are still re-parsed with `new Date(...)`, sorted
+// lexicographically, or used in Excel `formatDate()` elsewhere and must stay
+// ISO for that to keep working.
+export function toDisplayDate(iso: string): string {
+  if (!iso) return iso;
+  const [y, m, d] = iso.split("-");
+  return `${d}-${m}-${y}`;
+}
+
 export const MS = 1000 * 60 * 60 * 24;
 
 export function mean(a: number[]): number {

@@ -544,12 +544,29 @@ export function buildAccountValueBreakupWorkbook(result: {
 
 // ── Sub-Strategy Performance ─────────────────────────────────────────────────
 
+/** Per-client-strategy constants (not per-year, unlike the monthly grid) —
+ *  Sub-Strategy Performance's own trailing columns, absent from the other
+ *  two monthly grids (Strategy-wise/Client-wise), which don't take a
+ *  `summary` in writeClientYearRows. Values are fractions (0-1), same scale
+ *  as return_pct/100 — always rendered with writePctCell regardless of
+ *  which sheet (% or ₹ Returns) is being built, since none of these four
+ *  have a rupee form. */
+const SUB_STRATEGY_SUMMARY_HEADERS = [
+  "XIRR",
+  "Max DD",
+  "Current DD",
+  "Since Incep. Abs.",
+];
+
 const GRID_HEADERS = [
   "Client",
   "Year",
   ...MONTHS.map((m) => m.toUpperCase()),
   "Total",
+  ...SUB_STRATEGY_SUMMARY_HEADERS,
 ];
+
+const MONTH_HEADER_SET = new Set(MONTHS.map((m) => m.toUpperCase()));
 
 function writeGridHeaderRow(
   ws: ExcelJS.Worksheet,
@@ -562,11 +579,10 @@ function writeGridHeaderRow(
     const cell = r.getCell(col);
     cell.value = h;
     cell.font = { bold: true };
-    const isMonth = i >= 2 && i < GRID_HEADERS.length - 1;
-    if (isMonth) {
+    if (MONTH_HEADER_SET.has(h)) {
       cell.fill = fill(XL_COLORS.title);
       cell.font = { bold: true, color: { argb: XL_COLORS.white } };
-    } else if (i === GRID_HEADERS.length - 1) {
+    } else if (h === "Total") {
       cell.fill = fill(XL_COLORS.totalHeader);
     } else {
       cell.fill = fill(XL_COLORS.sectionHeader);
@@ -719,6 +735,12 @@ function writeSubStrategyGrid(
         totalOf,
         writeCell,
         widths,
+        [
+          { value: r.total_xirr, write: writePctCell },
+          { value: r.max_drawdown, write: writePctCell },
+          { value: r.current_drawdown, write: writePctCell },
+          { value: r.since_inception_absolute, write: writePctCell },
+        ],
       );
     }
     row += 2; // blank row between sections

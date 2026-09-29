@@ -1,4 +1,4 @@
-import { round, MS, mean, std } from "@/lib/utils";
+import { round, MS, mean, std, toDisplayDate } from "@/lib/utils";
 import type { NavPoint } from "@/app/lib/internal-utils";
 
 export interface MonthlyReturn {
@@ -392,8 +392,10 @@ export function buildTagMetrics(
   const quarterly = calcQuarterlyReturns(monthly);
   const yearly = calcYearlyReturns(monthly);
   return {
-    start_date: nav[0].date.toISOString().split("T")[0],
-    end_date: nav[nav.length - 1].date.toISOString().split("T")[0],
+    // Display-only (rendered as raw text on Client Dashboard) — DD-MM-YYYY.
+    // `series[].date` below stays ISO: it's re-parsed/sorted by the frontend.
+    start_date: toDisplayDate(nav[0].date.toISOString().split("T")[0]),
+    end_date: toDisplayDate(nav[nav.length - 1].date.toISOString().split("T")[0]),
     since_inception: calcSinceInception(nav),
     since_inception_pnl: calcSiPnl(nav),
     since_inception_absolute: calcSinceInceptionAbsolute(nav),

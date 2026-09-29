@@ -1,4 +1,4 @@
-import { round, MS, mean, std } from "@/lib/utils";
+import { round, MS, mean, std, toDisplayDate } from "@/lib/utils";
 import { MONTHS } from "@/app/lib/portfolio-review/returns";
 import type { MonthlyReturn } from "@/app/lib/portfolio-review/returns";
 import { solveXirr } from "@/app/lib/portfolio-review/xirr";
@@ -86,8 +86,10 @@ export function computeBenchmarkMetrics(
   );
 
   return {
-    start_date: ref.date,
-    end_date: last.date,
+    // Display-only (rendered as raw text on Client Dashboard) — DD-MM-YYYY.
+    // `series[].date` above stays ISO: re-parsed/sorted by the frontend.
+    start_date: toDisplayDate(ref.date),
+    end_date: toDisplayDate(last.date),
     since_inception: round(si, 4),
     xirr,
     max_drawdown: round(maxDD, 4),

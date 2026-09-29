@@ -94,13 +94,31 @@ export async function fetchTagData(
   asOf?: Date,
   // See fetchBulkNavSeries's `table` param — same reasoning, Prop-only.
   table: "bifurcated_master_sheet_test" | "master_sheet_test" = "bifurcated_master_sheet_test",
+  // Lower bound, inclusive — see fetchBulkNavSeries's identical `start`
+  // param. Previously this function had no lower bound at all: the Client
+  // Dashboard route accepted a start_date but only ever applied it to
+  // fetchBulkXirrInputs, silently leaving the NAV series (and everything
+  // buildTagMetrics derives from it — since_inception, drawdowns, monthly/
+  // yearly returns) on full history regardless of what was requested. This
+  // param closes that gap; each row still carries its own DB-computed
+  // prev_nav, so windowing here doesn't corrupt the first included month's
+  // return the way naively dropping rows would.
+  start?: Date,
 ): Promise<Record<string, NavPoint[]>> {
   let rows: any[];
 
   if (strategy === "combined") {
     if (allPrefixes.length === 0) {
-      const dateClause = asOf ? " AND date <= $2" : "";
-      const params: any[] = asOf ? [qcode, asOf] : [qcode];
+      const params: any[] = [qcode];
+      let dateClause = "";
+      if (start) {
+        params.push(start);
+        dateClause += ` AND date >= $${params.length}`;
+      }
+      if (asOf) {
+        params.push(asOf);
+        dateClause += ` AND date <= $${params.length}`;
+      }
       rows = await prisma.$queryRawUnsafe<any[]>(
         `SELECT system_tag, date, nav, prev_nav, drawdown, pnl, portfolio_value
          FROM ${table}
@@ -109,13 +127,19 @@ export async function fetchTagData(
         ...params,
       );
     } else {
+      const params: any[] = [qcode, ...allPrefixes.map((p) => `${p} %`)];
       const excludes = allPrefixes
         .map((_, i) => `system_tag NOT LIKE $${i + 2}`)
         .join(" AND ");
-      const dateIdx = allPrefixes.length + 2;
-      const dateClause = asOf ? ` AND date <= $${dateIdx}` : "";
-      const params: any[] = [qcode, ...allPrefixes.map((p) => `${p} %`)];
-      if (asOf) params.push(asOf);
+      let dateClause = "";
+      if (start) {
+        params.push(start);
+        dateClause += ` AND date >= $${params.length}`;
+      }
+      if (asOf) {
+        params.push(asOf);
+        dateClause += ` AND date <= $${params.length}`;
+      }
       rows = await prisma.$queryRawUnsafe<any[]>(
         `SELECT system_tag, date, nav, prev_nav, drawdown, pnl, portfolio_value
          FROM ${table}
@@ -125,10 +149,16 @@ export async function fetchTagData(
       );
     }
   } else {
-    const dateClause = asOf ? " AND date <= $3" : "";
-    const params: any[] = asOf
-      ? [qcode, `${strategy} %`, asOf]
-      : [qcode, `${strategy} %`];
+    const params: any[] = [qcode, `${strategy} %`];
+    let dateClause = "";
+    if (start) {
+      params.push(start);
+      dateClause += ` AND date >= $${params.length}`;
+    }
+    if (asOf) {
+      params.push(asOf);
+      dateClause += ` AND date <= $${params.length}`;
+    }
     rows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT system_tag, date, nav, prev_nav, drawdown, pnl, portfolio_value
        FROM ${table}

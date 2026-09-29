@@ -8,6 +8,7 @@ import {
   buildTagMetrics,
 } from "@/app/lib/internal-utils";
 import { solveXirr, fetchBulkXirrInputs } from "@/app/lib/portfolio-review/xirr";
+import { toDisplayDate } from "@/lib/utils";
 
 export async function POST(req: Request) {
   const { error } = await requireInternal();
@@ -47,10 +48,12 @@ export async function POST(req: Request) {
     }
   }
 
-  // Windowed XIRR only — does NOT filter the NAV series (since_inception,
-  // cagr, drawdowns, monthly returns stay full-history for now; only the
-  // xirr field below respects this window). See portfolio-review-formulas.md
-  // if that scope ever needs widening to the other metrics too.
+  // Windows the NAV series (since_inception, drawdowns, monthly/yearly
+  // returns) AND xirr below when given — same start/end convention as
+  // Sub-Strategy Performance's fetchBulkNavSeries. Existing field names are
+  // unchanged: since_inception_absolute etc. just reflect the window's own
+  // range instead of full account history, same as sub-strategy-performance
+  // already does when its own start/end are set.
   let windowStart: Date | null = null;
   if (body.start_date) {
     windowStart = new Date(body.start_date);
@@ -146,17 +149,14 @@ export async function POST(req: Request) {
     exposureTag = `${effectiveStrategy} ${match.exposure_tag_suffix}`;
   }
 
-  // Parallel: targeted DB query + Nifty fetch, both cut off at asOf when given
-  const [tagData, benchmark] = await Promise.all([
-    fetchTagData(
-      qcode,
-      effectiveStrategy,
-      isSoloProp ? [] : allPrefixes,
-      asOf ?? undefined,
-      table,
-    ),
-    fetchBenchmark(benchmarkStart, asOf ?? new Date()),
-  ]);
+  const tagData = await fetchTagData(
+    qcode,
+    effectiveStrategy,
+    isSoloProp ? [] : allPrefixes,
+    asOf ?? undefined,
+    table,
+    windowStart ?? undefined,
+  );
 
   if (Object.keys(tagData).length === 0) {
     return NextResponse.json(
@@ -173,6 +173,23 @@ export async function POST(req: Request) {
       if (!dataAsOf || d > dataAsOf) dataAsOf = d;
     }
   }
+
+  // Benchmark end date is capped to this account's own last reported day
+  // (dataAsOf), not "today" — a withdrawn/closed or stale account whose
+  // mastersheet data stopped weeks ago must not be compared against Nifty
+  // running all the way to today, which silently hands the benchmark extra
+  // performance (positive or negative) the account was never around to
+  // earn or avoid. asOf (an explicit caller-given cutoff) still wins over
+  // both when given. `benchmark` respects windowStart the same way the tag
+  // metrics below do — same field, full account history when no start_date
+  // is given, windowed since_inception/xirr/drawdown when it is (matches
+  // buildTagMetrics' own since_inception_absolute: no separate "windowed"
+  // key).
+  const benchmarkEnd = asOf ?? (dataAsOf ? new Date(dataAsOf) : new Date());
+  const benchmark = await fetchBenchmark(
+    windowStart ?? benchmarkStart,
+    benchmarkEnd,
+  );
 
   // Whole-account XIRR, computed once for the request and shown on every
   // tag's metrics — same "repeat per row" pattern as sub-strategy
@@ -215,14 +232,18 @@ export async function POST(req: Request) {
     ? await fetchPnlSnapshot(qcode, profitTag, resolvedPnlOn, table)
     : null;
 
+  // dataAsOf/resolvedPnlOn stay ISO everywhere above (benchmarkEnd's
+  // `new Date(dataAsOf)`, fetchPnlSnapshot's `date = $2::date`) — only
+  // reformatted here, at the point they're handed to the frontend as
+  // raw display text.
   return NextResponse.json({
     account_name: configs[0].account_name,
-    data_as_of: dataAsOf,
+    data_as_of: toDisplayDate(dataAsOf),
     risk_free_rate: rfr,
     benchmark,
     profit_tag: profitTag,
     tags,
-    pnl_on: resolvedPnlOn,
+    pnl_on: resolvedPnlOn ? toDisplayDate(resolvedPnlOn) : null,
     pnl_snapshot: pnlSnapshot,
   });
 }
