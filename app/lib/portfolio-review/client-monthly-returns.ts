@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { round } from "@/lib/utils";
 import { fetchBulkNavSeries } from "@/app/lib/portfolio-review/nav-series";
 import { fetchBulkXirrInputs, solveXirr } from "@/app/lib/portfolio-review/xirr";
 import {
@@ -26,6 +27,55 @@ const MANAGED_TABLE = "bifurcated_master_sheet_test" as const;
 // Low Vol, which are gated on SplitConfig.gold_pct etc) — attempted for every
 // strategy and simply dropped if it has no NAV data, same as any other node.
 const LIQUIDCASE_TAG = "Liquidcase Stock Holdings";
+
+// Momentum's own two sub-legs (momentum50 / momidmtm) have no NAV tag of
+// their own anywhere in master_sheet — only a live capital-weight ratio in
+// strategy_config_defaults (config_key momentum50/momidmtm, ratio_type
+// "model", synced daily, QAW+/QAW++ only). So unlike every other breakdown
+// leg here, these two can't be fetched — they're derived by splitting the
+// already-resolved "Momentum Stock Holdings" node's own pnl by that ratio
+// (% figures stay identical to the parent: scaling pnl by a constant weight
+// doesn't change % return, XIRR, drawdown, or CAGR — only the rupee amounts
+// change). Ratio history is short (~27 days) vs the NAV series (months/
+// years), so the latest known ratio is applied uniformly across all history
+// rather than trying to align a ratio to every individual date.
+const MOMENTUM_TAG = "Momentum Stock Holdings";
+const MOMENTUM_SPLIT_STRATEGIES = ["QAW+", "QAW++"] as const;
+const MOMENTUM_SPLIT_LEGS = [
+  { config_key: "momentum50", label: "Momentum50" },
+  { config_key: "momidmtm", label: "MomIdMtm" },
+] as const;
+
+type MomentumRatios = { momentum50: number; momidmtm: number };
+
+async function fetchMomentumSplitRatios(): Promise<Map<string, MomentumRatios>> {
+  const rows = await prisma.strategy_config_defaults.findMany({
+    where: {
+      strategy_name: { in: [...MOMENTUM_SPLIT_STRATEGIES] },
+      config_key: { in: MOMENTUM_SPLIT_LEGS.map((l) => l.config_key) },
+      ratio_type: "model",
+    },
+    orderBy: { as_of_date: "desc" },
+  });
+
+  // Latest as_of_date wins per (strategy, leg) — rows are already sorted
+  // desc, so the first one seen per key is the latest.
+  const latest = new Map<string, number>();
+  for (const r of rows) {
+    const key = `${r.strategy_name}|${r.config_key}`;
+    if (!latest.has(key) && r.value != null) latest.set(key, Number(r.value));
+  }
+
+  const result = new Map<string, MomentumRatios>();
+  for (const strategy of MOMENTUM_SPLIT_STRATEGIES) {
+    const momentum50 = latest.get(`${strategy}|momentum50`);
+    const momidmtm = latest.get(`${strategy}|momidmtm`);
+    if (momentum50 != null && momidmtm != null) {
+      result.set(strategy, { momentum50, momidmtm });
+    }
+  }
+  return result;
+}
 
 type SplitConfigMap = Map<string, SplitConfig>;
 type GenericSectionsMap = Awaited<ReturnType<typeof resolveSplitConfigs>>["genericSections"];
@@ -84,6 +134,10 @@ interface ReturnsNode {
   // if the strategy-prefixed tag has no data — only set for a qcode with
   // exactly one configured strategy (see resolveNode's header for why).
   fallbackProfitTag?: string;
+  // Set only on the "Momentum Stock Holdings" node for QAW+/QAW++ — tells
+  // resolveNode to derive momentum50/momidmtm as synthetic children once
+  // this node's own metrics are resolved (see MOMENTUM_SPLIT_LEGS above).
+  momentumSplit?: MomentumRatios;
   children: ReturnsNode[];
 }
 
@@ -157,6 +211,7 @@ function buildSystemTagChildren(
   strategyCount: number,
   split: SplitConfig | undefined,
   generic: Map<string, { value: number; label: string; tagSuffix: string }> | undefined,
+  momentumRatios: Map<string, MomentumRatios>,
 ): ReturnsNode[] {
   const children: ReturnsNode[] = [];
 
@@ -172,6 +227,7 @@ function buildSystemTagChildren(
         label,
         profitTag: `${strategy} ${sec.tag}`,
         exposureTag: `${strategy} ${sec.tag}`,
+        momentumSplit: sec.tag === MOMENTUM_TAG ? momentumRatios.get(strategy) : undefined,
         children: [],
       });
     }
@@ -218,6 +274,7 @@ function buildRootNode(
   splits: SplitConfigMap | null,
   genericSections: GenericSectionsMap | null,
   propLeaves: PropCatalogLeaf[] | null,
+  momentumRatios: Map<string, MomentumRatios>,
 ): ReturnsNode {
   const { profitTag, exposureTag } = combinedTags(group);
   const strategyCount = group.configs.length;
@@ -228,7 +285,11 @@ function buildRootNode(
       profitTag,
       exposureTag,
       children: (propLeaves ?? []).map((leaf) => ({
-        label: leaf.label,
+        // This page shows the bare tag ("LONG") rather than the catalog's
+        // own "Long Options" label — scoped here only, same treatment as
+        // the managed-side LONG rename above; doesn't touch the shared
+        // catalog data or the Sub-Strategy Performance page.
+        label: leaf.label === "Long Options" ? "LONG" : leaf.label,
         profitTag: leaf.tag_suffix,
         exposureTag: leaf.tag_suffix,
         children: [],
@@ -250,6 +311,7 @@ function buildRootNode(
         strategyCount,
         splits?.get(`${group.qcode}|${c.strategy}`),
         genericSections?.get(`${group.qcode}|${c.strategy}`),
+        momentumRatios,
       ),
     })),
   };
@@ -285,10 +347,56 @@ interface ResolvedReturns {
   strategy_breakdown: ClientStrategyBreakdownRow[];
 }
 
+// Derives a momentum50/momidmtm leg by scaling a resolved node's own pnl by
+// its live capital-weight ratio — see MOMENTUM_SPLIT_LEGS above for why this
+// is a scale, not a fetch. % figures (return, XIRR, drawdown, CAGR) are
+// scale-invariant so they're carried over unchanged; only rupee amounts
+// (pnl_inr) are multiplied by the ratio.
+//
+// IMPORTANT: this means momentum50 and momidmtm always show byte-identical
+// % figures — that's expected, not a bug. There is no separate historical
+// NAV/price series for either leg anywhere in the data; only the blended
+// parent "Momentum Stock Holdings" NAV exists, plus a *current* weight
+// ratio. So "each leg's own % return" isn't something we can compute —
+// only "each leg's proportional share of the combined rupee P&L" is.
+// Confirmed with the team (2026-09-29): keep this as-is rather than fabricate
+// a per-leg % that isn't backed by real data.
+function scaleMomentumLeg(
+  own: Omit<ResolvedReturns, "strategy_breakdown">,
+  ratio: number,
+  label: string,
+): ClientStrategyBreakdownRow {
+  const scaleTrailing = (t: TrailingReturns): TrailingReturns => {
+    const out = {} as TrailingReturns;
+    (Object.keys(t) as (keyof TrailingReturns)[]).forEach((k) => {
+      out[k] = {
+        pct: t[k].pct,
+        pnl_inr: t[k].pnl_inr != null ? round(t[k].pnl_inr! * ratio, 2) : null,
+      };
+    });
+    return out;
+  };
+
+  return {
+    strategy: label,
+    monthly: own.monthly.map((m) => ({ ...m, pnl_inr: round(m.pnl_inr * ratio, 2) ?? 0 })),
+    yearly: own.yearly.map((y) => ({ ...y, pnl_inr: round(y.pnl_inr * ratio, 2) ?? 0 })),
+    xirr: own.xirr,
+    max_drawdown: own.max_drawdown,
+    current_drawdown: own.current_drawdown,
+    since_inception_absolute: own.since_inception_absolute,
+    since_inception_pnl: own.since_inception_pnl != null ? round(own.since_inception_pnl * ratio, 2) : null,
+    trailing_returns: scaleTrailing(own.trailing_returns),
+    strategy_breakdown: [],
+  };
+}
+
 // Recursively resolves a node's own metrics, then its children's — a node
 // without NAV data (and thus no own metrics) is dropped from the breakdown
 // entirely, same as its children. Falls back to the bare tag (if any) only
-// when the strategy-prefixed tag has no data.
+// when the strategy-prefixed tag has no data. `momentumSplit`, when set,
+// additionally synthesizes momentum50/momidmtm as two more breakdown
+// entries derived from this node's own just-resolved metrics.
 function resolveNode(
   qcode: string,
   node: ReturnsNode,
@@ -304,14 +412,7 @@ function resolveNode(
   const xirrInputs = xirrMap.get(`${qcode}|${node.exposureTag}`);
   const monthly = calcMonthlyReturns(nav);
 
-  const strategy_breakdown: ClientStrategyBreakdownRow[] = [];
-  for (const child of node.children) {
-    const resolved = resolveNode(qcode, child, navMap, xirrMap);
-    if (!resolved) continue;
-    strategy_breakdown.push({ strategy: child.label, ...resolved });
-  }
-
-  return {
+  const own: Omit<ResolvedReturns, "strategy_breakdown"> = {
     monthly,
     yearly: calcYearlyReturns(monthly),
     xirr: xirrInputs
@@ -322,8 +423,23 @@ function resolveNode(
     since_inception_absolute: calcSinceInceptionAbsolute(nav),
     since_inception_pnl: calcSiPnl(nav),
     trailing_returns: calcTrailingReturns(nav),
-    strategy_breakdown,
   };
+
+  const strategy_breakdown: ClientStrategyBreakdownRow[] = [];
+  for (const child of node.children) {
+    const resolved = resolveNode(qcode, child, navMap, xirrMap);
+    if (!resolved) continue;
+    strategy_breakdown.push({ strategy: child.label, ...resolved });
+  }
+
+  if (node.momentumSplit) {
+    for (const leg of MOMENTUM_SPLIT_LEGS) {
+      const ratio = node.momentumSplit[leg.config_key as keyof MomentumRatios];
+      strategy_breakdown.push(scaleMomentumLeg(own, ratio, leg.label));
+    }
+  }
+
+  return { ...own, strategy_breakdown };
 }
 
 export async function computeClientMonthlyReturns(
@@ -336,11 +452,16 @@ export async function computeClientMonthlyReturns(
   let splits: SplitConfigMap | null = null;
   let genericSections: GenericSectionsMap | null = null;
   let propLeaves: PropCatalogLeaf[] | null = null;
+  let momentumRatios: Map<string, MomentumRatios> = new Map();
   if (accountType === "managed") {
     const qcodes = new Set(groups.map((g) => g.qcode));
-    const pairs = (await fetchStrategyPairs("profit_tag_suffix")).filter(
-      (p) => qcodes.has(p.qcode) && p.strategy !== "Prop",
-    );
+    const [pairs, fetchedMomentumRatios] = await Promise.all([
+      fetchStrategyPairs("profit_tag_suffix").then((all) =>
+        all.filter((p) => qcodes.has(p.qcode) && p.strategy !== "Prop"),
+      ),
+      fetchMomentumSplitRatios(),
+    ]);
+    momentumRatios = fetchedMomentumRatios;
     const resolved = await resolveSplitConfigs(pairs, new Date());
     splits = resolved.splits;
     genericSections = resolved.genericSections;
@@ -348,7 +469,10 @@ export async function computeClientMonthlyReturns(
     propLeaves = await fetchPropCatalog();
   }
   const roots = new Map(
-    groups.map((g) => [g.qcode, buildRootNode(g, splits, genericSections, propLeaves)]),
+    groups.map((g) => [
+      g.qcode,
+      buildRootNode(g, splits, genericSections, propLeaves, momentumRatios),
+    ]),
   );
 
   const profitPairs = groups.flatMap((g) => flattenNode(g.qcode, roots.get(g.qcode)!));
