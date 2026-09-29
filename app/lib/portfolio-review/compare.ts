@@ -290,6 +290,35 @@ function rebaseNavToWindow(
   });
 }
 
+/**
+ * Prepends a T-1 anchor point at nav=100 when the series' own first point
+ * isn't already 100 — same convention as portfolio-utils.ts's "prepend NAV
+ * of 100 if the first NAV is not 100". Needed here because a "Total
+ * Portfolio"/rollup tag's own first tracked row can already sit well above
+ * or below 100 (it's a continuously-compounding index blending in gains
+ * from allocations that started earlier), so the raw series would plot a
+ * line that doesn't start at 100 — confusing on a comparison chart where
+ * every line is meant to represent "growth of the same starting amount".
+ * The real first row is left untouched right after the anchor, so the jump
+ * from 100 to that value is visible rather than smoothed away.
+ */
+function withNav100Anchor(
+  metrics: Omit<TagMetrics, "ratios">,
+): Omit<TagMetrics, "ratios"> {
+  const series = metrics.series;
+  if (series.length === 0 || series[0].nav === 100) return metrics;
+  const firstDate = new Date(series[0].date);
+  const anchorDate = new Date(firstDate);
+  anchorDate.setUTCDate(firstDate.getUTCDate() - 1);
+  return {
+    ...metrics,
+    series: [
+      { date: anchorDate.toISOString().split("T")[0], nav: 100, drawdown: 0 },
+      ...series,
+    ],
+  };
+}
+
 export async function computeCompare(
   selections: CompareSelection[],
   rebaseFrom?: Date,
@@ -460,14 +489,14 @@ export async function computeCompare(
       return {
         qcode: s.qcode,
         system_tag: s.system_tag,
-        metrics,
+        metrics: withNav100Anchor(metrics),
         benchmark_overview: benchmarkOverview(key, nav),
       };
     }
     return {
       qcode: s.qcode,
       system_tag: s.system_tag,
-      metrics: b.metrics,
+      metrics: withNav100Anchor(b.metrics),
       benchmark_overview: benchmarkOverview(key, b.nav),
     };
   });
