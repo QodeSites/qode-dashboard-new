@@ -28,6 +28,12 @@ const MANAGED_TABLE = "bifurcated_master_sheet_test" as const;
 // strategy and simply dropped if it has no NAV data, same as any other node.
 const LIQUIDCASE_TAG = "Liquidcase Stock Holdings";
 
+// Same treatment as Liquidcase above — as of 2026-09-30 real NAV data only
+// exists for one qcode/strategy (QAC00133 / QYE+) in bifurcated_master_sheet_test,
+// but attempting it for every strategy means it appears automatically as
+// more clients get this tag populated, with no code change needed.
+const LIQUIDADD_TAG = "Liquidadd Stock Holdings";
+
 // Momentum's own two sub-legs (momentum50 / momidmtm) have no NAV tag of
 // their own anywhere in master_sheet — only a live capital-weight ratio in
 // strategy_config_defaults (config_key momentum50/momidmtm, ratio_type
@@ -254,6 +260,15 @@ function buildSystemTagChildren(
     label: "Liquidcase",
     profitTag: `${strategy} ${LIQUIDCASE_TAG}`,
     exposureTag: `${strategy} ${LIQUIDCASE_TAG}`,
+    children: [],
+  });
+
+  children.push({
+    // Display label only — underlying tag stays "Liquidadd Stock Holdings"
+    // (LIQUIDADD_TAG), matching the DB's master_sheet system_tag.
+    label: "LiquidAdd",
+    profitTag: `${strategy} ${LIQUIDADD_TAG}`,
+    exposureTag: `${strategy} ${LIQUIDADD_TAG}`,
     children: [],
   });
 
