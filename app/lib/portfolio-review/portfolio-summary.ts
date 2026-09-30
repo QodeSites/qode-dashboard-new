@@ -185,7 +185,16 @@ export async function computePortfolioSummary(): Promise<PortfolioSummaryResult>
       account_name: pair.account_name,
       strategy: pair.strategy,
       since: series[0].date,
-      aum: series[series.length - 1].value,
+      // A closed pair's AUM is forced to 0 rather than echoed from its last
+      // reported row — a config-driven closure (data feed stopped) usually
+      // leaves a real, stale non-zero balance behind (unlike a genuine
+      // withdrawal, which already drives the series to ~0 on its own), and
+      // showing that stale figure as "current AUM" would misrepresent money
+      // no longer under active management/reporting. Uses `effective_to <
+      // today` (not just "is set") so a future-dated planned closure —
+      // none exist today, but nothing rules one out later — doesn't zero
+      // an account that's still actively reporting.
+      aum: pair.effective_to && pair.effective_to < today ? 0 : series[series.length - 1].value,
       until: pair.effective_to,
     });
 
