@@ -58,8 +58,8 @@ export interface TagDetail {
   end_date: string;
   since_inception: number;
   since_inception_pnl: number;
-  cagr: number; // new — always annualized regardless of holding period
-  xirr: number | null; // new — money-weighted; null only for the "combined" multi-strategy view
+  cagr: number; 
+  xirr: number | null; 
   max_drawdown: number;
   current_drawdown: number;
   ratios: RatioSet;
@@ -96,6 +96,7 @@ export interface ClientDashboardResponse {
 }
 
 export interface PortfolioSummaryInvestor {
+  icode:string;
   qcode: string;
   account_name: string;
   strategy: string;
@@ -219,15 +220,6 @@ export interface TrailingReturns {
 
 
 
-export interface ReturnsMetrics {
-  monthly: { year: number; month: string; return_pct: number; pnl_inr: number }[];
-  yearly: { year: number; return_pct: number; pnl_inr: number }[];
-  xirr: number | null; 
-  max_drawdown: number | null; 
-  current_drawdown: number | null; 
-  since_inception_absolute: number | null; 
-  trailing_returns: TrailingReturns | null; 
-}
 
 // ─── Sub-Strategy Performance ─────────────────────────────────────────────────
 
@@ -246,6 +238,7 @@ export interface SubStrategyEntry {
   max_drawdown: number;
   current_drawdown: number;
   since_inception_absolute: number;
+  since_inception_pnl: number; 
 }
 
 
@@ -257,11 +250,11 @@ export interface StrategyMonthlyEntry {
   strategy: string;
   monthly: { year: number; month: string; return_pct: number; pnl_inr: number }[];
   yearly: { year: number; return_pct: number; pnl_inr: number }[];
-  since_inception?: number | null;
-  since_inception_pnl?: number | null;
-  xirr?: number | null;
-  max_drawdown?: number | null;
-  current_drawdown?: number | null;
+  since_inception: number;      
+  since_inception_pnl: number ;  
+  xirr: number | null;          
+  max_drawdown: number;        
+  current_drawdown: number;    
 }
 
 // ─── Shared fetch infrastructure ─────────────────────────────────────────────
@@ -382,22 +375,24 @@ export { ApiError };
 
 
 
-export interface ClientReturnsBreakdownNode extends ReturnsMetrics {
-  strategy: string;
-  strategy_breakdown: ClientReturnsBreakdownNode[]; 
-}
 
-export interface ClientReturnsRow extends ReturnsMetrics {
+export interface ClientMonthlyReturnRow {
   qcode: string;
   account_name: string;
-  is_multi_strategy: boolean;
-  strategy_breakdown: ClientReturnsBreakdownNode[];
+  strategy: string;
+  monthly: { year: number; month: string; return_pct: number; pnl_inr: number }[];
+  yearly: { year: number; return_pct: number; pnl_inr: number }[];
+  since_inception_absolute: number;      
+  since_inception_pnl: number; 
+  xirr: number | null;         
+  max_drawdown: number;        
+  current_drawdown: number;    
 }
 
 export async function fetchClientMonthlyReturns(
   accountType: "managed" | "prop" = "managed"
-): Promise<ClientReturnsRow[]> {
-  return apiFetch<ClientReturnsRow[]>("/api/internal/portfolio-review/client-monthly-returns", {
+): Promise<ClientMonthlyReturnRow[]> {
+  return apiFetch<ClientMonthlyReturnRow[]>("/api/internal/portfolio-review/client-monthly-returns", {
     method: "POST",
     body: JSON.stringify({ account_type: accountType }),
   });

@@ -98,8 +98,7 @@ export function MaReviewDashboard() {
             <p className="text-[0.7rem] font-semibold uppercase tracking-widest text-button-text mb-1">
               Qode Advisors
             </p>
-            <h1 className="font-serif text-3xl text-logo-green mb-1.5">MA Review Dashboard</h1>
-            <p className="text-sm text-card-text-secondary">Portfolio Analysis &amp; Reporting</p>
+            <h1 className="font-serif text-3xl text-logo-green mb-1.5">Portfolio Dashboard</h1>
           </div>
 
           {/* Managed/Prop toggle — above the page nav, per spec */}

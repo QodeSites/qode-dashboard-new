@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, AlertCircle, X, ChevronDown, AlertTriangle } from "lucide-react";
 import { fetchSubStrategyPerformance, type SubStrategyEntry } from "./api";
+import { fmtFull } from "./format";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const MONTH_SHORT = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
@@ -132,6 +133,7 @@ interface ClientYearRow {
   months: (number | null)[];
   total: number | null;
   sinceInceptionAbsolute: number | null | undefined;
+  sinceInceptionPnl: number | null | undefined;
   maxDrawdown: number | null | undefined;
   currentDrawdown: number | null | undefined;
   totalXirr: number | null | undefined;
@@ -190,6 +192,7 @@ function SectionTable({
           clientKey: key, accountName, strategy, year, months,
           total: tot ? (showInr ? tot.inr : tot.pct) : null,
           sinceInceptionAbsolute: first.since_inception_absolute,
+          sinceInceptionPnl: first.since_inception_pnl,
           maxDrawdown: first.max_drawdown,
           currentDrawdown: first.current_drawdown,
           totalXirr: first.total_xirr,
@@ -215,7 +218,7 @@ function SectionTable({
               <th className="px-4 py-2.5 text-left font-medium w-16">Year</th>
               {MONTH_SHORT.map((m) => <th key={m} className="px-3 py-2.5 text-right font-medium">{m}</th>)}
               <th className="px-4 py-2.5 text-right font-medium">Total</th>
-              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Since Inception</th>
+              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap border-l-2 border-logo-green/25">Since Inception</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Max DD</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Current DD</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">XIRR</th>
@@ -245,8 +248,11 @@ function SectionTable({
                     <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap ${row.total !== null ? valColor(row.total) : "text-card-text-secondary/40"}`}>
                       {row.total === null ? "—" : showInr ? fmtInr(row.total) : fmtPct(row.total)}
                     </td>
-                    <td className={`px-4 py-2 text-right whitespace-nowrap ${isFirstForClient ? valColor(row.sinceInceptionAbsolute) : "text-card-text-secondary/20"}`}>
-                      {isFirstForClient ? fmtFracPct(row.sinceInceptionAbsolute) : ""}
+                    <td
+                      title={isFirstForClient && showInr ? fmtFull(row.sinceInceptionPnl) : undefined}
+                      className={`px-4 py-2 text-right whitespace-nowrap border-l-2 border-logo-green/25 ${isFirstForClient ? valColor(showInr ? row.sinceInceptionPnl : row.sinceInceptionAbsolute) : "text-card-text-secondary/20"}`}
+                    >
+                      {isFirstForClient ? (showInr ? fmtInr(row.sinceInceptionPnl) : fmtFracPct(row.sinceInceptionAbsolute)) : ""}
                     </td>
                     <td className={`px-4 py-2 text-right whitespace-nowrap ${isFirstForClient ? "text-red-600" : "text-card-text-secondary/20"}`}>
                       {isFirstForClient ? fmtFracPct(row.maxDrawdown) : ""}

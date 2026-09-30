@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Loader2, Plus, X, ChevronDown, AlertTriangle } from "lucide-react";
 import {
-  LineChart, Line, AreaChart, Area,
+  LineChart, Line, AreaChart, Area, ReferenceArea,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import {
@@ -33,7 +33,7 @@ interface CompareMetrics {
 interface CompareResult {
   qcode: string;
   system_tag: string;
-  metrics: CompareMetrics | null; // null when skip_reason is set (e.g. no data in the rebase window)
+  metrics: CompareMetrics | null; 
   benchmark_overview: {
     since_inception: number;
     max_drawdown: number;
@@ -90,6 +90,113 @@ function deriveDrawdown(series: { date: string; nav: number }[]) {
     peak = Math.max(peak, p.nav);
     return { date: p.date, dd: ((p.nav - peak) / peak) * 100 };
   });
+}
+
+// ─── Chart zoom (drag across a section of a chart to zoom into it) ───────────
+
+// Works across Recharts versions: prefer activeLabel, fall back to the hovered index
+function labelFromEvent(e: any, rows: { date: string }[]): string | null {
+  if (e?.activeLabel !== undefined && e?.activeLabel !== null) return String(e.activeLabel);
+  const idx = Number(e?.activeTooltipIndex ?? e?.activeIndex);
+  return Number.isFinite(idx) && rows[idx] ? rows[idx].date : null;
+}
+
+
+function drawdownDomain(rows: Record<string, any>[], keys: string[]): [number, number] {
+  let min = 0;
+  rows.forEach((r) =>
+    keys.forEach((k) => {
+      const v = r[k];
+      if (typeof v === "number" && v < min) min = v;
+    })
+  );
+  return [Math.min(min * 1.1, -0.5), 0];
+}
+
+
+const fmtDdTick = (v: number) => `${Number(v.toFixed(2))}%`;
+
+function useChartZoom<T extends { date: string }>(data: T[]) {
+  const [range, setRange] = useState<[number, number] | null>(null);
+  const [drag, setDrag] = useState<{ left: string; right: string | null } | null>(null);
+
+
+  const dataKey = `${data.length}|${data[0]?.date ?? ""}|${data[data.length - 1]?.date ?? ""}`;
+  useEffect(() => {
+    setRange(null);
+    setDrag(null);
+  }, [dataKey]);
+
+  const visible = useMemo(
+    () => (range ? data.slice(range[0], range[1] + 1) : data),
+    [data, range]
+  );
+
+  const chartProps = {
+    onMouseDown: (e: any) => {
+      const l = labelFromEvent(e, visible);
+      if (l) setDrag({ left: l, right: null });
+    },
+    onMouseMove: (e: any) => {
+      if (!drag) return;
+      const l = labelFromEvent(e, visible);
+      if (l) setDrag({ left: drag.left, right: l });
+    },
+    onMouseUp: () => {
+      if (!drag || !drag.right || drag.left === drag.right) {
+        setDrag(null);
+        return;
+      }
+      const i1 = visible.findIndex((p) => p.date === drag.left);
+      const i2 = visible.findIndex((p) => p.date === drag.right);
+      if (i1 < 0 || i2 < 0) {
+        setDrag(null);
+        return;
+      }
+      const [a, b] = i1 < i2 ? [i1, i2] : [i2, i1];
+      const base = range ? range[0] : 0;
+      setRange([base + a, base + b]);
+      setDrag(null);
+    },
+    onMouseLeave: () => setDrag(null),
+  };
+
+  return {
+    data: visible,
+    chartProps,
+    selection: drag && drag.right ? { x1: drag.left, x2: drag.right } : null,
+    isZoomed: range !== null,
+    reset: () => setRange(null),
+  };
+}
+
+
+function ZoomFrame({
+  zoom, children,
+}: {
+  zoom: { isZoomed: boolean; reset: () => void };
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="relative select-none" onDoubleClick={zoom.reset}>
+      <div className="absolute right-2 top-0 z-10">
+        {zoom.isZoomed ? (
+          <button
+            type="button"
+            onClick={zoom.reset}
+            className="rounded-md border border-logo-green/20 bg-white/90 px-2 py-0.5 text-[10px] font-medium text-logo-green hover:bg-primary-bg/60 transition-colors"
+          >
+            Reset zoom
+          </button>
+        ) : (
+          <span className="rounded-md bg-white/70 px-1.5 py-0.5 text-[10px] text-card-text-secondary/60">
+            Drag to zoom
+          </span>
+        )}
+      </div>
+      {children}
+    </div>
+  );
 }
 
 // ─── Multi-select tag dropdown ────────────────────────────────────────────────
@@ -307,9 +414,6 @@ export function ComparisonTab() {
     }
   }
 
-  // Build chart data — one key per result tag. Skipped (null-metrics) results
-  // contribute no series data, but still get a line entry (see allLines) so
-  // their absence is visible rather than silently missing.
   const chartData = useMemo(() => {
     if (!compareData) return [];
     const dateMap = new Map<string, Record<string, number | null>>();
@@ -354,6 +458,9 @@ export function ComparisonTab() {
       .map(([date, vals]) => ({ date, ...vals }));
   }, [compareData, compareNifty, showBacktest]);
 
+  const navZoom = useChartZoom(chartData);
+  const ddZoom = useChartZoom(chartData);
+
   function lightenHex(hex: string, amount: number) {
     const num = parseInt(hex.replace("#", ""), 16);
     const r = (num >> 16) & 0xff;
@@ -363,9 +470,6 @@ export function ComparisonTab() {
     return `#${[mix(r), mix(g), mix(b)].map((c) => c.toString(16).padStart(2, "0")).join("")}`;
   }
 
-  // All lines for charts — skipped results still get a color-matched entry
-  // in the legend so it's visible that a selection was requested but has
-  // no plottable data, rather than just silently disappearing.
   const allLines = useMemo(() => {
     if (!compareData) return [];
     const lines = compareData.results.map((r, i) => {
@@ -398,8 +502,11 @@ export function ComparisonTab() {
     return lines;
   }, [compareData, compareNifty, showBacktest, clients]);
 
-  // One row-group per tag — skipped results get an empty `years` array so
-  // the Returns table simply shows nothing for them instead of crashing.
+  const ddDomain = useMemo(
+    () => drawdownDomain(ddZoom.data, allLines.map((l) => `dd__${l.key}`)),
+    [ddZoom.data, allLines]
+  );
+
   const monthlyGroups = useMemo(() => {
     if (!compareData) return [];
     return compareData.results.map((r) => {
@@ -611,65 +718,55 @@ export function ComparisonTab() {
           {/* NAV Time Series */}
           <div className="bg-white rounded-lg border border-logo-green/10 p-4 mb-5">
             <div className="text-sm font-semibold text-card-text mb-3">NAV Time Series</div>
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={chartData}>
-                <CartesianGrid stroke="#E8E4D4" vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 9, fill: "#555" }} minTickGap={50} tickFormatter={fmtDate} />
-                <YAxis tick={{ fontSize: 9, fill: "#555" }} width={35} domain={["auto", "auto"]} />
-                <Tooltip labelFormatter={fmtDate}
-                  formatter={(v: number, name: string) => [v?.toFixed(2), allLines.find(l => `nav__${l.key}` === name)?.label || name]} />
-                <Legend formatter={(name) => allLines.find(l => `nav__${l.key}` === name)?.label || name} wrapperStyle={{ fontSize: 11 }} />
-                {allLines.map((l) => (
-                  <Line key={l.key} type="monotone" dataKey={`nav__${l.key}`}
-                    stroke={l.color} strokeWidth={l.isNifty || l.isBacktest ? 1.5 : 2}
-                    strokeDasharray={l.isNifty ? "4 2" : l.isBacktest ? "2 3" : undefined}
-                    dot={false} connectNulls />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Cumulative Return */}
-          <div className="bg-white rounded-lg border border-logo-green/10 p-4 mb-5">
-            <div className="text-sm font-semibold text-card-text mb-3">Cumulative Return (%)</div>
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={chartData}>
-                <CartesianGrid stroke="#E8E4D4" vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 9, fill: "#555" }} minTickGap={50} tickFormatter={fmtDate} />
-                <YAxis tick={{ fontSize: 9, fill: "#555" }} width={40} tickFormatter={(v) => `${v.toFixed(1)}%`} />
-                <Tooltip labelFormatter={fmtDate}
-                  formatter={(v: number, name: string) => [`${v?.toFixed(2)}%`, allLines.find(l => `cum__${l.key}` === name)?.label || name]} />
-                <Legend formatter={(name) => allLines.find(l => `cum__${l.key}` === name)?.label || name} wrapperStyle={{ fontSize: 11 }} />
-                {allLines.map((l) => (
-                  <Line key={l.key} type="monotone" dataKey={`cum__${l.key}`}
-                    stroke={l.color} strokeWidth={l.isNifty ? 1.5 : 2}
-                    strokeDasharray={l.isNifty ? "4 2" : undefined} dot={false} connectNulls />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
+            <ZoomFrame zoom={navZoom}>
+              <ResponsiveContainer width="100%" height={280}>
+                <LineChart data={navZoom.data} {...navZoom.chartProps}>
+                  <CartesianGrid stroke="#E8E4D4" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 9, fill: "#555" }} minTickGap={50} tickFormatter={fmtDate} />
+                  <YAxis tick={{ fontSize: 9, fill: "#555" }} width={35} domain={["auto", "auto"]} />
+                  <Tooltip labelFormatter={fmtDate}
+                    formatter={(v: number, name: string) => [v?.toFixed(2), allLines.find(l => `nav__${l.key}` === name)?.label || name]} />
+                  <Legend formatter={(name) => allLines.find(l => `nav__${l.key}` === name)?.label || name} wrapperStyle={{ fontSize: 11 }} />
+                  {navZoom.selection && (
+                    <ReferenceArea x1={navZoom.selection.x1} x2={navZoom.selection.x2} fill="#02422B" fillOpacity={0.12} />
+                  )}
+                  {allLines.map((l) => (
+                    <Line key={l.key} type="monotone" dataKey={`nav__${l.key}`}
+                      stroke={l.color} strokeWidth={l.isNifty || l.isBacktest ? 1.5 : 2}
+                      strokeDasharray={l.isNifty ? "4 2" : l.isBacktest ? "2 3" : undefined}
+                      dot={false} connectNulls isAnimationActive={false} />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </ZoomFrame>
           </div>
 
           {/* Drawdown */}
           <div className="bg-white rounded-lg border border-logo-green/10 p-4 mb-5">
             <div className="text-sm font-semibold text-card-text mb-3">Drawdown (%)</div>
-            <ResponsiveContainer width="100%" height={260}>
-              <AreaChart data={chartData}>
-                <CartesianGrid stroke="#E8E4D4" vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 9, fill: "#555" }} minTickGap={50} tickFormatter={fmtDate} />
-                <YAxis tick={{ fontSize: 9, fill: "#555" }} width={40} tickFormatter={(v) => `${v.toFixed(0)}%`} />
-                <Tooltip labelFormatter={fmtDate}
-                  formatter={(v: number, name: string) => [`${v?.toFixed(2)}%`, allLines.find(l => `dd__${l.key}` === name)?.label || name]} />
-                <Legend formatter={(name) => allLines.find(l => `dd__${l.key}` === name)?.label || name} wrapperStyle={{ fontSize: 11 }} />
-                {allLines.map((l) => (
-                  <Area key={l.key} type="monotone" dataKey={`dd__${l.key}`}
-                    stroke={l.color} fill={l.color}
-                    fillOpacity={l.isNifty || l.isBacktest ? 0.08 : 0.12}
-                    strokeWidth={1.5}
-                    strokeDasharray={l.isNifty ? "4 2" : l.isBacktest ? "2 3" : undefined}
-                    dot={false} connectNulls />
-                ))}
-              </AreaChart>
-            </ResponsiveContainer>
+            <ZoomFrame zoom={ddZoom}>
+              <ResponsiveContainer width="100%" height={260}>
+                <AreaChart data={ddZoom.data} {...ddZoom.chartProps}>
+                  <CartesianGrid stroke="#E8E4D4" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 9, fill: "#555" }} minTickGap={50} tickFormatter={fmtDate} />
+                  <YAxis tick={{ fontSize: 9, fill: "#555" }} width={44} domain={ddDomain} allowDecimals tickFormatter={fmtDdTick} />
+                  <Tooltip labelFormatter={fmtDate}
+                    formatter={(v: number, name: string) => [`${v?.toFixed(2)}%`, allLines.find(l => `dd__${l.key}` === name)?.label || name]} />
+                  <Legend formatter={(name) => allLines.find(l => `dd__${l.key}` === name)?.label || name} wrapperStyle={{ fontSize: 11 }} />
+                  {ddZoom.selection && (
+                    <ReferenceArea x1={ddZoom.selection.x1} x2={ddZoom.selection.x2} fill="#B91C1C" fillOpacity={0.12} />
+                  )}
+                  {allLines.map((l) => (
+                    <Area key={l.key} type="monotone" dataKey={`dd__${l.key}`}
+                      stroke={l.color} fill={l.color}
+                      fillOpacity={l.isNifty || l.isBacktest ? 0.08 : 0.12}
+                      strokeWidth={1.5}
+                      strokeDasharray={l.isNifty ? "4 2" : l.isBacktest ? "2 3" : undefined}
+                      dot={false} connectNulls isAnimationActive={false} />
+                  ))}
+                </AreaChart>
+              </ResponsiveContainer>
+            </ZoomFrame>
           </div>
 
           {/* Returns — Monthly / Quarterly / Yearly tabs */}

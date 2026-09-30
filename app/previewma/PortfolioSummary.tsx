@@ -17,10 +17,19 @@ const STRATEGY_COLORS: Record<string, string> = {
 };
 function stratColor(s: string) { return STRATEGY_COLORS[s] || "#6B7280"; }
 
+function fmtFull(v: number) {
+  return `₹${v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 function fmtCr(v: number) {
   const cr = v / 1e7;
-  return `₹${cr.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Cr`;
+  return (
+    <span title={fmtFull(v)}>
+      ₹{cr.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Cr
+    </span>
+  );
 }
+
 function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" });
 }
@@ -526,10 +535,11 @@ function PortfolioSummaryInner({ data }: { data: PortfolioSummaryResponse }) {
   }, [activeInvestors]);
 
   const firstInvestmentByMonth = useMemo(() => {
-    const earliest = new Map<string, string>();
-    investors.forEach((inv) => {
-      if (!earliest.has(inv.qcode) || inv.since < earliest.get(inv.qcode)!) earliest.set(inv.qcode, inv.since);
-    });
+const earliest = new Map<string, string>();
+investors.forEach((inv) => {
+  const key = inv.icode ?? inv.qcode;
+  if (!earliest.has(key) || inv.since < earliest.get(key)!) earliest.set(key, inv.since);
+});
     const counts = new Map<string, number>();
     Array.from(earliest.values()).forEach((since) => {
       const label = fmtMonthKey(since);
@@ -586,9 +596,6 @@ function PortfolioSummaryInner({ data }: { data: PortfolioSummaryResponse }) {
         <div className="flex items-start justify-between mb-6">
           <div>
             <h2 className="font-serif text-2xl text-logo-green mb-1">Portfolio Summary</h2>
-            <p className="text-sm text-card-text-secondary">
-              Executive overview · All figures as of latest available data
-            </p>
           </div>
           <button
             onClick={handleDownloadPdf}
@@ -651,7 +658,7 @@ function PortfolioSummaryInner({ data }: { data: PortfolioSummaryResponse }) {
                 <CartesianGrid stroke="#E8E4D4" vertical={false} />
                 <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#555" }} minTickGap={40} tickFormatter={(d) => aumFreq === "Daily" ? fmtDate(d) : d} />
                 <YAxis tick={{ fontSize: 10, fill: "#555" }} tickFormatter={(v) => `₹${v.toFixed(0)}Cr`} width={65} />
-                <Tooltip labelFormatter={(d) => aumFreq === "Daily" ? fmtDate(d) : d} formatter={(v: number) => [fmtCr(v * 1e7), "AUM"]} />
+                <Tooltip labelFormatter={(d) => aumFreq === "Daily" ? fmtDate(d) : d} formatter={(v: number) => [fmtFull(v * 1e7), "AUM"]} />
                 <Line type="monotone" dataKey="aum" stroke="#02422B" strokeWidth={2.5} dot={false} name="Total AUM" isAnimationActive={!isExporting} />
               </LineChart>
             </ResponsiveContainer>
@@ -681,7 +688,7 @@ function PortfolioSummaryInner({ data }: { data: PortfolioSummaryResponse }) {
                 <CartesianGrid stroke="#E8E4D4" vertical={false} />
                 <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#555" }} minTickGap={50} tickFormatter={(d) => strategyFreq === "Daily" ? fmtDate(d) : d} />
                 <YAxis tick={{ fontSize: 10, fill: "#555" }} tickFormatter={(v) => `₹${v.toFixed(0)}Cr`} width={65} />
-                <Tooltip labelFormatter={(d) => strategyFreq === "Daily" ? fmtDate(d) : d} formatter={(v: number, name: string) => [v != null ? fmtCr(v * 1e7) : "—", name]} />
+                <Tooltip labelFormatter={(d) => strategyFreq === "Daily" ? fmtDate(d) : d} formatter={(v: number, name: string) => [v != null ? fmtFull(v * 1e7) : "—", name]} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 {strategies.map((s) => (
                   <Line key={s} type="monotone" dataKey={s} stroke={stratColor(s)} strokeWidth={2.2} dot={false} connectNulls isAnimationActive={!isExporting} />
@@ -708,7 +715,7 @@ function PortfolioSummaryInner({ data }: { data: PortfolioSummaryResponse }) {
                     isAnimationActive={!isExporting}>
                     {strategyBreakdown.map((s) => <Cell key={s.name} fill={stratColor(s.name)} />)}
                   </Pie>
-                  <Tooltip formatter={(v: number) => fmtCr(v)} />
+                  <Tooltip formatter={(v: number) => fmtFull(v)} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -744,7 +751,7 @@ function PortfolioSummaryInner({ data }: { data: PortfolioSummaryResponse }) {
                   <CartesianGrid stroke="#E8E4D4" vertical={false} />
                   <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#555" }} />
                   <YAxis tick={{ fontSize: 10, fill: "#555" }} tickFormatter={(v) => `₹${v.toFixed(0)}Cr`} width={65} />
-                  <Tooltip formatter={(v: number) => fmtCr(v * 1e7)} />
+                  <Tooltip formatter={(v: number) => fmtFull(v * 1e7)} />
                   <Bar dataKey="AUM" radius={[4, 4, 0, 0]} isAnimationActive={!isExporting}>
                     <Cell fill="#DABD38" /><Cell fill="#02422B" />
                   </Bar>
@@ -767,7 +774,7 @@ function PortfolioSummaryInner({ data }: { data: PortfolioSummaryResponse }) {
                       isAnimationActive={!isExporting}>
                       {investorAumDonut.map((e, i) => <Cell key={i} fill={e.color} fillOpacity={1 - (i / investorAumDonut.length) * 0.5} />)}
                     </Pie>
-                    <Tooltip formatter={(v: number) => fmtCr(v)} />
+                    <Tooltip formatter={(v: number) => fmtFull(v)} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -794,7 +801,7 @@ function PortfolioSummaryInner({ data }: { data: PortfolioSummaryResponse }) {
 
         {/* Investor AUM Table */}
         <SectionHeader>Investor AUM Table</SectionHeader>
-        <InvestorAumTable investors={activeInvestors} totalAum={total_aum} />
+        <InvestorAumTable investors={investors} totalAum={total_aum} />
       </div>
     </div>
   );

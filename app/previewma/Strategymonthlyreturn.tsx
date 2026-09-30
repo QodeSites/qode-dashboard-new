@@ -6,18 +6,26 @@ import { fetchStrategyMonthlyReturns, type StrategyMonthlyEntry } from "./api";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MONTH_ORDER = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const MONTH_ORDER = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const MONTH_SHORT: Record<string, string> = {
-  January:"JAN", February:"FEB", March:"MAR", April:"APR",
-  May:"MAY", June:"JUN", July:"JUL", August:"AUG",
-  September:"SEP", October:"OCT", November:"NOV", December:"DEC",
+  January: "JAN", February: "FEB", March: "MAR", April: "APR",
+  May: "MAY", June: "JUN", July: "JUL", August: "AUG",
+  September: "SEP", October: "OCT", November: "NOV", December: "DEC",
 };
-const STRATEGY_PREFERRED_ORDER = ["QYE+","QYE++","QAW+","QAW++","QTF++"];
+const STRATEGY_PREFERRED_ORDER = ["QYE+", "QYE++", "QAW+", "QAW++", "QTF++"];
+
+const COL = { label: 220, year: 72, month: 96, total: 104, since: 110, xirr: 90, dd: 100 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+
 function fmtPct(v: number) {
   return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
+}
+
+function fmtFracPct(v: number | null | undefined) {
+  if (v === null || v === undefined || !isFinite(v)) return "—";
+  return `${v >= 0 ? "+" : ""}${(v * 100).toFixed(2)}%`;
 }
 
 function fmtInr(v: number) {
@@ -27,18 +35,21 @@ function fmtInr(v: number) {
   return `${sign}₹${(abs / 1e5).toFixed(2)}L`;
 }
 
-// xirr/drawdowns/since-inception come back as fractions (0.15 = 15%),
-// unlike monthly return_pct which is already *100 — scale here before display
-function fmtPctOrDash(v: number | null | undefined) {
-  if (v === null || v === undefined) return "—";
-  const pct = v * 100;
-  return `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
+// Exact figure for the hover tooltip — Indian grouping, always 2 decimals
+function fmtFull(v: number | null | undefined) {
+  if (v === null || v === undefined || !isFinite(v)) return "—";
+  return `${v < 0 ? "-" : ""}₹${Math.abs(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-// Cell background + text color matching the screenshots
+
 function cellClass(v: number | null) {
   if (v === null) return "";
   return v >= 0 ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600";
+}
+
+function textClass(v: number | null | undefined) {
+  if (v === null || v === undefined || !isFinite(v)) return "text-card-text-secondary/30";
+  return v >= 0 ? "text-green-700" : "text-red-600";
 }
 
 // ─── Strategy table ───────────────────────────────────────────────────────────
@@ -51,7 +62,7 @@ interface ClientYearRow {
   months: (number | null)[];
   total: number | null;
   sinceInception: number | null;
-  sinceInceptionPnl: number | null;
+  sinceInceptionPnl: number ;
   xirr: number | null;
   maxDrawdown: number | null;
   currentDrawdown: number | null;
@@ -114,18 +125,20 @@ function StrategyTable({
           year,
           months,
           total,
-          sinceInception: yi === 0 ? entry.since_inception ?? null : null,
-          sinceInceptionPnl: yi === 0 ? entry.since_inception_pnl ?? null : null,
-          xirr: yi === 0 ? entry.xirr ?? null : null,
-          maxDrawdown: yi === 0 ? entry.max_drawdown ?? null : null,
-          currentDrawdown: yi === 0 ? entry.current_drawdown ?? null : null,
+          sinceInception: entry.since_inception ?? null,
+          sinceInceptionPnl: entry.since_inception_pnl ?? null,
+          xirr: entry.xirr ?? null,
+          maxDrawdown: entry.max_drawdown ?? null,
+          currentDrawdown: entry.current_drawdown ?? null,
         });
       });
     });
 
     return result;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries, showInr, allYears, allMonths]);
+
+  const tableWidth =
+    COL.label + COL.year + allMonths.length * COL.month + COL.total + COL.since + COL.xirr + COL.dd * 2;
 
   return (
     <div className="mb-8">
@@ -134,17 +147,26 @@ function StrategyTable({
         <span className="text-sm font-semibold text-logo-green">{strategy} Clients</span>
       </div>
       <div className="overflow-x-auto border border-t-0 border-logo-green/10 rounded-b-lg bg-white">
-        <table className="w-full text-sm">
+        <table className="text-sm" style={{ tableLayout: "fixed", width: "100%", minWidth: tableWidth }}>
+          <colgroup>
+            <col style={{ width: COL.label }} />
+            <col style={{ width: COL.year }} />
+            {allMonths.map((m) => <col key={m} style={{ width: COL.month }} />)}
+            <col style={{ width: COL.total }} />
+            <col style={{ width: COL.since }} />
+            <col style={{ width: COL.xirr }} />
+            <col style={{ width: COL.dd }} />
+            <col style={{ width: COL.dd }} />
+          </colgroup>
           <thead>
             <tr className="text-card-text-secondary text-xs border-b border-logo-green/10 bg-white">
-              <th className="px-4 py-2.5 text-left font-medium w-36 sticky left-0 bg-white">Client</th>
-              <th className="px-4 py-2.5 text-left font-medium w-16">Year</th>
+              <th className="px-4 py-2.5 text-left font-medium sticky left-0 z-10 bg-white border-r border-logo-green/10">Client</th>
+              <th className="px-4 py-2.5 text-left font-medium">Year</th>
               {allMonths.map((m) => (
                 <th key={m} className="px-3 py-2.5 text-right font-medium">{MONTH_SHORT[m]}</th>
               ))}
               <th className="px-4 py-2.5 text-right font-medium">Total</th>
-              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Since Inception</th>
-              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">SI P&amp;L (₹)</th>
+              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap border-l-2 border-logo-green/25">Since Inception</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">XIRR</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Max DD</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Current DD</th>
@@ -155,6 +177,7 @@ function StrategyTable({
               const isNewClient = row.isFirstRow && i > 0;
               // Check if any month or total has data
               const hasData = row.months.some((v) => v !== null) || row.total !== null;
+              const show = row.isFirstRow;
 
               return (
                 <tr
@@ -162,9 +185,9 @@ function StrategyTable({
                   className={`border-t ${isNewClient ? "border-logo-green/20 border-t-2" : "border-logo-green/5"}`}
                 >
                   {/* Client name — only on first year row */}
-                  <td className="px-4 py-2 text-card-text font-medium whitespace-nowrap sticky left-0 bg-white">
+                  <td className="px-4 py-2 text-card-text font-medium whitespace-nowrap sticky left-0 z-10 bg-white overflow-hidden border-r border-logo-green/10">
                     {row.isFirstRow ? (
-                      <span className="truncate block max-w-[130px]" title={row.accountName}>
+                      <span className="truncate block" title={row.accountName}>
                         {row.accountName}
                       </span>
                     ) : null}
@@ -175,34 +198,34 @@ function StrategyTable({
                   {row.months.map((v, mi) => (
                     <td
                       key={mi}
-                      className={`px-3 py-2 text-right whitespace-nowrap text-xs font-medium ${
-                        v !== null ? cellClass(v) : "text-card-text-secondary/30"
-                      }`}
+                      title={showInr && v !== null ? fmtFull(v) : undefined}
+                      className={`px-3 py-2 text-right whitespace-nowrap text-xs font-medium ${v !== null ? cellClass(v) : "text-card-text-secondary/30"
+                        }`}
                     >
                       {v === null ? "—" : showInr ? fmtInr(v) : fmtPct(v)}
                     </td>
                   ))}
                   <td
-                    className={`px-4 py-2 text-right font-semibold whitespace-nowrap text-xs ${
-                      row.total !== null ? cellClass(row.total) : "text-card-text-secondary/30"
-                    }`}
+                    title={showInr && row.total !== null ? fmtFull(row.total) : undefined}
+                    className={`px-4 py-2 text-right font-semibold whitespace-nowrap text-xs ${row.total !== null ? cellClass(row.total) : "text-card-text-secondary/30"
+                      }`}
                   >
                     {row.total === null ? "—" : showInr ? fmtInr(row.total) : fmtPct(row.total)}
                   </td>
-                  <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap text-xs ${row.isFirstRow ? cellClass(row.sinceInception) : ""}`}>
-                    {row.isFirstRow ? fmtPctOrDash(row.sinceInception) : ""}
+                  <td
+                    title={show && showInr ? fmtFull(row.sinceInceptionPnl) : undefined}
+                    className={`px-3 py-2 text-right text-xs whitespace-nowrap border-l-2 border-logo-green/25 ${show ? textClass(showInr ? row.sinceInceptionPnl : row.sinceInception) : ""}`}
+                  >
+                    {show ? (showInr ? fmtInr(row.sinceInceptionPnl) : fmtFracPct(row.sinceInception)) : ""}
                   </td>
-                  <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap text-xs ${row.isFirstRow ? cellClass(row.sinceInceptionPnl) : ""}`}>
-                    {row.isFirstRow ? (row.sinceInceptionPnl === null ? "—" : fmtInr(row.sinceInceptionPnl)) : ""}
+                  <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${show ? textClass(row.xirr) : ""}`}>
+                    {show ? fmtFracPct(row.xirr) : ""}
                   </td>
-                  <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap text-xs ${row.isFirstRow ? cellClass(row.xirr) : ""}`}>
-                    {row.isFirstRow ? fmtPctOrDash(row.xirr) : ""}
+                  <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${show ? "text-red-600" : ""}`}>
+                    {show ? fmtFracPct(row.maxDrawdown) : ""}
                   </td>
-                  <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap text-xs ${row.isFirstRow ? cellClass(row.maxDrawdown) : ""}`}>
-                    {row.isFirstRow ? fmtPctOrDash(row.maxDrawdown) : ""}
-                  </td>
-                  <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap text-xs ${row.isFirstRow ? cellClass(row.currentDrawdown) : ""}`}>
-                    {row.isFirstRow ? fmtPctOrDash(row.currentDrawdown) : ""}
+                  <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${show ? "text-red-600" : ""}`}>
+                    {show ? fmtFracPct(row.currentDrawdown) : ""}
                   </td>
                 </tr>
               );
