@@ -206,17 +206,7 @@ export interface AccountValueOverride {
   momentum_pct?: number;
 }
 
-export interface TrailingReturns {
-  one_month: number | null;
-  three_month: number | null;
-  six_month: number | null;
-  one_year: number | null;
-  two_year: number | null;
-  three_year: number | null;
-  four_year: number | null;
-  five_year: number | null;
-  since_inception: number | null;
-}
+
 
 
 
@@ -376,23 +366,49 @@ export { ApiError };
 
 
 
-export interface ClientMonthlyReturnRow {
-  qcode: string;
-  account_name: string;
-  strategy: string;
+export interface TrailingReturnValue {
+  pct: number | null;      // fraction-scale
+  pnl_inr: number | null;
+}
+export interface TrailingReturns {
+  one_month: TrailingReturnValue;
+  three_month: TrailingReturnValue;
+  six_month: TrailingReturnValue;
+  one_year: TrailingReturnValue;
+  two_year: TrailingReturnValue;
+  three_year: TrailingReturnValue;
+  four_year: TrailingReturnValue;
+  five_year: TrailingReturnValue;
+}
+
+// Shared by the top-level client row and every nested strategy_breakdown node.
+export interface ReturnsMetrics {
   monthly: { year: number; month: string; return_pct: number; pnl_inr: number }[];
   yearly: { year: number; return_pct: number; pnl_inr: number }[];
-  since_inception_absolute: number;      
-  since_inception_pnl: number; 
-  xirr: number | null;         
-  max_drawdown: number;        
-  current_drawdown: number;    
+  xirr: number | null;                   
+  max_drawdown: number | null;          
+  current_drawdown: number | null;      
+  since_inception_absolute: number | null;
+  since_inception_pnl: number | null;     
+  trailing_returns: TrailingReturns | null;
+}
+
+export interface ClientReturnsBreakdownNode extends ReturnsMetrics {
+  strategy: string;
+  strategy_breakdown: ClientReturnsBreakdownNode[]; // recursive, [] at leaves
+}
+
+export interface ClientReturnsRow extends ReturnsMetrics {
+  qcode: string;
+  account_name: string;
+  is_multi_strategy: boolean;
+  strategy_breakdown: ClientReturnsBreakdownNode[];
 }
 
 export async function fetchClientMonthlyReturns(
   accountType: "managed" | "prop" = "managed"
-): Promise<ClientMonthlyReturnRow[]> {
-  return apiFetch<ClientMonthlyReturnRow[]>("/api/internal/portfolio-review/client-monthly-returns", {
+): Promise<ClientReturnsRow[]> {
+  return apiFetch<ClientReturnsRow[]>("/api/internal/portfolio-review/client-monthly-returns", {
     method: "POST",
     body: JSON.stringify({ account_type: accountType }),
   });

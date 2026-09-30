@@ -1,8 +1,14 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useState, useEffect } from "react";
 import { Loader2, AlertCircle, Download, ChevronRight, Layers } from "lucide-react";
-import { fetchClientMonthlyReturns, type ClientMonthlyReturnRow } from "./api";
+import {
+  fetchClientMonthlyReturns,
+  type ClientReturnsRow,
+  type ClientReturnsBreakdownNode,
+  type ReturnsMetrics,
+  type TrailingReturns,
+} from "./api";
 
 const MONTH_ORDER = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const MONTH_SHORT: Record<string, string> = {
@@ -10,16 +16,29 @@ const MONTH_SHORT: Record<string, string> = {
   July:"JUL", August:"AUG", September:"SEP", October:"OCT", November:"NOV", December:"DEC",
 };
 
-const COL = { label: 260, year: 72, month: 96, total: 104, since: 116, xirr: 90, dd: 100 };
+const TRAILING_COLS: { key: keyof TrailingReturns; label: string }[] = [
+  { key: "one_month", label: "1M" },
+  { key: "three_month", label: "3M" },
+  { key: "six_month", label: "6M" },
+  { key: "one_year", label: "1Y" },
+  { key: "two_year", label: "2Y" },
+  { key: "three_year", label: "3Y" },
+  { key: "four_year", label: "4Y" },
+  { key: "five_year", label: "5Y" },
+];
+
+// Fixed column widths (px) — table-layout: fixed keeps columns from collapsing
+// into each other and overlapping.
+const COL = { label: 260, year: 72, month: 96, total: 104, since: 116, xirr: 90, dd: 100, trailing: 90 };
 
 // ─── Formatters — all null-safe ───────────────────────────────────────────────
 
-
+// monthly/yearly return_pct is already percent-scale (2.55 = "2.55%")
 function fmtPct(v: number | null | undefined) {
   if (v === null || v === undefined || !isFinite(v)) return "—";
   return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
 }
-
+// since_inception_absolute / xirr / drawdowns / trailing .pct are fraction-scale
 function fmtFracPct(v: number | null | undefined) {
   if (v === null || v === undefined || !isFinite(v)) return "—";
   return `${v >= 0 ? "+" : ""}${(v * 100).toFixed(2)}%`;
@@ -31,7 +50,7 @@ function fmtInr(v: number | null | undefined) {
   if (abs >= 1e7) return `${sign}₹${(abs / 1e7).toFixed(2)}Cr`;
   return `${sign}₹${(abs / 1e5).toFixed(2)}L`;
 }
-
+// Exact figure for the hover tooltip — Indian grouping, always 2 decimals
 function fmtFull(v: number | null | undefined) {
   if (v === null || v === undefined || !isFinite(v)) return "—";
   return `${v < 0 ? "-" : ""}₹${Math.abs(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -45,230 +64,219 @@ function textClass(v: number | null | undefined) {
   return v >= 0 ? "text-green-700" : "text-red-600";
 }
 
-// ─── Client-side consolidation ─────────────────────────────────────────────────
+// ─── Tree scanning helpers ────────────────────────────────────────────────────
 
-interface ConsolidatedClient {
-  qcode: string;
-  accountName: string;
-  isMultiStrategy: boolean;
-  legs: ClientMonthlyReturnRow[];
-  combinedSinceInceptionPnl: number;
-  combinedSinceInception: number | null;
+type TreeNode = ReturnsMetrics & { strategy_breakdown?: ClientReturnsBreakdownNode[] };
+
+function collectMonths(nodes: TreeNode[], into: Set<string>) {
+  nodes.forEach((n) => {
+    (n.monthly ?? []).forEach((m) => into.add(m.month));
+    collectMonths(n.strategy_breakdown ?? [], into);
+  });
 }
 
-function combineSinceInception(legs: ClientMonthlyReturnRow[]): number | null {
-  let totalBase = 0;
-  let anyBase = false;
-  legs.forEach((l) => {
-    if (l.since_inception_absolute !== 0) {
-      totalBase += l.since_inception_pnl / l.since_inception_absolute;
-      anyBase = true;
+function collectTrailingKeys(nodes: TreeNode[], into: Set<keyof TrailingReturns>) {
+  nodes.forEach((n) => {
+    if (n.trailing_returns) {
+      TRAILING_COLS.forEach((c) => {
+        const v = n.trailing_returns![c.key];
+        if (v && (v.pct !== null || v.pnl_inr !== null)) into.add(c.key);
+      });
     }
-  });
-  if (!anyBase || totalBase === 0) return null;
-  const totalPnl = legs.reduce((s, l) => s + l.since_inception_pnl, 0);
-  return totalPnl / totalBase;
-}
-
-function combineMonthlyPct(legsForMonth: { pnlInr: number; returnPct: number }[]): number | null {
-  let totalBase = 0;
-  let anyBase = false;
-  legsForMonth.forEach((l) => {
-    if (l.returnPct !== 0) {
-      totalBase += l.pnlInr / (l.returnPct / 100);
-      anyBase = true;
-    }
-  });
-  if (!anyBase || totalBase === 0) return legsForMonth.length > 0 ? 0 : null;
-  const totalPnl = legsForMonth.reduce((s, l) => s + l.pnlInr, 0);
-  return (totalPnl / totalBase) * 100;
-}
-
-interface YearRow {
-  isFirstRow: boolean;
-  year: number;
-  months: (number | null)[];
-  total: number | null;
-}
-
-function buildYearRows(
-  legs: { monthly: ClientMonthlyReturnRow["monthly"]; yearly: ClientMonthlyReturnRow["yearly"] }[],
-  allYears: number[],
-  allMonths: string[],
-  showInr: boolean
-): YearRow[] {
-  return allYears.map((year, yi) => {
-    const months: (number | null)[] = allMonths.map((mName) => {
-      const legsForMonth = legs
-        .flatMap((l) => l.monthly)
-        .filter((m) => m.year === year && m.month === mName)
-        .map((m) => ({ pnlInr: m.pnl_inr, returnPct: m.return_pct }));
-      if (legsForMonth.length === 0) return null;
-      if (showInr) return legsForMonth.reduce((s, m) => s + m.pnlInr, 0);
-      return combineMonthlyPct(legsForMonth);
-    });
-
-    const yearLegs = legs
-      .flatMap((l) => l.yearly)
-      .filter((y) => y.year === year)
-      .map((y) => ({ pnlInr: y.pnl_inr, returnPct: y.return_pct }));
-    const total = yearLegs.length === 0
-      ? null
-      : showInr
-        ? yearLegs.reduce((s, y) => s + y.pnlInr, 0)
-        : combineMonthlyPct(yearLegs);
-
-    return { isFirstRow: yi === 0, year, months, total };
+    collectTrailingKeys(n.strategy_breakdown ?? [], into);
   });
 }
 
-function ClientRowGroup({
-  client, allYears, allMonths, showInr,
+// ─── Recursive accordion row group ────────────────────────────────────────────
+
+// Opaque on purpose: the label column is sticky, so a translucent tint lets
+// scrolled month cells show through it.
+const DEPTH_BG = ["bg-white", "bg-[#fcfbf7]", "bg-[#f9f7ee]", "bg-[#f5f2e6]"];
+
+function NodeRows({
+  node, nodeKey, label, depth, months, showInr, trailingKeys, badge, isFirstTopLevel,
 }: {
-  client: ConsolidatedClient; allYears: number[]; allMonths: string[]; showInr: boolean;
+  node: TreeNode;
+  nodeKey: string;
+  label: string;
+  depth: number;
+  months: string[];
+  showInr: boolean;
+  trailingKeys: (keyof TrailingReturns)[];
+  badge?: React.ReactNode;
+  isFirstTopLevel: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [open, setOpen] = useState(false);
+  const children = node.strategy_breakdown ?? [];
+  const hasChildren = children.length > 0;
+  const bg = DEPTH_BG[Math.min(depth, DEPTH_BG.length - 1)];
 
-  const consolidatedRows = useMemo(
-    () => buildYearRows(client.legs, allYears, allMonths, showInr),
-    [client, allYears, allMonths, showInr]
-  );
+  const { years, monthMap, yearMap } = useMemo(() => {
+    const monthMap = new Map<string, { pct: number; inr: number }>();
+    const yearMap = new Map<number, { pct: number; inr: number }>();
+    const ys = new Set<number>();
+    (node.monthly ?? []).forEach((m) => {
+      monthMap.set(`${m.year}|${m.month}`, { pct: m.return_pct, inr: m.pnl_inr });
+      ys.add(m.year);
+    });
+    (node.yearly ?? []).forEach((y) => {
+      yearMap.set(y.year, { pct: y.return_pct, inr: y.pnl_inr });
+      ys.add(y.year);
+    });
+    return { years: Array.from(ys).sort((a, b) => a - b), monthMap, yearMap };
+  }, [node]);
+
+  const tr = node.trailing_returns;
+
+  function labelCell() {
+    return (
+      <td className={`px-4 py-2 whitespace-nowrap sticky left-0 z-10 overflow-hidden border-r border-logo-green/10 ${bg}`}>
+        <div className="flex items-center gap-1.5 min-w-0" style={{ paddingLeft: depth * 16 }}>
+          {hasChildren ? (
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              className="text-card-text-secondary hover:text-logo-green flex-shrink-0"
+              title={open ? "Collapse breakdown" : "Show breakdown"}
+            >
+              <ChevronRight className={`h-3 w-3 transition-transform ${open ? "rotate-90" : ""}`} />
+            </button>
+          ) : (
+            <span className="w-3 flex-shrink-0" />
+          )}
+          {depth > 0 && <span className="text-card-text-secondary/60 text-xs flex-shrink-0">↳</span>}
+          <span
+            className={`truncate min-w-0 flex-1 ${depth === 0 ? "font-medium text-card-text text-sm" : "text-xs text-card-text-secondary"}`}
+            title={label}
+          >
+            {label}
+          </span>
+          {badge}
+        </div>
+      </td>
+    );
+  }
+
+  function summaryCells(show: boolean) {
+    return (
+      <>
+        <td
+          title={show && showInr ? fmtFull(node.since_inception_pnl) : undefined}
+          className={`px-3 py-2 text-right text-xs whitespace-nowrap border-l-2 border-logo-green/25 ${show ? textClass(showInr ? node.since_inception_pnl : node.since_inception_absolute) : ""}`}
+        >
+          {show ? (showInr ? fmtInr(node.since_inception_pnl) : fmtFracPct(node.since_inception_absolute)) : ""}
+        </td>
+        <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${show ? textClass(node.xirr) : ""}`}>
+          {show ? fmtFracPct(node.xirr) : ""}
+        </td>
+        <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${show ? "text-red-600" : ""}`}>
+          {show ? fmtFracPct(node.max_drawdown) : ""}
+        </td>
+        <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${show ? "text-red-600" : ""}`}>
+          {show ? fmtFracPct(node.current_drawdown) : ""}
+        </td>
+        {trailingKeys.map((k) => {
+          const v = tr?.[k];
+          return (
+            <td
+              key={k}
+              title={show && showInr ? fmtFull(v?.pnl_inr) : undefined}
+              className={`px-3 py-2 text-right text-xs whitespace-nowrap ${show ? textClass(showInr ? v?.pnl_inr : v?.pct) : ""}`}
+            >
+              {show ? (showInr ? fmtInr(v?.pnl_inr) : fmtFracPct(v?.pct)) : ""}
+            </td>
+          );
+        })}
+      </>
+    );
+  }
 
   return (
-    <>
-      {consolidatedRows.map((row, i) => (
-        <tr
-          key={`${client.qcode}-${row.year}`}
-          className={`border-t ${row.isFirstRow && i > 0 ? "border-logo-green/20 border-t-2" : "border-logo-green/5"}`}
-        >
-          <td className="px-4 py-2 text-card-text font-medium whitespace-nowrap sticky left-0 bg-white overflow-hidden border-r border-logo-green/10">
-            {row.isFirstRow ? (
-              <div className="flex items-center gap-1.5 min-w-0">
-                {client.isMultiStrategy && (
-                  <button
-                    type="button"
-                    onClick={() => setExpanded((v) => !v)}
-                    className="text-card-text-secondary hover:text-logo-green flex-shrink-0"
-                    title="Show strategy breakdown"
-                  >
-                    <ChevronRight className={`h-3 w-3 transition-transform ${expanded ? "rotate-90" : ""}`} />
-                  </button>
-                )}
-                <span className="truncate min-w-0 flex-1" title={client.accountName}>
-                  {client.accountName}
-                </span>
-                {client.isMultiStrategy && (
-                  <span
-                    className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 flex-shrink-0"
-                    title={`Combines: ${client.legs.map((l) => l.strategy).join(", ")}`}
-                  >
-                    <Layers className="h-2.5 w-2.5" />
-                    Multi-Strategy
-                  </span>
-                )}
-              </div>
-            ) : null}
+    <Fragment key={nodeKey}>
+      {years.length === 0 ? (
+        <tr className={`border-t ${depth === 0 && !isFirstTopLevel ? "border-logo-green/20 border-t-2" : "border-logo-green/5"} ${bg}`}>
+          {labelCell()}
+          <td className="px-4 py-2 text-card-text-secondary text-xs">—</td>
+          <td colSpan={months.length + 1} className="px-3 py-2 text-xs text-card-text-secondary/50 italic">
+            No return data
           </td>
-          <td className="px-4 py-2 text-card-text-secondary">{row.year}</td>
-          {row.months.map((v, mi) => (
-            <td key={mi} title={showInr && v !== null ? fmtFull(v) : undefined} className={`px-3 py-2 text-right whitespace-nowrap text-xs font-medium ${cellClass(v)}`}>
-              {v === null ? "—" : showInr ? fmtInr(v) : fmtPct(v)}
-            </td>
-          ))}
-          <td title={showInr && row.total !== null ? fmtFull(row.total) : undefined} className={`px-4 py-2 text-right font-semibold whitespace-nowrap text-xs ${cellClass(row.total)}`}>
-            {row.total === null ? "—" : showInr ? fmtInr(row.total) : fmtPct(row.total)}
-          </td>
-
-          {/* Since Inception / XIRR / Max DD / Current DD — shown once, on the
-              client's first row. For a multi-strategy client, only Since
-              Inception is mathematically combined; the other three are only
-              meaningful per-strategy and show as "—" on this consolidated row. */}
-          {row.isFirstRow ? (
-            <>
-              <td
-                title={showInr ? fmtFull(client.combinedSinceInceptionPnl) : undefined}
-                className={`px-3 py-2 text-right text-xs whitespace-nowrap border-l-2 border-logo-green/25 ${textClass(showInr ? client.combinedSinceInceptionPnl : client.combinedSinceInception)}`}
-              >
-                {showInr ? fmtInr(client.combinedSinceInceptionPnl) : fmtFracPct(client.combinedSinceInception)}
-              </td>
-              <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${client.isMultiStrategy ? "text-card-text-secondary/30" : textClass(client.legs[0].xirr)}`}>
-                {client.isMultiStrategy ? "—" : fmtFracPct(client.legs[0].xirr)}
-              </td>
-              <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${client.isMultiStrategy ? "text-card-text-secondary/30" : "text-red-600"}`}>
-                {client.isMultiStrategy ? "—" : fmtFracPct(client.legs[0].max_drawdown)}
-              </td>
-              <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${client.isMultiStrategy ? "text-card-text-secondary/30" : "text-red-600"}`}>
-                {client.isMultiStrategy ? "—" : fmtFracPct(client.legs[0].current_drawdown)}
-              </td>
-            </>
-          ) : (
-            <>
-              <td className="px-3 py-2 border-l-2 border-logo-green/25" />
-              <td className="px-3 py-2" />
-              <td className="px-3 py-2" />
-              <td className="px-3 py-2" />
-            </>
-          )}
+          {summaryCells(true)}
         </tr>
-      ))}
-
-      {client.isMultiStrategy && expanded && client.legs.map((leg) => {
-        const legRows = buildYearRows([leg], allYears, allMonths, showInr);
-        return legRows.map((row, i) => (
-          <tr key={`${client.qcode}-${leg.strategy}-${row.year}`} className="border-t border-logo-green/5 bg-primary-bg/20">
-            <td className="px-4 py-1.5 text-card-text-secondary text-xs whitespace-nowrap sticky left-0 bg-primary-bg/20 pl-9 border-r border-logo-green/10">
-              {i === 0 ? `↳ ${leg.strategy}` : ""}
-            </td>
-            <td className="px-4 py-1.5 text-card-text-secondary text-xs">{row.year}</td>
-            {row.months.map((v, mi) => (
-              <td key={mi} title={showInr && v !== null ? fmtFull(v) : undefined} className={`px-3 py-1.5 text-right whitespace-nowrap text-[11px] ${v !== null ? textClass(v) : "text-card-text-secondary/30"}`}>
-                {v === null ? "—" : showInr ? fmtInr(v) : fmtPct(v)}
+      ) : (
+        years.map((year, yi) => {
+          const total = yearMap.get(year);
+          const totalVal = total ? (showInr ? total.inr : total.pct) : null;
+          const isFirst = yi === 0;
+          return (
+            <tr
+              key={`${nodeKey}-${year}`}
+              className={`border-t ${isFirst && depth === 0 && !isFirstTopLevel ? "border-logo-green/20 border-t-2" : "border-logo-green/5"} ${bg}`}
+            >
+              {isFirst
+                ? labelCell()
+                : <td className={`px-4 py-2 sticky left-0 z-10 border-r border-logo-green/10 ${bg}`} />}
+              <td className="px-4 py-2 text-card-text-secondary text-xs">{year}</td>
+              {months.map((mName) => {
+                const d = monthMap.get(`${year}|${mName}`);
+                const v = d ? (showInr ? d.inr : d.pct) : null;
+                return (
+                  <td
+                    key={mName}
+                    title={showInr && v !== null ? fmtFull(v) : undefined}
+                    className={`px-3 py-2 text-right whitespace-nowrap text-xs font-medium ${cellClass(v)}`}
+                  >
+                    {v === null ? "—" : showInr ? fmtInr(v) : fmtPct(v)}
+                  </td>
+                );
+              })}
+              <td
+                title={showInr && totalVal !== null ? fmtFull(totalVal) : undefined}
+                className={`px-4 py-2 text-right font-semibold whitespace-nowrap text-xs ${cellClass(totalVal)}`}
+              >
+                {totalVal === null ? "—" : showInr ? fmtInr(totalVal) : fmtPct(totalVal)}
               </td>
-            ))}
-            <td title={showInr && row.total !== null ? fmtFull(row.total) : undefined} className={`px-4 py-1.5 text-right font-medium whitespace-nowrap text-[11px] ${row.total !== null ? textClass(row.total) : "text-card-text-secondary/30"}`}>
-              {row.total === null ? "—" : showInr ? fmtInr(row.total) : fmtPct(row.total)}
-            </td>
-            {i === 0 ? (
-              <>
-                <td title={showInr ? fmtFull(leg.since_inception_pnl) : undefined} className={`px-3 py-1.5 text-right text-[11px] whitespace-nowrap border-l-2 border-logo-green/25 ${textClass(showInr ? leg.since_inception_pnl : leg.since_inception_absolute)}`}>
-                  {showInr ? fmtInr(leg.since_inception_pnl) : fmtFracPct(leg.since_inception_absolute)}
-                </td>
-                <td className={`px-3 py-1.5 text-right text-[11px] whitespace-nowrap ${textClass(leg.xirr)}`}>{fmtFracPct(leg.xirr)}</td>
-                <td className="px-3 py-1.5 text-right text-[11px] whitespace-nowrap text-red-600">{fmtFracPct(leg.max_drawdown)}</td>
-                <td className="px-3 py-1.5 text-right text-[11px] whitespace-nowrap text-red-600">{fmtFracPct(leg.current_drawdown)}</td>
-              </>
-            ) : (
-              <>
-                <td className="px-3 py-1.5 border-l-2 border-logo-green/25" />
-                <td className="px-3 py-1.5" />
-                <td className="px-3 py-1.5" />
-                <td className="px-3 py-1.5" />
-              </>
-            )}
-          </tr>
-        ));
-      })}
-    </>
+              {summaryCells(isFirst)}
+            </tr>
+          );
+        })
+      )}
+
+      {/* Children — each can itself expand further */}
+      {open && children.map((child) => (
+        <NodeRows
+          key={`${nodeKey}>${child.strategy}`}
+          nodeKey={`${nodeKey}>${child.strategy}`}
+          node={child}
+          label={child.strategy}
+          depth={depth + 1}
+          months={months}
+          showInr={showInr}
+          trailingKeys={trailingKeys}
+          isFirstTopLevel={false}
+        />
+      ))}
+    </Fragment>
   );
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function ClientwiseReturns({ accountType }: { accountType: "managed" | "prop" }) {
-  const [data, setData] = useState<ClientMonthlyReturnRow[]>([]);
+  const [data, setData] = useState<ClientReturnsRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showInr, setShowInr] = useState(false);
+  const [showTrailing, setShowTrailing] = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  useState(() => {
+  useEffect(() => {
     setLoading(true);
     setError(null);
     fetchClientMonthlyReturns(accountType)
       .then((rows) => setData(rows ?? []))
       .catch((e) => setError(e?.message || "Failed to load client-wise returns."))
       .finally(() => setLoading(false));
-  });
+  }, [accountType]);
 
   async function handleExport() {
     setExporting(true);
@@ -294,34 +302,27 @@ export function ClientwiseReturns({ accountType }: { accountType: "managed" | "p
     }
   }
 
-  const { allYears, allMonths } = useMemo(() => {
-    const years = Array.from(
-      new Set(data.flatMap((e) => [...e.monthly.map((m) => m.year), ...e.yearly.map((y) => y.year)]))
-    ).sort();
-    const monthSet = new Set(data.flatMap((e) => e.monthly.map((m) => m.month)));
-    const months = MONTH_ORDER.filter((m) => monthSet.has(m));
-    return { allYears: years, allMonths: months };
+  const months = useMemo(() => {
+    const set = new Set<string>();
+    collectMonths(data, set);
+    return MONTH_ORDER.filter((m) => set.has(m));
   }, [data]);
 
-  const consolidatedClients = useMemo((): ConsolidatedClient[] => {
-    const map = new Map<string, ClientMonthlyReturnRow[]>();
-    data.forEach((e) => {
-      if (!map.has(e.qcode)) map.set(e.qcode, []);
-      map.get(e.qcode)!.push(e);
-    });
-    return Array.from(map.entries())
-      .map(([qcode, legs]) => ({
-        qcode,
-        accountName: legs[0].account_name,
-        isMultiStrategy: legs.length > 1,
-        legs,
-        combinedSinceInceptionPnl: legs.reduce((s, l) => s + l.since_inception_pnl, 0),
-        combinedSinceInception: legs.length === 1 ? legs[0].since_inception_absolute : combineSinceInception(legs),
-      }))
-      .sort((a, b) => a.accountName.localeCompare(b.accountName));
-  }, [data]);
+  const trailingKeys = useMemo(() => {
+    if (!showTrailing) return [] as (keyof TrailingReturns)[];
+    const set = new Set<keyof TrailingReturns>();
+    collectTrailingKeys(data, set);
+    return TRAILING_COLS.filter((c) => set.has(c.key)).map((c) => c.key);
+  }, [data, showTrailing]);
 
-  const tableWidth = COL.label + COL.year + allMonths.length * COL.month + COL.total + COL.since + COL.xirr + COL.dd * 2;
+  const sortedClients = useMemo(
+    () => [...data].sort((a, b) => (a.account_name ?? "").localeCompare(b.account_name ?? "")),
+    [data]
+  );
+
+  const tableWidth =
+    COL.label + COL.year + months.length * COL.month + COL.total + COL.since + COL.xirr + COL.dd * 2 +
+    trailingKeys.length * COL.trailing;
 
   if (loading) {
     return (
@@ -368,6 +369,15 @@ export function ClientwiseReturns({ accountType }: { accountType: "managed" | "p
             <input type="radio" className="sr-only" checked={showInr} onChange={() => setShowInr(true)} />
             ₹ Returns
           </label>
+          <label className="flex items-center gap-2 text-sm text-card-text cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showTrailing}
+              onChange={(e) => setShowTrailing(e.target.checked)}
+              className="h-4 w-4 rounded accent-logo-green"
+            />
+            Trailing returns
+          </label>
           <button
             type="button"
             onClick={handleExport}
@@ -382,25 +392,26 @@ export function ClientwiseReturns({ accountType }: { accountType: "managed" | "p
 
       <div className="mb-2">
         <div className="flex items-center gap-3 rounded-t-lg bg-[#e8e4d0]/80 border-l-4 border-logo-green px-5 py-3">
-          <span className="text-sm font-semibold text-logo-green">All Clients ({consolidatedClients.length})</span>
+          <span className="text-sm font-semibold text-logo-green">All Clients ({sortedClients.length})</span>
         </div>
         <div className="overflow-x-auto border border-t-0 border-logo-green/10 rounded-b-lg bg-white">
           <table className="text-sm" style={{ tableLayout: "fixed", width: "100%", minWidth: tableWidth }}>
             <colgroup>
               <col style={{ width: COL.label }} />
               <col style={{ width: COL.year }} />
-              {allMonths.map((m) => <col key={m} style={{ width: COL.month }} />)}
+              {months.map((m) => <col key={m} style={{ width: COL.month }} />)}
               <col style={{ width: COL.total }} />
               <col style={{ width: COL.since }} />
               <col style={{ width: COL.xirr }} />
               <col style={{ width: COL.dd }} />
               <col style={{ width: COL.dd }} />
+              {trailingKeys.map((k) => <col key={k} style={{ width: COL.trailing }} />)}
             </colgroup>
             <thead>
               <tr className="text-card-text-secondary text-xs border-b border-logo-green/10 bg-white">
                 <th className="px-4 py-2.5 text-left font-medium sticky left-0 z-10 bg-white border-r border-logo-green/10">Client</th>
                 <th className="px-4 py-2.5 text-left font-medium">Year</th>
-                {allMonths.map((m) => (
+                {months.map((m) => (
                   <th key={m} className="px-3 py-2.5 text-right font-medium">{MONTH_SHORT[m]}</th>
                 ))}
                 <th className="px-4 py-2.5 text-right font-medium">Total</th>
@@ -408,16 +419,36 @@ export function ClientwiseReturns({ accountType }: { accountType: "managed" | "p
                 <th className="px-3 py-2.5 text-right font-medium">XIRR</th>
                 <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Max DD</th>
                 <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Current DD</th>
+                {trailingKeys.map((k) => (
+                  <th key={k} className="px-3 py-2.5 text-right font-medium">
+                    {TRAILING_COLS.find((c) => c.key === k)?.label}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {consolidatedClients.map((client) => (
-                <ClientRowGroup
+              {sortedClients.map((client, i) => (
+                <NodeRows
                   key={client.qcode}
-                  client={client}
-                  allYears={allYears}
-                  allMonths={allMonths}
+                  nodeKey={client.qcode}
+                  node={client}
+                  label={client.account_name}
+                  depth={0}
+                  months={months}
                   showInr={showInr}
+                  trailingKeys={trailingKeys}
+                  isFirstTopLevel={i === 0}
+                  badge={
+                    client.is_multi_strategy ? (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 flex-shrink-0"
+                        title={`Combines: ${(client.strategy_breakdown ?? []).map((s) => s.strategy).join(", ")}`}
+                      >
+                        <Layers className="h-2.5 w-2.5" />
+                        Multi-Strategy
+                      </span>
+                    ) : undefined
+                  }
                 />
               ))}
             </tbody>
