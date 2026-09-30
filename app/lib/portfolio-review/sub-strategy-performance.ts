@@ -8,6 +8,7 @@ import {
   calcMaxDrawdown,
   calcCurrentDrawdown,
   calcSinceInceptionAbsolute,
+  calcSiPnl,
 } from "@/app/lib/portfolio-review/returns";
 import type { MonthlyReturn, YearlyReturn } from "@/app/lib/portfolio-review/returns";
 import { solveXirr, fetchBulkXirrInputs } from "@/app/lib/portfolio-review/xirr";
@@ -104,6 +105,8 @@ export interface SubStrategyRow {
   /** Pure absolute since-inception return for this section's own NAV curve
    * — never CAGR'd regardless of tenure (see calcSinceInceptionAbsolute). */
   since_inception_absolute: number | null;
+  /** Since-inception P&L in rupees for this section's own NAV curve. */
+  since_inception_pnl: number | null;
 }
 
 export interface SubStrategyPerformanceResult {
@@ -236,6 +239,7 @@ async function computeSubStrategyPerformanceManaged(
         max_drawdown: calcMaxDrawdown(nav),
         current_drawdown: calcCurrentDrawdown(nav),
         since_inception_absolute: calcSinceInceptionAbsolute(nav),
+        since_inception_pnl: calcSiPnl(nav),
       });
     }
 
@@ -261,6 +265,7 @@ async function computeSubStrategyPerformanceManaged(
         max_drawdown: calcMaxDrawdown(nav),
         current_drawdown: calcCurrentDrawdown(nav),
         since_inception_absolute: calcSinceInceptionAbsolute(nav),
+        since_inception_pnl: calcSiPnl(nav),
       });
     }
   }

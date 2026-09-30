@@ -7,6 +7,7 @@ import {
   calcMaxDrawdown,
   calcCurrentDrawdown,
   calcSinceInceptionAbsolute,
+  calcSiPnl,
 } from "@/app/lib/portfolio-review/returns";
 import type {
   SubStrategyRow,
@@ -105,6 +106,7 @@ export async function computeSubStrategyPerformanceProp(
         max_drawdown: calcMaxDrawdown(nav),
         current_drawdown: calcCurrentDrawdown(nav),
         since_inception_absolute: calcSinceInceptionAbsolute(nav),
+        since_inception_pnl: calcSiPnl(nav),
       });
     }
   }
