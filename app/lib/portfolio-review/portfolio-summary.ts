@@ -85,9 +85,15 @@ function computeMom(
 ): { prev_aum: number; prev_date: string; change_pct: number | null } | null {
   if (aumDaily.length === 0) return null;
   const latest = aumDaily[aumDaily.length - 1];
-  const target = new Date(latest.date);
-  target.setUTCMonth(target.getUTCMonth() - 1);
-  const targetStr = target.toISOString().split("T")[0];
+  const [y, m, d] = latest.date.split("-").map(Number);
+  // "Same day, one month back" clamped to the previous month's own last
+  // day — plain setUTCMonth(-1) overflows instead of clamping when the
+  // previous month is shorter (31-05 → "31-04" → 01-05, still May).
+  const prevMonthLastDay = new Date(Date.UTC(y, m - 1, 0)).getUTCDate();
+  const targetDay = Math.min(d, prevMonthLastDay);
+  const targetStr = new Date(Date.UTC(y, m - 2, targetDay))
+    .toISOString()
+    .split("T")[0];
 
   let prev: AumPoint | null = null;
   for (const p of aumDaily) {

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { toSqlDate } from "@/lib/utils";
 import type { NavPoint } from "@/app/lib/internal-utils";
 
 export interface StrategyPair {
@@ -87,6 +88,57 @@ function groupRows(rows: any[]): Record<string, NavPoint[]> {
   return grouped;
 }
 
+/**
+ * The single latest row strictly before `start`, per matching system_tag —
+ * the t-1 reference point the Client Dashboard rebase (rebase.ts) needs to
+ * rebase a windowed NAV series back to 100. Mirrors fetchTagData's own
+ * qcode/strategy/prefix filtering exactly, just with the date direction
+ * flipped (< start, latest first) and DISTINCT ON to cap it at one row per
+ * tag. Returns raw rows, same shape as fetchTagData's query — merged into
+ * its result by the caller, not grouped here.
+ */
+async function fetchAnchorRows(
+  qcode: string,
+  strategy: string,
+  allPrefixes: string[],
+  start: Date,
+  table: "bifurcated_master_sheet_test" | "master_sheet_test",
+): Promise<any[]> {
+  const startStr = toSqlDate(start);
+  if (strategy === "combined") {
+    if (allPrefixes.length === 0) {
+      return prisma.$queryRawUnsafe<any[]>(
+        `SELECT DISTINCT ON (system_tag) system_tag, date, nav, prev_nav, drawdown, pnl, portfolio_value
+         FROM ${table}
+         WHERE qcode = $1 AND nav IS NOT NULL AND date < $2::date
+         ORDER BY system_tag, date DESC`,
+        qcode,
+        startStr,
+      );
+    }
+    const params: any[] = [qcode, startStr, ...allPrefixes.map((p) => `${p} %`)];
+    const excludes = allPrefixes
+      .map((_, i) => `system_tag NOT LIKE $${i + 3}`)
+      .join(" AND ");
+    return prisma.$queryRawUnsafe<any[]>(
+      `SELECT DISTINCT ON (system_tag) system_tag, date, nav, prev_nav, drawdown, pnl, portfolio_value
+       FROM ${table}
+       WHERE qcode = $1 AND nav IS NOT NULL AND date < $2::date AND ${excludes}
+       ORDER BY system_tag, date DESC`,
+      ...params,
+    );
+  }
+  return prisma.$queryRawUnsafe<any[]>(
+    `SELECT DISTINCT ON (system_tag) system_tag, date, nav, prev_nav, drawdown, pnl, portfolio_value
+     FROM ${table}
+     WHERE qcode = $1 AND nav IS NOT NULL AND system_tag LIKE $2 AND date < $3::date
+     ORDER BY system_tag, date DESC`,
+    qcode,
+    `${strategy} %`,
+    startStr,
+  );
+}
+
 export async function fetchTagData(
   qcode: string,
   strategy: string,
@@ -112,12 +164,12 @@ export async function fetchTagData(
       const params: any[] = [qcode];
       let dateClause = "";
       if (start) {
-        params.push(start);
-        dateClause += ` AND date >= $${params.length}`;
+        params.push(toSqlDate(start));
+        dateClause += ` AND date >= $${params.length}::date`;
       }
       if (asOf) {
-        params.push(asOf);
-        dateClause += ` AND date <= $${params.length}`;
+        params.push(toSqlDate(asOf));
+        dateClause += ` AND date <= $${params.length}::date`;
       }
       rows = await prisma.$queryRawUnsafe<any[]>(
         `SELECT system_tag, date, nav, prev_nav, drawdown, pnl, portfolio_value
@@ -133,12 +185,12 @@ export async function fetchTagData(
         .join(" AND ");
       let dateClause = "";
       if (start) {
-        params.push(start);
-        dateClause += ` AND date >= $${params.length}`;
+        params.push(toSqlDate(start));
+        dateClause += ` AND date >= $${params.length}::date`;
       }
       if (asOf) {
-        params.push(asOf);
-        dateClause += ` AND date <= $${params.length}`;
+        params.push(toSqlDate(asOf));
+        dateClause += ` AND date <= $${params.length}::date`;
       }
       rows = await prisma.$queryRawUnsafe<any[]>(
         `SELECT system_tag, date, nav, prev_nav, drawdown, pnl, portfolio_value
@@ -152,12 +204,12 @@ export async function fetchTagData(
     const params: any[] = [qcode, `${strategy} %`];
     let dateClause = "";
     if (start) {
-      params.push(start);
-      dateClause += ` AND date >= $${params.length}`;
+      params.push(toSqlDate(start));
+      dateClause += ` AND date >= $${params.length}::date`;
     }
     if (asOf) {
-      params.push(asOf);
-      dateClause += ` AND date <= $${params.length}`;
+      params.push(toSqlDate(asOf));
+      dateClause += ` AND date <= $${params.length}::date`;
     }
     rows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT system_tag, date, nav, prev_nav, drawdown, pnl, portfolio_value
@@ -167,6 +219,18 @@ export async function fetchTagData(
        ORDER BY system_tag, date ASC`,
       ...params,
     );
+  }
+
+  // Prepend each tag's t-1 anchor row (date < start) so callers that rebase
+  // the window to 100 (see rebase.ts, used by the Client Dashboard route)
+  // have a reference point — without this, a window that doesn't start at
+  // the account's true inception has no pre-window value to rebase from.
+  // Safe to prepend unconditionally: every anchor row's date is < start,
+  // and every main row's date is >= start, so this can't reorder a tag's
+  // own series out of ascending-date order.
+  if (start) {
+    const anchorRows = await fetchAnchorRows(qcode, strategy, allPrefixes, start, table);
+    rows = [...anchorRows, ...rows];
   }
 
   return groupRows(rows);

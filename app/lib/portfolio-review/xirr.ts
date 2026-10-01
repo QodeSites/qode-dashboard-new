@@ -1,5 +1,65 @@
 import { prisma } from "@/lib/prisma";
-import { round, MS } from "@/lib/utils";
+import { round, MS, toSqlDate } from "@/lib/utils";
+
+export interface XirrTagConfig {
+  strategy: string;
+  profit_tag_suffix: string;
+  exposure_tag_suffix: string;
+}
+
+export function isSoloPropConfigs(configs: XirrTagConfig[]): boolean {
+  return configs.length === 1 && configs[0].strategy === "Prop";
+}
+
+// Whole-portfolio tag names (NAV + deposit tags) — a line on any of these is
+// a total line for its level, not a sleeve, whatever a config's own
+// profit/exposure suffix happens to be.
+const TOTAL_TAG_SUFFIXES = [
+  "Total Portfolio Value",
+  "Total Portfolio Exposure",
+  "Zerodha Total Portfolio",
+];
+
+/**
+ * The exposure tag XIRR should be solved on for a system tag, or null when
+ * the tag isn't a client- or strategy-level total (sleeves like Gold, PSAR,
+ * LONG, Liquidcase get no XIRR). Same tags Client-Wise Returns uses: a
+ * strategy's total tag → `<strategy> <exposure suffix>`; a client total
+ * (Qode Total Portfolio or an unprefixed total tag) → Zerodha Total
+ * Portfolio / Total Portfolio Exposure; solo Prop → its own bare exposure
+ * tag. Never the tag's own capital_in_out — on a profit tag that column
+ * carries internal transfer noise (see tags.ts).
+ */
+export function xirrSourceTag(tag: string, configs: XirrTagConfig[]): string | null {
+  if (configs.length === 0) return null;
+  const isTotalFor = (suffix: string, c: XirrTagConfig) =>
+    suffix === c.profit_tag_suffix ||
+    suffix === c.exposure_tag_suffix ||
+    TOTAL_TAG_SUFFIXES.includes(suffix);
+
+  if (isSoloPropConfigs(configs)) {
+    const c = configs[0];
+    return isTotalFor(tag, c) ? c.exposure_tag_suffix : null;
+  }
+
+  let source: string | null = null;
+  for (const c of configs) {
+    const prefix = `${c.strategy} `;
+    if (tag.startsWith(prefix) && isTotalFor(tag.slice(prefix.length), c)) {
+      source = `${c.strategy} ${c.exposure_tag_suffix}`;
+    }
+  }
+  if (source) return source;
+
+  const clientExposure = configs.some((c) =>
+    c.exposure_tag_suffix.toLowerCase().includes("zerodha"),
+  )
+    ? "Zerodha Total Portfolio"
+    : "Total Portfolio Exposure";
+  return tag === "Qode Total Portfolio" || TOTAL_TAG_SUFFIXES.includes(tag)
+    ? clientExposure
+    : null;
+}
 
 export interface CashFlow {
   date: Date;
@@ -18,7 +78,17 @@ export function solveXirr(
   asOfDate: Date,
   finalValue: number,
 ): number | null {
-  if (flows.length === 0 || finalValue <= 0) return null;
+  if (flows.length === 0) return null;
+  // A zero/negative final value normally means "no usable data" and bails
+  // — except when the account was fully withdrawn exactly on `asOfDate`:
+  // that withdrawal is already present below as a same-day flow (negated
+  // into a positive, realization-like event), so there IS a real exit to
+  // solve against. Bailing here would silently turn a legitimate full
+  // redemption into a null XIRR instead of a real (likely negative) one.
+  const hasSameDayExit = flows.some(
+    (f) => f.date.getTime() === asOfDate.getTime() && f.amount !== 0,
+  );
+  if (finalValue <= 0 && !hasSameDayExit) return null;
 
   const sorted = [...flows].sort((a, b) => a.date.getTime() - b.date.getTime());
   const t0 = sorted[0].date.getTime();
@@ -123,17 +193,23 @@ export async function fetchBulkXirrInputs(
   const result = new Map<string, XirrInputs>();
 
   if (start) {
-    // Opening value: latest row at/before `start`, per pair — becomes the
-    // synthetic "deposit" that opens the window.
+    // Opening value: latest row strictly BEFORE `start` (t-1), per pair —
+    // becomes the synthetic "deposit" that opens the window. Previously
+    // `<=`, which could pick `start`'s own row as both the opening balance
+    // AND (via the `> start` flow clause below) exclude that same day's
+    // real flow — or double-count it, depending on which row the DISTINCT
+    // ON happened to prefer. Strict `<` removes the ambiguity: the opening
+    // balance is always from before the window, and the window's own flows
+    // (today's `>=` clause below) are never confused with it.
     const openingRows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT DISTINCT ON (b.qcode, b.system_tag)
          b.qcode, b.system_tag, b.date, b.portfolio_value
        FROM ${table} b
        JOIN unnest($1::text[], $2::text[]) AS v(qcode, tag)
          ON b.qcode = v.qcode AND b.system_tag = v.tag
-       WHERE b.portfolio_value IS NOT NULL AND b.date <= $3
+       WHERE b.portfolio_value IS NOT NULL AND b.date < $3::date
        ORDER BY b.qcode, b.system_tag, b.date DESC`,
-      qcodes, tags, start,
+      qcodes, tags, toSqlDate(start),
     );
     for (const row of openingRows) {
       const key = `${row.qcode}|${row.system_tag}`;
@@ -144,13 +220,16 @@ export async function fetchBulkXirrInputs(
         finalValue: openingValue,
       });
     }
-    // Real flows strictly after `start` (and up to `end`, if given) — the
-    // opening row itself is never double-counted since this is `> start`.
-    const params: any[] = [qcodes, tags, start];
-    let dateClause = " AND b.date > $3";
+    // Real flows on/after `start` (and up to `end`, if given) — now that
+    // the opening balance is sourced strictly before `start`, a flow dated
+    // exactly on `start` is a real flow that happened during the window,
+    // not part of the opening balance, so it belongs here (`>=`, not the
+    // previous `>`).
+    const params: any[] = [qcodes, tags, toSqlDate(start)];
+    let dateClause = " AND b.date >= $3::date";
     if (end) {
-      params.push(end);
-      dateClause += ` AND b.date <= $${params.length}`;
+      params.push(toSqlDate(end));
+      dateClause += ` AND b.date <= $${params.length}::date`;
     }
     const flowRows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT b.qcode, b.system_tag, b.date, b.capital_in_out, b.portfolio_value
@@ -164,7 +243,7 @@ export async function fetchBulkXirrInputs(
     for (const row of flowRows) {
       const key = `${row.qcode}|${row.system_tag}`;
       const entry = result.get(key);
-      if (!entry) continue; // no opening value found (account didn't exist before `start`) — can't window this
+      if (!entry) continue; // no opening value found — handled below via full-history fallback
       const date = row.date instanceof Date ? row.date : new Date(row.date);
       const amount = Number(row.capital_in_out) || 0;
       if (amount !== 0) entry.flows.push({ date, amount });
@@ -173,6 +252,20 @@ export async function fetchBulkXirrInputs(
         entry.finalValue = Number(row.portfolio_value) || 0;
       }
     }
+
+    // A pair with no row before `start` means the account's own inception
+    // is on/after the requested window start — there's no opening balance
+    // to window from. Rather than silently dropping it, fall back to a
+    // full-history XIRR from the account's actual inception for just those
+    // pairs, so the caller still gets a real (if not window-scoped) rate
+    // instead of nothing.
+    const missing = pairs.filter(
+      (p) => !result.has(`${p.qcode}|${p.tag}`),
+    );
+    if (missing.length > 0) {
+      const fallback = await fetchBulkXirrInputs(missing, end, undefined, table);
+      for (const [key, inputs] of fallback) result.set(key, inputs);
+    }
     return result;
   }
 
@@ -180,8 +273,8 @@ export async function fetchBulkXirrInputs(
   const params: any[] = [qcodes, tags];
   let dateClause = "";
   if (end) {
-    params.push(end);
-    dateClause = ` AND b.date <= $${params.length}`;
+    params.push(toSqlDate(end));
+    dateClause = ` AND b.date <= $${params.length}::date`;
   }
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `SELECT b.qcode, b.system_tag, b.date, b.capital_in_out, b.portfolio_value

@@ -5,7 +5,7 @@ import {
   calcYearlyReturns,
   calcMaxDrawdown,
   calcCurrentDrawdown,
-  calcSinceInception,
+  calcSinceInceptionAbsolute,
   calcSiPnl,
 } from "@/app/lib/portfolio-review/returns";
 import type { MonthlyReturn, YearlyReturn } from "@/app/lib/portfolio-review/returns";
@@ -50,7 +50,7 @@ export async function computeStrategyMonthlyReturns(): Promise<
       strategy: pair.strategy,
       monthly,
       yearly: calcYearlyReturns(monthly),
-      since_inception: calcSinceInception(nav),
+      since_inception: calcSinceInceptionAbsolute(nav),
       since_inception_pnl: calcSiPnl(nav),
       xirr: xirrInputs
         ? solveXirr(xirrInputs.flows, xirrInputs.asOfDate, xirrInputs.finalValue)
