@@ -412,11 +412,23 @@ function scaleMomentumLeg(
 // when the strategy-prefixed tag has no data. `momentumSplit`, when set,
 // additionally synthesizes momentum50/momidmtm as two more breakdown
 // entries derived from this node's own just-resolved metrics.
+//
+// `depth` is 0 for the client root, 1 for each strategy child (Managed) —
+// XIRR is only meaningful money-weighted at those two levels (a deposit
+// isn't attributable to one sleeve any more than to one tag). Deeper nodes
+// (LONG/PSAR/Gold/Liquidcase/... and the synthetic momentum50/momidmtm
+// legs) get `xirr: null` instead of a real per-sleeve solve. Solo-Prop has
+// no separate strategy layer — the client root already IS "the strategy"
+// (see buildRootNode's isSoloProp branch), so its depth-1 children are
+// sleeves, not a strategy node; `maxXirrDepth` lets the caller pass 0 for
+// solo-Prop so those sleeves don't wrongly get a real XIRR either.
 function resolveNode(
   qcode: string,
   node: ReturnsNode,
   navMap: NavSeriesMap,
   xirrMap: XirrInputsMap,
+  depth = 0,
+  maxXirrDepth = 1,
 ): ResolvedReturns | null {
   let nav = navMap.get(`${qcode}|${node.profitTag}`);
   if ((!nav || nav.length === 0) && node.fallbackProfitTag) {
@@ -424,7 +436,8 @@ function resolveNode(
   }
   if (!nav || nav.length === 0) return null;
 
-  const xirrInputs = xirrMap.get(`${qcode}|${node.exposureTag}`);
+  const xirrInputs =
+    depth <= maxXirrDepth ? xirrMap.get(`${qcode}|${node.exposureTag}`) : null;
   const monthly = calcMonthlyReturns(nav);
 
   const own: Omit<ResolvedReturns, "strategy_breakdown"> = {
@@ -442,7 +455,7 @@ function resolveNode(
 
   const strategy_breakdown: ClientStrategyBreakdownRow[] = [];
   for (const child of node.children) {
-    const resolved = resolveNode(qcode, child, navMap, xirrMap);
+    const resolved = resolveNode(qcode, child, navMap, xirrMap, depth + 1, maxXirrDepth);
     if (!resolved) continue;
     strategy_breakdown.push({ strategy: child.label, ...resolved });
   }
@@ -503,7 +516,14 @@ export async function computeClientMonthlyReturns(
   const rows: ClientMonthlyRow[] = [];
   for (const group of groups) {
     const root = roots.get(group.qcode)!;
-    const resolved = resolveNode(group.qcode, root, navMap, xirrMap);
+    const resolved = resolveNode(
+      group.qcode,
+      root,
+      navMap,
+      xirrMap,
+      0,
+      group.isSoloProp ? 0 : 1,
+    );
     if (!resolved) continue;
 
     rows.push({

@@ -27,6 +27,14 @@ export function toDisplayDate(iso: string): string {
   return `${d}-${m}-${y}`;
 }
 
+// For raw-SQL date bounds: pass this string with a `$n::date` cast, never a
+// JS Date. The DB session runs in Asia/Kolkata, so a Date param (UTC
+// midnight) compared against a `date` column shifts every lower bound by a
+// day — `date >= $1` drops the start day itself and `date < $1` includes it.
+export function toSqlDate(d: Date): string {
+  return d.toISOString().split("T")[0];
+}
+
 export const MS = 1000 * 60 * 60 * 24;
 
 export function mean(a: number[]): number {

@@ -181,6 +181,7 @@ async function computeSubStrategyPerformanceManaged(
   const xirrMap = await fetchBulkXirrInputs(
     pairs.map((p) => ({ qcode: p.qcode, tag: p.exposure_tag })),
     end,
+    start,
   );
 
   // Prefixed tag wins when it has data; bare tag is only trusted as a

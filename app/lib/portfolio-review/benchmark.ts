@@ -1,13 +1,11 @@
-import { round, MS, mean, std, toDisplayDate } from "@/lib/utils";
+import { round, mean, std, toDisplayDate } from "@/lib/utils";
 import { MONTHS } from "@/app/lib/portfolio-review/returns";
 import type { MonthlyReturn } from "@/app/lib/portfolio-review/returns";
-import { solveXirr } from "@/app/lib/portfolio-review/xirr";
 
 export interface BenchmarkResult {
   start_date: string;
   end_date: string;
   since_inception: number | null;
-  xirr: number | null;
   max_drawdown: number | null;
   current_drawdown: number | null;
   series: { date: string; nav: number; drawdown: number }[];
@@ -56,12 +54,9 @@ export function computeBenchmarkMetrics(
   if (clipped.length === 0) return null;
 
   const last = clipped[clipped.length - 1];
-  const days =
-    (new Date(last.date).getTime() - new Date(ref.date).getTime()) / MS;
-  const si =
-    days < 365
-      ? last.nav / refPrice - 1
-      : (last.nav / refPrice) ** (365 / days) - 1;
+  // Pure absolute return, same as the portfolio's since_inception it's shown
+  // beside — never CAGR'd past 1yr, so the two stay like-for-like.
+  const si = last.nav / refPrice - 1;
 
   let peak = refPrice,
     maxDD = 0;
@@ -76,22 +71,16 @@ export function computeBenchmarkMetrics(
     };
   });
 
-  // Single hypothetical buy-and-hold flow (buy at ref.date, mark-to-market
-  // at last.date) — the benchmark has no real dated cash flows, so this is
-  // the closest equivalent to solveXirr's money-weighted return.
-  const xirr = solveXirr(
-    [{ date: new Date(ref.date), amount: refPrice }],
-    new Date(last.date),
-    last.nav,
-  );
-
+  // Nifty has no real cash flows, so there's no money-weighted return to
+  // solve for it — an XIRR field here was always a fake single-flow
+  // buy-and-hold stand-in. Removed rather than kept as dead code; see
+  // BenchmarkResult above.
   return {
     // Display-only (rendered as raw text on Client Dashboard) — DD-MM-YYYY.
     // `series[].date` above stays ISO: re-parsed/sorted by the frontend.
     start_date: toDisplayDate(ref.date),
     end_date: toDisplayDate(last.date),
     since_inception: round(si, 4),
-    xirr,
     max_drawdown: round(maxDD, 4),
     current_drawdown: series[series.length - 1].drawdown,
     series,

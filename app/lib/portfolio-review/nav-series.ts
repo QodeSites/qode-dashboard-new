@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { toSqlDate } from "@/lib/utils";
 import type { NavPoint } from "@/app/lib/internal-utils";
 
 export async function fetchBulkNavSeries(
@@ -13,12 +14,12 @@ export async function fetchBulkNavSeries(
   const params: any[] = [pairs.map((p) => p.qcode), pairs.map((p) => p.tag)];
   let dateClause = "";
   if (start) {
-    params.push(start);
-    dateClause += ` AND b.date >= $${params.length}`;
+    params.push(toSqlDate(start));
+    dateClause += ` AND b.date >= $${params.length}::date`;
   }
   if (end) {
-    params.push(end);
-    dateClause += ` AND b.date <= $${params.length}`;
+    params.push(toSqlDate(end));
+    dateClause += ` AND b.date <= $${params.length}::date`;
   }
 
   const rows = await prisma.$queryRawUnsafe<any[]>(

@@ -53,10 +53,11 @@ export interface TagMetrics {
 
 /**
  * <1yr/≥1yr branching return: plain absolute below 1yr tenure, CAGR once
- * tenure crosses a year. Unchanged/untouched — TagMetrics.since_inception
- * keeps exactly this value, same as every other consumer of this function
- * (Calmar in calcRatios, StrategyBreakupRow, StrategyMonthlyRow, etc.).
- * `cagr` below is purely additive, not a replacement for this field.
+ * tenure crosses a year. Only used internally as the annualized-ish return
+ * in calcRatios (Calmar/Sortino) — never as a displayed "Since Inception"
+ * figure: every since_inception field shown on the dashboard is the pure
+ * absolute return (calcSinceInceptionAbsolute), with XIRR as its own
+ * separate field, so the two are never blended into one number.
  */
 export function calcSinceInception(nav: NavPoint[]): number | null {
   if (nav.length < 2) return null;
@@ -195,14 +196,32 @@ export function calcTrailingReturns(nav: NavPoint[]): TrailingReturns {
   return result;
 }
 
+/**
+ * Drawdown path (fractions, ≤ 0) by peak-tracking on NAV from the period's
+ * own starting value — the first row's prev_nav (its t-1 value), else its
+ * own nav. One rule for every page: over full history this matches the DB
+ * `drawdown` column (verified ≤ 0.005pp), but unlike that column it also
+ * stays correct when the series is windowed by a start date — the stored
+ * column keeps remembering peaks from before the window.
+ */
+function drawdownPath(nav: NavPoint[]): number[] {
+  const first = nav[0];
+  let peak = first.prev_nav != null && first.prev_nav > 0 ? first.prev_nav : first.nav;
+  return nav.map((p) => {
+    if (p.nav > peak) peak = p.nav;
+    return peak > 0 ? (p.nav - peak) / peak : 0;
+  });
+}
+
 export function calcMaxDrawdown(nav: NavPoint[]): number | null {
   if (nav.length === 0) return null;
-  return round(Math.min(...nav.map((p) => p.drawdown)) / 100, 4);
+  return round(Math.min(0, ...drawdownPath(nav)), 4);
 }
 
 export function calcCurrentDrawdown(nav: NavPoint[]): number | null {
   if (nav.length === 0) return null;
-  return round(nav[nav.length - 1].drawdown / 100, 4);
+  const path = drawdownPath(nav);
+  return round(path[path.length - 1], 4);
 }
 
 export function calcSiPnl(nav: NavPoint[]): number {
@@ -341,12 +360,16 @@ export function calcRatios(
   }
   if (daily.length < 10) return EMPTY_RATIOS;
 
-  const rfDaily = (1 + rfr) ** (1 / 252) - 1;
+  // Annualized on 365 calendar days, not 252 trading days — matches every
+  // other annualization in this file (calcSinceInception, calcCagr,
+  // calcTrailingReturns all use 365), so Sharpe/Sortino/vol don't silently
+  // run on a different calendar than since_inception/CAGR.
+  const rfDaily = (1 + rfr) ** (1 / 365) - 1;
   const s = std(daily);
-  const annVol = s > 0 ? s * Math.sqrt(252) : null;
+  const annVol = s > 0 ? s * Math.sqrt(365) : null;
   const sharpe =
     s > 0
-      ? round((mean(daily.map((r) => r - rfDaily)) / s) * Math.sqrt(252), 3)
+      ? round((mean(daily.map((r) => r - rfDaily)) / s) * Math.sqrt(365), 3)
       : null;
 
   const si = calcSinceInception(nav);
@@ -360,7 +383,7 @@ export function calcRatios(
   let sortino: number | null = null;
   let downsideDev: number | null = null;
   if (down.length > 1 && si != null) {
-    downsideDev = std(down) * Math.sqrt(252);
+    downsideDev = std(down) * Math.sqrt(365);
     if (downsideDev > 0) sortino = round((si - rfr) / downsideDev, 3);
   }
 
@@ -396,7 +419,7 @@ export function buildTagMetrics(
     // `series[].date` below stays ISO: it's re-parsed/sorted by the frontend.
     start_date: toDisplayDate(nav[0].date.toISOString().split("T")[0]),
     end_date: toDisplayDate(nav[nav.length - 1].date.toISOString().split("T")[0]),
-    since_inception: calcSinceInception(nav),
+    since_inception: calcSinceInceptionAbsolute(nav),
     since_inception_pnl: calcSiPnl(nav),
     since_inception_absolute: calcSinceInceptionAbsolute(nav),
     cagr: calcCagr(nav),

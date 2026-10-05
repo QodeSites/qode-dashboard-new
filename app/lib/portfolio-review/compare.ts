@@ -6,7 +6,19 @@ import {
 } from "@/app/lib/portfolio-review/benchmark";
 import { buildTagMetrics } from "@/app/lib/portfolio-review/returns";
 import type { TagMetrics } from "@/app/lib/portfolio-review/returns";
-import { fetchBulkXirrInputs, solveXirr } from "@/app/lib/portfolio-review/xirr";
+import {
+  fetchBulkXirrInputs,
+  solveXirr,
+  xirrSourceTag,
+  isSoloPropConfigs,
+  type XirrTagConfig,
+} from "@/app/lib/portfolio-review/xirr";
+import {
+  rebaseNavWindow,
+  anchorDateBefore,
+  withAnchorPoint,
+  type RebasedWindow,
+} from "@/app/lib/portfolio-review/rebase";
 import type { NavPoint } from "@/app/lib/internal-utils";
 
 const PROP_TABLE = "master_sheet_test" as const;
@@ -18,22 +30,26 @@ const PROP_TABLE = "master_sheet_test" as const;
  * sub-strategy-performance-prop.ts. Compare must fetch each qcode from its
  * own table since the two are never mixed in one query.
  */
-async function resolvePropQcodes(qcodes: string[]): Promise<Set<string>> {
-  if (qcodes.length === 0) return new Set();
+async function fetchConfigsByQcode(
+  qcodes: string[],
+): Promise<Map<string, XirrTagConfig[]>> {
+  if (qcodes.length === 0) return new Map();
   const configs = await prisma.client_strategy_configs.findMany({
     where: { qcode: { in: qcodes } },
-    select: { qcode: true, strategy: true },
+    select: {
+      qcode: true,
+      strategy: true,
+      profit_tag_suffix: true,
+      exposure_tag_suffix: true,
+    },
+    orderBy: { effective_from: "asc" },
   });
-  const grouped = new Map<string, string[]>();
+  const grouped = new Map<string, XirrTagConfig[]>();
   for (const c of configs) {
     if (!grouped.has(c.qcode)) grouped.set(c.qcode, []);
-    grouped.get(c.qcode)!.push(c.strategy);
+    grouped.get(c.qcode)!.push(c);
   }
-  const propQcodes = new Set<string>();
-  for (const [qcode, strategies] of grouped) {
-    if (strategies.length === 1 && strategies[0] === "Prop") propQcodes.add(qcode);
-  }
-  return propQcodes;
+  return grouped;
 }
 
 const SCHEDULE_RUNS_URL = "https://research.qodeinvest.com/api/schedule-runs";
@@ -223,7 +239,7 @@ export interface CompareResult {
     max_drawdown: number | null;
     current_drawdown: number | null;
   } | null;
-  skip_reason?: "no_data" | "inception_after_rebase_from";
+  skip_reason?: "no_data";
 }
 
 export interface BacktestSeries {
@@ -239,58 +255,6 @@ export interface CompareOutput {
 }
 
 /**
- * Clips `nav` to [ref, to] and rebases every point to 100 as of the last
- * available value at-or-before `from` — same "nearest prior value" +
- * inclusive-of-that-point convention computeBenchmarkMetrics already uses
- * for the Nifty benchmark (see its `ref`/`earlier` logic), so a line whose
- * own inception predates `from` by a few days still starts exactly at 100
- * on its first plotted point.
- *
- * Drawdown is recomputed by peak-tracking from that baseline — the stored
- * `drawdown` column is inception-relative and would be wrong for a custom
- * window, so it's deliberately NOT reused here (contrast with the default,
- * non-rebased path, which does read that column via calcMaxDrawdown).
- *
- * Returns null when `nav` has no point at-or-before `from` (inception is
- * after the requested window) or no data falls within [ref, to] — the
- * caller excludes the line in that case rather than showing a partial,
- * not-actually-comparable window.
- */
-function rebaseNavToWindow(
-  nav: NavPoint[],
-  from: Date,
-  to: Date,
-): NavPoint[] | null {
-  const toStr = to.toISOString().split("T")[0];
-  const earlier = nav.filter((p) => p.date.getTime() <= from.getTime());
-  if (earlier.length === 0) return null;
-  const ref = earlier[earlier.length - 1];
-  if (ref.nav <= 0) return null;
-
-  const clipped = nav.filter(
-    (p) =>
-      p.date.getTime() >= ref.date.getTime() &&
-      p.date.toISOString().split("T")[0] <= toStr,
-  );
-  if (clipped.length === 0) return null;
-
-  let peak = 100;
-  return clipped.map((p) => {
-    const rebasedNav = (p.nav / ref.nav) * 100;
-    if (rebasedNav > peak) peak = rebasedNav;
-    const drawdown = peak > 0 ? ((rebasedNav - peak) / peak) * 100 : 0;
-    return {
-      date: p.date,
-      nav: rebasedNav,
-      prev_nav: null,
-      drawdown,
-      pnl: p.pnl,
-      portfolio_value: p.portfolio_value,
-    };
-  });
-}
-
-/**
  * Prepends a T-1 anchor point at nav=100 when the series' own first point
  * isn't already 100 — same convention as portfolio-utils.ts's "prepend NAV
  * of 100 if the first NAV is not 100". Needed here because a "Total
@@ -300,23 +264,20 @@ function rebaseNavToWindow(
  * line that doesn't start at 100 — confusing on a comparison chart where
  * every line is meant to represent "growth of the same starting amount".
  * The real first row is left untouched right after the anchor, so the jump
- * from 100 to that value is visible rather than smoothed away.
+ * from 100 to that value is visible rather than smoothed away. The anchor
+ * is dated on Nifty's trading day before the first row (not just the
+ * previous calendar day) so it lines up with the benchmark's own 100-point.
  */
 function withNav100Anchor(
   metrics: Omit<TagMetrics, "ratios">,
+  benchDates: string[],
 ): Omit<TagMetrics, "ratios"> {
   const series = metrics.series;
   if (series.length === 0 || series[0].nav === 100) return metrics;
-  const firstDate = new Date(series[0].date);
-  const anchorDate = new Date(firstDate);
-  anchorDate.setUTCDate(firstDate.getUTCDate() - 1);
-  return {
-    ...metrics,
-    series: [
-      { date: anchorDate.toISOString().split("T")[0], nav: 100, drawdown: 0 },
-      ...series,
-    ],
-  };
+  return withAnchorPoint(
+    metrics,
+    anchorDateBefore(new Date(series[0].date), benchDates),
+  );
 }
 
 export async function computeCompare(
@@ -338,7 +299,14 @@ export async function computeCompare(
   for (const s of selections) uniquePairs.set(`${s.qcode}|${s.system_tag}`, s);
   const unique = [...uniquePairs.values()];
 
-  const propQcodes = await resolvePropQcodes([...new Set(unique.map((s) => s.qcode))]);
+  const configsByQcode = await fetchConfigsByQcode([
+    ...new Set(unique.map((s) => s.qcode)),
+  ]);
+  const propQcodes = new Set(
+    [...configsByQcode]
+      .filter(([, configs]) => isSoloPropConfigs(configs))
+      .map(([qcode]) => qcode),
+  );
   const propSelections = unique.filter((s) => propQcodes.has(s.qcode));
   const managedSelections = unique.filter((s) => !propQcodes.has(s.qcode));
 
@@ -356,19 +324,33 @@ export async function computeCompare(
   const seriesMap = new Map([...managedSeries, ...propSeries]);
 
   // XIRR is money-weighted (needs real cash flows + a final valuation, not
-  // just the NAV curve), computed per selected (qcode, system_tag) line —
-  // same windowing as the rest of this function: the shared rebase window
-  // when rebasing, full history otherwise. `start` here also doubles as
-  // fetchBulkXirrInputs' windowed-XIRR opening balance so the rate reflects
-  // exactly the rebased period, not the line's whole lifetime.
+  // just the NAV curve) and only exists for client- and strategy-level
+  // lines — each selection is mapped to its exposure tag via xirrSourceTag,
+  // sleeves get null. Same windowing as the rest of this function: the
+  // shared rebase window when rebasing, full history otherwise.
+  const sourceBySelection = new Map<string, string | null>();
+  for (const s of unique) {
+    sourceBySelection.set(
+      `${s.qcode}|${s.system_tag}`,
+      xirrSourceTag(s.system_tag, configsByQcode.get(s.qcode) ?? []),
+    );
+  }
+  const sourcePairs = (list: CompareSelection[]) => {
+    const seen = new Map<string, { qcode: string; tag: string }>();
+    for (const s of list) {
+      const tag = sourceBySelection.get(`${s.qcode}|${s.system_tag}`);
+      if (tag) seen.set(`${s.qcode}|${tag}`, { qcode: s.qcode, tag });
+    }
+    return [...seen.values()];
+  };
   const [managedXirrInputs, propXirrInputs] = await Promise.all([
     fetchBulkXirrInputs(
-      managedSelections.map((s) => ({ qcode: s.qcode, tag: s.system_tag })),
+      sourcePairs(managedSelections),
       rebasing ? rebaseTo : undefined,
       rebasing ? rebaseFrom : undefined,
     ),
     fetchBulkXirrInputs(
-      propSelections.map((s) => ({ qcode: s.qcode, tag: s.system_tag })),
+      sourcePairs(propSelections),
       rebasing ? rebaseTo : undefined,
       rebasing ? rebaseFrom : undefined,
       PROP_TABLE,
@@ -376,10 +358,13 @@ export async function computeCompare(
   ]);
   const xirrInputsMap = new Map([...managedXirrInputs, ...propXirrInputs]);
   const xirrMap = new Map<string, number | null>();
-  for (const [key, inputs] of xirrInputsMap) {
+  for (const [key, source] of sourceBySelection) {
+    const inputs = source
+      ? xirrInputsMap.get(`${key.split("|")[0]}|${source}`)
+      : undefined;
     xirrMap.set(
       key,
-      solveXirr(inputs.flows, inputs.asOfDate, inputs.finalValue),
+      inputs ? solveXirr(inputs.flows, inputs.asOfDate, inputs.finalValue) : null,
     );
   }
 
@@ -391,7 +376,7 @@ export async function computeCompare(
   // separate from `built` so tagGroups/backtest below can keep using each
   // line's real (unrebased) dates for its own inception-based window when
   // not rebasing, without threading an extra branch through that logic.
-  const rebasedNav = new Map<string, NavPoint[] | null>();
+  const rebasedNav = new Map<string, RebasedWindow | null>();
   for (const s of unique) {
     const key = `${s.qcode}|${s.system_tag}`;
     const nav = seriesMap.get(key);
@@ -406,7 +391,7 @@ export async function computeCompare(
     );
     built.set(key, { nav, metrics });
     if (rebasing) {
-      rebasedNav.set(key, rebaseNavToWindow(nav, rebaseFrom!, rebaseTo!));
+      rebasedNav.set(key, rebaseNavWindow(nav, rebaseFrom!, rebaseTo!));
     }
   }
 
@@ -425,16 +410,27 @@ export async function computeCompare(
   const niftyRaw =
     minStart && maxEnd ? await fetchNiftyRawSeries(minStart, maxEnd) : null;
 
+  // When rebasing, suppress the Nifty benchmark/backtest overlay unless at
+  // least one selection actually has real data in the requested window —
+  // otherwise the chart would draw a benchmark-only line over a date range
+  // where every client line was skipped (skip_reason below), which reads as
+  // "the client has data here" when they don't.
+  const anyRebasedData =
+    !rebasing || unique.some((s) => rebasedNav.get(`${s.qcode}|${s.system_tag}`));
+
   const chartBenchmark =
-    niftyRaw && minStart && maxEnd
+    niftyRaw && minStart && maxEnd && anyRebasedData
       ? computeBenchmarkMetrics(niftyRaw, minStart, maxEnd)
       : null;
+  const benchDates = chartBenchmark?.series.map((p) => p.date) ?? [];
 
   const overviewCache = new Map<string, CompareResult["benchmark_overview"]>();
-  function benchmarkOverview(key: string, nav: NavPoint[]) {
-    // Rebasing puts every line on the same shared window, so the benchmark
-    // comparison is the same chart-level one for all of them.
-    if (rebasing) {
+  function benchmarkOverview(key: string, nav: NavPoint[], sharedWindow: boolean) {
+    // A line rebased off a real t-1 row sits on the same shared window as
+    // the chart, so it gets the chart-level benchmark comparison. A line
+    // that started inside the window is compared against Nifty over its
+    // own span instead (the per-line branch below).
+    if (rebasing && sharedWindow) {
       return chartBenchmark
         ? {
             since_inception: chartBenchmark.since_inception,
@@ -471,33 +467,40 @@ export async function computeCompare(
       };
     }
     if (rebasing) {
-      const nav = rebasedNav.get(key);
-      if (!nav) {
+      const rebased = rebasedNav.get(key);
+      if (!rebased) {
         return {
           qcode: s.qcode,
           system_tag: s.system_tag,
           metrics: null,
           benchmark_overview: null,
-          skip_reason: "inception_after_rebase_from" as const,
+          skip_reason: "no_data" as const,
         };
       }
       const { ratios: _ratios, ...metrics } = buildTagMetrics(
-        nav,
+        rebased.points,
         0,
         xirrMap.get(key) ?? null,
       );
+      const anchorDate = rebased.anchorDate
+        ? rebased.anchorDate.toISOString().split("T")[0]
+        : anchorDateBefore(rebased.points[0].date, benchDates);
       return {
         qcode: s.qcode,
         system_tag: s.system_tag,
-        metrics: withNav100Anchor(metrics),
-        benchmark_overview: benchmarkOverview(key, nav),
+        metrics: withAnchorPoint(metrics, anchorDate),
+        benchmark_overview: benchmarkOverview(
+          key,
+          rebased.points,
+          rebased.anchorDate !== null,
+        ),
       };
     }
     return {
       qcode: s.qcode,
       system_tag: s.system_tag,
-      metrics: withNav100Anchor(b.metrics),
-      benchmark_overview: benchmarkOverview(key, b.nav),
+      metrics: withNav100Anchor(b.metrics, benchDates),
+      benchmark_overview: benchmarkOverview(key, b.nav, false),
     };
   });
 

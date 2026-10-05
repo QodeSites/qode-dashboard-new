@@ -12,7 +12,7 @@ import {
 import {
   calcMonthlyReturns,
   calcRatios,
-  calcSinceInception,
+  calcSinceInceptionAbsolute,
   calcSiPnl,
   calcMaxDrawdown,
   calcCurrentDrawdown,
@@ -136,7 +136,7 @@ export async function computeStrategyBreakup(
       account_name: pair.account_name,
       strategy: pair.strategy,
       inception_date: clientStart.toISOString().split("T")[0],
-      since_inception: calcSinceInception(nav),
+      since_inception: calcSinceInceptionAbsolute(nav),
       since_inception_pnl: calcSiPnl(nav),
       xirr,
       benchmark_return: bmMetrics?.since_inception ?? null,
