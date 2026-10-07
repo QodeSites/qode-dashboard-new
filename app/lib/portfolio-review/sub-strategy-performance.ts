@@ -43,6 +43,14 @@ const fixedLabel = (label: string) => () => label;
 const pctLabel = (base: string) => (value: number) => `${base} (${round(value * 100, 2)}%)`;
 const leverageLabel = (base: string) => (value: number) => `${base} ${value}x`;
 
+// Fixed-label sections' value is a per-client allocation pct, not a tier —
+// exposing it as section_value made each distinct pct a separate dropdown entry.
+const FIXED_LABEL_FIELDS = new Set<SubStrategySectionDef["existsField"]>([
+  "gold_pct",
+  "lowvol_pct",
+  "momentum_pct",
+]);
+
 export const SUB_STRATEGY_SECTIONS: SubStrategySectionDef[] = [
   { tag: "LONG", existsField: "long_opt_pct", labelFor: pctLabel("Long Options") },
   { tag: "NLONG", existsField: "long_opt_pct", labelFor: pctLabel("NLONG") },
@@ -228,7 +236,7 @@ async function computeSubStrategyPerformanceManaged(
       rows.push({
         section: sec.labelFor(value),
         section_family: sec.tag,
-        section_value: value,
+        section_value: FIXED_LABEL_FIELDS.has(sec.existsField) ? null : value,
         is_exception: isException,
         standard_value: isException ? standardValue : null,
         qcode: pair.qcode,
