@@ -370,7 +370,7 @@ export function ComparisonTab() {
   const [rebaseFrom, setRebaseFrom] = useState("");
   const [rebaseTo, setRebaseTo] = useState("");
 
-  useEffect(() => { fetchClients().then(setClients).catch(() => { }); }, []);
+  useEffect(() => { fetchClients(undefined, "all").then(setClients).catch(() => { }); }, []);
 
   const updateRow = useCallback((id: string, patch: Partial<SelectionRow>) => {
     setRows((prev) => prev.map((r) => r.id === id ? { ...r, ...patch } : r));

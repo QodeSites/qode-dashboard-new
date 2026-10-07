@@ -18,6 +18,21 @@ export async function GET(req: Request) {
     );
   }
 
+  // Opt-in: default (omitted / "active") keeps today's active-only list so
+  // existing callers are unaffected; "all" also returns fully closed clients.
+  const accountStatusParam = new URL(req.url).searchParams.get("account_status");
+  if (
+    accountStatusParam !== null &&
+    accountStatusParam !== "active" &&
+    accountStatusParam !== "all"
+  ) {
+    return NextResponse.json(
+      { error: "account_status must be 'active' or 'all'" },
+      { status: 400 },
+    );
+  }
+  const includeInactive = accountStatusParam === "all";
+
   const configs = await prisma.client_strategy_configs.findMany({
     orderBy: [{ qcode: "asc" }, { effective_from: "asc" }],
   });
@@ -34,10 +49,11 @@ export async function GET(req: Request) {
   const result = [];
   for (const [qcode, rows] of grouped) {
     // client-level gate: needs at least one active strategy to appear at all
+    // (skipped when account_status=all)
     const hasActive = rows.some(
       (r) => !r.effective_to || r.effective_to >= today,
     );
-    if (!hasActive) continue;
+    if (!includeInactive && !hasActive) continue;
 
     // Solo Prop client — tags carry no strategy prefix, same discriminator as client-dashboard
     const isSoloProp = rows.length === 1 && rows[0].strategy === "Prop";

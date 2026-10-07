@@ -281,9 +281,15 @@ async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-export async function fetchClients(accountType?: "managed" | "prop"): Promise<ClientListItem[]> {
-  const qs = accountType ? `?account_type=${accountType}` : "";
-  return apiFetch<ClientListItem[]>(`/api/internal/clients${qs}`);
+export async function fetchClients(
+  accountType?: "managed" | "prop",
+  accountStatus?: "active" | "all", // omitted = active-only (server default)
+): Promise<ClientListItem[]> {
+  const params = new URLSearchParams();
+  if (accountType) params.set("account_type", accountType);
+  if (accountStatus) params.set("account_status", accountStatus);
+  const qs = params.toString();
+  return apiFetch<ClientListItem[]>(`/api/internal/clients${qs ? `?${qs}` : ""}`);
 }
 
 export async function fetchClientDashboard(

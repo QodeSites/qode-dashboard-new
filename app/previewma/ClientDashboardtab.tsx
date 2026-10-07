@@ -58,7 +58,7 @@ export function ClientDashboardsTab({
     setSelectedQcode(null); // clear stale selection from the other mode
     setSelectedStrategy(null);
 
-    fetchClients(accountType)
+    fetchClients(accountType, "all")
       .then((list) => {
         if (cancelled) return;
         setClients(list);
