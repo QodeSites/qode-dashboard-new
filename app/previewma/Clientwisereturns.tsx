@@ -17,6 +17,9 @@ const MONTH_SHORT: Record<string, string> = {
 };
 
 const TRAILING_COLS: { key: keyof TrailingReturns; label: string }[] = [
+  { key: "five_day", label: "5D" },
+  { key: "ten_day", label: "10D" },
+  { key: "fifteen_day", label: "15D" },
   { key: "one_month", label: "1M" },
   { key: "three_month", label: "3M" },
   { key: "six_month", label: "6M" },

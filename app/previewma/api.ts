@@ -371,6 +371,9 @@ export interface TrailingReturnValue {
   pnl_inr: number | null;
 }
 export interface TrailingReturns {
+  five_day: TrailingReturnValue;
+  ten_day: TrailingReturnValue;
+  fifteen_day: TrailingReturnValue;
   one_month: TrailingReturnValue;
   three_month: TrailingReturnValue;
   six_month: TrailingReturnValue;

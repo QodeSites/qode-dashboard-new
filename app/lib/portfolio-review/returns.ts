@@ -111,6 +111,9 @@ export interface TrailingReturnPoint {
 // first-class field alongside trailing_returns on every row (since_inception /
 // since_inception_absolute), so repeating it here was pure duplication.
 export interface TrailingReturns {
+  five_day: TrailingReturnPoint;
+  ten_day: TrailingReturnPoint;
+  fifteen_day: TrailingReturnPoint;
   one_month: TrailingReturnPoint;
   three_month: TrailingReturnPoint;
   six_month: TrailingReturnPoint;
@@ -125,6 +128,9 @@ const TRAILING_PERIODS: {
   key: keyof TrailingReturns;
   days: number;
 }[] = [
+  { key: "five_day", days: 5 },
+  { key: "ten_day", days: 10 },
+  { key: "fifteen_day", days: 15 },
   { key: "one_month", days: 30 },
   { key: "three_month", days: 90 },
   { key: "six_month", days: 180 },
@@ -147,6 +153,9 @@ const TRAILING_PERIODS: {
 export function calcTrailingReturns(nav: NavPoint[]): TrailingReturns {
   const empty: TrailingReturnPoint = { pct: null, pnl_inr: null };
   const result: TrailingReturns = {
+    five_day: { ...empty },
+    ten_day: { ...empty },
+    fifteen_day: { ...empty },
     one_month: { ...empty },
     three_month: { ...empty },
     six_month: { ...empty },
