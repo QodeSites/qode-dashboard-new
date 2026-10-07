@@ -4,7 +4,12 @@ import {
   fetchNiftyRawSeries,
   computeBenchmarkMetrics,
 } from "@/app/lib/portfolio-review/benchmark";
-import { buildTagMetrics } from "@/app/lib/portfolio-review/returns";
+import {
+  buildTagMetrics,
+  calcMonthlyReturns,
+  calcQuarterlyReturns,
+  calcYearlyReturns,
+} from "@/app/lib/portfolio-review/returns";
 import type { TagMetrics } from "@/app/lib/portfolio-review/returns";
 import {
   fetchBulkXirrInputs,
@@ -242,12 +247,48 @@ export interface CompareResult {
   skip_reason?: "no_data";
 }
 
-export interface BacktestSeries {
+export interface PeriodReturns {
+  monthly: { year: number; month: string; return_pct: number }[];
+  quarterly: { year: number; quarter: string; return_pct: number }[];
+  yearly: { year: number; return_pct: number }[];
+}
+
+export interface BacktestSeries extends PeriodReturns {
   system_tag: string;
   series: { date: string; nav: number; drawdown: number }[];
 }
 
+/**
+ * Monthly/quarterly/yearly returns off a rebased index series (benchmark or
+ * backtest). Reuses the portfolio's own bucketing so the figures are
+ * like-for-like; the series' first point is the 100-base, so the first month
+ * is measured from 100. No rupee P&L exists for an index, so pnl is dropped.
+ */
+function periodReturnsFromSeries(
+  series: { date: string; nav: number }[],
+): PeriodReturns {
+  const nav: NavPoint[] = series.map((p) => ({
+    date: new Date(p.date),
+    nav: p.nav,
+    prev_nav: null,
+    drawdown: 0,
+    pnl: 0,
+    portfolio_value: 0,
+  }));
+  const monthly = calcMonthlyReturns(nav);
+  return {
+    monthly: monthly.map(({ year, month, return_pct }) => ({ year, month, return_pct })),
+    quarterly: calcQuarterlyReturns(monthly).map(({ year, quarter, return_pct }) => ({
+      year,
+      quarter,
+      return_pct,
+    })),
+    yearly: calcYearlyReturns(monthly).map(({ year, return_pct }) => ({ year, return_pct })),
+  };
+}
+
 export interface CompareOutput {
+  benchmark_returns: PeriodReturns | null;
   benchmark_series: { date: string; nav: number; drawdown: number }[];
   backtest_series: BacktestSeries[];
   results: CompareResult[];
@@ -287,6 +328,7 @@ export async function computeCompare(
 ): Promise<CompareOutput> {
   if (selections.length === 0)
     return {
+      benchmark_returns: null,
       benchmark_series: [],
       backtest_series: [],
       results: [],
@@ -569,12 +611,16 @@ export async function computeCompare(
           backtest_series.push({
             system_tag: systemTag,
             series: rebased.series,
+            ...periodReturnsFromSeries(rebased.series),
           });
       }
     }
   }
 
   return {
+    benchmark_returns: chartBenchmark
+      ? periodReturnsFromSeries(chartBenchmark.series)
+      : null,
     benchmark_series: chartBenchmark?.series ?? [],
     backtest_series,
     results,
