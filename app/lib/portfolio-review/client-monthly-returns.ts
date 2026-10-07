@@ -154,7 +154,6 @@ async function fetchClientGroups(
     orderBy: [{ qcode: "asc" }, { effective_from: "asc" }],
   });
 
-  const today = new Date();
   const grouped = new Map<string, typeof configs>();
   for (const c of configs) {
     if (!grouped.has(c.qcode)) grouped.set(c.qcode, []);
@@ -163,9 +162,6 @@ async function fetchClientGroups(
 
   const result: ClientGroup[] = [];
   for (const [qcode, rows] of grouped) {
-    const hasActive = rows.some((r) => !r.effective_to || r.effective_to >= today);
-    if (!hasActive) continue;
-
     const isSoloProp = rows.length === 1 && rows[0].strategy === "Prop";
     if (accountType === "prop" && !isSoloProp) continue;
     if (accountType === "managed" && isSoloProp) continue;
