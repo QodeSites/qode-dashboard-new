@@ -4,6 +4,7 @@ import {
   type CompareSelection,
 } from "@/app/lib/internal-utils";
 import { requireInternal } from "@/app/lib/admin-utils";
+import { toDisplayDate } from "@/lib/utils";
 
 interface GroupedSelection {
   qcode: string;
@@ -80,5 +81,27 @@ export async function POST(req: Request) {
   }
 
   const data = await computeCompare(flat, rebaseFrom, rebaseTo);
-  return NextResponse.json(data);
+
+  const dmy = <T extends { date: string }>(series: T[]): T[] =>
+    series.map((p) => ({ ...p, date: toDisplayDate(p.date) }));
+
+  return NextResponse.json({
+    ...data,
+    benchmark_series: dmy(data.benchmark_series),
+    backtest_series: data.backtest_series.map((b) => ({
+      ...b,
+      series: dmy(b.series),
+    })),
+    results: data.results.map((r) =>
+      r.metrics
+        ? { ...r, metrics: { ...r.metrics, series: dmy(r.metrics.series) } }
+        : r,
+    ),
+    rebase_window: data.rebase_window
+      ? {
+          from: toDisplayDate(data.rebase_window.from),
+          to: toDisplayDate(data.rebase_window.to),
+        }
+      : null,
+  });
 }
