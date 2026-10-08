@@ -36,13 +36,11 @@ const LIQUIDCASE_TAG = "Liquidcase Stock Holdings";
 const LIQUIDADD_TAG = "Liquidadd Stock Holdings";
 
 // Momentum's two sub-legs (MOMENTUM50 / MOMIDMTM) have no NAV tag of their
-// own in master_sheet. Their split comes from the client's actual holdings in
+// own in master_sheet. They are derived from the client's actual holdings in
 // bifurcated_equity_holding_test: rows with sub_category = 'Momentum', told
-// apart by `symbol`, valued by value_as_of_today. A leg exists only if the
-// client has ever held that symbol (e.g. a client holding only MOMENTUM50 has
-// no MomIdMtm leg). Each leg's rupee P&L is the parent Momentum series' daily
-// pnl times that day's value share, so the share can change over time; the %
-// figures stay the parent's (there is no separate per-leg NAV series).
+// apart by `symbol` (quantity, ltp, value_as_of_today). A leg exists only if
+// the client has ever held that symbol. See allocateMomentumDays for how the
+// parent Momentum series' daily pnl and return are attributed to each leg.
 const MOMENTUM_TAG = "Momentum Stock Holdings";
 const MOMENTUM_SUB_CATEGORY = "Momentum";
 const MOMENTUM_SPLIT_LEGS = [
@@ -51,10 +49,16 @@ const MOMENTUM_SPLIT_LEGS = [
 ] as const;
 
 type MomentumLegSymbol = (typeof MOMENTUM_SPLIT_LEGS)[number]["symbol"];
-// Value share per leg on one holdings date; shares sum to 1 across the legs
-// held that day.
+interface MomentumPosition {
+  qty: number;
+  ltp: number;
+  value: number;
+}
+// One holdings date for a client/strategy: each leg's position, plus its
+// value share of the combined Momentum holding.
 interface MomentumSnapshot {
   date: string; // ISO yyyy-mm-dd
+  legs: Partial<Record<MomentumLegSymbol, MomentumPosition>>;
   shares: Record<MomentumLegSymbol, number>;
 }
 // Ascending by date, keyed `${qcode}|${strategy}`.
@@ -67,9 +71,19 @@ async function fetchMomentumSplits(
   if (qcodes.length === 0) return result;
 
   const rows = await prisma.$queryRawUnsafe<
-    { qcode: string; strategy: string | null; date: string; symbol: string; value: number }[]
+    {
+      qcode: string;
+      strategy: string | null;
+      date: string;
+      symbol: MomentumLegSymbol;
+      qty: number;
+      ltp: number;
+      value: number;
+    }[]
   >(
     `SELECT qcode, strategy, date::text AS date, symbol,
+            COALESCE(SUM(quantity), 0)::float AS qty,
+            COALESCE(MAX(ltp), 0)::float AS ltp,
             COALESCE(SUM(value_as_of_today), 0)::float AS value
      FROM bifurcated_equity_holding_test
      WHERE sub_category = $1
@@ -82,26 +96,27 @@ async function fetchMomentumSplits(
     qcodes,
   );
 
-  const byDay = new Map<string, Map<string, Record<string, number>>>();
+  const byDay = new Map<string, Map<string, MomentumSnapshot["legs"]>>();
   for (const r of rows) {
     if (!r.strategy) continue;
     const key = `${r.qcode}|${r.strategy}`;
     if (!byDay.has(key)) byDay.set(key, new Map());
     const days = byDay.get(key)!;
     if (!days.has(r.date)) days.set(r.date, {});
-    days.get(r.date)![r.symbol] = r.value;
+    days.get(r.date)![r.symbol] = { qty: r.qty, ltp: r.ltp, value: r.value };
   }
 
   for (const [key, days] of byDay) {
     const history: MomentumSplitHistory = [];
-    for (const [date, values] of [...days].sort(([a], [b]) => a.localeCompare(b))) {
-      const total = MOMENTUM_SPLIT_LEGS.reduce((sum, l) => sum + (values[l.symbol] ?? 0), 0);
+    for (const [date, legs] of [...days].sort(([x], [y]) => x.localeCompare(y))) {
+      const total = MOMENTUM_SPLIT_LEGS.reduce((sum, l) => sum + (legs[l.symbol]?.value ?? 0), 0);
       if (total <= 0) continue;
       history.push({
         date,
+        legs,
         shares: {
-          MOMENTUM50: (values.MOMENTUM50 ?? 0) / total,
-          MOMIDMTM: (values.MOMIDMTM ?? 0) / total,
+          MOMENTUM50: (legs.MOMENTUM50?.value ?? 0) / total,
+          MOMIDMTM: (legs.MOMIDMTM?.value ?? 0) / total,
         },
       });
     }
@@ -402,49 +417,156 @@ interface ResolvedReturns {
   strategy_breakdown: ClientStrategyBreakdownRow[];
 }
 
-// Derives one Momentum leg from the parent Momentum series: each day's pnl is
-// multiplied by that day's holdings share for the leg's symbol, then the usual
-// monthly / yearly / since-inception / trailing calcs run on that scaled
-// series, so rupee figures follow the changing split. % figures, XIRR and
-// drawdowns are carried over from the parent unchanged — no separate NAV
-// series exists per leg, so "each leg's own % return" isn't computable;
-// only each leg's share of the combined rupee P&L is.
+interface MomentumLegDay {
+  pnl: number;
+  ret: number;
+}
+
+const isoDay = (d: Date) => d.toISOString().split("T")[0];
+
+// Attributes each day of the parent Momentum series to its legs.
+//
+// P&L: when both today's and the previous NAV day's holdings snapshots exist,
+// each leg's actual contribution is prior-day quantity x that day's ltp move;
+// the parent's pnl is split in proportion to those contributions (so legs
+// still sum to the parent exactly). If that isn't usable - a snapshot is
+// missing, or the contributions are near-zero / disagree in sign with the
+// parent's pnl - the parent's pnl is split by holdings value share instead.
+//
+// Return: a leg's return is its own ltp move. On a day with a snapshot it is
+// measured from the leg's previous snapshot (so a gap of missing days is
+// captured once, on the day data resumes, and the gap days carry 0). Only
+// where there is no price data to use (the leg isn't held that day, or no
+// later snapshot exists) does it fall back to the parent's daily return.
+function allocateMomentumDays(
+  nav: NavPoint[],
+  history: MomentumSplitHistory,
+): Record<MomentumLegSymbol, MomentumLegDay[]> {
+  const byDate = new Map(history.map((h, i) => [h.date, i]));
+  const out = { MOMENTUM50: [], MOMIDMTM: [] } as Record<MomentumLegSymbol, MomentumLegDay[]>;
+  const lastSnapshot = history[history.length - 1].date;
+
+  // Index of the latest earlier snapshot that holds `symbol`.
+  const refIndex = (symbol: MomentumLegSymbol, before: number): number => {
+    for (let k = before - 1; k >= 0; k--) if (history[k].legs[symbol]) return k;
+    return -1;
+  };
+
+  nav.forEach((p, i) => {
+    const day = isoDay(p.date);
+    const prevNav = p.prev_nav ?? (i > 0 ? nav[i - 1].nav : null);
+    const parentRet = prevNav != null && prevNav > 0 ? p.nav / prevNav - 1 : 0;
+    const curIdx = byDate.get(day);
+    const prevIdx = i > 0 ? byDate.get(isoDay(nav[i - 1].date)) : undefined;
+
+    const ret = {} as Record<MomentumLegSymbol, number>;
+    for (const { symbol } of MOMENTUM_SPLIT_LEGS) {
+      if (curIdx !== undefined) {
+        const now = history[curIdx].legs[symbol];
+        const ref = now ? refIndex(symbol, curIdx) : -1;
+        if (now && ref >= 0 && history[ref].legs[symbol]!.ltp > 0) {
+          ret[symbol] = now.ltp / history[ref].legs[symbol]!.ltp - 1;
+        } else if (now && ref < 0 && curIdx > 0) {
+          // first day the leg appears after the series began: it was bought
+          // at this snapshot, so it has no return of its own yet
+          ret[symbol] = 0;
+        } else {
+          ret[symbol] = parentRet;
+        }
+      } else {
+        // between two snapshots of a leg already held: that gap's move is
+        // booked on the day data resumes. Before the first snapshot or after
+        // the last, there is no price data, so follow the parent.
+        const heldBefore = history.some((h) => h.date < day && h.legs[symbol]);
+        const heldLater = history.some((h) => h.date > day && h.legs[symbol]);
+        ret[symbol] = heldBefore && heldLater && day < lastSnapshot ? 0 : parentRet;
+      }
+    }
+
+    if (curIdx !== undefined && prevIdx !== undefined) {
+      const contrib = {} as Record<MomentumLegSymbol, number>;
+      for (const { symbol } of MOMENTUM_SPLIT_LEGS) {
+        const before = history[prevIdx].legs[symbol];
+        const now = history[curIdx].legs[symbol];
+        contrib[symbol] = before && now ? before.qty * (now.ltp - before.ltp) : 0;
+      }
+      const sum = MOMENTUM_SPLIT_LEGS.reduce((t, l) => t + contrib[l.symbol], 0);
+      const gross = MOMENTUM_SPLIT_LEGS.reduce((t, l) => t + Math.abs(contrib[l.symbol]), 0);
+      if (
+        p.pnl !== 0 &&
+        gross > 0 &&
+        Math.abs(sum) >= 0.2 * gross &&
+        Math.sign(sum) === Math.sign(p.pnl)
+      ) {
+        for (const { symbol } of MOMENTUM_SPLIT_LEGS) {
+          out[symbol].push({ pnl: (p.pnl * contrib[symbol]) / sum, ret: ret[symbol] });
+        }
+        return;
+      }
+    }
+    for (const { symbol } of MOMENTUM_SPLIT_LEGS) {
+      out[symbol].push({
+        pnl: p.pnl * momentumShareAt(history, symbol, p.date),
+        ret: ret[symbol],
+      });
+    }
+  });
+  return out;
+}
+
+// Builds one leg's own NAV series (starting at 100 on its first day) from the
+// per-day attribution, then runs the normal calcs on it, so % returns,
+// drawdowns and trailing returns are the leg's own, not the parent's.
 function buildMomentumLeg(
   nav: NavPoint[],
-  own: Omit<ResolvedReturns, "strategy_breakdown">,
+  days: MomentumLegDay[],
   history: MomentumSplitHistory,
   symbol: MomentumLegSymbol,
   label: string,
 ): ClientStrategyBreakdownRow {
-  const legNav = nav.map((p) => ({
-    ...p,
-    pnl: p.pnl * momentumShareAt(history, symbol, p.date),
-  }));
-  const monthly = calcMonthlyReturns(legNav);
-  const trailing = calcTrailingReturns(legNav);
-  const trailing_returns = {} as TrailingReturns;
-  (Object.keys(trailing) as (keyof TrailingReturns)[]).forEach((k) => {
-    trailing_returns[k] = { pct: own.trailing_returns[k].pct, pnl_inr: trailing[k].pnl_inr };
-  });
+  const firstHeld = history.find((h) => h.shares[symbol] > 0)!;
+  const start =
+    history[0].shares[symbol] > 0 ? 0 : nav.findIndex((p) => isoDay(p.date) >= firstHeld.date);
 
+  const legNav: NavPoint[] = [];
+  let level = 100;
+  let peak = 100;
+  for (let i = Math.max(start, 0); i < nav.length; i++) {
+    const prev = level;
+    level = prev * (1 + days[i].ret);
+    peak = Math.max(peak, level);
+    legNav.push({
+      date: nav[i].date,
+      nav: level,
+      prev_nav: prev,
+      drawdown: ((level - peak) / peak) * 100,
+      pnl: days[i].pnl,
+      portfolio_value: 0,
+    });
+  }
+
+  const monthly = calcMonthlyReturns(legNav);
   return {
     strategy: label,
-    monthly: monthly.map((m, i) => ({ ...m, return_pct: own.monthly[i].return_pct })),
-    yearly: own.yearly.map((y) => ({
-      ...y,
-      pnl_inr: round(
-        monthly.filter((m) => m.year === y.year).reduce((sum, m) => sum + m.pnl_inr, 0),
-        2,
-      ) ?? 0,
-    })),
-    xirr: own.xirr,
-    max_drawdown: own.max_drawdown,
-    current_drawdown: own.current_drawdown,
-    since_inception_absolute: own.since_inception_absolute,
+    monthly,
+    yearly: calcYearlyReturns(monthly),
+    xirr: null,
+    max_drawdown: calcMaxDrawdown(legNav),
+    current_drawdown: calcCurrentDrawdown(legNav),
+    since_inception_absolute: calcSinceInceptionAbsolute(legNav),
     since_inception_pnl: calcSiPnl(legNav),
-    trailing_returns,
+    trailing_returns: calcTrailingReturns(legNav),
     strategy_breakdown: [],
   };
+}
+
+// A client that only ever held one leg has that leg at 100% - it is the
+// parent Momentum series, so reuse the parent's own figures unchanged.
+function wholeMomentumLeg(
+  own: Omit<ResolvedReturns, "strategy_breakdown">,
+  label: string,
+): ClientStrategyBreakdownRow {
+  return { strategy: label, ...own, strategy_breakdown: [] };
 }
 
 // Recursively resolves a node's own metrics, then its children's — a node
@@ -503,10 +625,14 @@ function resolveNode(
 
   if (node.momentumSplit) {
     const history = node.momentumSplit;
-    for (const leg of MOMENTUM_SPLIT_LEGS) {
-      // Only legs the client has actually held at some point.
-      if (!history.some((h) => h.shares[leg.symbol] > 0)) continue;
-      strategy_breakdown.push(buildMomentumLeg(nav, own, history, leg.symbol, leg.label));
+    const held = MOMENTUM_SPLIT_LEGS.filter((l) => history.some((h) => h.shares[l.symbol] > 0));
+    if (held.length === 1) {
+      strategy_breakdown.push(wholeMomentumLeg(own, held[0].label));
+    } else if (held.length > 1) {
+      const days = allocateMomentumDays(nav, history);
+      for (const leg of held) {
+        strategy_breakdown.push(buildMomentumLeg(nav, days[leg.symbol], history, leg.symbol, leg.label));
+      }
     }
   }
 
