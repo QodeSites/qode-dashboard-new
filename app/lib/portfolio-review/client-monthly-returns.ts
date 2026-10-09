@@ -1,13 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { round } from "@/lib/utils";
 import { fetchBulkNavSeries } from "@/app/lib/portfolio-review/nav-series";
-import { fetchBulkXirrInputs, solveXirr } from "@/app/lib/portfolio-review/xirr";
 import {
   calcMonthlyReturns,
   calcYearlyReturns,
   calcMaxDrawdown,
   calcCurrentDrawdown,
-  calcSinceInceptionAbsolute,
+  calcSinceInception,
   calcSiPnl,
   calcTrailingReturns,
 } from "@/app/lib/portfolio-review/returns";
@@ -151,10 +150,10 @@ export interface ClientStrategyBreakdownRow {
   strategy: string;
   monthly: MonthlyReturn[];
   yearly: YearlyReturn[];
-  xirr: number | null;
+  // Blended: absolute <1yr tenure, CAGR >=1yr — no separate XIRR field.
+  since_inception: number | null;
   max_drawdown: number | null;
   current_drawdown: number | null;
-  since_inception_absolute: number | null;
   since_inception_pnl: number | null;
   trailing_returns: TrailingReturns;
   strategy_breakdown: ClientStrategyBreakdownRow[];
@@ -166,10 +165,9 @@ export interface ClientMonthlyRow {
   is_multi_strategy: boolean;
   monthly: MonthlyReturn[];
   yearly: YearlyReturn[];
-  xirr: number | null;
+  since_inception: number | null;
   max_drawdown: number | null;
   current_drawdown: number | null;
-  since_inception_absolute: number | null;
   since_inception_pnl: number | null;
   trailing_returns: TrailingReturns;
   strategy_breakdown: ClientStrategyBreakdownRow[];
@@ -392,26 +390,14 @@ function flattenNode(qcode: string, node: ReturnsNode): { qcode: string; tag: st
   if (node.fallbackProfitTag) pairs.push({ qcode, tag: node.fallbackProfitTag });
   return [...pairs, ...node.children.flatMap((c) => flattenNode(qcode, c))];
 }
-function flattenNodeExposure(
-  qcode: string,
-  node: ReturnsNode,
-): { qcode: string; tag: string }[] {
-  return [
-    { qcode, tag: node.exposureTag },
-    ...node.children.flatMap((c) => flattenNodeExposure(qcode, c)),
-  ];
-}
-
 type NavSeriesMap = Awaited<ReturnType<typeof fetchBulkNavSeries>>;
-type XirrInputsMap = Awaited<ReturnType<typeof fetchBulkXirrInputs>>;
 
 interface ResolvedReturns {
   monthly: MonthlyReturn[];
   yearly: YearlyReturn[];
-  xirr: number | null;
+  since_inception: number | null;
   max_drawdown: number | null;
   current_drawdown: number | null;
-  since_inception_absolute: number | null;
   since_inception_pnl: number | null;
   trailing_returns: TrailingReturns;
   strategy_breakdown: ClientStrategyBreakdownRow[];
@@ -550,10 +536,9 @@ function buildMomentumLeg(
     strategy: label,
     monthly,
     yearly: calcYearlyReturns(monthly),
-    xirr: null,
     max_drawdown: calcMaxDrawdown(legNav),
     current_drawdown: calcCurrentDrawdown(legNav),
-    since_inception_absolute: calcSinceInceptionAbsolute(legNav),
+    since_inception: calcSinceInception(legNav),
     since_inception_pnl: calcSiPnl(legNav),
     trailing_returns: calcTrailingReturns(legNav),
     strategy_breakdown: [],
@@ -576,22 +561,16 @@ function wholeMomentumLeg(
 // additionally synthesizes momentum50/momidmtm as two more breakdown
 // entries derived from this node's own just-resolved metrics.
 //
-// `depth` is 0 for the client root, 1 for each strategy child (Managed) —
-// XIRR is only meaningful money-weighted at those two levels (a deposit
-// isn't attributable to one sleeve any more than to one tag). Deeper nodes
-// (LONG/PSAR/Gold/Liquidcase/... and the synthetic momentum50/momidmtm
-// legs) get `xirr: null` instead of a real per-sleeve solve. Solo-Prop has
-// no separate strategy layer — the client root already IS "the strategy"
-// (see buildRootNode's isSoloProp branch), so its depth-1 children are
-// sleeves, not a strategy node; `maxXirrDepth` lets the caller pass 0 for
-// solo-Prop so those sleeves don't wrongly get a real XIRR either.
+// since_inception is NAV-based (calcSinceInception), not cash-flow XIRR, so
+// — unlike the old XIRR depth gate this function used to carry — every
+// node, sleeves included (Gold/PSAR/LONG/.../momentum50/momidmtm), now gets
+// a real value instead of null. A sleeve has no deposit of its own to
+// attribute an XIRR to, but it has its own NAV series, which is all this
+// metric needs.
 function resolveNode(
   qcode: string,
   node: ReturnsNode,
   navMap: NavSeriesMap,
-  xirrMap: XirrInputsMap,
-  depth = 0,
-  maxXirrDepth = 1,
 ): ResolvedReturns | null {
   let nav = navMap.get(`${qcode}|${node.profitTag}`);
   if ((!nav || nav.length === 0) && node.fallbackProfitTag) {
@@ -599,26 +578,21 @@ function resolveNode(
   }
   if (!nav || nav.length === 0) return null;
 
-  const xirrInputs =
-    depth <= maxXirrDepth ? xirrMap.get(`${qcode}|${node.exposureTag}`) : null;
   const monthly = calcMonthlyReturns(nav);
 
   const own: Omit<ResolvedReturns, "strategy_breakdown"> = {
     monthly,
     yearly: calcYearlyReturns(monthly),
-    xirr: xirrInputs
-      ? solveXirr(xirrInputs.flows, xirrInputs.asOfDate, xirrInputs.finalValue)
-      : null,
     max_drawdown: calcMaxDrawdown(nav),
     current_drawdown: calcCurrentDrawdown(nav),
-    since_inception_absolute: calcSinceInceptionAbsolute(nav),
+    since_inception: calcSinceInception(nav),
     since_inception_pnl: calcSiPnl(nav),
     trailing_returns: calcTrailingReturns(nav),
   };
 
   const strategy_breakdown: ClientStrategyBreakdownRow[] = [];
   for (const child of node.children) {
-    const resolved = resolveNode(qcode, child, navMap, xirrMap, depth + 1, maxXirrDepth);
+    const resolved = resolveNode(qcode, child, navMap);
     if (!resolved) continue;
     strategy_breakdown.push({ strategy: child.label, ...resolved });
   }
@@ -673,26 +647,13 @@ export async function computeClientMonthlyReturns(
   );
 
   const profitPairs = groups.flatMap((g) => flattenNode(g.qcode, roots.get(g.qcode)!));
-  const exposurePairs = groups.flatMap((g) =>
-    flattenNodeExposure(g.qcode, roots.get(g.qcode)!),
-  );
 
-  const [navMap, xirrMap] = await Promise.all([
-    fetchBulkNavSeries(profitPairs, undefined, undefined, table),
-    fetchBulkXirrInputs(exposurePairs, undefined, undefined, table),
-  ]);
+  const navMap = await fetchBulkNavSeries(profitPairs, undefined, undefined, table);
 
   const rows: ClientMonthlyRow[] = [];
   for (const group of groups) {
     const root = roots.get(group.qcode)!;
-    const resolved = resolveNode(
-      group.qcode,
-      root,
-      navMap,
-      xirrMap,
-      0,
-      group.isSoloProp ? 0 : 1,
-    );
+    const resolved = resolveNode(group.qcode, root, navMap);
     if (!resolved) continue;
 
     rows.push({

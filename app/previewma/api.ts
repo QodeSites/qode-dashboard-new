@@ -56,10 +56,10 @@ export interface SeriesPoint {
 export interface TagDetail {
   start_date: string;
   end_date: string;
+  // Blended: absolute <1yr tenure, CAGR >=1yr — no separate XIRR field.
   since_inception: number;
   since_inception_pnl: number;
-  cagr: number; 
-  xirr: number | null; 
+  cagr: number;
   max_drawdown: number;
   current_drawdown: number;
   ratios: RatioSet;
@@ -70,10 +70,9 @@ export interface TagDetail {
 }
 
 export interface BenchmarkData {
-  start_date: string; 
-  end_date: string; 
+  start_date: string;
+  end_date: string;
   since_inception: number;
-  xirr: number; 
   max_drawdown: number;
   current_drawdown: number;
   series: { date: string; nav: number; drawdown: number }[];
@@ -126,9 +125,9 @@ export interface StrategyBreakupRow {
   account_name: string;
   strategy: string;
   inception_date: string;
+  // Blended: absolute <1yr tenure, CAGR >=1yr — no separate XIRR field.
   since_inception: number;
   since_inception_pnl: number | null;
-  xirr: number;
   benchmark_return: number;
   max_drawdown: number;
   current_drawdown: number;
@@ -224,11 +223,13 @@ export interface SubStrategyEntry {
   strategy: string;
   monthly: { year: number; month: string; return_pct: number; pnl_inr: number }[];
   yearly: { year: number; return_pct: number; pnl_inr: number }[];
-  total_xirr: number | null;
+  // Blended: absolute <1yr tenure, CAGR >=1yr — whole-account figure, same
+  // value on every section row for a given client/strategy.
+  total_since_inception: number | null;
   max_drawdown: number;
   current_drawdown: number;
-  since_inception_absolute: number;
-  since_inception_pnl: number; 
+  since_inception: number;
+  since_inception_pnl: number;
 }
 
 
@@ -240,11 +241,11 @@ export interface StrategyMonthlyEntry {
   strategy: string;
   monthly: { year: number; month: string; return_pct: number; pnl_inr: number }[];
   yearly: { year: number; return_pct: number; pnl_inr: number }[];
-  since_inception: number;      
-  since_inception_pnl: number ;  
-  xirr: number | null;          
-  max_drawdown: number;        
-  current_drawdown: number;    
+  // Blended: absolute <1yr tenure, CAGR >=1yr — no separate XIRR field.
+  since_inception: number;
+  since_inception_pnl: number ;
+  max_drawdown: number;
+  current_drawdown: number;
 }
 
 // ─── Shared fetch infrastructure ─────────────────────────────────────────────
@@ -394,11 +395,11 @@ export interface TrailingReturns {
 export interface ReturnsMetrics {
   monthly: { year: number; month: string; return_pct: number; pnl_inr: number }[];
   yearly: { year: number; return_pct: number; pnl_inr: number }[];
-  xirr: number | null;                   
-  max_drawdown: number | null;          
-  current_drawdown: number | null;      
-  since_inception_absolute: number | null;
-  since_inception_pnl: number | null;     
+  // Blended: absolute <1yr tenure, CAGR >=1yr — no separate XIRR field.
+  since_inception: number | null;
+  max_drawdown: number | null;
+  current_drawdown: number | null;
+  since_inception_pnl: number | null;
   trailing_returns: TrailingReturns | null;
 }
 

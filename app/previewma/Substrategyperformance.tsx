@@ -132,11 +132,11 @@ interface ClientYearRow {
   year: number;
   months: (number | null)[];
   total: number | null;
-  sinceInceptionAbsolute: number | null | undefined;
+  sinceInception: number | null | undefined;
   sinceInceptionPnl: number | null | undefined;
   maxDrawdown: number | null | undefined;
   currentDrawdown: number | null | undefined;
-  totalXirr: number | null | undefined;
+  totalSinceInception: number | null | undefined;
 }
 
 interface ExceptionPointer {
@@ -191,11 +191,11 @@ function SectionTable({
         result.push({
           clientKey: key, accountName, strategy, year, months,
           total: tot ? (showInr ? tot.inr : tot.pct) : null,
-          sinceInceptionAbsolute: first.since_inception_absolute,
+          sinceInception: first.since_inception,
           sinceInceptionPnl: first.since_inception_pnl,
           maxDrawdown: first.max_drawdown,
           currentDrawdown: first.current_drawdown,
-          totalXirr: first.total_xirr,
+          totalSinceInception: first.total_since_inception,
         });
       });
     });
@@ -221,7 +221,7 @@ function SectionTable({
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap border-l-2 border-logo-green/25">Since Inception</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Max DD</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Current DD</th>
-              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">XIRR</th>
+              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Total Since Inception</th>
             </tr>
           </thead>
           <tbody>
@@ -250,9 +250,9 @@ function SectionTable({
                     </td>
                     <td
                       title={isFirstForClient && showInr ? fmtFull(row.sinceInceptionPnl) : undefined}
-                      className={`px-4 py-2 text-right whitespace-nowrap border-l-2 border-logo-green/25 ${isFirstForClient ? valColor(showInr ? row.sinceInceptionPnl : row.sinceInceptionAbsolute) : "text-card-text-secondary/20"}`}
+                      className={`px-4 py-2 text-right whitespace-nowrap border-l-2 border-logo-green/25 ${isFirstForClient ? valColor(showInr ? row.sinceInceptionPnl : row.sinceInception) : "text-card-text-secondary/20"}`}
                     >
-                      {isFirstForClient ? (showInr ? fmtInr(row.sinceInceptionPnl) : fmtFracPct(row.sinceInceptionAbsolute)) : ""}
+                      {isFirstForClient ? (showInr ? fmtInr(row.sinceInceptionPnl) : fmtFracPct(row.sinceInception)) : ""}
                     </td>
                     <td className={`px-4 py-2 text-right whitespace-nowrap ${isFirstForClient ? "text-red-600" : "text-card-text-secondary/20"}`}>
                       {isFirstForClient ? fmtFracPct(row.maxDrawdown) : ""}
@@ -260,8 +260,8 @@ function SectionTable({
                     <td className={`px-4 py-2 text-right whitespace-nowrap ${isFirstForClient ? "text-red-600" : "text-card-text-secondary/20"}`}>
                       {isFirstForClient ? fmtFracPct(row.currentDrawdown) : ""}
                     </td>
-                    <td className={`px-4 py-2 text-right whitespace-nowrap ${isFirstForClient ? valColor(row.totalXirr) : "text-card-text-secondary/20"}`}>
-                      {isFirstForClient ? fmtFracPct(row.totalXirr) : ""}
+                    <td className={`px-4 py-2 text-right whitespace-nowrap ${isFirstForClient ? valColor(row.totalSinceInception) : "text-card-text-secondary/20"}`}>
+                      {isFirstForClient ? fmtFracPct(row.totalSinceInception) : ""}
                     </td>
                   </tr>
                 );

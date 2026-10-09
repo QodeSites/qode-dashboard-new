@@ -14,7 +14,7 @@ const MONTH_SHORT: Record<string, string> = {
 };
 const STRATEGY_PREFERRED_ORDER = ["QYE+", "QYE++", "QAW+", "QAW++", "QTF++"];
 
-const COL = { label: 220, year: 72, month: 96, total: 104, since: 110, xirr: 90, dd: 100 };
+const COL = { label: 220, year: 72, month: 96, total: 104, since: 110, dd: 100 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -63,7 +63,6 @@ interface ClientYearRow {
   total: number | null;
   sinceInception: number | null;
   sinceInceptionPnl: number ;
-  xirr: number | null;
   maxDrawdown: number | null;
   currentDrawdown: number | null;
 }
@@ -127,7 +126,6 @@ function StrategyTable({
           total,
           sinceInception: entry.since_inception ?? null,
           sinceInceptionPnl: entry.since_inception_pnl ?? null,
-          xirr: entry.xirr ?? null,
           maxDrawdown: entry.max_drawdown ?? null,
           currentDrawdown: entry.current_drawdown ?? null,
         });
@@ -138,7 +136,7 @@ function StrategyTable({
   }, [entries, showInr, allYears, allMonths]);
 
   const tableWidth =
-    COL.label + COL.year + allMonths.length * COL.month + COL.total + COL.since + COL.xirr + COL.dd * 2;
+    COL.label + COL.year + allMonths.length * COL.month + COL.total + COL.since + COL.dd * 2;
 
   return (
     <div className="mb-8">
@@ -154,7 +152,6 @@ function StrategyTable({
             {allMonths.map((m) => <col key={m} style={{ width: COL.month }} />)}
             <col style={{ width: COL.total }} />
             <col style={{ width: COL.since }} />
-            <col style={{ width: COL.xirr }} />
             <col style={{ width: COL.dd }} />
             <col style={{ width: COL.dd }} />
           </colgroup>
@@ -167,7 +164,6 @@ function StrategyTable({
               ))}
               <th className="px-4 py-2.5 text-right font-medium">Total</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap border-l-2 border-logo-green/25">Since Inception</th>
-              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">XIRR</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Max DD</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Current DD</th>
             </tr>
@@ -217,9 +213,6 @@ function StrategyTable({
                     className={`px-3 py-2 text-right text-xs whitespace-nowrap border-l-2 border-logo-green/25 ${show ? textClass(showInr ? row.sinceInceptionPnl : row.sinceInception) : ""}`}
                   >
                     {show ? (showInr ? fmtInr(row.sinceInceptionPnl) : fmtFracPct(row.sinceInception)) : ""}
-                  </td>
-                  <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${show ? textClass(row.xirr) : ""}`}>
-                    {show ? fmtFracPct(row.xirr) : ""}
                   </td>
                   <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${show ? "text-red-600" : ""}`}>
                     {show ? fmtFracPct(row.maxDrawdown) : ""}

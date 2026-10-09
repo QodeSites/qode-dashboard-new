@@ -8,11 +8,6 @@ import {
   buildTagMetrics,
 } from "@/app/lib/internal-utils";
 import {
-  solveXirr,
-  fetchBulkXirrInputs,
-  xirrSourceTag,
-} from "@/app/lib/portfolio-review/xirr";
-import {
   rebaseNavWindow,
   anchorDateBefore,
   withAnchorPoint,
@@ -217,40 +212,6 @@ export async function POST(req: Request) {
     : null;
   const benchDates = fetchedBenchmark?.series.map((p) => p.date) ?? [];
 
-  // XIRR only on client/strategy total rows, solved on that level's
-  // exposure tag (xirrSourceTag) — sleeve rows (Gold, PSAR, LONG, ...) get
-  // null rather than a copy of the account's XIRR. In the multi-strategy
-  // "combined" view the client total rows (Qode Total Portfolio etc.) use
-  // the client-level Zerodha Total Portfolio / Total Portfolio Exposure tag,
-  // same as Client-Wise Returns' client row.
-  const sourceByTag = new Map<string, string | null>();
-  for (const tag of Object.keys(tagData)) {
-    sourceByTag.set(tag, xirrSourceTag(tag, configs));
-  }
-  const xirrSources = [
-    ...new Set([...sourceByTag.values()].filter((t): t is string => t !== null)),
-  ];
-  const xirrInputsMap = xirrSources.length
-    ? await fetchBulkXirrInputs(
-        xirrSources.map((tag) => ({ qcode, tag })),
-        asOf ?? undefined,
-        windowStart ?? undefined,
-        table,
-      )
-    : new Map();
-  const xirrBySource = new Map<string, number | null>();
-  for (const source of xirrSources) {
-    const inputs = xirrInputsMap.get(`${qcode}|${source}`);
-    xirrBySource.set(
-      source,
-      inputs ? solveXirr(inputs.flows, inputs.asOfDate, inputs.finalValue) : null,
-    );
-  }
-  const xirrFor = (tag: string) => {
-    const source = sourceByTag.get(tag);
-    return source ? (xirrBySource.get(source) ?? null) : null;
-  };
-
   // Every tag's chart line starts at 100 on its t-1 day, same as Nifty.
   // Windowed: rebase off the tag's real row before windowStart (fetchTagData
   // prepends it); drawdown is recomputed from that baseline instead of the
@@ -272,11 +233,11 @@ export async function POST(req: Request) {
         ? toSqlDate(rebased.anchorDate)
         : anchorDateBefore(rebased.points[0].date, benchDates);
       tags[tag] = withAnchorPoint(
-        buildTagMetrics(rebased.points, rfr, xirrFor(tag)),
+        buildTagMetrics(rebased.points, rfr),
         anchorDate,
       );
     } else {
-      const metrics = buildTagMetrics(nav, rfr, xirrFor(tag));
+      const metrics = buildTagMetrics(nav, rfr);
       const first = nav[0];
       const base = first.prev_nav != null && first.prev_nav > 0 ? first.prev_nav : first.nav;
       tags[tag] = withAnchorPoint(

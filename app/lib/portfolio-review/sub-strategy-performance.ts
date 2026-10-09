@@ -7,11 +7,10 @@ import {
   calcYearlyReturns,
   calcMaxDrawdown,
   calcCurrentDrawdown,
-  calcSinceInceptionAbsolute,
+  calcSinceInception,
   calcSiPnl,
 } from "@/app/lib/portfolio-review/returns";
 import type { MonthlyReturn, YearlyReturn } from "@/app/lib/portfolio-review/returns";
-import { solveXirr, fetchBulkXirrInputs } from "@/app/lib/portfolio-review/xirr";
 import type { NavPoint } from "@/app/lib/internal-utils";
 import { round } from "@/lib/utils";
 import {
@@ -101,18 +100,20 @@ export interface SubStrategyRow {
   strategy: string;
   monthly: MonthlyReturn[];
   yearly: YearlyReturn[];
-  /** Whole-account XIRR for this (qcode, strategy) — same value on every
-   * section row for that pair, not a per-sleeve XIRR. A client's deposit
-   * isn't attributable to one sleeve, so this is "Total XIRR" shown for
-   * context alongside each section's own return figures. */
-  total_xirr: number | null;
-  /** Max/current drawdown ARE per-section here (unlike XIRR above) —
+  /** Whole-account blended Since Inception for this (qcode, strategy) — the
+   * pair's own profit-tag NAV curve, not this section's. Same value on
+   * every section row for that pair, shown for context alongside each
+   * section's own return figures. Replaces the old cash-flow "Total XIRR":
+   * NAV-based, so it's meaningful at the whole-account level without
+   * needing a separate deposit-attribution story. */
+  total_since_inception: number | null;
+  /** Max/current drawdown are per-section here (unlike the field above) —
    * each sleeve has its own NAV curve, so its own drawdown is meaningful. */
   max_drawdown: number | null;
   current_drawdown: number | null;
-  /** Pure absolute since-inception return for this section's own NAV curve
-   * — never CAGR'd regardless of tenure (see calcSinceInceptionAbsolute). */
-  since_inception_absolute: number | null;
+  /** Blended Since Inception (absolute <1yr, CAGR >=1yr) for this section's
+   * own NAV curve. */
+  since_inception: number | null;
   /** Since-inception P&L in rupees for this section's own NAV curve. */
   since_inception_pnl: number | null;
 }
@@ -167,6 +168,11 @@ async function computeSubStrategyPerformanceManaged(
 
   const queries: { qcode: string; tag: string }[] = [];
   for (const pair of pairs) {
+    // Whole-account profit-tag NAV — feeds total_since_inception below. Same
+    // tag Strategy Breakup/Client Dashboard use for their own Since
+    // Inception, not the exposure tag (that's only for cash-flow XIRR,
+    // which this page no longer computes).
+    queries.push({ qcode: pair.qcode, tag: pair.tag });
     const split = splitMap.get(`${pair.qcode}|${pair.strategy}`)!;
     for (const sec of SUB_STRATEGY_SECTIONS) {
       if (split[sec.existsField] == null) continue;
@@ -186,11 +192,6 @@ async function computeSubStrategyPerformanceManaged(
   }
 
   const seriesMap = await fetchBulkNavSeries(queries, end, start);
-  const xirrMap = await fetchBulkXirrInputs(
-    pairs.map((p) => ({ qcode: p.qcode, tag: p.exposure_tag })),
-    end,
-    start,
-  );
 
   // Prefixed tag wins when it has data; bare tag is only trusted as a
   // fallback for a qcode with exactly one configured strategy (see the DMA
@@ -209,10 +210,9 @@ async function computeSubStrategyPerformanceManaged(
   const rows: SubStrategyRow[] = [];
   for (const pair of pairs) {
     const split = splitMap.get(`${pair.qcode}|${pair.strategy}`)!;
-    const xirrInputs = xirrMap.get(`${pair.qcode}|${pair.exposure_tag}`);
-    const total_xirr = xirrInputs
-      ? solveXirr(xirrInputs.flows, xirrInputs.asOfDate, xirrInputs.finalValue)
-      : null;
+    const totalNav = seriesMap.get(`${pair.qcode}|${pair.tag}`);
+    const total_since_inception =
+      totalNav && totalNav.length > 0 ? calcSinceInception(totalNav) : null;
     for (const sec of SUB_STRATEGY_SECTIONS) {
       const value = split[sec.existsField];
       if (value == null) continue;
@@ -244,10 +244,10 @@ async function computeSubStrategyPerformanceManaged(
         strategy: pair.strategy,
         monthly,
         yearly: calcYearlyReturns(monthly),
-        total_xirr,
+        total_since_inception,
         max_drawdown: calcMaxDrawdown(nav),
         current_drawdown: calcCurrentDrawdown(nav),
-        since_inception_absolute: calcSinceInceptionAbsolute(nav),
+        since_inception: calcSinceInception(nav),
         since_inception_pnl: calcSiPnl(nav),
       });
     }
@@ -270,10 +270,10 @@ async function computeSubStrategyPerformanceManaged(
         strategy: pair.strategy,
         monthly,
         yearly: calcYearlyReturns(monthly),
-        total_xirr,
+        total_since_inception,
         max_drawdown: calcMaxDrawdown(nav),
         current_drawdown: calcCurrentDrawdown(nav),
-        since_inception_absolute: calcSinceInceptionAbsolute(nav),
+        since_inception: calcSinceInception(nav),
         since_inception_pnl: calcSiPnl(nav),
       });
     }

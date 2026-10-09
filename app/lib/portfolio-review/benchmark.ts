@@ -54,9 +54,16 @@ export function computeBenchmarkMetrics(
   if (clipped.length === 0) return null;
 
   const last = clipped[clipped.length - 1];
-  // Pure absolute return, same as the portfolio's since_inception it's shown
-  // beside — never CAGR'd past 1yr, so the two stay like-for-like.
-  const si = last.nav / refPrice - 1;
+  // Blended absolute/CAGR — same convention as calcSinceInception (the
+  // portfolio's own since_inception, shown right beside this), so the two
+  // stay like-for-like: both absolute below 1yr tenure, both CAGR at/above.
+  const days =
+    (new Date(last.date).getTime() - new Date(ref.date).getTime()) /
+    (1000 * 60 * 60 * 24);
+  const si =
+    days < 365 || refPrice <= 0 || last.nav <= 0
+      ? last.nav / refPrice - 1
+      : (last.nav / refPrice) ** (365 / days) - 1;
 
   let peak = refPrice,
     maxDD = 0;

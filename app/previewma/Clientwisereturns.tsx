@@ -32,7 +32,7 @@ const TRAILING_COLS: { key: keyof TrailingReturns; label: string }[] = [
 
 // Fixed column widths (px) — table-layout: fixed keeps columns from collapsing
 // into each other and overlapping.
-const COL = { label: 260, year: 72, month: 96, total: 104, since: 116, xirr: 90, dd: 100, trailing: 90 };
+const COL = { label: 260, year: 72, month: 96, total: 104, since: 116, dd: 100, trailing: 90 };
 
 // ─── Formatters — all null-safe ───────────────────────────────────────────────
 
@@ -41,7 +41,7 @@ function fmtPct(v: number | null | undefined) {
   if (v === null || v === undefined || !isFinite(v)) return "—";
   return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
 }
-// since_inception_absolute / xirr / drawdowns / trailing .pct are fraction-scale
+// since_inception / drawdowns / trailing .pct are fraction-scale
 function fmtFracPct(v: number | null | undefined) {
   if (v === null || v === undefined || !isFinite(v)) return "—";
   return `${v >= 0 ? "+" : ""}${(v * 100).toFixed(2)}%`;
@@ -165,12 +165,9 @@ function NodeRows({
       <>
         <td
           title={show && showInr ? fmtFull(node.since_inception_pnl) : undefined}
-          className={`px-3 py-2 text-right text-xs whitespace-nowrap border-l-2 border-logo-green/25 ${show ? textClass(showInr ? node.since_inception_pnl : node.since_inception_absolute) : ""}`}
+          className={`px-3 py-2 text-right text-xs whitespace-nowrap border-l-2 border-logo-green/25 ${show ? textClass(showInr ? node.since_inception_pnl : node.since_inception) : ""}`}
         >
-          {show ? (showInr ? fmtInr(node.since_inception_pnl) : fmtFracPct(node.since_inception_absolute)) : ""}
-        </td>
-        <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${show ? textClass(node.xirr) : ""}`}>
-          {show ? fmtFracPct(node.xirr) : ""}
+          {show ? (showInr ? fmtInr(node.since_inception_pnl) : fmtFracPct(node.since_inception)) : ""}
         </td>
         <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${show ? "text-red-600" : ""}`}>
           {show ? fmtFracPct(node.max_drawdown) : ""}
@@ -324,7 +321,7 @@ export function ClientwiseReturns({ accountType }: { accountType: "managed" | "p
   );
 
   const tableWidth =
-    COL.label + COL.year + months.length * COL.month + COL.total + COL.since + COL.xirr + COL.dd * 2 +
+    COL.label + COL.year + months.length * COL.month + COL.total + COL.since + COL.dd * 2 +
     trailingKeys.length * COL.trailing;
 
   if (loading) {
@@ -405,7 +402,6 @@ export function ClientwiseReturns({ accountType }: { accountType: "managed" | "p
               {months.map((m) => <col key={m} style={{ width: COL.month }} />)}
               <col style={{ width: COL.total }} />
               <col style={{ width: COL.since }} />
-              <col style={{ width: COL.xirr }} />
               <col style={{ width: COL.dd }} />
               <col style={{ width: COL.dd }} />
               {trailingKeys.map((k) => <col key={k} style={{ width: COL.trailing }} />)}
@@ -419,7 +415,6 @@ export function ClientwiseReturns({ accountType }: { accountType: "managed" | "p
                 ))}
                 <th className="px-4 py-2.5 text-right font-medium">Total</th>
                 <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap border-l-2 border-logo-green/25">Since Inception</th>
-                <th className="px-3 py-2.5 text-right font-medium">XIRR</th>
                 <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Max DD</th>
                 <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Current DD</th>
                 {trailingKeys.map((k) => (

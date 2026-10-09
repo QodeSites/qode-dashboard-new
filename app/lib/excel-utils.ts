@@ -212,7 +212,6 @@ const COLUMNS: Col[] = [
     kind: "money",
     get: (r) => r.since_inception_pnl,
   },
-  { header: "XIRR", kind: "pct", get: (r) => r.xirr },
   { header: "Benchmark Return", kind: "pct", get: (r) => r.benchmark_return },
   { header: "Max Drawdown", kind: "pct", get: (r) => r.max_drawdown },
   { header: "Current Drawdown", kind: "pct", get: (r) => r.current_drawdown },
@@ -552,10 +551,10 @@ export function buildAccountValueBreakupWorkbook(result: {
  *  which sheet (% or ₹ Returns) is being built, since none of these four
  *  have a rupee form. */
 const SUB_STRATEGY_SUMMARY_HEADERS = [
-  "XIRR",
+  "Total Since Incep.",
   "Max DD",
   "Current DD",
-  "Since Incep. Abs.",
+  "Since Inception",
 ];
 
 const GRID_HEADERS = [
@@ -736,10 +735,10 @@ function writeSubStrategyGrid(
         writeCell,
         widths,
         [
-          { value: r.total_xirr, write: writePctCell },
+          { value: r.total_since_inception, write: writePctCell },
           { value: r.max_drawdown, write: writePctCell },
           { value: r.current_drawdown, write: writePctCell },
-          { value: r.since_inception_absolute, write: writePctCell },
+          { value: r.since_inception, write: writePctCell },
         ],
       );
     }
@@ -868,7 +867,6 @@ const MONTHLY_RETURNS_HEADERS = [
 const STRATEGY_MONTHLY_PCT_HEADERS = [
   ...MONTHLY_RETURNS_HEADERS,
   "Since Inception",
-  "XIRR",
   "Max DD",
   "Current DD",
 ];
@@ -907,7 +905,6 @@ function writeStrategyMonthlyGrid(
         variant === "pct"
           ? [
               { value: r.since_inception, write: writePctCell },
-              { value: r.xirr, write: writePctCell },
               { value: r.max_drawdown, write: writePctCell },
               { value: r.current_drawdown, write: writePctCell },
             ]
@@ -970,13 +967,12 @@ const TRAILING_PERIOD_COLS: { key: keyof TrailingReturns; label: string }[] = [
 ];
 
 // client-wise sheet additionally surfaces a per-client/per-strategy summary
-// block (since inception, XIRR, drawdowns, trailing returns) once per row —
-// each sheet only gets the columns matching its own unit, same split as the
+// block (since inception, drawdowns, trailing returns) once per row — each
+// sheet only gets the columns matching its own unit, same split as the
 // strategy-wise monthly grid above
 const CLIENT_MONTHLY_PCT_HEADERS = [
   ...MONTHLY_RETURNS_HEADERS,
   "Since Inception",
-  "XIRR",
   "Max DD",
   "Current DD",
   ...TRAILING_PERIOD_COLS.map((c) => c.label),
@@ -990,14 +986,13 @@ const CLIENT_MONTHLY_MONEY_HEADERS = [
 function clientSummaryExtraCols(
   r: Pick<
     ClientMonthlyRow | ClientStrategyBreakdownRow,
-    "xirr" | "max_drawdown" | "current_drawdown" | "since_inception_absolute" | "since_inception_pnl" | "trailing_returns"
+    "max_drawdown" | "current_drawdown" | "since_inception" | "since_inception_pnl" | "trailing_returns"
   >,
   variant: "pct" | "money",
 ): ExtraSummaryCol[] {
   if (variant === "pct") {
     return [
-      { value: r.since_inception_absolute, write: writePctCell },
-      { value: r.xirr, write: writePctCell },
+      { value: r.since_inception, write: writePctCell },
       { value: r.max_drawdown, write: writePctCell },
       { value: r.current_drawdown, write: writePctCell },
       ...TRAILING_PERIOD_COLS.map((c) => ({
@@ -1024,10 +1019,9 @@ type ClientNodeLike = Pick<
   ClientStrategyBreakdownRow,
   | "monthly"
   | "yearly"
-  | "xirr"
   | "max_drawdown"
   | "current_drawdown"
-  | "since_inception_absolute"
+  | "since_inception"
   | "since_inception_pnl"
   | "trailing_returns"
   | "strategy_breakdown"

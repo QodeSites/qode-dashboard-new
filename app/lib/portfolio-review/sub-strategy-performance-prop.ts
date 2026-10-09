@@ -1,12 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { fetchBulkNavSeries } from "@/app/lib/portfolio-review/nav-series";
-import { fetchBulkXirrInputs, solveXirr } from "@/app/lib/portfolio-review/xirr";
 import {
   calcMonthlyReturns,
   calcYearlyReturns,
   calcMaxDrawdown,
   calcCurrentDrawdown,
-  calcSinceInceptionAbsolute,
+  calcSinceInception,
   calcSiPnl,
 } from "@/app/lib/portfolio-review/returns";
 import type {
@@ -28,6 +27,7 @@ interface PropPair {
   qcode: string;
   account_name: string;
   exposure_tag_suffix: string;
+  profit_tag_suffix: string;
 }
 
 export interface PropCatalogLeaf {
@@ -38,7 +38,7 @@ export interface PropCatalogLeaf {
 async function fetchPropPairs(): Promise<PropPair[]> {
   return prisma.client_strategy_configs.findMany({
     where: { strategy: "Prop" },
-    select: { qcode: true, account_name: true, exposure_tag_suffix: true },
+    select: { qcode: true, account_name: true, exposure_tag_suffix: true, profit_tag_suffix: true },
   });
 }
 
@@ -66,25 +66,21 @@ export async function computeSubStrategyPerformanceProp(
 
   const queries: { qcode: string; tag: string }[] = [];
   for (const pair of pairs) {
+    // Whole-account profit-tag NAV — feeds total_since_inception below, same
+    // convention as the Managed path (see sub-strategy-performance.ts).
+    queries.push({ qcode: pair.qcode, tag: pair.profit_tag_suffix });
     for (const leaf of leaves) {
       queries.push({ qcode: pair.qcode, tag: leaf.tag_suffix });
     }
   }
 
   const seriesMap = await fetchBulkNavSeries(queries, end, start, PROP_TABLE);
-  const xirrMap = await fetchBulkXirrInputs(
-    pairs.map((p) => ({ qcode: p.qcode, tag: p.exposure_tag_suffix })),
-    end,
-    start,
-    PROP_TABLE,
-  );
 
   const rows: SubStrategyRow[] = [];
   for (const pair of pairs) {
-    const xirrInputs = xirrMap.get(`${pair.qcode}|${pair.exposure_tag_suffix}`);
-    const total_xirr = xirrInputs
-      ? solveXirr(xirrInputs.flows, xirrInputs.asOfDate, xirrInputs.finalValue)
-      : null;
+    const totalNav = seriesMap.get(`${pair.qcode}|${pair.profit_tag_suffix}`);
+    const total_since_inception =
+      totalNav && totalNav.length > 0 ? calcSinceInception(totalNav) : null;
 
     for (const leaf of leaves) {
       const nav = seriesMap.get(`${pair.qcode}|${leaf.tag_suffix}`);
@@ -102,10 +98,10 @@ export async function computeSubStrategyPerformanceProp(
         strategy: "Prop",
         monthly,
         yearly: calcYearlyReturns(monthly),
-        total_xirr,
+        total_since_inception,
         max_drawdown: calcMaxDrawdown(nav),
         current_drawdown: calcCurrentDrawdown(nav),
-        since_inception_absolute: calcSinceInceptionAbsolute(nav),
+        since_inception: calcSinceInception(nav),
         since_inception_pnl: calcSiPnl(nav),
       });
     }

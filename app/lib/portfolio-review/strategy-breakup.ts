@@ -12,21 +12,20 @@ import {
 import {
   calcMonthlyReturns,
   calcRatios,
-  calcSinceInceptionAbsolute,
+  calcSinceInception,
   calcSiPnl,
   calcMaxDrawdown,
   calcCurrentDrawdown,
 } from "@/app/lib/portfolio-review/returns";
-import { solveXirr, fetchBulkXirrInputs } from "@/app/lib/portfolio-review/xirr";
 
 export interface StrategyBreakupRow {
   qcode: string;
   account_name: string;
   strategy: string;
   inception_date: string;
+  // Blended: absolute <1yr tenure, CAGR >=1yr — no separate XIRR field.
   since_inception: number | null;
   since_inception_pnl: number | null;
-  xirr: number | null;
   benchmark_return: number | null;
   max_drawdown: number | null;
   current_drawdown: number | null;
@@ -68,10 +67,6 @@ export async function computeStrategyBreakup(
     end,
     start,
   );
-  const xirrMap = await fetchBulkXirrInputs(
-    pairs.map((p) => ({ qcode: p.qcode, tag: p.exposure_tag })),
-    end,
-  );
 
   let minStart: Date | null = null;
   let maxEnd: Date | null = null;
@@ -95,11 +90,6 @@ export async function computeStrategyBreakup(
   for (const pair of pairs) {
     const nav = seriesMap.get(`${pair.qcode}|${pair.tag}`);
     if (!nav || nav.length === 0) continue;
-
-    const xirrInputs = xirrMap.get(`${pair.qcode}|${pair.exposure_tag}`);
-    const xirr = xirrInputs
-      ? solveXirr(xirrInputs.flows, xirrInputs.asOfDate, xirrInputs.finalValue)
-      : null;
 
     const monthly = calcMonthlyReturns(nav);
     const clientStart = nav[0].date;
@@ -136,9 +126,8 @@ export async function computeStrategyBreakup(
       account_name: pair.account_name,
       strategy: pair.strategy,
       inception_date: clientStart.toISOString().split("T")[0],
-      since_inception: calcSinceInceptionAbsolute(nav),
+      since_inception: calcSinceInception(nav),
       since_inception_pnl: calcSiPnl(nav),
-      xirr,
       benchmark_return: bmMetrics?.since_inception ?? null,
       max_drawdown: calcMaxDrawdown(nav),
       current_drawdown: calcCurrentDrawdown(nav),

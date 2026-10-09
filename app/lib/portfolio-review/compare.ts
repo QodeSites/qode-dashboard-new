@@ -12,9 +12,6 @@ import {
 } from "@/app/lib/portfolio-review/returns";
 import type { TagMetrics } from "@/app/lib/portfolio-review/returns";
 import {
-  fetchBulkXirrInputs,
-  solveXirr,
-  xirrSourceTag,
   isSoloPropConfigs,
   type XirrTagConfig,
 } from "@/app/lib/portfolio-review/xirr";
@@ -365,51 +362,6 @@ export async function computeCompare(
   ]);
   const seriesMap = new Map([...managedSeries, ...propSeries]);
 
-  // XIRR is money-weighted (needs real cash flows + a final valuation, not
-  // just the NAV curve) and only exists for client- and strategy-level
-  // lines — each selection is mapped to its exposure tag via xirrSourceTag,
-  // sleeves get null. Same windowing as the rest of this function: the
-  // shared rebase window when rebasing, full history otherwise.
-  const sourceBySelection = new Map<string, string | null>();
-  for (const s of unique) {
-    sourceBySelection.set(
-      `${s.qcode}|${s.system_tag}`,
-      xirrSourceTag(s.system_tag, configsByQcode.get(s.qcode) ?? []),
-    );
-  }
-  const sourcePairs = (list: CompareSelection[]) => {
-    const seen = new Map<string, { qcode: string; tag: string }>();
-    for (const s of list) {
-      const tag = sourceBySelection.get(`${s.qcode}|${s.system_tag}`);
-      if (tag) seen.set(`${s.qcode}|${tag}`, { qcode: s.qcode, tag });
-    }
-    return [...seen.values()];
-  };
-  const [managedXirrInputs, propXirrInputs] = await Promise.all([
-    fetchBulkXirrInputs(
-      sourcePairs(managedSelections),
-      rebasing ? rebaseTo : undefined,
-      rebasing ? rebaseFrom : undefined,
-    ),
-    fetchBulkXirrInputs(
-      sourcePairs(propSelections),
-      rebasing ? rebaseTo : undefined,
-      rebasing ? rebaseFrom : undefined,
-      PROP_TABLE,
-    ),
-  ]);
-  const xirrInputsMap = new Map([...managedXirrInputs, ...propXirrInputs]);
-  const xirrMap = new Map<string, number | null>();
-  for (const [key, source] of sourceBySelection) {
-    const inputs = source
-      ? xirrInputsMap.get(`${key.split("|")[0]}|${source}`)
-      : undefined;
-    xirrMap.set(
-      key,
-      inputs ? solveXirr(inputs.flows, inputs.asOfDate, inputs.finalValue) : null,
-    );
-  }
-
   const built = new Map<
     string,
     { nav: NavPoint[] | null; metrics: Omit<TagMetrics, "ratios"> | null }
@@ -426,11 +378,7 @@ export async function computeCompare(
       built.set(key, { nav: null, metrics: null });
       continue;
     }
-    const { ratios: _ratios, ...metrics } = buildTagMetrics(
-      nav,
-      0,
-      xirrMap.get(key) ?? null,
-    );
+    const { ratios: _ratios, ...metrics } = buildTagMetrics(nav, 0);
     built.set(key, { nav, metrics });
     if (rebasing) {
       rebasedNav.set(key, rebaseNavWindow(nav, rebaseFrom!, rebaseTo!));
@@ -519,11 +467,7 @@ export async function computeCompare(
           skip_reason: "no_data" as const,
         };
       }
-      const { ratios: _ratios, ...metrics } = buildTagMetrics(
-        rebased.points,
-        0,
-        xirrMap.get(key) ?? null,
-      );
+      const { ratios: _ratios, ...metrics } = buildTagMetrics(rebased.points, 0);
       const anchorDate = rebased.anchorDate
         ? rebased.anchorDate.toISOString().split("T")[0]
         : anchorDateBefore(rebased.points[0].date, benchDates);

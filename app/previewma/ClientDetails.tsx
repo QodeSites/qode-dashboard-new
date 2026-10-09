@@ -318,7 +318,6 @@ function OverviewTab({
               <th className="px-4 py-2.5 font-medium text-right border-l-2 border-logo-green/25">
                 {showInr ? "Since Inception P&L" : "Since Inception"}
               </th>
-              <th className="px-4 py-2.5 font-medium text-right">XIRR</th>
               <th className="px-4 py-2.5 font-medium text-right">Max Drawdown</th>
               <th className="px-4 py-2.5 font-medium text-right">Current Drawdown</th>
             </tr>
@@ -339,17 +338,6 @@ function OverviewTab({
                 >
                   {showInr ? fmtInr(tag.since_inception_pnl) : fmtPct(tag.since_inception)}
                 </td>
-                <td
-                  className={`px-4 py-2.5 text-right font-semibold ${
-                    tag.xirr === null
-                      ? "text-card-text-secondary/50"
-                      : tag.xirr >= 0
-                      ? "text-green-700 bg-green-50"
-                      : "text-red-700 bg-red-50"
-                  }`}
-                >
-                  {tag.xirr === null ? "—" : fmtPct(tag.xirr)}
-                </td>
                 <td className="px-4 py-2.5 text-right font-semibold text-red-700 bg-red-50">
                   {fmtPct(tag.max_drawdown)}
                 </td>
@@ -369,9 +357,6 @@ function OverviewTab({
                 }`}
               >
                 {showInr ? "— (index)" : fmtPct(benchmark.since_inception)}
-              </td>
-              <td className={`px-4 py-2.5 text-right font-bold ${benchmark.xirr >= 0 ? "text-green-700 bg-green-50" : "text-red-700 bg-red-50"}`}>
-                {fmtPct(benchmark.xirr)}
               </td>
               <td className="px-4 py-2.5 text-right font-bold text-red-700 bg-red-50">{fmtPct(benchmark.max_drawdown)}</td>
               <td className="px-4 py-2.5 text-right font-bold text-red-700 bg-red-50">{fmtPct(benchmark.current_drawdown)}</td>

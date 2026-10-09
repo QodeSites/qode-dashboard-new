@@ -37,11 +37,12 @@ export interface Ratios {
 export interface TagMetrics {
   start_date: string;
   end_date: string;
+  // Blended: pure absolute below 1yr tenure, CAGR at/above — see
+  // calcSinceInception. No separate XIRR field any more: this is now the
+  // single displayed return figure everywhere TagMetrics is used.
   since_inception: number | null;
   since_inception_pnl: number;
-  since_inception_absolute: number | null;
   cagr: number | null;
-  xirr: number | null;
   max_drawdown: number | null;
   current_drawdown: number | null;
   ratios: Ratios;
@@ -58,18 +59,36 @@ export interface TagMetrics {
  * figure: every since_inception field shown on the dashboard is the pure
  * absolute return (calcSinceInceptionAbsolute), with XIRR as its own
  * separate field, so the two are never blended into one number.
+ *
+ * UPDATE: this is now what buildTagMetrics' `since_inception` actually
+ * sends — XIRR (cash-flow/money-weighted) has been retired in favor of
+ * this NAV-based blend everywhere. calcSinceInceptionAbsolute below is kept
+ * only as a building block for calcTrailingReturns-style callers that want
+ * pure absolute explicitly; it is no longer a separately displayed field.
  */
 export function calcSinceInception(nav: NavPoint[]): number | null {
   if (nav.length < 2) return null;
-  const days =
-    (nav[nav.length - 1].date.getTime() - nav[0].date.getTime()) / MS;
-  const baseNav =
-    nav[0].prev_nav != null && nav[0].prev_nav > 0 ? nav[0].prev_nav : 100;
-  const startNav = nav[0].nav;
+  // baseNav's date is ALWAYS one day before nav[0].date when it comes from
+  // a real prev_nav — "prev" means the prior trading day's value, by
+  // definition — so the days-count must anchor there too, not at
+  // nav[0].date. Using nav[0].date regardless of where baseNav came from
+  // (the previous version of this function) undercounted the period by one
+  // day whenever prev_nav was real, which is the common case. With no real
+  // prev_nav (brand-new series, nothing before it), there's no earlier date
+  // to anchor to, so day 0 stays nav[0].date itself. This also reproduces
+  // the client-facing dashboard's (portfolio-utils.ts) number exactly: it
+  // prepends a synthetic nav=100 point dated firstRow.date - 1 and anchors
+  // its own days-count there, which is the same date this lands on here.
+  const hasRealPrevNav = nav[0].prev_nav != null && nav[0].prev_nav > 0;
+  const baseNav = hasRealPrevNav ? nav[0].prev_nav! : 100;
+  const anchorTime = hasRealPrevNav
+    ? nav[0].date.getTime() - MS
+    : nav[0].date.getTime();
+  const days = (nav[nav.length - 1].date.getTime() - anchorTime) / MS;
   const endNav = nav[nav.length - 1].nav;
-  if (endNav <= 0 || startNav <= 0 || days <= 0) return null;
+  if (endNav <= 0 || baseNav <= 0 || days <= 0) return null;
   return round(
-    days < 365 ? endNav / baseNav - 1 : (endNav / startNav) ** (365 / days) - 1,
+    days < 365 ? endNav / baseNav - 1 : (endNav / baseNav) ** (365 / days) - 1,
     4,
   );
 }
@@ -94,12 +113,17 @@ export function calcSinceInceptionAbsolute(nav: NavPoint[]): number | null {
  * always does); that's expected for a metric explicitly labeled CAGR. */
 export function calcCagr(nav: NavPoint[]): number | null {
   if (nav.length < 2) return null;
-  const days =
-    (nav[nav.length - 1].date.getTime() - nav[0].date.getTime()) / MS;
-  const startNav = nav[0].nav;
+  // Same baseline + anchor-date convention as calcSinceInception — see its
+  // comment.
+  const hasRealPrevNav = nav[0].prev_nav != null && nav[0].prev_nav > 0;
+  const baseNav = hasRealPrevNav ? nav[0].prev_nav! : 100;
+  const anchorTime = hasRealPrevNav
+    ? nav[0].date.getTime() - MS
+    : nav[0].date.getTime();
+  const days = (nav[nav.length - 1].date.getTime() - anchorTime) / MS;
   const endNav = nav[nav.length - 1].nav;
-  if (endNav <= 0 || startNav <= 0 || days <= 0) return null;
-  return round((endNav / startNav) ** (365 / days) - 1, 4);
+  if (endNav <= 0 || baseNav <= 0 || days <= 0) return null;
+  return round((endNav / baseNav) ** (365 / days) - 1, 4);
 }
 
 export interface TrailingReturnPoint {
@@ -418,7 +442,6 @@ export function calcRatios(
 export function buildTagMetrics(
   nav: NavPoint[],
   rfr: number,
-  xirr: number | null = null,
 ): TagMetrics {
   const monthly = calcMonthlyReturns(nav);
   const quarterly = calcQuarterlyReturns(monthly);
@@ -428,11 +451,11 @@ export function buildTagMetrics(
     // `series[].date` below stays ISO: it's re-parsed/sorted by the frontend.
     start_date: toDisplayDate(nav[0].date.toISOString().split("T")[0]),
     end_date: toDisplayDate(nav[nav.length - 1].date.toISOString().split("T")[0]),
-    since_inception: calcSinceInceptionAbsolute(nav),
+    // Blended NAV-based return (absolute <1yr, CAGR >=1yr) — replaces the
+    // old cash-flow XIRR as the single displayed return figure.
+    since_inception: calcSinceInception(nav),
     since_inception_pnl: calcSiPnl(nav),
-    since_inception_absolute: calcSinceInceptionAbsolute(nav),
     cagr: calcCagr(nav),
-    xirr,
     max_drawdown: calcMaxDrawdown(nav),
     current_drawdown: calcCurrentDrawdown(nav),
     ratios: calcRatios(nav, monthly, rfr),
