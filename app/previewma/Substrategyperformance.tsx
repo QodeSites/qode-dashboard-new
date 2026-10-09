@@ -101,7 +101,7 @@ function SectionSelector({
       </div>
 
       {open && (
-        <div className="absolute z-20 mt-1 w-full max-h-72 overflow-y-auto rounded-lg border border-logo-green/15 bg-white shadow-lg py-1">
+        <div className="absolute z-40 mt-1 w-full max-h-72 overflow-y-auto rounded-lg border border-logo-green/15 bg-white shadow-lg py-1">
           {allSections.length > 0 && (
             <button type="button" onClick={toggleAll} className="w-full text-left px-4 py-2 text-sm text-logo-green font-medium hover:bg-primary-bg/50 border-b border-logo-green/10">
               {allSelected ? "Deselect all" : `Select all (${allSections.length})`}
@@ -220,6 +220,7 @@ function SectionTable({
         className={`w-full flex items-center gap-3 bg-logo-green hover:bg-logo-green/90 px-5 py-3 text-left transition-colors ${open ? "rounded-t-lg" : "rounded-lg"}`}
       >
         <ChevronRight className={`h-4 w-4 text-white flex-shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
+        <span className="text-sm font-semibold text-white">{label}</span>
         <span className="text-xs text-white/70">
           {clientCount} {clientCount === 1 ? "client" : "clients"}
         </span>
