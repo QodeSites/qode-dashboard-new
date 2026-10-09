@@ -97,7 +97,7 @@ export async function computeSubStrategyPerformanceProp(
         account_name: pair.account_name,
         strategy: "Prop",
         monthly,
-        yearly: calcYearlyReturns(monthly),
+        yearly: calcYearlyReturns(nav),
         total_since_inception,
         max_drawdown: calcMaxDrawdown(nav),
         current_drawdown: calcCurrentDrawdown(nav),

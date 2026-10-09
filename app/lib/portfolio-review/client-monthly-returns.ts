@@ -535,7 +535,7 @@ function buildMomentumLeg(
   return {
     strategy: label,
     monthly,
-    yearly: calcYearlyReturns(monthly),
+    yearly: calcYearlyReturns(legNav),
     max_drawdown: calcMaxDrawdown(legNav),
     current_drawdown: calcCurrentDrawdown(legNav),
     since_inception: calcSinceInception(legNav),
@@ -582,7 +582,7 @@ function resolveNode(
 
   const own: Omit<ResolvedReturns, "strategy_breakdown"> = {
     monthly,
-    yearly: calcYearlyReturns(monthly),
+    yearly: calcYearlyReturns(nav),
     max_drawdown: calcMaxDrawdown(nav),
     current_drawdown: calcCurrentDrawdown(nav),
     since_inception: calcSinceInception(nav),

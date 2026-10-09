@@ -275,12 +275,12 @@ function periodReturnsFromSeries(
   const monthly = calcMonthlyReturns(nav);
   return {
     monthly: monthly.map(({ year, month, return_pct }) => ({ year, month, return_pct })),
-    quarterly: calcQuarterlyReturns(monthly).map(({ year, quarter, return_pct }) => ({
+    quarterly: calcQuarterlyReturns(nav, monthly).map(({ year, quarter, return_pct }) => ({
       year,
       quarter,
       return_pct,
     })),
-    yearly: calcYearlyReturns(monthly).map(({ year, return_pct }) => ({ year, return_pct })),
+    yearly: calcYearlyReturns(nav).map(({ year, return_pct }) => ({ year, return_pct })),
   };
 }
 

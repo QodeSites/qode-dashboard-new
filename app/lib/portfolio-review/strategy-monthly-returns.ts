@@ -44,7 +44,7 @@ export async function computeStrategyMonthlyReturns(): Promise<
       account_name: pair.account_name,
       strategy: pair.strategy,
       monthly,
-      yearly: calcYearlyReturns(monthly),
+      yearly: calcYearlyReturns(nav),
       since_inception: calcSinceInception(nav),
       since_inception_pnl: calcSiPnl(nav),
       max_drawdown: calcMaxDrawdown(nav),

@@ -1019,6 +1019,7 @@ function ChartsTab({
                   {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((m) => (
                     <th key={m} className="px-1 py-1 text-center text-card-text-secondary font-medium">{m}</th>
                   ))}
+                  <th className="px-2 py-1 text-center text-card-text-secondary font-medium border-l-2 border-logo-green/20">Total</th>
                 </tr>
               </thead>
               <tbody>
@@ -1027,9 +1028,16 @@ function ChartsTab({
                   if (!tag) return null;
                   const years = Array.from(new Set(tag.monthly.map((m) => m.year))).sort() as number[];
                   const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                  // Yearly total comes from the backend's compounded figure
+                  // (calcYearlyReturns), not a sum of the displayed monthly
+                  // %s — same convention as every other monthly grid on this
+                  // tool (Client-Wise Returns, Strategy-wise Monthly
+                  // Returns, Sub-Strategy Performance).
+                  const yearTotal = new Map(tag.yearly.map((y) => [y.year, y.return_pct]));
                   return years.map((yr, yi) => {
                     const rowData: Record<string, number | null> = {};
                     tag.monthly.filter((m) => m.year === yr).forEach((m) => { rowData[m.month.slice(0, 3)] = m.return_pct; });
+                    const total = yearTotal.get(yr) ?? null;
                     return (
                       <tr key={`${tagName}-${yr}`} className={yi === 0 && ti > 0 ? "border-t-2 border-logo-green/20" : "border-t border-logo-green/5"}>
                         <td className="px-2 py-1 font-semibold text-card-text whitespace-nowrap">
@@ -1047,10 +1055,13 @@ function ChartsTab({
                           const bg = val === null ? "bg-transparent" : val >= 3 ? "bg-green-700 text-white" : val >= 1 ? "bg-green-400 text-white" : val >= 0 ? "bg-green-100 text-green-800" : val >= -1 ? "bg-red-100 text-red-700" : val >= -3 ? "bg-red-400 text-white" : "bg-red-700 text-white";
                           return (
                             <td key={monthName} className={`px-1 py-1 text-center rounded-sm ${bg}`}>
-                              {val === null ? "" : `${val >= 0 ? "+" : ""}${val.toFixed(1)}%`}
+                              {val === null ? "" : `${val >= 0 ? "+" : ""}${val.toFixed(2)}%`}
                             </td>
                           );
                         })}
+                        <td className={`px-2 py-1 text-center font-semibold border-l-2 border-logo-green/20 ${total === null ? "text-card-text-secondary/40" : total >= 0 ? "text-green-700" : "text-red-700"}`}>
+                          {total === null ? "—" : `${total >= 0 ? "+" : ""}${total.toFixed(2)}%`}
+                        </td>
                       </tr>
                     );
                   });

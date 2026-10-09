@@ -321,50 +321,104 @@ export function calcMonthlyReturns(nav: NavPoint[]): MonthlyReturn[] {
   return result;
 }
 
-export function calcQuarterlyReturns(
-  monthly: MonthlyReturn[],
-): QuarterlyReturn[] {
-  const buckets = new Map<string, { c: number; pnl: number }>();
-  for (const m of monthly) {
-    const mi = MONTHS.indexOf(m.month);
-    const q = Object.entries(QUARTERS).find(([, v]) => v.includes(mi))?.[0];
-    if (!q) continue;
-    const key = `${m.year}-${q}`;
-    if (!buckets.has(key)) buckets.set(key, { c: 1, pnl: 0 });
-    const e = buckets.get(key)!;
-    e.c *= 1 + m.return_pct / 100;
-    e.pnl += m.pnl_inr;
-  }
-  return [...buckets.entries()]
-    .map(([k, d]) => {
-      const [yr, q] = k.split("-");
-      return {
-        year: parseInt(yr),
-        quarter: q,
-        return_pct: parseFloat(((d.c - 1) * 100).toFixed(2)),
-        pnl_inr: parseFloat(d.pnl.toFixed(2)),
-      };
-    })
-    .sort((a, b) =>
-      a.year !== b.year ? a.year - b.year : a.quarter.localeCompare(b.quarter),
-    );
+function quarterOf(monthIndex: number): string {
+  return Object.entries(QUARTERS).find(([, v]) => v.includes(monthIndex))![0];
 }
 
-export function calcYearlyReturns(monthly: MonthlyReturn[]): YearlyReturn[] {
-  const buckets = new Map<number, { c: number; pnl: number }>();
+/**
+ * Quarterly return, computed directly off the raw NAV chain (same
+ * start/end-of-bucket approach as calcMonthlyReturns) rather than by
+ * compounding the already-rounded monthly % figures. Compounding rounded
+ * monthly values drifts from the true period return — each month's
+ * return_pct is independently rounded to 2dp before this used to multiply
+ * them together, so a quarter's "true" compounded return and
+ * "compound-the-rounded-parts" return diverge by a few hundredths of a
+ * percent (confirmed against the client-facing login dashboard, which
+ * computes this way — directly off NAV, not off its own rounded monthly
+ * display values). Carries `monthly` only to decide quarter boundaries.
+ */
+export function calcQuarterlyReturns(
+  nav: NavPoint[],
+  monthly: MonthlyReturn[],
+): QuarterlyReturn[] {
+  if (nav.length === 0) return [];
+  const quarterKeyByYearMonth = new Map<string, string>();
   for (const m of monthly) {
-    if (!buckets.has(m.year)) buckets.set(m.year, { c: 1, pnl: 0 });
-    const e = buckets.get(m.year)!;
-    e.c *= 1 + m.return_pct / 100;
-    e.pnl += m.pnl_inr;
+    quarterKeyByYearMonth.set(`${m.year}-${m.month}`, quarterOf(MONTHS.indexOf(m.month)));
   }
-  return [...buckets.entries()]
-    .map(([yr, d]) => ({
-      year: yr,
-      return_pct: parseFloat(((d.c - 1) * 100).toFixed(2)),
-      pnl_inr: parseFloat(d.pnl.toFixed(2)),
-    }))
-    .sort((a, b) => a.year - b.year);
+
+  const buckets = new Map<string, NavPoint[]>();
+  for (const p of nav) {
+    const y = p.date.getFullYear();
+    const mi = p.date.getMonth();
+    const q = quarterKeyByYearMonth.get(`${y}-${MONTHS[mi]}`) ?? quarterOf(mi);
+    const key = `${y}-${q}`;
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key)!.push(p);
+  }
+
+  const keys = [...buckets.keys()].sort();
+  const result: QuarterlyReturn[] = [];
+  let prevEnd: number | null = null;
+  for (let i = 0; i < keys.length; i++) {
+    const pts = buckets.get(keys[i])!;
+    const [yr, q] = keys[i].split("-");
+    const startNav =
+      i === 0
+        ? nav[0].prev_nav != null && nav[0].prev_nav > 0
+          ? nav[0].prev_nav
+          : 100
+        : prevEnd!;
+    const endNav = pts[pts.length - 1].nav;
+    result.push({
+      year: parseInt(yr),
+      quarter: q,
+      return_pct: parseFloat(
+        (startNav > 0 ? (endNav / startNav - 1) * 100 : 0).toFixed(2),
+      ),
+      pnl_inr: parseFloat(pts.reduce((s, p) => s + p.pnl, 0).toFixed(2)),
+    });
+    prevEnd = endNav;
+  }
+  return result;
+}
+
+/**
+ * Yearly return — same rationale as calcQuarterlyReturns above: computed
+ * directly off the raw NAV chain, not by compounding already-rounded
+ * monthly figures.
+ */
+export function calcYearlyReturns(nav: NavPoint[]): YearlyReturn[] {
+  if (nav.length === 0) return [];
+  const buckets = new Map<number, NavPoint[]>();
+  for (const p of nav) {
+    const y = p.date.getFullYear();
+    if (!buckets.has(y)) buckets.set(y, []);
+    buckets.get(y)!.push(p);
+  }
+
+  const years = [...buckets.keys()].sort((a, b) => a - b);
+  const result: YearlyReturn[] = [];
+  let prevEnd: number | null = null;
+  for (let i = 0; i < years.length; i++) {
+    const pts = buckets.get(years[i])!;
+    const startNav =
+      i === 0
+        ? nav[0].prev_nav != null && nav[0].prev_nav > 0
+          ? nav[0].prev_nav
+          : 100
+        : prevEnd!;
+    const endNav = pts[pts.length - 1].nav;
+    result.push({
+      year: years[i],
+      return_pct: parseFloat(
+        (startNav > 0 ? (endNav / startNav - 1) * 100 : 0).toFixed(2),
+      ),
+      pnl_inr: parseFloat(pts.reduce((s, p) => s + p.pnl, 0).toFixed(2)),
+    });
+    prevEnd = endNav;
+  }
+  return result;
 }
 
 const EMPTY_RATIOS: Ratios = {
@@ -444,8 +498,8 @@ export function buildTagMetrics(
   rfr: number,
 ): TagMetrics {
   const monthly = calcMonthlyReturns(nav);
-  const quarterly = calcQuarterlyReturns(monthly);
-  const yearly = calcYearlyReturns(monthly);
+  const quarterly = calcQuarterlyReturns(nav, monthly);
+  const yearly = calcYearlyReturns(nav);
   return {
     // Display-only (rendered as raw text on Client Dashboard) — DD-MM-YYYY.
     // `series[].date` below stays ISO: it's re-parsed/sorted by the frontend.
