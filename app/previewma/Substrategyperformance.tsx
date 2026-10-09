@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, AlertCircle, X, ChevronDown, AlertTriangle } from "lucide-react";
+import { Loader2, AlertCircle, X, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
 import { fetchSubStrategyPerformance, type SubStrategyEntry } from "./api";
 import { fmtFull } from "./format";
 
@@ -63,7 +63,8 @@ function SectionSelector({
   function toggle(key: string) {
     onChange(selected.includes(key) ? selected.filter((x) => x !== key) : [...selected, key]);
   }
-  function selectAll() { onChange(allSections.map((s) => s.key)); }
+  const allSelected = allSections.length > 0 && allSections.every((s) => selected.includes(s.key));
+  function toggleAll() { onChange(allSelected ? [] : allSections.map((s) => s.key)); }
   function clearAll() { onChange([]); }
 
   return (
@@ -101,9 +102,11 @@ function SectionSelector({
 
       {open && (
         <div className="absolute z-20 mt-1 w-full max-h-72 overflow-y-auto rounded-lg border border-logo-green/15 bg-white shadow-lg py-1">
-          <button type="button" onClick={selectAll} className="w-full text-left px-4 py-2 text-sm text-logo-green font-medium hover:bg-primary-bg/50 border-b border-logo-green/10">
-            Select all ({allSections.length})
-          </button>
+          {allSections.length > 0 && (
+            <button type="button" onClick={toggleAll} className="w-full text-left px-4 py-2 text-sm text-logo-green font-medium hover:bg-primary-bg/50 border-b border-logo-green/10">
+              {allSelected ? "Deselect all" : `Select all (${allSections.length})`}
+            </button>
+          )}
           {allSections.length === 0 ? (
             <p className="px-4 py-3 text-sm text-card-text-secondary italic">No sections in this date range.</p>
           ) : (
@@ -147,9 +150,10 @@ interface ExceptionPointer {
 }
 
 function SectionTable({
-  label, entries, showInr, exceptionPointers,
+  label, entries, showInr, exceptionPointers, open, onToggle,
 }: {
   label: string; entries: SubStrategyEntry[]; showInr: boolean; exceptionPointers: ExceptionPointer[];
+  open: boolean; onToggle: () => void;
 }) {
   const rows = useMemo((): ClientYearRow[] => {
     const result: ClientYearRow[] = [];
@@ -204,80 +208,92 @@ function SectionTable({
   }, [entries, showInr]);
 
   const shownClients = new Set<string>();
+  const clientCount = new Set(entries.map((e) => `${e.qcode ?? "?"}__${e.strategy ?? "?"}`)).size;
 
   return (
-    <div className="mb-8">
-      <div className="rounded-t-lg bg-logo-green px-5 py-3">
-        <span className="text-sm font-semibold text-white">{label}</span>
-      </div>
-      <div className="overflow-x-auto rounded-b-lg border border-logo-green/10 bg-white">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-primary-bg/40 text-card-text-secondary text-xs border-b border-logo-green/10">
-              <th className="px-4 py-2.5 text-left font-medium w-56">Client</th>
-              <th className="px-4 py-2.5 text-left font-medium w-16">Year</th>
-              {MONTH_SHORT.map((m) => <th key={m} className="px-3 py-2.5 text-right font-medium">{m}</th>)}
-              <th className="px-4 py-2.5 text-right font-medium">Total</th>
-              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap border-l-2 border-logo-green/25">Since Inception</th>
-              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Max DD</th>
-              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Current DD</th>
-              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Total Since Inception</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && exceptionPointers.length === 0 ? (
-              <tr><td colSpan={2 + MONTH_SHORT.length + 5} className="px-4 py-4 text-sm text-card-text-secondary italic text-center">No data for this section.</td></tr>
-            ) : (
-              rows.map((row, i) => {
-                const isFirstForClient = !shownClients.has(row.clientKey);
-                if (isFirstForClient) shownClients.add(row.clientKey);
-                return (
-                  <tr
-                    key={`${row.clientKey}-${row.year}`}
-                    className={`border-t ${isFirstForClient && i > 0 ? "border-logo-green/15 border-t-2" : "border-logo-green/5"} hover:bg-primary-bg/20 transition-colors`}
-                  >
-                    <td className="px-4 py-2 text-card-text font-medium whitespace-nowrap">
-                      {isFirstForClient ? `${row.accountName} ${row.strategy}` : null}
-                    </td>
-                    <td className="px-4 py-2 text-card-text-secondary">{row.year}</td>
-                    {row.months.map((v, mi) => (
-                      <td key={mi} className={`px-3 py-2 text-right whitespace-nowrap ${v !== null ? valColor(v) : "text-card-text-secondary/40"}`}>
-                        {v === null ? "—" : showInr ? fmtInr(v) : fmtPct(v)}
-                      </td>
-                    ))}
-                    <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap ${row.total !== null ? valColor(row.total) : "text-card-text-secondary/40"}`}>
-                      {row.total === null ? "—" : showInr ? fmtInr(row.total) : fmtPct(row.total)}
-                    </td>
-                    <td
-                      title={isFirstForClient && showInr ? fmtFull(row.sinceInceptionPnl) : undefined}
-                      className={`px-4 py-2 text-right whitespace-nowrap border-l-2 border-logo-green/25 ${isFirstForClient ? valColor(showInr ? row.sinceInceptionPnl : row.sinceInception) : "text-card-text-secondary/20"}`}
-                    >
-                      {isFirstForClient ? (showInr ? fmtInr(row.sinceInceptionPnl) : fmtFracPct(row.sinceInception)) : ""}
-                    </td>
-                    <td className={`px-4 py-2 text-right whitespace-nowrap ${isFirstForClient ? "text-red-600" : "text-card-text-secondary/20"}`}>
-                      {isFirstForClient ? fmtFracPct(row.maxDrawdown) : ""}
-                    </td>
-                    <td className={`px-4 py-2 text-right whitespace-nowrap ${isFirstForClient ? "text-red-600" : "text-card-text-secondary/20"}`}>
-                      {isFirstForClient ? fmtFracPct(row.currentDrawdown) : ""}
-                    </td>
-                    <td className={`px-4 py-2 text-right whitespace-nowrap ${isFirstForClient ? valColor(row.totalSinceInception) : "text-card-text-secondary/20"}`}>
-                      {isFirstForClient ? fmtFracPct(row.totalSinceInception) : ""}
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-            {exceptionPointers.map((p) => (
-              <tr key={`pointer-${p.clientKey}`} className="border-t border-amber-200 bg-amber-50/50">
-                <td colSpan={2 + MONTH_SHORT.length + 5} className="px-4 py-2 text-xs text-amber-800 italic">
-                  <AlertTriangle className="inline h-3 w-3 mr-1.5 -mt-0.5" />
-                  {p.accountName} {p.strategy} runs {p.actualLabel} instead of the standard tier here — see the {p.actualLabel} table for actual figures.
-                </td>
+    <div className="mb-4">
+      {/* Accordion header: click to expand or collapse this section's table */}
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className={`w-full flex items-center gap-3 bg-logo-green hover:bg-logo-green/90 px-5 py-3 text-left transition-colors ${open ? "rounded-t-lg" : "rounded-lg"}`}
+      >
+        <ChevronRight className={`h-4 w-4 text-white flex-shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
+        <span className="text-xs text-white/70">
+          {clientCount} {clientCount === 1 ? "client" : "clients"}
+        </span>
+      </button>
+      {open && (
+        <div className="overflow-auto max-h-[70vh] rounded-b-lg border border-logo-green/10 bg-white">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-card-text-secondary text-xs border-b border-logo-green/10">
+                <th className="px-4 py-2.5 text-left font-medium w-56 sticky left-0 top-0 z-30 bg-[#f8f7ee] shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] border-r border-logo-green/10">Client</th>
+                <th className="sticky top-0 z-20 bg-[#f8f7ee] shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-4 py-2.5 text-left font-medium w-16">Year</th>
+                {MONTH_SHORT.map((m) => <th key={m} className="sticky top-0 z-20 bg-[#f8f7ee] shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-3 py-2.5 text-right font-medium">{m}</th>)}
+                <th className="sticky top-0 z-20 bg-[#f8f7ee] shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-4 py-2.5 text-right font-medium">Total</th>
+                <th className="sticky top-0 z-20 bg-[#f8f7ee] shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-4 py-2.5 text-right font-medium whitespace-nowrap border-l-2 border-logo-green/25">Since Inception</th>
+                <th className="sticky top-0 z-20 bg-[#f8f7ee] shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-4 py-2.5 text-right font-medium whitespace-nowrap">Max DD</th>
+                <th className="sticky top-0 z-20 bg-[#f8f7ee] shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-4 py-2.5 text-right font-medium whitespace-nowrap">Current DD</th>
+                <th className="sticky top-0 z-20 bg-[#f8f7ee] shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-4 py-2.5 text-right font-medium whitespace-nowrap">Total Since Inception</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {rows.length === 0 && exceptionPointers.length === 0 ? (
+                <tr><td colSpan={2 + MONTH_SHORT.length + 5} className="px-4 py-4 text-sm text-card-text-secondary italic text-center">No data for this section.</td></tr>
+              ) : (
+                rows.map((row, i) => {
+                  const isFirstForClient = !shownClients.has(row.clientKey);
+                  if (isFirstForClient) shownClients.add(row.clientKey);
+                  return (
+                    <tr
+                      key={`${row.clientKey}-${row.year}`}
+                      className={`border-t ${isFirstForClient && i > 0 ? "border-logo-green/15 border-t-2" : "border-logo-green/5"} hover:bg-primary-bg/20 transition-colors`}
+                    >
+                      <td className="px-4 py-2 text-card-text font-medium whitespace-nowrap sticky left-0 z-10 bg-white border-r border-logo-green/10">
+                        {isFirstForClient ? `${row.accountName} ${row.strategy}` : null}
+                      </td>
+                      <td className="px-4 py-2 text-card-text-secondary">{row.year}</td>
+                      {row.months.map((v, mi) => (
+                        <td key={mi} className={`px-3 py-2 text-right whitespace-nowrap ${v !== null ? valColor(v) : "text-card-text-secondary/40"}`}>
+                          {v === null ? "—" : showInr ? fmtInr(v) : fmtPct(v)}
+                        </td>
+                      ))}
+                      <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap ${row.total !== null ? valColor(row.total) : "text-card-text-secondary/40"}`}>
+                        {row.total === null ? "—" : showInr ? fmtInr(row.total) : fmtPct(row.total)}
+                      </td>
+                      <td
+                        title={isFirstForClient && showInr ? fmtFull(row.sinceInceptionPnl) : undefined}
+                        className={`px-4 py-2 text-right whitespace-nowrap border-l-2 border-logo-green/25 ${isFirstForClient ? valColor(showInr ? row.sinceInceptionPnl : row.sinceInception) : "text-card-text-secondary/20"}`}
+                      >
+                        {isFirstForClient ? (showInr ? fmtInr(row.sinceInceptionPnl) : fmtFracPct(row.sinceInception)) : ""}
+                      </td>
+                      <td className={`px-4 py-2 text-right whitespace-nowrap ${isFirstForClient ? "text-red-600" : "text-card-text-secondary/20"}`}>
+                        {isFirstForClient ? fmtFracPct(row.maxDrawdown) : ""}
+                      </td>
+                      <td className={`px-4 py-2 text-right whitespace-nowrap ${isFirstForClient ? "text-red-600" : "text-card-text-secondary/20"}`}>
+                        {isFirstForClient ? fmtFracPct(row.currentDrawdown) : ""}
+                      </td>
+                      <td className={`px-4 py-2 text-right whitespace-nowrap ${isFirstForClient ? valColor(row.totalSinceInception) : "text-card-text-secondary/20"}`}>
+                        {isFirstForClient ? fmtFracPct(row.totalSinceInception) : ""}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+              {exceptionPointers.map((p) => (
+                <tr key={`pointer-${p.clientKey}`} className="border-t border-amber-200 bg-amber-50/50">
+                  <td colSpan={2 + MONTH_SHORT.length + 5} className="px-4 py-2 text-xs text-amber-800 italic">
+                    <AlertTriangle className="inline h-3 w-3 mr-1.5 -mt-0.5" />
+                    {p.accountName} {p.strategy} runs {p.actualLabel} instead of the standard tier here — see the {p.actualLabel} table for actual figures.
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -287,6 +303,10 @@ export function SubStrategyPerformance({ accountType }: { accountType: "managed"
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showInr, setShowInr] = useState(false);
+
+  // Accordion state, keyed by section. A key that was never toggled follows the default
+  // (first section open, the rest collapsed). Sections open independently.
+  const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
 
   const [startDateInput, setStartDateInput] = useState(defaultStartDate(4));
   const [endDateInput, setEndDateInput] = useState(todayStr());
@@ -305,6 +325,7 @@ export function SubStrategyPerformance({ accountType }: { accountType: "managed"
 
   useEffect(() => {
     setSelectedSections([]);
+    setOpenMap({});
   }, [accountType]);
 
   const allSections = useMemo((): SectionOption[] => {
@@ -354,6 +375,16 @@ export function SubStrategyPerformance({ accountType }: { accountType: "managed"
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, allSections]);
+
+  // Sections that actually render a table, in display order
+  const renderedKeys = selectedSections.filter(
+    (key) => (entriesBySection.get(key)?.length ?? 0) > 0 || (pointersByStandardKey.get(key)?.length ?? 0) > 0
+  );
+  const isOpen = (key: string) => openMap[key] ?? key === renderedKeys[0];
+  const allOpen = renderedKeys.length > 0 && renderedKeys.every(isOpen);
+  function setAll(v: boolean) {
+    setOpenMap(Object.fromEntries(renderedKeys.map((k) => [k, v])));
+  }
 
   if (loading) {
     return (
@@ -410,6 +441,14 @@ export function SubStrategyPerformance({ accountType }: { accountType: "managed"
         </div>
 
         <div className="flex items-center gap-5 pt-7 flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => setAll(!allOpen)}
+            disabled={renderedKeys.length === 0}
+            className="text-sm font-medium text-logo-green hover:underline disabled:opacity-40 disabled:no-underline"
+          >
+            {allOpen ? "Collapse all" : "Expand all"}
+          </button>
           <label className="flex items-center gap-2 text-sm text-card-text cursor-pointer">
             <span className={`h-4 w-4 rounded-full border-2 flex-shrink-0 ${!showInr ? "border-red-500" : "border-card-text-secondary/40"}`}>
               {!showInr && <span className="block h-full w-full scale-50 rounded-full bg-red-500" />}
@@ -444,6 +483,8 @@ export function SubStrategyPerformance({ accountType }: { accountType: "managed"
             entries={entries}
             showInr={showInr}
             exceptionPointers={pointers}
+            open={isOpen(key)}
+            onToggle={() => setOpenMap((m) => ({ ...m, [key]: !isOpen(key) }))}
           />
         );
       })}
@@ -451,4 +492,4 @@ export function SubStrategyPerformance({ accountType }: { accountType: "managed"
   );
 }
 
-export default SubStrategyPerformance;  
+export default SubStrategyPerformance;

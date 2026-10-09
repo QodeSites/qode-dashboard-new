@@ -611,7 +611,7 @@ investors.forEach((inv) => {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-2 pdf-section">
           <div className="rounded-xl bg-white border border-logo-green/10 border-t-4 border-t-logo-green p-5 overflow-hidden">
             <div className="text-[0.65rem] font-semibold uppercase tracking-wide text-card-text-secondary mb-2">Total Investors</div>
-            <div className="text-3xl font-bold text-card-text">{total_investors}</div>
+            <div className="text-3xl mb-5 font-serif font-bold text-card-text">{total_investors}</div>
             <div className="text-xs text-card-text-secondary mt-1">Active clients</div>
           </div>
           <div className="rounded-xl bg-white border border-logo-green/10 border-t-4 border-t-button-text p-5 overflow-hidden">
@@ -632,7 +632,7 @@ investors.forEach((inv) => {
           </div>
           <div className="rounded-xl bg-white border border-logo-green/10 border-t-4 border-t-[#DABD38] p-5 overflow-hidden">
             <div className="text-[0.65rem] font-semibold uppercase tracking-wide text-card-text-secondary mb-2">New This Quarter</div>
-            <div className="text-3xl font-bold text-card-text">{new_this_quarter}</div>
+            <div className="text-3xl mb-5 font-serif font-bold text-card-text">{new_this_quarter}</div>
             <div className="text-xs text-card-text-secondary mt-1">New investors</div>
           </div>
         </div>
@@ -652,7 +652,7 @@ investors.forEach((inv) => {
         </div>
         {aumView === "chart" ? (
           <div className="overflow-x-auto p-3 bg-white rounded-lg border border-logo-green/10 pdf-section">
-            <div className="text-sm font-semibold text-card-text mb-3">Portfolio AUM — {aumFreq}</div>
+            <div className="text-sm font-semibold text-card-text mb-3">Portfolio AUM - {aumFreq}</div>
             <ResponsiveContainer width="100%" height={280}>
               <LineChart data={aumLineSeries}>
                 <CartesianGrid stroke="#E8E4D4" vertical={false} />
@@ -682,7 +682,7 @@ investors.forEach((inv) => {
         </div>
         {strategyView === "chart" ? (
           <div className="rounded-lg border border-logo-green/10 bg-white p-4 pdf-section">
-            <div className="text-sm font-semibold text-card-text mb-3">AUM by Strategy — {strategyFreq}</div>
+            <div className="text-sm font-semibold text-card-text mb-3">AUM by Strategy - {strategyFreq}</div>
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={strategyLineSeries}>
                 <CartesianGrid stroke="#E8E4D4" vertical={false} />
@@ -707,7 +707,7 @@ investors.forEach((inv) => {
           <SectionHeader>Strategy Breakdown</SectionHeader>
           <div className="grid gap-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
             <div className="rounded-lg border border-logo-green/10 bg-white p-4 pdf-section">
-              <div className="text-sm font-semibold text-card-text mb-2">AUM — Strategy Wise</div>
+              <div className="text-sm font-semibold text-card-text mb-2">AUM Strategy Wise</div>
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                   <Pie data={strategyBreakdown} dataKey="aum" nameKey="name" cx="50%" cy="50%" outerRadius={80}
@@ -721,7 +721,7 @@ investors.forEach((inv) => {
             </div>
 
             <div className="rounded-lg border border-logo-green/10 bg-white p-4 pdf-section">
-              <div className="text-sm font-semibold text-card-text mb-2">No. of Investors — Strategy Wise</div>
+              <div className="text-sm font-semibold text-card-text mb-2">No. of Investors Strategy Wise</div>
               <div className="relative">
                 <ResponsiveContainer width="100%" height={220}>
                   <PieChart>

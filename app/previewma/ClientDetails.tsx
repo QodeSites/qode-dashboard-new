@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, Pin, Ruler, LineChart as LineChartIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, Pin, Ruler, Search, X, LineChart as LineChartIcon } from "lucide-react";
 import {
   LineChart,
   Line,
   AreaChart,
   Area,
-  XAxis,
   YAxis,
+  XAxis,
   CartesianGrid,
   Tooltip,
   Legend,
@@ -465,7 +465,6 @@ function ReturnMiniTable({
 const RATIO_ROWS: { key: keyof TagDetail["ratios"]; label: string; pct: boolean }[] = [
   { key: "ann_volatility", label: "Annualised Volatility", pct: true },
   { key: "sharpe", label: "Sharpe Ratio", pct: false },
-  { key: "sortino", label: "Sortino Ratio", pct: false },
   { key: "calmar", label: "Calmar Ratio", pct: false },
   { key: "best_month", label: "Best Month", pct: true },
   { key: "worst_month", label: "Worst Month", pct: true },
@@ -474,6 +473,113 @@ const RATIO_ROWS: { key: keyof TagDetail["ratios"]; label: string; pct: boolean 
   { key: "monthly_volatility", label: "Monthly Volatility", pct: true },
   { key: "downside_deviation", label: "Downside Deviation", pct: true },
 ];
+
+function SearchableTagSelect({
+  options, value, onChange,
+}: {
+  options: string[]; value: string; onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  // Start fresh each time the dropdown opens
+  useEffect(() => {
+    if (!open) setSearch("");
+  }, [open]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return q ? options.filter((o) => o.toLowerCase().includes(q)) : options;
+  }, [options, search]);
+
+  function pick(v: string) {
+    onChange(v);
+    setOpen(false);
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between gap-2 rounded-lg border border-logo-green/20 bg-white px-4 py-2.5 text-sm text-card-text text-left hover:border-logo-green/40 transition-colors"
+      >
+        <span className="truncate">{value || "Select a system tag"}</span>
+        <ChevronDown className={`h-4 w-4 text-card-text-secondary flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="absolute z-30 mt-1 w-full rounded-lg border border-logo-green/15 bg-white shadow-lg">
+          <div className="p-2 border-b border-logo-green/10">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-card-text-secondary" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && filtered.length > 0) {
+                    e.preventDefault();
+                    pick(filtered[0]); // Enter picks the top match
+                  }
+                  if (e.key === "Escape") setOpen(false);
+                }}
+                placeholder={`Search ${options.length} tags…`}
+                autoFocus
+                className="w-full rounded-md border border-logo-green/20 pl-8 pr-7 py-1.5 text-sm text-card-text focus:outline-none focus:border-logo-green/40"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-card-text-secondary hover:text-red-600"
+                  aria-label="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div role="listbox" className="max-h-60 overflow-y-auto py-1">
+            {filtered.length === 0 ? (
+              <p className="px-3 py-2 text-sm text-card-text-secondary italic">No tags match &quot;{search}&quot;.</p>
+            ) : (
+              filtered.map((name) => {
+                const selected = name === value;
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    onClick={() => pick(name)}
+                    className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
+                      selected ? "bg-primary-bg/60 text-logo-green font-medium" : "text-card-text hover:bg-primary-bg/30"
+                    }`}
+                  >
+                    {name}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function AnalysisTab({ data, tagFilter }: { data: ClientDashboardResponse; tagFilter: string[] }) {
   const { tags } = data;
@@ -502,20 +608,9 @@ function AnalysisTab({ data, tagFilter }: { data: ClientDashboardResponse; tagFi
         returns
       </p>
 
-      <div className="relative mb-5 max-w-md">
-        <select
-          value={selectedTag}
-          onChange={(e) => setSelectedTag(e.target.value)}
-          className="w-full appearance-none rounded-lg border border-logo-green/20 bg-white px-4 py-2.5 text-sm text-card-text pr-9"
-        >
-          {tagNames.map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-        </select>
-        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-card-text-secondary pointer-events-none" />
-      </div>
+<div className="mb-5 max-w-md">
+  <SearchableTagSelect options={tagNames} value={selectedTag} onChange={setSelectedTag} />
+</div>
 
       {tag && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -679,7 +774,7 @@ function ChartsTab({
 
   const [compareNifty, setCompareNifty] = useState(true);
 
-  const CHART_TYPE_OPTIONS = ["NAV Time Series", "Cumulative Return", "Drawdown", "Monthly Returns Heatmap"];
+  const CHART_TYPE_OPTIONS = ["NAV Time Series", "Drawdown", "Monthly Returns Heatmap"];
   const [selectedChartTypes, setSelectedChartTypes] = useState<string[]>(CHART_TYPE_OPTIONS);
 
   function toggleChartType(ct: string) {
@@ -893,7 +988,7 @@ function ChartsTab({
                   />
                 ))}
                 {compareNifty && (
-                  <Area
+                  <Area 
                     type="monotone"
                     dataKey="dd__Nifty50"
                     name="dd__Nifty50"
@@ -934,7 +1029,7 @@ function ChartsTab({
                   const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
                   return years.map((yr, yi) => {
                     const rowData: Record<string, number | null> = {};
-                    tag.monthly.filter((m) => m.year === yr).forEach((m) => { rowData[m.month] = m.return_pct; });
+                    tag.monthly.filter((m) => m.year === yr).forEach((m) => { rowData[m.month.slice(0, 3)] = m.return_pct; });
                     return (
                       <tr key={`${tagName}-${yr}`} className={yi === 0 && ti > 0 ? "border-t-2 border-logo-green/20" : "border-t border-logo-green/5"}>
                         <td className="px-2 py-1 font-semibold text-card-text whitespace-nowrap">
