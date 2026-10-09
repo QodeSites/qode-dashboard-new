@@ -236,6 +236,63 @@ export async function fetchTagData(
   return groupRows(rows);
 }
 
+export interface EffectiveToConfig {
+  strategy: string;
+  effective_to: Date | null;
+}
+
+/**
+ * The closure date that should cap a tag's NAV series, or null when the
+ * tag's strategy is still active (or no matching config was found — this
+ * never trims a tag it can't positively identify as closed).
+ *
+ * Needed because a closed strategy's mastersheet pipeline can keep writing
+ * rows after its real last trading day — NAV frozen at the last value,
+ * portfolio_value at 0 — once another strategy becomes the account's active
+ * one. Those rows have a non-null `nav`, so fetchTagData's own filtering
+ * doesn't drop them; capping by `effective_to` here does, using the same
+ * source of truth (`client_strategy_configs`) already used elsewhere to
+ * decide whether a strategy is active (e.g. portfolio-summary.ts).
+ *
+ * A bare/unprefixed combined tag (e.g. "Qode Total Portfolio") matches no
+ * single strategy and is deliberately left uncapped — it already spans the
+ * account's full history across every strategy it has ever run.
+ *
+ * When more than one config row shares the same strategy name (reconfigured
+ * over time), the tag is only capped once EVERY matching row is closed, at
+ * the latest of their effective_to dates — same "hasActive" convention used
+ * in portfolio-summary.ts.
+ */
+export function effectiveToForTag(
+  tag: string,
+  configs: EffectiveToConfig[],
+  isSoloProp: boolean,
+): Date | null {
+  const matches = isSoloProp
+    ? configs
+    : configs.filter(
+        (c) => tag === c.strategy || tag.startsWith(`${c.strategy} `),
+      );
+  if (matches.length === 0) return null;
+  if (matches.some((c) => c.effective_to === null)) return null;
+  return matches.reduce<Date | null>(
+    (max, c) => (!max || (c.effective_to as Date) > max ? c.effective_to : max),
+    null,
+  );
+}
+
+/** Drops NAV rows dated after `effectiveTo` (inclusive bound) — see
+ * effectiveToForTag above for why this is needed. Accepts `undefined` so a
+ * raw `Map.get(...)` result can be passed straight through. */
+export function trimToEffectiveTo(
+  nav: NavPoint[] | undefined,
+  effectiveTo: Date | null,
+): NavPoint[] | undefined {
+  if (!nav || !effectiveTo) return nav;
+  const cutoff = toSqlDate(effectiveTo);
+  return nav.filter((p) => toSqlDate(p.date) <= cutoff);
+}
+
 export interface PnlSnapshotEntry {
   pnl_inr: number;
   pnl_pct: number;

@@ -1,4 +1,4 @@
-import { fetchStrategyPairs } from "@/app/lib/portfolio-review/tags";
+import { fetchStrategyPairs, trimToEffectiveTo } from "@/app/lib/portfolio-review/tags";
 import { fetchBulkNavSeries } from "@/app/lib/portfolio-review/nav-series";
 import {
   calcMonthlyReturns,
@@ -35,7 +35,13 @@ export async function computeStrategyMonthlyReturns(): Promise<
 
   const rows: StrategyMonthlyRow[] = [];
   for (const pair of pairs) {
-    const nav = seriesMap.get(`${pair.qcode}|${pair.tag}`);
+    // Closed strategies can keep getting frozen/zero rows written past their
+    // real last trading day (see tags.ts's effectiveToForTag) — cap here so
+    // since_inception/drawdowns/monthly table never see them.
+    const nav = trimToEffectiveTo(
+      seriesMap.get(`${pair.qcode}|${pair.tag}`),
+      pair.effective_to ? new Date(pair.effective_to) : null,
+    );
     if (!nav || nav.length === 0) continue;
 
     const monthly = calcMonthlyReturns(nav);

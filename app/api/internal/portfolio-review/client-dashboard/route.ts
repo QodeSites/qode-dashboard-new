@@ -12,6 +12,10 @@ import {
   anchorDateBefore,
   withAnchorPoint,
 } from "@/app/lib/portfolio-review/rebase";
+import {
+  effectiveToForTag,
+  trimToEffectiveTo,
+} from "@/app/lib/portfolio-review/tags";
 import { toDisplayDate, toSqlDate } from "@/lib/utils";
 
 export async function POST(req: Request) {
@@ -159,6 +163,18 @@ export async function POST(req: Request) {
       { error: "No mastersheet data found" },
       { status: 404 },
     );
+  }
+
+  // A closed strategy's data pipeline can keep writing frozen/zero rows
+  // past its real last trading day once another strategy takes over as the
+  // account's active one (see effectiveToForTag) — drop those before they
+  // reach dataAsOf, the benchmark window, or any metric below. Only caps
+  // tags positively matched to a closed strategy; the bare combined tag
+  // ("Qode Total Portfolio") and any still-active strategy's tags pass
+  // through unchanged.
+  for (const tag of Object.keys(tagData)) {
+    const effectiveTo = effectiveToForTag(tag, configs, isSoloProp);
+    if (effectiveTo) tagData[tag] = trimToEffectiveTo(tagData[tag], effectiveTo)!;
   }
 
   // Latest date across all returned tags — reflects the asOf cutoff automatically

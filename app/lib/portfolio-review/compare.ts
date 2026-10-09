@@ -16,6 +16,10 @@ import {
   type XirrTagConfig,
 } from "@/app/lib/portfolio-review/xirr";
 import {
+  effectiveToForTag,
+  trimToEffectiveTo,
+} from "@/app/lib/portfolio-review/tags";
+import {
   rebaseNavWindow,
   anchorDateBefore,
   withAnchorPoint,
@@ -24,6 +28,8 @@ import {
 import type { NavPoint } from "@/app/lib/internal-utils";
 
 const PROP_TABLE = "master_sheet_test" as const;
+
+type CompareConfig = XirrTagConfig & { effective_to: Date | null };
 
 /**
  * Solo Prop accounts store their data in master_sheet_test with bare
@@ -34,7 +40,7 @@ const PROP_TABLE = "master_sheet_test" as const;
  */
 async function fetchConfigsByQcode(
   qcodes: string[],
-): Promise<Map<string, XirrTagConfig[]>> {
+): Promise<Map<string, CompareConfig[]>> {
   if (qcodes.length === 0) return new Map();
   const configs = await prisma.client_strategy_configs.findMany({
     where: { qcode: { in: qcodes } },
@@ -43,10 +49,11 @@ async function fetchConfigsByQcode(
       strategy: true,
       profit_tag_suffix: true,
       exposure_tag_suffix: true,
+      effective_to: true,
     },
     orderBy: { effective_from: "asc" },
   });
-  const grouped = new Map<string, XirrTagConfig[]>();
+  const grouped = new Map<string, CompareConfig[]>();
   for (const c of configs) {
     if (!grouped.has(c.qcode)) grouped.set(c.qcode, []);
     grouped.get(c.qcode)!.push(c);
@@ -361,6 +368,23 @@ export async function computeCompare(
     ),
   ]);
   const seriesMap = new Map([...managedSeries, ...propSeries]);
+
+  // A closed strategy's data pipeline can keep writing frozen/zero rows past
+  // its real last trading day once another strategy becomes the account's
+  // active one — cap each selected line to its own strategy's effective_to
+  // before any metric or the shared chart window is built from it. See
+  // tags.ts's effectiveToForTag for the matching rule; a bare combined tag
+  // or a still-active strategy's line passes through unchanged. Capping one
+  // line can only narrow the shared Nifty window (minStart/maxEnd below) if
+  // no other selected line reaches as far — otherwise that other line's own
+  // (real) data still sets the bound, which is correct: the window shouldn't
+  // be stretched by one closed account's dead padding in the first place.
+  for (const s of unique) {
+    const key = `${s.qcode}|${s.system_tag}`;
+    const configs = configsByQcode.get(s.qcode) ?? [];
+    const effectiveTo = effectiveToForTag(s.system_tag, configs, propQcodes.has(s.qcode));
+    if (effectiveTo) seriesMap.set(key, trimToEffectiveTo(seriesMap.get(key), effectiveTo)!);
+  }
 
   const built = new Map<
     string,

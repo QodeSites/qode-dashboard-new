@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { fetchBulkNavSeries } from "@/app/lib/portfolio-review/nav-series";
+import { trimToEffectiveTo } from "@/app/lib/portfolio-review/tags";
 import {
   calcMonthlyReturns,
   calcYearlyReturns,
@@ -28,6 +29,7 @@ interface PropPair {
   account_name: string;
   exposure_tag_suffix: string;
   profit_tag_suffix: string;
+  effective_to: Date | null;
 }
 
 export interface PropCatalogLeaf {
@@ -38,7 +40,13 @@ export interface PropCatalogLeaf {
 async function fetchPropPairs(): Promise<PropPair[]> {
   return prisma.client_strategy_configs.findMany({
     where: { strategy: "Prop" },
-    select: { qcode: true, account_name: true, exposure_tag_suffix: true, profit_tag_suffix: true },
+    select: {
+      qcode: true,
+      account_name: true,
+      exposure_tag_suffix: true,
+      profit_tag_suffix: true,
+      effective_to: true,
+    },
   });
 }
 
@@ -78,12 +86,21 @@ export async function computeSubStrategyPerformanceProp(
 
   const rows: SubStrategyRow[] = [];
   for (const pair of pairs) {
-    const totalNav = seriesMap.get(`${pair.qcode}|${pair.profit_tag_suffix}`);
+    // Capped to the pair's own effective_to — a closed Prop account can keep
+    // getting frozen/zero rows written past its real last trading day (see
+    // tags.ts's effectiveToForTag).
+    const totalNav = trimToEffectiveTo(
+      seriesMap.get(`${pair.qcode}|${pair.profit_tag_suffix}`),
+      pair.effective_to,
+    );
     const total_since_inception =
       totalNav && totalNav.length > 0 ? calcSinceInception(totalNav) : null;
 
     for (const leaf of leaves) {
-      const nav = seriesMap.get(`${pair.qcode}|${leaf.tag_suffix}`);
+      const nav = trimToEffectiveTo(
+        seriesMap.get(`${pair.qcode}|${leaf.tag_suffix}`),
+        pair.effective_to,
+      );
       if (!nav || nav.length === 0) continue; // presence check — no ratio system involved
 
       const monthly = calcMonthlyReturns(nav);

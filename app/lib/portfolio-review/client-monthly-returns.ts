@@ -13,7 +13,11 @@ import {
 import type { MonthlyReturn, YearlyReturn, TrailingReturns } from "@/app/lib/portfolio-review/returns";
 import type { NavPoint } from "@/app/lib/internal-utils";
 
-import { fetchStrategyPairs } from "@/app/lib/portfolio-review/tags";
+import {
+  fetchStrategyPairs,
+  effectiveToForTag,
+  trimToEffectiveTo,
+} from "@/app/lib/portfolio-review/tags";
 import { resolveSplitConfigs } from "@/app/lib/portfolio-review/mandate-snapshot";
 import type { SplitConfig } from "@/app/lib/portfolio-review/mandate-snapshot";
 import { SUB_STRATEGY_SECTIONS } from "@/app/lib/portfolio-review/sub-strategy-performance";
@@ -181,6 +185,7 @@ interface ClientGroup {
     strategy: string;
     profit_tag_suffix: string;
     exposure_tag_suffix: string;
+    effective_to: Date | null;
   }[];
 }
 
@@ -230,6 +235,7 @@ async function fetchClientGroups(
         strategy: r.strategy,
         profit_tag_suffix: r.profit_tag_suffix,
         exposure_tag_suffix: r.exposure_tag_suffix,
+        effective_to: r.effective_to,
       })),
     });
   }
@@ -649,6 +655,22 @@ export async function computeClientMonthlyReturns(
   const profitPairs = groups.flatMap((g) => flattenNode(g.qcode, roots.get(g.qcode)!));
 
   const navMap = await fetchBulkNavSeries(profitPairs, undefined, undefined, table);
+
+  // A closed strategy's data pipeline can keep writing frozen/zero rows past
+  // its real last trading day once another strategy becomes the account's
+  // active one — caps every node under that strategy (not just its own
+  // total), same as the sleeve rows on Sub-Strategy Performance. See
+  // tags.ts's effectiveToForTag for the matching rule; the bare combined
+  // tag and any still-active strategy's nodes pass through unchanged.
+  const groupByQcode = new Map(groups.map((g) => [g.qcode, g]));
+  for (const key of [...navMap.keys()]) {
+    const sep = key.indexOf("|");
+    const group = groupByQcode.get(key.slice(0, sep));
+    if (!group) continue;
+    const tag = key.slice(sep + 1);
+    const effectiveTo = effectiveToForTag(tag, group.configs, group.isSoloProp);
+    if (effectiveTo) navMap.set(key, trimToEffectiveTo(navMap.get(key), effectiveTo)!);
+  }
 
   const rows: ClientMonthlyRow[] = [];
   for (const group of groups) {

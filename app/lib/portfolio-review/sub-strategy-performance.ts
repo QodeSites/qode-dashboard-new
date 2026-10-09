@@ -1,4 +1,4 @@
-import { fetchStrategyPairs } from "@/app/lib/portfolio-review/tags";
+import { fetchStrategyPairs, trimToEffectiveTo } from "@/app/lib/portfolio-review/tags";
 import type { StrategyPair } from "@/app/lib/portfolio-review/tags";
 import { resolveSplitConfigs } from "@/app/lib/portfolio-review/mandate-snapshot";
 import { fetchBulkNavSeries } from "@/app/lib/portfolio-review/nav-series";
@@ -197,11 +197,18 @@ async function computeSubStrategyPerformanceManaged(
   // fallback for a qcode with exactly one configured strategy (see the DMA
   // investigation this rule came from — a multi-strategy client's bare tag
   // mixes activity from more than one strategy, so it's ambiguous there).
+  // Both branches are capped to the pair's own effective_to — a closed
+  // strategy's sleeves can freeze/zero out past its real last trading day
+  // the same way its own total does (see tags.ts's effectiveToForTag).
   function resolveGenericNav(pair: StrategyPair, tagSuffix: string): NavPoint[] | undefined {
-    const prefixed = seriesMap.get(`${pair.qcode}|${pair.strategy} ${tagSuffix}`);
+    const effTo = pair.effective_to ? new Date(pair.effective_to) : null;
+    const prefixed = trimToEffectiveTo(
+      seriesMap.get(`${pair.qcode}|${pair.strategy} ${tagSuffix}`),
+      effTo,
+    );
     if (prefixed && prefixed.length > 0) return prefixed;
     if (qcodeStrategyCount.get(pair.qcode) === 1) {
-      const bare = seriesMap.get(`${pair.qcode}|${tagSuffix}`);
+      const bare = trimToEffectiveTo(seriesMap.get(`${pair.qcode}|${tagSuffix}`), effTo);
       if (bare && bare.length > 0) return bare;
     }
     return undefined;
@@ -209,15 +216,19 @@ async function computeSubStrategyPerformanceManaged(
 
   const rows: SubStrategyRow[] = [];
   for (const pair of pairs) {
+    const effTo = pair.effective_to ? new Date(pair.effective_to) : null;
     const split = splitMap.get(`${pair.qcode}|${pair.strategy}`)!;
-    const totalNav = seriesMap.get(`${pair.qcode}|${pair.tag}`);
+    const totalNav = trimToEffectiveTo(seriesMap.get(`${pair.qcode}|${pair.tag}`), effTo);
     const total_since_inception =
       totalNav && totalNav.length > 0 ? calcSinceInception(totalNav) : null;
     for (const sec of SUB_STRATEGY_SECTIONS) {
       const value = split[sec.existsField];
       if (value == null) continue;
 
-      const nav = seriesMap.get(`${pair.qcode}|${pair.strategy} ${sec.tag}`);
+      const nav = trimToEffectiveTo(
+        seriesMap.get(`${pair.qcode}|${pair.strategy} ${sec.tag}`),
+        effTo,
+      );
       if (!nav || nav.length === 0) continue;
 
       const monthly = calcMonthlyReturns(nav);
