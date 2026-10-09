@@ -406,7 +406,7 @@ export function ClientwiseReturns({ accountType }: { accountType: "managed" | "p
         <div className="flex items-center gap-3 rounded-t-lg bg-[#e8e4d0]/80 border-l-4 border-logo-green px-5 py-3">
           <span className="text-sm font-semibold text-logo-green">All Clients ({sortedClients.length})</span>
         </div>
-        <div className="overflow-x-auto border border-t-0 border-logo-green/10 rounded-b-lg bg-white">
+        <div className="overflow-auto max-h-[75vh] border border-t-0 border-logo-green/10 rounded-b-lg bg-white">
           <table className="text-sm" style={{ tableLayout: "fixed", width: "100%", minWidth: tableWidth }}>
             <colgroup>
               <col style={{ width: COL.label }} />
@@ -421,18 +421,18 @@ export function ClientwiseReturns({ accountType }: { accountType: "managed" | "p
             </colgroup>
             <thead>
               <tr className="text-card-text-secondary text-xs border-b border-logo-green/10 bg-white">
-                <th className="px-4 py-2.5 text-left font-medium sticky left-0 z-10 bg-white border-r border-logo-green/10">Client</th>
-                <th className="px-4 py-2.5 text-left font-medium">Year</th>
-                <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap border-l-2 border-logo-green/25">Since Inception</th>
-                <th className="px-3 py-2.5 text-right font-medium">XIRR</th>
-                <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Max DD</th>
-                <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap border-r-2 border-logo-green/25">Current DD</th>
+                <th className="px-4 py-2.5 text-left font-medium sticky left-0 top-0 z-30 bg-white shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] border-r border-logo-green/10">Client</th>
+                <th className="sticky top-0 z-20 bg-white shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-4 py-2.5 text-left font-medium">Year</th>
+                <th className="sticky top-0 z-20 bg-white shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-3 py-2.5 text-right font-medium whitespace-nowrap border-l-2 border-logo-green/25">Since Inception</th>
+                <th className="sticky top-0 z-20 bg-white shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-3 py-2.5 text-right font-medium">XIRR</th>
+                <th className="sticky top-0 z-20 bg-white shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-3 py-2.5 text-right font-medium whitespace-nowrap">Max DD</th>
+                <th className="sticky top-0 z-20 bg-white shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-3 py-2.5 text-right font-medium whitespace-nowrap border-r-2 border-logo-green/25">Current DD</th>
                 {months.map((m) => (
-                  <th key={m} className="px-3 py-2.5 text-right font-medium">{MONTH_SHORT[m]}</th>
+                  <th key={m} className="sticky top-0 z-20 bg-white shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-3 py-2.5 text-right font-medium">{MONTH_SHORT[m]}</th>
                 ))}
-                <th className="px-4 py-2.5 text-right font-medium">Total</th>
+                <th className="sticky top-0 z-20 bg-white shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-4 py-2.5 text-right font-medium">Total</th>
                 {trailingKeys.map((k) => (
-                  <th key={k} className="px-3 py-2.5 text-right font-medium">
+                  <th key={k} className="sticky top-0 z-20 bg-white shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-3 py-2.5 text-right font-medium">
                     {TRAILING_COLS.find((c) => c.key === k)?.label}
                   </th>
                 ))}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, AlertCircle, Download } from "lucide-react";
+import { Loader2, AlertCircle, Download, ChevronRight } from "lucide-react";
 import { fetchStrategyMonthlyReturns, type StrategyMonthlyEntry } from "./api";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -72,10 +72,14 @@ function StrategyTable({
   strategy,
   entries,
   showInr,
+  open,
+  onToggle,
 }: {
   strategy: string;
   entries: StrategyMonthlyEntry[];
   showInr: boolean;
+  open: boolean;
+  onToggle: () => void;
 }) {
   const { allYears, allMonths } = useMemo(() => {
     const years = Array.from(
@@ -141,98 +145,109 @@ function StrategyTable({
     COL.label + COL.year + allMonths.length * COL.month + COL.total + COL.since + COL.xirr + COL.dd * 2;
 
   return (
-    <div className="mb-8">
-      {/* Olive/sage section header matching screenshot */}
-      <div className="flex items-center gap-3 rounded-t-lg bg-[#e8e4d0]/80 border-l-4 border-logo-green px-5 py-3">
+    <div className="mb-4">
+      {/* Accordion header — click to expand or collapse this strategy's table */}
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className={`w-full flex items-center gap-3 bg-[#e8e4d0]/80 hover:bg-[#e8e4d0] border-l-4 border-logo-green px-5 py-3 text-left transition-colors ${open ? "rounded-t-lg" : "rounded-lg"}`}
+      >
+        <ChevronRight className={`h-4 w-4 text-logo-green flex-shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
         <span className="text-sm font-semibold text-logo-green">{strategy} Clients</span>
-      </div>
-      <div className="overflow-x-auto border border-t-0 border-logo-green/10 rounded-b-lg bg-white">
-        <table className="text-sm" style={{ tableLayout: "fixed", width: "100%", minWidth: tableWidth }}>
-          <colgroup>
-            <col style={{ width: COL.label }} />
-            <col style={{ width: COL.year }} />
-            {allMonths.map((m) => <col key={m} style={{ width: COL.month }} />)}
-            <col style={{ width: COL.total }} />
-            <col style={{ width: COL.since }} />
-            <col style={{ width: COL.xirr }} />
-            <col style={{ width: COL.dd }} />
-            <col style={{ width: COL.dd }} />
-          </colgroup>
-          <thead>
-            <tr className="text-card-text-secondary text-xs border-b border-logo-green/10 bg-white">
-              <th className="px-4 py-2.5 text-left font-medium sticky left-0 z-10 bg-white border-r border-logo-green/10">Client</th>
-              <th className="px-4 py-2.5 text-left font-medium">Year</th>
-              {allMonths.map((m) => (
-                <th key={m} className="px-3 py-2.5 text-right font-medium">{MONTH_SHORT[m]}</th>
-              ))}
-              <th className="px-4 py-2.5 text-right font-medium">Total</th>
-              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap border-l-2 border-logo-green/25">Since Inception</th>
-              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">XIRR</th>
-              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Max DD</th>
-              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Current DD</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, i) => {
-              const isNewClient = row.isFirstRow && i > 0;
-              // Check if any month or total has data
-              const hasData = row.months.some((v) => v !== null) || row.total !== null;
-              const show = row.isFirstRow;
+        <span className="text-xs text-logo-green/60">
+          {entries.length} {entries.length === 1 ? "client" : "clients"}
+        </span>
+      </button>
+      {open && (
+        <div className="overflow-auto max-h-[70vh] border border-t-0 border-logo-green/10 rounded-b-lg bg-white">
+          <table className="text-sm" style={{ tableLayout: "fixed", width: "100%", minWidth: tableWidth }}>
+            <colgroup>
+              <col style={{ width: COL.label }} />
+              <col style={{ width: COL.year }} />
+              {allMonths.map((m) => <col key={m} style={{ width: COL.month }} />)}
+              <col style={{ width: COL.total }} />
+              <col style={{ width: COL.since }} />
+              <col style={{ width: COL.xirr }} />
+              <col style={{ width: COL.dd }} />
+              <col style={{ width: COL.dd }} />
+            </colgroup>
+            <thead>
+              <tr className="text-card-text-secondary text-xs border-b border-logo-green/10 bg-white">
+                <th className="px-4 py-2.5 text-left font-medium sticky left-0 top-0 z-30 bg-white shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] border-r border-logo-green/10">Client</th>
+                <th className="sticky top-0 z-20 bg-white shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-4 py-2.5 text-left font-medium">Year</th>
+                {allMonths.map((m) => (
+                  <th key={m} className="sticky top-0 z-20 bg-white shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-3 py-2.5 text-right font-medium">{MONTH_SHORT[m]}</th>
+                ))}
+                <th className="sticky top-0 z-20 bg-white shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-4 py-2.5 text-right font-medium">Total</th>
+                <th className="sticky top-0 z-20 bg-white shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-3 py-2.5 text-right font-medium whitespace-nowrap border-l-2 border-logo-green/25">Since Inception</th>
+                <th className="sticky top-0 z-20 bg-white shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-3 py-2.5 text-right font-medium">XIRR</th>
+                <th className="sticky top-0 z-20 bg-white shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-3 py-2.5 text-right font-medium whitespace-nowrap">Max DD</th>
+                <th className="sticky top-0 z-20 bg-white shadow-[inset_0_-1px_0_0_rgba(2,66,43,0.12)] px-3 py-2.5 text-right font-medium whitespace-nowrap">Current DD</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => {
+                const isNewClient = row.isFirstRow && i > 0;
+                // Check if any month or total has data
+                const hasData = row.months.some((v) => v !== null) || row.total !== null;
+                const show = row.isFirstRow;
 
-              return (
-                <tr
-                  key={`${row.clientKey}-${row.year}`}
-                  className={`border-t ${isNewClient ? "border-logo-green/20 border-t-2" : "border-logo-green/5"}`}
-                >
-                  {/* Client name — only on first year row */}
-                  <td className="px-4 py-2 text-card-text font-medium whitespace-nowrap sticky left-0 z-10 bg-white overflow-hidden border-r border-logo-green/10">
-                    {row.isFirstRow ? (
-                      <span className="truncate block" title={row.accountName}>
-                        {row.accountName}
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className={`px-4 py-2 text-card-text-secondary ${!hasData ? "opacity-40" : ""}`}>
-                    {row.year}
-                  </td>
-                  {row.months.map((v, mi) => (
+                return (
+                  <tr
+                    key={`${row.clientKey}-${row.year}`}
+                    className={`border-t ${isNewClient ? "border-logo-green/20 border-t-2" : "border-logo-green/5"}`}
+                  >
+                    {/* Client name — only on first year row */}
+                    <td className="px-4 py-2 text-card-text font-medium whitespace-nowrap sticky left-0 z-10 bg-white overflow-hidden border-r border-logo-green/10">
+                      {row.isFirstRow ? (
+                        <span className="truncate block" title={row.accountName}>
+                          {row.accountName}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className={`px-4 py-2 text-card-text-secondary ${!hasData ? "opacity-40" : ""}`}>
+                      {row.year}
+                    </td>
+                    {row.months.map((v, mi) => (
+                      <td
+                        key={mi}
+                        title={showInr && v !== null ? fmtFull(v) : undefined}
+                        className={`px-3 py-2 text-right whitespace-nowrap text-xs font-medium ${v !== null ? cellClass(v) : "text-card-text-secondary/30"
+                          }`}
+                      >
+                        {v === null ? "—" : showInr ? fmtInr(v) : fmtPct(v)}
+                      </td>
+                    ))}
                     <td
-                      key={mi}
-                      title={showInr && v !== null ? fmtFull(v) : undefined}
-                      className={`px-3 py-2 text-right whitespace-nowrap text-xs font-medium ${v !== null ? cellClass(v) : "text-card-text-secondary/30"
+                      title={showInr && row.total !== null ? fmtFull(row.total) : undefined}
+                      className={`px-4 py-2 text-right font-semibold whitespace-nowrap text-xs ${row.total !== null ? cellClass(row.total) : "text-card-text-secondary/30"
                         }`}
                     >
-                      {v === null ? "—" : showInr ? fmtInr(v) : fmtPct(v)}
+                      {row.total === null ? "—" : showInr ? fmtInr(row.total) : fmtPct(row.total)}
                     </td>
-                  ))}
-                  <td
-                    title={showInr && row.total !== null ? fmtFull(row.total) : undefined}
-                    className={`px-4 py-2 text-right font-semibold whitespace-nowrap text-xs ${row.total !== null ? cellClass(row.total) : "text-card-text-secondary/30"
-                      }`}
-                  >
-                    {row.total === null ? "—" : showInr ? fmtInr(row.total) : fmtPct(row.total)}
-                  </td>
-                  <td
-                    title={show && showInr ? fmtFull(row.sinceInceptionPnl) : undefined}
-                    className={`px-3 py-2 text-right text-xs whitespace-nowrap border-l-2 border-logo-green/25 ${show ? textClass(showInr ? row.sinceInceptionPnl : row.sinceInception) : ""}`}
-                  >
-                    {show ? (showInr ? fmtInr(row.sinceInceptionPnl) : fmtFracPct(row.sinceInception)) : ""}
-                  </td>
-                  <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${show ? textClass(row.xirr) : ""}`}>
-                    {show ? fmtFracPct(row.xirr) : ""}
-                  </td>
-                  <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${show ? "text-red-600" : ""}`}>
-                    {show ? fmtFracPct(row.maxDrawdown) : ""}
-                  </td>
-                  <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${show ? "text-red-600" : ""}`}>
-                    {show ? fmtFracPct(row.currentDrawdown) : ""}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+                    <td
+                      title={show && showInr ? fmtFull(row.sinceInceptionPnl) : undefined}
+                      className={`px-3 py-2 text-right text-xs whitespace-nowrap border-l-2 border-logo-green/25 ${show ? textClass(showInr ? row.sinceInceptionPnl : row.sinceInception) : ""}`}
+                    >
+                      {show ? (showInr ? fmtInr(row.sinceInceptionPnl) : fmtFracPct(row.sinceInception)) : ""}
+                    </td>
+                    <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${show ? textClass(row.xirr) : ""}`}>
+                      {show ? fmtFracPct(row.xirr) : ""}
+                    </td>
+                    <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${show ? "text-red-600" : ""}`}>
+                      {show ? fmtFracPct(row.maxDrawdown) : ""}
+                    </td>
+                    <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${show ? "text-red-600" : ""}`}>
+                      {show ? fmtFracPct(row.currentDrawdown) : ""}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -246,6 +261,10 @@ export function StrategyMonthlyReturns() {
   const [showInr, setShowInr] = useState(false);
 
   const [exporting, setExporting] = useState(false);
+
+  // Accordion state, keyed by strategy. Sections open independently.
+  const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
+  const [initOpen, setInitOpen] = useState(false);
 
   async function handleExport() {
     setExporting(true);
@@ -287,6 +306,19 @@ export function StrategyMonthlyReturns() {
     return [...known, ...unknown].map((s) => ({ strategy: s, entries: map.get(s)! }));
   }, [data]);
 
+  // First strategy starts open, the rest collapsed
+  useEffect(() => {
+    if (!initOpen && grouped.length > 0) {
+      setOpenMap({ [grouped[0].strategy]: true });
+      setInitOpen(true);
+    }
+  }, [grouped, initOpen]);
+
+  const allOpen = grouped.length > 0 && grouped.every((g) => openMap[g.strategy]);
+  function setAll(v: boolean) {
+    setOpenMap(Object.fromEntries(grouped.map((g) => [g.strategy, v])));
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center gap-2 py-20 text-card-text-secondary">
@@ -320,6 +352,13 @@ export function StrategyMonthlyReturns() {
 
         {/* % / ₹ toggle + Export */}
         <div className="flex items-center gap-5 flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => setAll(!allOpen)}
+            className="text-sm font-medium text-logo-green hover:underline"
+          >
+            {allOpen ? "Collapse all" : "Expand all"}
+          </button>
           <label className="flex items-center gap-2 text-sm text-card-text cursor-pointer">
             <span className={`h-4 w-4 rounded-full border-2 flex-shrink-0 ${!showInr ? "border-red-500" : "border-card-text-secondary/40"}`}>
               {!showInr && <span className="block h-full w-full scale-50 rounded-full bg-red-500" />}
@@ -353,6 +392,8 @@ export function StrategyMonthlyReturns() {
           strategy={strategy}
           entries={entries}
           showInr={showInr}
+          open={!!openMap[strategy]}
+          onToggle={() => setOpenMap((m) => ({ ...m, [strategy]: !m[strategy] }))}
         />
       ))}
     </div>

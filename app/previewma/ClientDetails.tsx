@@ -1044,7 +1044,7 @@ function ChartsTab({
                   const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
                   return years.map((yr, yi) => {
                     const rowData: Record<string, number | null> = {};
-                    tag.monthly.filter((m) => m.year === yr).forEach((m) => { rowData[m.month] = m.return_pct; });
+                    tag.monthly.filter((m) => m.year === yr).forEach((m) => { rowData[m.month.slice(0, 3)] = m.return_pct; });
                     return (
                       <tr key={`${tagName}-${yr}`} className={yi === 0 && ti > 0 ? "border-t-2 border-logo-green/20" : "border-t border-logo-green/5"}>
                         <td className="px-2 py-1 font-semibold text-card-text whitespace-nowrap">

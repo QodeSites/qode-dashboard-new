@@ -63,7 +63,8 @@ function SectionSelector({
   function toggle(key: string) {
     onChange(selected.includes(key) ? selected.filter((x) => x !== key) : [...selected, key]);
   }
-  function selectAll() { onChange(allSections.map((s) => s.key)); }
+  const allSelected = allSections.length > 0 && allSections.every((s) => selected.includes(s.key));
+  function toggleAll() { onChange(allSelected ? [] : allSections.map((s) => s.key)); }
   function clearAll() { onChange([]); }
 
   return (
@@ -101,9 +102,11 @@ function SectionSelector({
 
       {open && (
         <div className="absolute z-20 mt-1 w-full max-h-72 overflow-y-auto rounded-lg border border-logo-green/15 bg-white shadow-lg py-1">
-          <button type="button" onClick={selectAll} className="w-full text-left px-4 py-2 text-sm text-logo-green font-medium hover:bg-primary-bg/50 border-b border-logo-green/10">
-            Select all ({allSections.length})
-          </button>
+          {allSections.length > 0 && (
+            <button type="button" onClick={toggleAll} className="w-full text-left px-4 py-2 text-sm text-logo-green font-medium hover:bg-primary-bg/50 border-b border-logo-green/10">
+              {allSelected ? "Deselect all" : `Select all (${allSections.length})`}
+            </button>
+          )}
           {allSections.length === 0 ? (
             <p className="px-4 py-3 text-sm text-card-text-secondary italic">No sections in this date range.</p>
           ) : (
@@ -451,4 +454,4 @@ export function SubStrategyPerformance({ accountType }: { accountType: "managed"
   );
 }
 
-export default SubStrategyPerformance;  
+export default SubStrategyPerformance;
