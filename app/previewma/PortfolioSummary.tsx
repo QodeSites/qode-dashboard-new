@@ -652,7 +652,7 @@ investors.forEach((inv) => {
         </div>
         {aumView === "chart" ? (
           <div className="overflow-x-auto p-3 bg-white rounded-lg border border-logo-green/10 pdf-section">
-            <div className="text-sm font-semibold text-card-text mb-3">Portfolio AUM — {aumFreq}</div>
+            <div className="text-sm font-semibold text-card-text mb-3">Portfolio AUM - {aumFreq}</div>
             <ResponsiveContainer width="100%" height={280}>
               <LineChart data={aumLineSeries}>
                 <CartesianGrid stroke="#E8E4D4" vertical={false} />
@@ -682,7 +682,7 @@ investors.forEach((inv) => {
         </div>
         {strategyView === "chart" ? (
           <div className="rounded-lg border border-logo-green/10 bg-white p-4 pdf-section">
-            <div className="text-sm font-semibold text-card-text mb-3">AUM by Strategy — {strategyFreq}</div>
+            <div className="text-sm font-semibold text-card-text mb-3">AUM by Strategy - {strategyFreq}</div>
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={strategyLineSeries}>
                 <CartesianGrid stroke="#E8E4D4" vertical={false} />
