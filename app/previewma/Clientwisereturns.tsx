@@ -160,7 +160,7 @@ function NodeRows({
     );
   }
 
-  function summaryCells(show: boolean) {
+  function metricCells(show: boolean) {
     return (
       <>
         <td
@@ -175,9 +175,16 @@ function NodeRows({
         <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${show ? "text-red-600" : ""}`}>
           {show ? fmtFracPct(node.max_drawdown) : ""}
         </td>
-        <td className={`px-3 py-2 text-right text-xs whitespace-nowrap ${show ? "text-red-600" : ""}`}>
+        <td className={`px-3 py-2 text-right text-xs whitespace-nowrap border-r-2 border-logo-green/25 ${show ? "text-red-600" : ""}`}>
           {show ? fmtFracPct(node.current_drawdown) : ""}
         </td>
+      </>
+    );
+  }
+
+  function trailingCells(show: boolean) {
+    return (
+      <>
         {trailingKeys.map((k) => {
           const v = tr?.[k];
           return (
@@ -193,17 +200,18 @@ function NodeRows({
       </>
     );
   }
-
+  
   return (
     <Fragment key={nodeKey}>
       {years.length === 0 ? (
         <tr className={`border-t ${depth === 0 && !isFirstTopLevel ? "border-logo-green/20 border-t-2" : "border-logo-green/5"} ${bg}`}>
           {labelCell()}
           <td className="px-4 py-2 text-card-text-secondary text-xs">—</td>
+          {metricCells(true)}
           <td colSpan={months.length + 1} className="px-3 py-2 text-xs text-card-text-secondary/50 italic">
             No return data
           </td>
-          {summaryCells(true)}
+          {trailingCells(true)}
         </tr>
       ) : (
         years.map((year, yi) => {
@@ -219,6 +227,7 @@ function NodeRows({
                 ? labelCell()
                 : <td className={`px-4 py-2 sticky left-0 z-10 border-r border-logo-green/10 ${bg}`} />}
               <td className="px-4 py-2 text-card-text-secondary text-xs">{year}</td>
+              {metricCells(isFirst)}
               {months.map((mName) => {
                 const d = monthMap.get(`${year}|${mName}`);
                 const v = d ? (showInr ? d.inr : d.pct) : null;
@@ -238,7 +247,7 @@ function NodeRows({
               >
                 {totalVal === null ? "—" : showInr ? fmtInr(totalVal) : fmtPct(totalVal)}
               </td>
-              {summaryCells(isFirst)}
+              {trailingCells(isFirst)}
             </tr>
           );
         })
@@ -402,26 +411,26 @@ export function ClientwiseReturns({ accountType }: { accountType: "managed" | "p
             <colgroup>
               <col style={{ width: COL.label }} />
               <col style={{ width: COL.year }} />
-              {months.map((m) => <col key={m} style={{ width: COL.month }} />)}
-              <col style={{ width: COL.total }} />
               <col style={{ width: COL.since }} />
               <col style={{ width: COL.xirr }} />
               <col style={{ width: COL.dd }} />
               <col style={{ width: COL.dd }} />
+              {months.map((m) => <col key={m} style={{ width: COL.month }} />)}
+              <col style={{ width: COL.total }} />
               {trailingKeys.map((k) => <col key={k} style={{ width: COL.trailing }} />)}
             </colgroup>
             <thead>
               <tr className="text-card-text-secondary text-xs border-b border-logo-green/10 bg-white">
                 <th className="px-4 py-2.5 text-left font-medium sticky left-0 z-10 bg-white border-r border-logo-green/10">Client</th>
                 <th className="px-4 py-2.5 text-left font-medium">Year</th>
+                <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap border-l-2 border-logo-green/25">Since Inception</th>
+                <th className="px-3 py-2.5 text-right font-medium">XIRR</th>
+                <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Max DD</th>
+                <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap border-r-2 border-logo-green/25">Current DD</th>
                 {months.map((m) => (
                   <th key={m} className="px-3 py-2.5 text-right font-medium">{MONTH_SHORT[m]}</th>
                 ))}
                 <th className="px-4 py-2.5 text-right font-medium">Total</th>
-                <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap border-l-2 border-logo-green/25">Since Inception</th>
-                <th className="px-3 py-2.5 text-right font-medium">XIRR</th>
-                <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Max DD</th>
-                <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Current DD</th>
                 {trailingKeys.map((k) => (
                   <th key={k} className="px-3 py-2.5 text-right font-medium">
                     {TRAILING_COLS.find((c) => c.key === k)?.label}
