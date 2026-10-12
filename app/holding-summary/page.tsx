@@ -109,7 +109,7 @@ const AssetAllocationChart = ({ equityValue, debtValue, hybridValue }: {
     if (total === 0) {
         return (
             <Card className="bg-white/50 backdrop-blur-sm card-shadow border-0">
-                <CardTitle className="text-2xl font-semibold text-card-text-secondary font-heading">
+                <CardTitle className="text-black p-3 mb-4 rounded-t-sm text-lg">
                     Holdings Distribution
                 </CardTitle>
                 <CardContent>
