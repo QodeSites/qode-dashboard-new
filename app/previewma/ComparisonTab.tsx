@@ -17,10 +17,11 @@ import { SearchableSelect } from "./Searchableselect";
 interface CompareMetrics {
   start_date: string;
   end_date: string;
-  // Blended: absolute <1yr tenure, CAGR >=1yr — no separate XIRR field.
   since_inception: number;
   since_inception_pnl: number;
+  since_inception_absolute: number;
   cagr: number;
+  xirr: number;
   max_drawdown: number;
   current_drawdown: number;
   monthly: { year: number; month: string; return_pct: number; pnl_inr: number }[];
@@ -591,7 +592,7 @@ export function ComparisonTab() {
         isBacktest: false,
       };
     });
-    if (compareNifty) lines.push({ key: "Nifty50", label: "Nifty50", color: "#e92059", isNifty: true, isBacktest: false });
+    if (compareNifty) lines.push({ key: "Nifty50", label: "Nifty50", color: "#f02e2e", isNifty: true, isBacktest: false });
     if (showBacktest && compareData.backtest_series) {
       compareData.backtest_series.forEach((bt, i) => {
         const matchIdx = compareData.results.findIndex((r) => r.system_tag === bt.system_tag);
@@ -820,6 +821,7 @@ export function ComparisonTab() {
                   <th className="px-4 py-2.5 text-left font-medium">Start Date</th>
                   <th className="px-4 py-2.5 text-left font-medium">End Date</th>
                   <th className="px-4 py-2.5 text-right font-medium">Since Inception</th>
+                  <th className="px-4 py-2.5 text-right font-medium">XIRR</th>
                   <th className="px-4 py-2.5 text-right font-medium">Since Inception P&L</th>
                   <th className="px-4 py-2.5 text-right font-medium">Max Drawdown</th>
                   <th className="px-4 py-2.5 text-right font-medium">Current Drawdown</th>
@@ -849,7 +851,7 @@ export function ComparisonTab() {
                             ) : null}
                           </td>
                           <td className="px-4 py-2.5 text-card-text-secondary whitespace-nowrap">{r.system_tag}</td>
-                          <td colSpan={6} className="px-4 py-2.5 text-amber-700 italic text-xs">
+                          <td colSpan={7} className="px-4 py-2.5 text-amber-700 italic text-xs">
                             No data available ({r.skip_reason || "unknown reason"})
                           </td>
                         </tr>
@@ -872,6 +874,9 @@ export function ComparisonTab() {
                         <td className="px-4 py-2.5 text-card-text-secondary">{r.metrics.end_date}</td>
                         <td className={`px-4 py-2.5 text-right font-semibold ${r.metrics.since_inception >= 0 ? "text-green-700 bg-green-50" : "text-red-600 bg-red-50"}`}>
                           {fmtPct(r.metrics.since_inception * 100)}
+                        </td>
+                        <td className={`px-4 py-2.5 text-right font-semibold ${r.metrics.xirr >= 0 ? "text-green-700 bg-green-50" : "text-red-600 bg-red-50"}`}>
+                          {fmtPct(r.metrics.xirr * 100)}
                         </td>
                         <td className={`px-4 py-2.5 text-right font-semibold ${r.metrics.since_inception_pnl >= 0 ? "text-green-700 bg-green-50" : "text-red-600 bg-red-50"}`}>
                           {r.metrics.since_inception_pnl >= 0 ? "+" : ""}₹{Math.abs(r.metrics.since_inception_pnl).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
@@ -908,7 +913,6 @@ export function ComparisonTab() {
                   {allLines.map((l) => (
                     <Line key={l.key} type="monotone" dataKey={`nav__${l.key}`}
                       stroke={l.color} strokeWidth={l.isNifty || l.isBacktest ? 1.5 : 2}
-                      strokeDasharray={l.isNifty ? "4 2" : l.isBacktest ? "2 3" : undefined}
                       dot={false} connectNulls isAnimationActive={false} />
                   ))}
                 </LineChart>
@@ -936,7 +940,6 @@ export function ComparisonTab() {
                       stroke={l.color} fill={l.color}
                       fillOpacity={l.isNifty || l.isBacktest ? 0.08 : 0.12}
                       strokeWidth={1.5}
-                      strokeDasharray={l.isNifty ? "4 2" : l.isBacktest ? "2 3" : undefined}
                       dot={false} connectNulls isAnimationActive={false} />
                   ))}
                 </AreaChart>
