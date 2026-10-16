@@ -24,6 +24,7 @@ const navigation = [
   { name: "Holdings Summary", href: "/holding-summary", icon: ChartCandlestickIcon },
   { name: "Costs Summary", href: "/quarterly-fees", icon: CurrencyDollarIcon },
   { name: "Personal Details", href: "/personal-details", icon: UserCircleIcon },
+  
 ];
 
 interface SidebarProps {

@@ -4,8 +4,19 @@ import { requireInternal } from "@/app/lib/admin-utils";
 import {
   fetchTagData,
   fetchBenchmark,
+  fetchPnlSnapshot,
   buildTagMetrics,
 } from "@/app/lib/internal-utils";
+import {
+  rebaseNavWindow,
+  anchorDateBefore,
+  withAnchorPoint,
+} from "@/app/lib/portfolio-review/rebase";
+import {
+  effectiveToForTag,
+  trimToEffectiveTo,
+} from "@/app/lib/portfolio-review/tags";
+import { toDisplayDate, toSqlDate } from "@/lib/utils";
 
 export async function POST(req: Request) {
   const { error } = await requireInternal();
@@ -16,6 +27,8 @@ export async function POST(req: Request) {
     strategy?: string;
     risk_free_rate?: number;
     as_of?: string;
+    start_date?: string;
+    pnl_on?: string;
   };
   try {
     body = await req.json();
@@ -38,6 +51,34 @@ export async function POST(req: Request) {
     if (isNaN(asOf.getTime())) {
       return NextResponse.json(
         { error: "Invalid as_of date" },
+        { status: 400 },
+      );
+    }
+  }
+
+  // Windows the NAV series (since_inception, drawdowns, monthly/yearly
+  // returns) AND xirr below when given — same start/end convention as
+  // Sub-Strategy Performance's fetchBulkNavSeries. Existing field names are
+  // unchanged: since_inception_absolute etc. just reflect the window's own
+  // range instead of full account history, same as sub-strategy-performance
+  // already does when its own start/end are set.
+  let windowStart: Date | null = null;
+  if (body.start_date) {
+    windowStart = new Date(body.start_date);
+    if (isNaN(windowStart.getTime())) {
+      return NextResponse.json(
+        { error: "Invalid start_date" },
+        { status: 400 },
+      );
+    }
+  }
+
+  let pnlOn: Date | null = null;
+  if (body.pnl_on) {
+    pnlOn = new Date(body.pnl_on);
+    if (isNaN(pnlOn.getTime())) {
+      return NextResponse.json(
+        { error: "Invalid pnl_on date" },
         { status: 400 },
       );
     }
@@ -70,40 +111,70 @@ export async function POST(req: Request) {
   // All known strategy prefixes (needed to identify unbifurcated tags in combined view)
   const allPrefixes = [...new Set(configs.map((c) => c.strategy))];
 
+  // Solo Prop client — no strategy prefix in its tags, so "Prop" and "combined"
+  // both mean "just show this client's one config row's own tags"
+  const isSoloProp = configs.length === 1 && configs[0].strategy === "Prop";
+  const effectiveStrategy = isSoloProp ? "combined" : strategy;
+  // Prop reads from master_sheet_test (bare tags, no bifurcation pipeline
+  // run for these accounts yet) — see nav-series.ts's `table` param.
+  const table = isSoloProp ? "master_sheet_test" : "bifurcated_master_sheet_test";
+
   // Determine profit_tag and benchmark start date based on requested strategy
   let profitTag: string;
   let benchmarkStart: Date;
 
-  if (strategy === "combined") {
-    profitTag = "Qode Total Portfolio";
-    benchmarkStart = configs.reduce<Date>(
-      (min, c) => (c.effective_from < min ? c.effective_from : min),
-      configs[0].effective_from,
-    );
+  if (effectiveStrategy === "combined") {
+    if (isSoloProp) {
+      profitTag = configs[0].profit_tag_suffix; // unprefixed — Prop tags carry no strategy prefix
+      benchmarkStart = configs[0].effective_from;
+    } else {
+      profitTag = "Qode Total Portfolio";
+      benchmarkStart = configs.reduce<Date>(
+        (min, c) => (c.effective_from < min ? c.effective_from : min),
+        configs[0].effective_from,
+      );
+    }
   } else {
     // Most recent config row for this strategy (for up-to-date suffix)
-    const match = [...configs].reverse().find((c) => c.strategy === strategy);
+    const match = [...configs]
+      .reverse()
+      .find((c) => c.strategy === effectiveStrategy);
     if (!match) {
       return NextResponse.json(
         { error: `Strategy "${strategy}" not found for this client` },
         { status: 404 },
       );
     }
-    profitTag = `${strategy} ${match.profit_tag_suffix}`;
+    profitTag = `${effectiveStrategy} ${match.profit_tag_suffix}`;
     benchmarkStart = match.effective_from;
   }
 
-  // Parallel: targeted DB query + Nifty fetch, both cut off at asOf when given
-  const [tagData, benchmark] = await Promise.all([
-    fetchTagData(qcode, strategy, allPrefixes, asOf ?? undefined),
-    fetchBenchmark(benchmarkStart, asOf ?? new Date()),
-  ]);
+  const tagData = await fetchTagData(
+    qcode,
+    effectiveStrategy,
+    isSoloProp ? [] : allPrefixes,
+    asOf ?? undefined,
+    table,
+    windowStart ?? undefined,
+  );
 
   if (Object.keys(tagData).length === 0) {
     return NextResponse.json(
       { error: "No mastersheet data found" },
       { status: 404 },
     );
+  }
+
+  // A closed strategy's data pipeline can keep writing frozen/zero rows
+  // past its real last trading day once another strategy takes over as the
+  // account's active one (see effectiveToForTag) — drop those before they
+  // reach dataAsOf, the benchmark window, or any metric below. Only caps
+  // tags positively matched to a closed strategy; the bare combined tag
+  // ("Qode Total Portfolio") and any still-active strategy's tags pass
+  // through unchanged.
+  for (const tag of Object.keys(tagData)) {
+    const effectiveTo = effectiveToForTag(tag, configs, isSoloProp);
+    if (effectiveTo) tagData[tag] = trimToEffectiveTo(tagData[tag], effectiveTo)!;
   }
 
   // Latest date across all returned tags — reflects the asOf cutoff automatically
@@ -115,18 +186,122 @@ export async function POST(req: Request) {
     }
   }
 
-  // Build metrics for every tag
+  // Benchmark end date is capped to this account's own last reported day
+  // (dataAsOf), not "today" — a withdrawn/closed or stale account whose
+  // mastersheet data stopped weeks ago must not be compared against Nifty
+  // running all the way to today, which silently hands the benchmark extra
+  // performance (positive or negative) the account was never around to
+  // earn or avoid. asOf (an explicit caller-given cutoff) still wins over
+  // both when given. `benchmark` respects windowStart the same way the tag
+  // metrics below do — same field, full account history when no start_date
+  // is given, windowed since_inception/xirr/drawdown when it is (matches
+  // buildTagMetrics' own since_inception_absolute: no separate "windowed"
+  // key).
+  //
+  // Benchmark start is chosen so Nifty's 100-point lands on the same day as
+  // the profit tag's: when the profit tag has a real row before windowStart,
+  // both rebase off that t-1 day; otherwise (no window, or the account
+  // started inside it) the profit tag's line starts at its first row, so
+  // Nifty starts at the trading day just before that row.
+  const windowStartStr = windowStart ? toSqlDate(windowStart) : null;
+  const profitSeriesRaw = tagData[profitTag] ?? [];
+  const profitHasAnchor =
+    windowStartStr !== null &&
+    profitSeriesRaw.some((p) => toSqlDate(p.date) < windowStartStr);
+  const profitFirst = profitSeriesRaw.find(
+    (p) => windowStartStr === null || toSqlDate(p.date) >= windowStartStr,
+  );
+  const benchmarkFrom = profitHasAnchor
+    ? windowStart!
+    : (profitFirst?.date ?? windowStart ?? benchmarkStart);
+  const benchmarkEnd = asOf ?? (dataAsOf ? new Date(dataAsOf) : new Date());
+  const fetchedBenchmark = await fetchBenchmark(benchmarkFrom, benchmarkEnd);
+  // start_date = first real day of the period (the day after the 100-point),
+  // matching each tag's own start_date below rather than the t-1 date.
+  const benchmark = fetchedBenchmark
+    ? {
+        ...fetchedBenchmark,
+        start_date: toDisplayDate(
+          (fetchedBenchmark.series[1] ?? fetchedBenchmark.series[0]).date,
+        ),
+      }
+    : null;
+  const benchDates = fetchedBenchmark?.series.map((p) => p.date) ?? [];
+
+  // Every tag's chart line starts at 100 on its t-1 day, same as Nifty.
+  // Windowed: rebase off the tag's real row before windowStart (fetchTagData
+  // prepends it); drawdown is recomputed from that baseline instead of the
+  // DB's full-history column. Full history: metrics stay on the raw series
+  // (DB drawdown is already correct there) — only the plotted series gets
+  // the 100-point, dated on Nifty's trading day before the tag's first row.
   const tags: Record<string, ReturnType<typeof buildTagMetrics>> = {};
   for (const [tag, nav] of Object.entries(tagData)) {
-    tags[tag] = buildTagMetrics(nav, rfr);
+    if (nav.length === 0) continue;
+    if (windowStart) {
+      const rebased = rebaseNavWindow(
+        nav,
+        windowStart,
+        asOf ?? nav[nav.length - 1].date,
+      );
+      // Only a pre-window anchor row, nothing inside the window.
+      if (!rebased) continue;
+      const anchorDate = rebased.anchorDate
+        ? toSqlDate(rebased.anchorDate)
+        : anchorDateBefore(rebased.points[0].date, benchDates);
+      tags[tag] = withAnchorPoint(
+        buildTagMetrics(rebased.points, rfr),
+        anchorDate,
+      );
+    } else {
+      const metrics = buildTagMetrics(nav, rfr);
+      const first = nav[0];
+      const base = first.prev_nav != null && first.prev_nav > 0 ? first.prev_nav : first.nav;
+      tags[tag] = withAnchorPoint(
+        {
+          ...metrics,
+          series: metrics.series.map((p) => ({ ...p, nav: (p.nav / base) * 100 })),
+        },
+        anchorDateBefore(first.date, benchDates),
+      );
+    }
   }
 
+  if (Object.keys(tags).length === 0) {
+    return NextResponse.json(
+      { error: "No mastersheet data found in the selected window" },
+      { status: 404 },
+    );
+  }
+
+  // pnl_on not given → profit tag's OWN latest date, not the global dataAsOf.
+  // dataAsOf is the max across every tag; if another tag's series runs a day ahead
+  // of the profit tag's, that date has no row for the profit tag — exact match
+  // would come back empty. Using this tag's own last date avoids that mismatch.
+  const profitTagSeries = tagData[profitTag];
+  const profitTagLastDate = profitTagSeries?.length
+    ? profitTagSeries[profitTagSeries.length - 1].date
+    : null;
+  const resolvedPnlOnDate = pnlOn ?? profitTagLastDate;
+  const resolvedPnlOn = resolvedPnlOnDate
+    ? resolvedPnlOnDate.toISOString().split("T")[0]
+    : null;
+
+  const pnlSnapshot = resolvedPnlOn
+    ? await fetchPnlSnapshot(qcode, profitTag, resolvedPnlOn, table)
+    : null;
+
+  // dataAsOf/resolvedPnlOn stay ISO everywhere above (benchmarkEnd's
+  // `new Date(dataAsOf)`, fetchPnlSnapshot's `date = $2::date`) — only
+  // reformatted here, at the point they're handed to the frontend as
+  // raw display text.
   return NextResponse.json({
     account_name: configs[0].account_name,
-    data_as_of: dataAsOf,
+    data_as_of: toDisplayDate(dataAsOf),
     risk_free_rate: rfr,
     benchmark,
     profit_tag: profitTag,
     tags,
+    pnl_on: resolvedPnlOn ? toDisplayDate(resolvedPnlOn) : null,
+    pnl_snapshot: pnlSnapshot,
   });
 }

@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState } from "react";
 import axios from "axios";
-import DashboardLayout from "../dashboard/layout";
+import DashboardLayout from "../m/layout";
+
 
 interface BlogPost {
   id: string;

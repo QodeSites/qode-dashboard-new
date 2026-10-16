@@ -20,6 +20,17 @@ function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+function fmtInr(v: number | null) {
+  if (v === null || v === undefined) return "—";
+  const abs = Math.abs(v);
+  const sign = v < 0 ? "-" : "+";
+  if (abs >= 1e7) return `${sign}₹${(abs / 1e7).toFixed(2)}Cr`;
+  return `${sign}₹${(abs / 1e5).toFixed(2)}L`;
+}
+
+// since_inception is already the blended absolute/CAGR figure (see
+// calcSinceInception) — no separate XIRR gating needed here any more.
+
 // ─── Optional ratio columns config ───────────────────────────────────────────
 
 const RATIO_COLUMNS = [
@@ -132,10 +143,12 @@ function StrategyTable({
   strategy,
   rows,
   selectedRatios,
+  asOfDate,
 }: {
   strategy: string;
   rows: StrategyBreakupRow[];
   selectedRatios: RatioKey[];
+  asOfDate: string;
 }) {
   const sorted = useMemo(
     () => [...rows].sort((a, b) => a.account_name.localeCompare(b.account_name)),
@@ -159,6 +172,7 @@ function StrategyTable({
               <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Client</th>
               <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Inception Date</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Return Since Inception</th>
+              <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">SI P&amp;L (₹)</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Benchmark Return</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Max Drawdown</th>
               <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Current Drawdown</th>
@@ -172,42 +186,47 @@ function StrategyTable({
             </tr>
           </thead>
           <tbody>
-            {sorted.map((row) => (
-              <tr key={`${row.qcode}-${row.strategy}`} className="border-t border-logo-green/5 hover:bg-primary-bg/20 transition-colors">
-                <td className="px-4 py-2.5 text-card-text font-medium whitespace-nowrap">
-                  {row.account_name} {row.strategy}
-                </td>
-                <td className="px-4 py-2.5 text-card-text-secondary whitespace-nowrap">
-                  {fmtDate(row.inception_date)}
-                </td>
-                <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${returnClass(row.since_inception)}`}>
-                  {fmtPct(row.since_inception)}
-                </td>
-                <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${returnClass(row.benchmark_return)}`}>
-                  {fmtPct(row.benchmark_return)}
-                </td>
-                <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${drawdownClass(row.max_drawdown)}`}>
-                  {fmtPct(row.max_drawdown)}
-                </td>
-                <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${drawdownClass(row.current_drawdown)}`}>
-                  {fmtPct(row.current_drawdown)}
-                </td>
-                <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${captureClass(row.upside_capture)}`}>
-                  {row.upside_capture === null ? "—" : fmtPct(row.upside_capture)}
-                </td>
-                <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${captureClass(row.downside_capture)}`}>
-                  {row.downside_capture === null ? "—" : fmtPct(row.downside_capture)}
-                </td>
-                {selectedCols.map((col) => {
-                  const v = row[col.key as keyof StrategyBreakupRow] as number | null;
-                  return (
-                    <td key={col.key} className="px-4 py-2.5 text-right text-card-text-secondary whitespace-nowrap">
-                      {v === null ? "—" : col.fmt(v)}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+            {sorted.map((row) => {
+              return (
+                <tr key={`${row.qcode}-${row.strategy}`} className="border-t border-logo-green/5 hover:bg-primary-bg/20 transition-colors">
+                  <td className="px-4 py-2.5 text-card-text font-medium whitespace-nowrap">
+                    {row.account_name} {row.strategy}
+                  </td>
+                  <td className="px-4 py-2.5 text-card-text-secondary whitespace-nowrap">
+                    {fmtDate(row.inception_date)}
+                  </td>
+                  <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${returnClass(row.since_inception)}`}>
+                    {fmtPct(row.since_inception)}
+                  </td>
+                  <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${row.since_inception_pnl === null ? "text-card-text-secondary/50" : returnClass(row.since_inception_pnl)}`}>
+                    {fmtInr(row.since_inception_pnl)}
+                  </td>
+                  <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${returnClass(row.benchmark_return)}`}>
+                    {fmtPct(row.benchmark_return)}
+                  </td>
+                  <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${drawdownClass(row.max_drawdown)}`}>
+                    {fmtPct(row.max_drawdown)}
+                  </td>
+                  <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${drawdownClass(row.current_drawdown)}`}>
+                    {fmtPct(row.current_drawdown)}
+                  </td>
+                  <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${captureClass(row.upside_capture)}`}>
+                    {row.upside_capture === null ? "—" : fmtPct(row.upside_capture)}
+                  </td>
+                  <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${captureClass(row.downside_capture)}`}>
+                    {row.downside_capture === null ? "—" : fmtPct(row.downside_capture)}
+                  </td>
+                  {selectedCols.map((col) => {
+                    const v = row[col.key as keyof StrategyBreakupRow] as number | null;
+                    return (
+                      <td key={col.key} className="px-4 py-2.5 text-right text-card-text-secondary whitespace-nowrap">
+                        {v === null ? "—" : col.fmt(v)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -315,7 +334,7 @@ export function StrategyBreakup({ riskFreeRate = 0.065, fetchTrigger = 0 }: Stra
   }
 
   return (
-     <div>
+    <div>
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div className="flex items-center gap-2.5 border-l-[3px] border-logo-green pl-3.5 py-1">
           <span className="text-xs font-bold uppercase tracking-wide text-logo-green">
@@ -360,6 +379,7 @@ export function StrategyBreakup({ riskFreeRate = 0.065, fetchTrigger = 0 }: Stra
           strategy={strategy}
           rows={rows}
           selectedRatios={selectedRatios}
+          asOfDate={endDate}
         />
       ))}
     </div>

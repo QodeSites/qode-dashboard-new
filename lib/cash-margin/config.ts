@@ -22,7 +22,7 @@ export interface StrategyOverride {
   equityPct?: number;
   cashPct?: number;
   lcPct?: number;
-  derivativePct?: number;
+  debtPct?: number;
   goldPct?: number;
   momentumPct?: number;
   lowvolPct?: number;
@@ -53,7 +53,7 @@ export interface StrategyConfigFields {
   equity_pct?: unknown;
   cash_pct?: unknown;
   lc_pct?: unknown;
-  derivative_pct?: unknown;
+  debt_pct?: unknown;
   gold_pct?: unknown;
   momentum_pct?: unknown;
   lowvol_pct?: unknown;
@@ -73,8 +73,16 @@ export interface RatioConfig {
   cashPct: number;
   /** Derivative Book's Liquid Case sub-target (was derived: derivPct - IDEAL_CASH_PCT[tier]). */
   lcPct: number;
-  /** Derivative Book % of Account Value (was 1 - EQUITY_BOOK_PCT[tier]). */
-  derivativePct: number;
+  /** Derivative Book % of Account Value. Sourced from the `debt_pct` column
+   *  (client_strategy_configs / strategy_defaults), NOT `derivative_pct` --
+   *  that column is dead, never read anywhere in cash-margin (see
+   *  docs/cash-margin-architecture.md §9). `debt_pct` is the one
+   *  internal-utils.ts already reads for the same "everything that isn't
+   *  equity" concept, and it's the column a client-level override actually
+   *  sets alongside equity_pct -- reading `derivative_pct` instead would
+   *  silently fall through to the strategy default and desync from the
+   *  equity override. */
+  debtPct: number;
   /** QAW Equity Book split (was the hardcoded global QAW_SUB_PCT). Null for non-split strategies. */
   goldPct: number | null;
   momentumPct: number | null;
@@ -107,13 +115,13 @@ export function resolveRatioConfig(
     ov?.equityPct ?? toNum(clientConfig?.equity_pct) ?? toNum(strategyDefault?.equity_pct) ?? 0;
   const cashPct = ov?.cashPct ?? toNum(clientConfig?.cash_pct) ?? toNum(strategyDefault?.cash_pct) ?? 0;
   const lcPct = ov?.lcPct ?? toNum(clientConfig?.lc_pct) ?? toNum(strategyDefault?.lc_pct) ?? 0;
-  const derivativePct =
-    ov?.derivativePct ?? toNum(clientConfig?.derivative_pct) ?? toNum(strategyDefault?.derivative_pct) ?? 1 - equityPct;
+  const debtPct =
+    ov?.debtPct ?? toNum(clientConfig?.debt_pct) ?? toNum(strategyDefault?.debt_pct) ?? 1 - equityPct;
   const goldPct = ov?.goldPct ?? toNum(clientConfig?.gold_pct) ?? toNum(strategyDefault?.gold_pct);
   const momentumPct = ov?.momentumPct ?? toNum(clientConfig?.momentum_pct) ?? toNum(strategyDefault?.momentum_pct);
   const lowvolPct = ov?.lowvolPct ?? toNum(clientConfig?.lowvol_pct) ?? toNum(strategyDefault?.lowvol_pct);
 
-  return { equityPct, cashPct, lcPct, derivativePct, goldPct, momentumPct, lowvolPct };
+  return { equityPct, cashPct, lcPct, debtPct, goldPct, momentumPct, lowvolPct };
 }
 
 /**

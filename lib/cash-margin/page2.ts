@@ -25,8 +25,17 @@
  */
 import { prisma } from "@/lib/prisma";
 import { loadMastersheet } from "./mastersheet";
-import { detectTier } from "./tags";
-import { resolveRatioConfig, type StrategyOverrides } from "./config";
+import { detectTier, PROP_STRATEGY } from "./tags";
+import type { StrategyOverrides } from "./config";
+import { loadCatalog } from "./catalog";
+import { loadHoldings } from "./holdings";
+import {
+  loadResolvedRatios,
+  withOverrides,
+  hasConfiguredLeaves,
+  Diagnostics,
+  type Diagnostic,
+} from "./ratio-resolver";
 import {
   computeAccountSummaryForStrategy,
   computeAccountSummaryCombined,
@@ -65,6 +74,11 @@ export interface Page2Result {
     byStrategy: Record<string, DebtEquityRow>;
   };
   inputs: Omit<InputsPanelResult, "qcode" | "accountName" | "strategies" | "mastersheetDate">;
+  /** Problems hit resolving System Breakup's config_catalog tree (see
+   *  ratio-resolver.ts's DiagnosticCode) -- [] in the healthy case. Not
+   *  errors: the rest of this response is still valid. See
+   *  docs/cash-margin-api-contract.md §0 (diagnostics conventions). */
+  diagnostics: Diagnostic[];
 }
 
 /**
@@ -74,8 +88,9 @@ export interface Page2Result {
  * @param overrides - optional, request-scoped only, never persisted -- see
  *   lib/cash-margin/config.ts's StrategyOverrides. Threaded into every
  *   sub-table exactly as it would be if each route were called individually.
- * @param asOfDate - TEMPORARY, for verification against frozen
- *   managed_accounts_analysis Excels -- see loadMastersheet(). Remove once done.
+ * @param asOfDate - pins every mandate/mastersheet read in this response to
+ *   a historical date instead of always-latest -- see loadMastersheet().
+ *   Omit for "latest."
  * @param niftyLtpOverride - see margin-requirements.ts; drives Put
  *   Protection's contractValue there. NOT passed to the Inputs panel's Put
  *   Protection Calculation block, which fetches its own live NIFTY LTP by
@@ -93,68 +108,63 @@ export async function buildPage2Dashboard(
   globalOverrides?: { niftyLotSize?: number; avgPricePerQty?: number },
 ): Promise<Page2Result | null> {
   const referenceDate = asOfDate ?? new Date();
-  const [mandates, strategyDefaultsList] = await Promise.all([
-    prisma.client_strategy_configs.findMany({
-      where: {
-        qcode,
-        effective_from: { lte: referenceDate },
-        OR: [{ effective_to: null }, { effective_to: { gte: referenceDate } }],
-      },
-      select: {
-        account_name: true,
-        strategy: true,
-        exposure_tag_suffix: true,
-        gold_pct: true,
-        equity_pct: true,
-        cash_pct: true,
-        lc_pct: true,
-        derivative_pct: true,
-        momentum_pct: true,
-        lowvol_pct: true,
-      },
-      orderBy: { strategy: "asc" },
-    }),
-    prisma.strategy_defaults.findMany({
-      select: {
-        strategy_name: true,
-        gold_pct: true,
-        equity_pct: true,
-        cash_pct: true,
-        lc_pct: true,
-        derivative_pct: true,
-        momentum_pct: true,
-        lowvol_pct: true,
-      },
-    }),
-  ]);
+  const mandates = await prisma.client_strategy_configs.findMany({
+    where: {
+      qcode,
+      strategy: { not: PROP_STRATEGY },
+      effective_from: { lte: referenceDate },
+      OR: [{ effective_to: null }, { effective_to: { gte: referenceDate } }],
+    },
+    select: { account_name: true, strategy: true, exposure_tag_suffix: true },
+    orderBy: { strategy: "asc" },
+  });
   if (mandates.length === 0) return null;
 
-  const defaultMap = new Map(strategyDefaultsList.map((d) => [d.strategy_name, d]));
-  const ms = await loadMastersheet(qcode, asOfDate);
+  const [ms, catalog, holdings] = await Promise.all([
+    loadMastersheet(qcode, asOfDate),
+    loadCatalog(),
+    loadHoldings(qcode, asOfDate),
+  ]);
+  const diagnostics = new Diagnostics();
 
   const accountSummaryByStrategy: Record<string, AccountSummaryCombined> = {};
   const systemBreakupScopes: SystemBreakupScope[] = [];
   const systemBreakupByStrategy: Record<string, SystemBreakupScope> = {};
   const debtEquityScopes: DebtEquityRow[] = [];
   const debtEquityByStrategy: Record<string, DebtEquityRow> = {};
+  const splitStrategies = new Set<string>();
 
   for (const m of mandates) {
+    const tier = detectTier(m.strategy);
+    const rawRatios = await loadResolvedRatios(m.strategy, qcode, referenceDate);
+    const ratios = withOverrides(rawRatios, overrides);
+    const hasEquitySplit = hasConfiguredLeaves(catalog, "equity_book", "ideal", ratios);
+    if (hasEquitySplit) splitStrategies.add(m.strategy);
+
+    // Same ratios/hasEquitySplit feed both tables -- Account Summary's
+    // sleeve gate must agree with System Breakup's, or the two tables would
+    // show a different equity split for the same strategy. See
+    // consolidated.ts's buildEquitySleeves doc comment for why the gate
+    // exists at all (console_equity_holdings has no strategy dimension).
     accountSummaryByStrategy[m.strategy] = computeAccountSummaryForStrategy(
       ms,
       m.strategy,
       m.exposure_tag_suffix,
+      catalog,
+      holdings,
+      hasEquitySplit,
+      diagnostics,
     );
 
-    const tier = detectTier(m.strategy);
-    const ratios = resolveRatioConfig(m.strategy, m, defaultMap.get(m.strategy), overrides);
-    const hasEquitySplit = ratios.goldPct != null;
     const breakupScope = computeSystemBreakupForStrategy(
       ms,
       m.strategy,
       m.exposure_tag_suffix,
       tier,
-      hasEquitySplit,
+      catalog,
       ratios,
+      holdings,
+      diagnostics,
     );
     systemBreakupScopes.push(breakupScope);
     systemBreakupByStrategy[m.strategy] = breakupScope;
@@ -183,7 +193,14 @@ export async function buildPage2Dashboard(
     strategies: mandates.map((m) => m.strategy),
     mastersheetDate: ms.date ? ms.date.toISOString().slice(0, 10) : null,
     accountSummary: {
-      combined: computeAccountSummaryCombined(ms, mandates.map((m) => m.strategy)),
+      combined: computeAccountSummaryCombined(
+        ms,
+        mandates.map((m) => m.strategy),
+        catalog,
+        holdings,
+        splitStrategies,
+        diagnostics,
+      ),
       byStrategy: accountSummaryByStrategy,
     },
     systemBreakup: {
@@ -196,5 +213,6 @@ export async function buildPage2Dashboard(
       byStrategy: debtEquityByStrategy,
     },
     inputs: inputsRest,
+    diagnostics: diagnostics.items,
   };
 }

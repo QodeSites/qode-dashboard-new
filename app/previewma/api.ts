@@ -56,8 +56,10 @@ export interface SeriesPoint {
 export interface TagDetail {
   start_date: string;
   end_date: string;
+  // Blended: absolute <1yr tenure, CAGR >=1yr — no separate XIRR field.
   since_inception: number;
   since_inception_pnl: number;
+  cagr: number;
   max_drawdown: number;
   current_drawdown: number;
   ratios: RatioSet;
@@ -68,10 +70,17 @@ export interface TagDetail {
 }
 
 export interface BenchmarkData {
+  start_date: string;
+  end_date: string;
   since_inception: number;
   max_drawdown: number;
   current_drawdown: number;
-  series: { date: string; nav: number }[];
+  series: { date: string; nav: number; drawdown: number }[];
+}
+
+export interface PnlSnapshot {
+  pnl_inr: number;
+  pnl_pct: number;
 }
 
 export interface ClientDashboardResponse {
@@ -81,9 +90,12 @@ export interface ClientDashboardResponse {
   benchmark: BenchmarkData;
   profit_tag: string;
   tags: Record<string, TagDetail>;
+  pnl_on: string;
+  pnl_snapshot: PnlSnapshot | null; 
 }
 
 export interface PortfolioSummaryInvestor {
+  icode:string;
   qcode: string;
   account_name: string;
   strategy: string;
@@ -95,6 +107,8 @@ export interface PortfolioSummaryInvestor {
 export interface PortfolioSummaryResponse {
   total_investors: number;
   total_aum: number;
+  avg_aum_per_investor: number; // new
+  new_this_quarter: number; // new
   mom: {
     prev_aum: number;
     prev_date: string;
@@ -104,7 +118,6 @@ export interface PortfolioSummaryResponse {
   aum_daily: { date: string; aum: number }[];
   strategy_aum_daily: Record<string, { date: string; aum: number }[]>;
 }
-
 // ─── Strategy-wise Client Breakup ────────────────────────────────────────────
 
 export interface StrategyBreakupRow {
@@ -112,7 +125,9 @@ export interface StrategyBreakupRow {
   account_name: string;
   strategy: string;
   inception_date: string;
+  // Blended: absolute <1yr tenure, CAGR >=1yr — no separate XIRR field.
   since_inception: number;
+  since_inception_pnl: number | null;
   benchmark_return: number;
   max_drawdown: number;
   current_drawdown: number;
@@ -134,8 +149,6 @@ interface StrategyBreakupResponse {
   end_date: string;
   clients: StrategyBreakupRow[];
 }
-
-
 
 // ─── Account Value Breakup ────────────────────────────────────────────────────
 
@@ -192,22 +205,33 @@ export interface AccountValueOverride {
   momentum_pct?: number;
 }
 
+
+
+
+
+
 // ─── Sub-Strategy Performance ─────────────────────────────────────────────────
 
 export interface SubStrategyEntry {
   section: string;
+  section_family: string;
+  section_value: number | null;
+  is_exception: boolean;
+  standard_value: number | null;
   qcode: string;
   account_name: string;
   strategy: string;
   monthly: { year: number; month: string; return_pct: number; pnl_inr: number }[];
   yearly: { year: number; return_pct: number; pnl_inr: number }[];
+  // Blended: absolute <1yr tenure, CAGR >=1yr — whole-account figure, same
+  // value on every section row for a given client/strategy.
+  total_since_inception: number | null;
+  max_drawdown: number;
+  current_drawdown: number;
+  since_inception: number;
+  since_inception_pnl: number;
 }
 
-interface SubStrategyPerformanceResponse {
-  start_date: string | null;
-  end_date: string;
-  rows: SubStrategyEntry[];
-}
 
 // ─── Strategy-wise Monthly Returns ───────────────────────────────────────────
 
@@ -217,6 +241,11 @@ export interface StrategyMonthlyEntry {
   strategy: string;
   monthly: { year: number; month: string; return_pct: number; pnl_inr: number }[];
   yearly: { year: number; return_pct: number; pnl_inr: number }[];
+  // Blended: absolute <1yr tenure, CAGR >=1yr — no separate XIRR field.
+  since_inception: number;
+  since_inception_pnl: number ;
+  max_drawdown: number;
+  current_drawdown: number;
 }
 
 // ─── Shared fetch infrastructure ─────────────────────────────────────────────
@@ -253,15 +282,24 @@ async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-export async function fetchClients(): Promise<ClientListItem[]> {
-  return apiFetch<ClientListItem[]>("/api/internal/clients");
+export async function fetchClients(
+  accountType?: "managed" | "prop",
+  accountStatus?: "active" | "all", // omitted = active-only (server default)
+): Promise<ClientListItem[]> {
+  const params = new URLSearchParams();
+  if (accountType) params.set("account_type", accountType);
+  if (accountStatus) params.set("account_status", accountStatus);
+  const qs = params.toString();
+  return apiFetch<ClientListItem[]>(`/api/internal/clients${qs ? `?${qs}` : ""}`);
 }
 
 export async function fetchClientDashboard(
   qcode: string,
   strategy: string,
   riskFreeRate?: number,
-  asOf?: string
+  asOf?: string,
+  startDate?: string, // new — windows XIRR only, everything else stays full-history
+  pnlOn?: string // new — controls the Day PnL card; omitted = latest available date
 ): Promise<ClientDashboardResponse> {
   return apiFetch<ClientDashboardResponse>("/api/internal/portfolio-review/client-dashboard", {
     method: "POST",
@@ -270,6 +308,8 @@ export async function fetchClientDashboard(
       strategy,
       ...(riskFreeRate !== undefined ? { risk_free_rate: riskFreeRate } : {}),
       ...(asOf ? { as_of: asOf } : {}),
+      ...(startDate ? { start_date: startDate } : {}),
+      ...(pnlOn ? { pnl_on: pnlOn } : {}),
     }),
   });
 }
@@ -296,26 +336,29 @@ export async function fetchAccountValueBreakup(override?: AccountValueOverride):
   });
 }
 
-
+interface SubStrategyPerformanceResponse {
+  start_date: string | null;
+  end_date: string;
+  rows: SubStrategyEntry[];
+}
 
 export async function fetchSubStrategyPerformance(
-  startDate: string,
-  endDate: string
+  startDate: string | null,
+  endDate: string | null,
+  accountType: "managed" | "prop" = "managed"
 ): Promise<SubStrategyEntry[]> {
   const res = await apiFetch<SubStrategyPerformanceResponse>(
     "/api/internal/portfolio-review/sub-strategy-performance",
     {
       method: "POST",
-      body: JSON.stringify({ start_date: startDate, end_date: endDate }),
+      body: JSON.stringify({ start_date: startDate, end_date: endDate, account_type: accountType }),
     }
   );
-  return res.rows;
+  return res.rows ?? [];
 }
-
 export async function fetchStrategyMonthlyReturns(): Promise<StrategyMonthlyEntry[]> {
   return apiFetch<StrategyMonthlyEntry[]>("/api/internal/portfolio-review/strategy-monthly-returns");
 }
-
 
 export async function fetchSystemTags(qcode: string, strategy: string): Promise<string[]> {
   return apiFetch<string[]>("/api/internal/system-tags", {
@@ -325,3 +368,58 @@ export async function fetchSystemTags(qcode: string, strategy: string): Promise<
 }
 
 export { ApiError };
+
+
+
+
+
+export interface TrailingReturnValue {
+  pct: number | null;      // fraction-scale
+  pnl_inr: number | null;
+}
+export interface TrailingReturns {
+  five_day: TrailingReturnValue;
+  ten_day: TrailingReturnValue;
+  fifteen_day: TrailingReturnValue;
+  one_month: TrailingReturnValue;
+  three_month: TrailingReturnValue;
+  six_month: TrailingReturnValue;
+  one_year: TrailingReturnValue;
+  two_year: TrailingReturnValue;
+  three_year: TrailingReturnValue;
+  four_year: TrailingReturnValue;
+  five_year: TrailingReturnValue;
+}
+
+// Shared by the top-level client row and every nested strategy_breakdown node.
+export interface ReturnsMetrics {
+  monthly: { year: number; month: string; return_pct: number; pnl_inr: number }[];
+  yearly: { year: number; return_pct: number; pnl_inr: number }[];
+  // Blended: absolute <1yr tenure, CAGR >=1yr — no separate XIRR field.
+  since_inception: number | null;
+  max_drawdown: number | null;
+  current_drawdown: number | null;
+  since_inception_pnl: number | null;
+  trailing_returns: TrailingReturns | null;
+}
+
+export interface ClientReturnsBreakdownNode extends ReturnsMetrics {
+  strategy: string;
+  strategy_breakdown: ClientReturnsBreakdownNode[]; // recursive, [] at leaves
+}
+
+export interface ClientReturnsRow extends ReturnsMetrics {
+  qcode: string;
+  account_name: string;
+  is_multi_strategy: boolean;
+  strategy_breakdown: ClientReturnsBreakdownNode[];
+}
+
+export async function fetchClientMonthlyReturns(
+  accountType: "managed" | "prop" = "managed"
+): Promise<ClientReturnsRow[]> {
+  return apiFetch<ClientReturnsRow[]>("/api/internal/portfolio-review/client-monthly-returns", {
+    method: "POST",
+    body: JSON.stringify({ account_type: accountType }),
+  });
+}

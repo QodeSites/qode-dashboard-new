@@ -37,3 +37,14 @@ export function resolveAccountValueTag(strategy: string, exposureTagSuffix: stri
 export function isXtsMandate(exposureTagSuffix: string | null | undefined): boolean {
   return (exposureTagSuffix ?? "").trim() === XTS_EXPOSURE_SUFFIX;
 }
+
+/**
+ * "Prop" (proprietary trading, not a client mandate) is out of scope for
+ * this module -- see docs/cash-margin-architecture.md §9. It was never
+ * migrated to config_catalog, so resolving its ratios here would either
+ * silently return nothing or, worse, fall through to a stale value from
+ * the old flat columns. Every cash-margin mandate query excludes it at the
+ * DB level via `strategy: { not: PROP_STRATEGY }`, mirroring isXtsMandate's
+ * role for XTS.
+ */
+export const PROP_STRATEGY = "Prop";

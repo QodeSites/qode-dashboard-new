@@ -2,9 +2,36 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireInternal } from "@/app/lib/admin-utils";
 
-export async function GET() {
+export async function GET(req: Request) {
   const { error } = await requireInternal();
   if (error) return error;
+
+  const accountTypeParam = new URL(req.url).searchParams.get("account_type");
+  if (
+    accountTypeParam !== null &&
+    accountTypeParam !== "managed" &&
+    accountTypeParam !== "prop"
+  ) {
+    return NextResponse.json(
+      { error: "account_type must be 'managed' or 'prop'" },
+      { status: 400 },
+    );
+  }
+
+  // Opt-in: default (omitted / "active") keeps today's active-only list so
+  // existing callers are unaffected; "all" also returns fully closed clients.
+  const accountStatusParam = new URL(req.url).searchParams.get("account_status");
+  if (
+    accountStatusParam !== null &&
+    accountStatusParam !== "active" &&
+    accountStatusParam !== "all"
+  ) {
+    return NextResponse.json(
+      { error: "account_status must be 'active' or 'all'" },
+      { status: 400 },
+    );
+  }
+  const includeInactive = accountStatusParam === "all";
 
   const configs = await prisma.client_strategy_configs.findMany({
     orderBy: [{ qcode: "asc" }, { effective_from: "asc" }],
@@ -22,10 +49,17 @@ export async function GET() {
   const result = [];
   for (const [qcode, rows] of grouped) {
     // client-level gate: needs at least one active strategy to appear at all
+    // (skipped when account_status=all)
     const hasActive = rows.some(
       (r) => !r.effective_to || r.effective_to >= today,
     );
-    if (!hasActive) continue;
+    if (!includeInactive && !hasActive) continue;
+
+    // Solo Prop client — tags carry no strategy prefix, same discriminator as client-dashboard
+    const isSoloProp = rows.length === 1 && rows[0].strategy === "Prop";
+
+    if (accountTypeParam === "prop" && !isSoloProp) continue;
+    if (accountTypeParam === "managed" && isSoloProp) continue;
 
     // combined.effective_from = oldest date across ALL configs
     const minFrom = rows.reduce<Date>(
@@ -51,18 +85,26 @@ export async function GET() {
           effective_to: r.effective_to
             ? r.effective_to.toISOString().split("T")[0]
             : null,
-          profit_tag: `${r.strategy} ${r.profit_tag_suffix}`,
-          exposure_tag: `${r.strategy} ${r.exposure_tag_suffix}`,
+          profit_tag: isSoloProp
+            ? r.profit_tag_suffix
+            : `${r.strategy} ${r.profit_tag_suffix}`,
+          exposure_tag: isSoloProp
+            ? r.exposure_tag_suffix
+            : `${r.strategy} ${r.exposure_tag_suffix}`,
         })),
         {
           id: null,
           strategy: "combined",
           effective_from: minFrom.toISOString().split("T")[0],
           effective_to: null,
-          profit_tag: "Qode Total Portfolio",
-          exposure_tag: hasZerodha
-            ? "Zerodha Total Portfolio"
-            : "Total Portfolio Exposure",
+          profit_tag: isSoloProp
+            ? rows[0].profit_tag_suffix
+            : "Qode Total Portfolio",
+          exposure_tag: isSoloProp
+            ? rows[0].exposure_tag_suffix
+            : hasZerodha
+              ? "Zerodha Total Portfolio"
+              : "Total Portfolio Exposure",
         },
       ],
     });

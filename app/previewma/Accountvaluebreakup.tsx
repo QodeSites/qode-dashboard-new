@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, AlertCircle, Download } from "lucide-react";
+import { Loader2, AlertCircle, Download, Settings, X } from "lucide-react";
 import { fetchAccountValueBreakup, fetchClients, type AccountValueBreakupResponse, type AccountValueRow, type EquityBreakupRow, type ClientListItem } from "./api";
 import { SearchableSelect } from "./Searchableselect";
 
@@ -9,7 +9,7 @@ import { SearchableSelect } from "./Searchableselect";
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtInr(v: number) {
-  return `₹${Math.round(v).toLocaleString("en-IN")}`;
+  return `₹${v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function fmtPct(v: number | null, digits = 2) {
@@ -39,17 +39,23 @@ function stratBase(strategy: string) {
   return strategy.replace(/\+\+?$/, "");
 }
 
-function SectionHeader({ children }: { children: React.ReactNode }) {
+function SectionHeader({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg bg-[#e2ebe6] border-l-4 border-logo-green px-4 py-3 mb-4">
+    <div className="flex items-center justify-between gap-3 rounded-lg bg-[#e2ebe6] border-l-4 border-logo-green px-4 py-3 mb-4">
       <span className="text-sm font-bold text-logo-green">{children}</span>
+      {action}
     </div>
   );
 }
 
 // ─── Section 1: Account Value Break-up ───────────────────────────────────────
 
-function Section1({ accounts }: { accounts: AccountValueRow[] }) {
+function Section1({
+  accounts, onOpenConfig,
+}: {
+  accounts: AccountValueRow[];
+  onOpenConfig: () => void;
+}) {
   const sorted = useMemo(
     () => [...accounts].sort((a, b) => a.account_name.localeCompare(b.account_name)),
     [accounts]
@@ -57,7 +63,20 @@ function Section1({ accounts }: { accounts: AccountValueRow[] }) {
 
   return (
     <div className="mb-8">
-      <SectionHeader>Section 1 — Account Value Break-up</SectionHeader>
+      <SectionHeader
+        action={
+          <button
+            type="button"
+            onClick={onOpenConfig}
+            title="Ideal split config"
+            className="p-1.5 rounded-md text-logo-green hover:bg-white/60 transition-colors"
+          >
+            <Settings className="h-4 w-4" />
+          </button>
+        }
+      >
+        Section 1 — Account Value Break-up
+      </SectionHeader>
       <div className="overflow-x-auto rounded-lg border border-logo-green/10 bg-white">
         <table className="w-full text-sm">
           <thead>
@@ -65,13 +84,13 @@ function Section1({ accounts }: { accounts: AccountValueRow[] }) {
               <th className="px-3 py-2.5 text-left font-medium whitespace-nowrap">Strategy</th>
               <th className="px-3 py-2.5 text-left font-medium whitespace-nowrap">Leverage</th>
               <th className="px-3 py-2.5 text-left font-medium whitespace-nowrap">Client Name</th>
-              <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Total AV</th>
+              <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Total Account Value</th>
               <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Equity Book</th>
               <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Debt Book</th>
-              <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">EQ %</th>
+              <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Equity %</th>
               <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Debt %</th>
-              <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Diff EQ</th>
-              <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Diff Debt</th>
+              <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">△ Equity</th>
+              <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">△ Debt</th>
             </tr>
           </thead>
           <tbody>
@@ -260,7 +279,7 @@ function Section3({ rows }: { rows: EquityBreakupRow[] }) {
   );
 }
 
-// ─── Ideal Split Targets panel ────────────────────────────────────────────────
+// ─── Split config inputs ──────────────────────────────────────────────────────
 
 interface SplitOverride {
   equity_pct: string;
@@ -281,7 +300,7 @@ function PctInput({ label, value, onChange }: { label: string; value: string; on
           type="number"
           min={0}
           max={100}
-          step={1}
+          step={0.01}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className="w-20 rounded-md border border-logo-green/20 bg-white px-2 py-1.5 text-sm text-card-text focus:outline-none focus:border-logo-green/40"
@@ -292,82 +311,114 @@ function PctInput({ label, value, onChange }: { label: string; value: string; on
   );
 }
 
-function IdealSplitTargets({
-  overrides,
-  onChange,
+// ─── Full config modal — Account Value Split + Debt Book Split + Equity Book Split ──
+
+function SplitConfigModal({
+  overrides, onChange, clientOptions, strategyOptions, selectedQcode, selectedStrategy,
+  onClientChange, onStrategyChange, onApply, onClose,
 }: {
   overrides: SplitOverride;
   onChange: (v: SplitOverride) => void;
+  clientOptions: { value: string; label: string; sublabel: string }[];
+  strategyOptions: { value: string; label: string }[];
+  selectedQcode: string | null;
+  selectedStrategy: string | null;
+  onClientChange: (qcode: string) => void;
+  onStrategyChange: (strategy: string) => void;
+  onApply: () => void;
+  onClose: () => void;
 }) {
   function set(key: keyof SplitOverride) {
     return (v: string) => onChange({ ...overrides, [key]: v });
   }
 
   return (
-    <div className="rounded-xl border border-logo-green/10 bg-white p-5 mb-6">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-        {/* Account Value Split */}
-        <div>
-          <div className="text-sm font-semibold text-card-text mb-3">Account Value Split</div>
-          <div className="rounded-lg border border-logo-green/10 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-primary-bg/40 text-card-text-secondary text-xs">
-                  <th className="px-3 py-2 text-left font-medium">Equity Book</th>
-                  <th className="px-3 py-2 text-left font-medium">Debt Book</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-t border-logo-green/5">
-                  <td className="px-3 py-2"><PctInput label="" value={overrides.equity_pct} onChange={set("equity_pct")} /></td>
-                  <td className="px-3 py-2"><PctInput label="" value={overrides.debt_pct} onChange={set("debt_pct")} /></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div className="relative bg-white rounded-xl border border-logo-green/10 shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto">
+        <div className="flex items-center justify-between bg-logo-green px-5 py-3 rounded-t-xl sticky top-0">
+          <span className="text-sm font-bold text-white">Ideal Split Targets</span>
+          <button type="button" onClick={onClose} className="text-white/70 hover:text-white transition-colors">
+            <X className="h-4 w-4" />
+          </button>
         </div>
-
-        {/* Debt Book Split */}
-        <div>
-          <div className="text-sm font-semibold text-card-text mb-3">Debt Book Split</div>
-          <div className="rounded-lg border border-logo-green/10 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-primary-bg/40 text-card-text-secondary text-xs">
-                  <th className="px-3 py-2 text-left font-medium">Liquid Case</th>
-                  <th className="px-3 py-2 text-left font-medium">Cash</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-t border-logo-green/5">
-                  <td className="px-3 py-2"><PctInput label="" value={overrides.lc_pct} onChange={set("lc_pct")} /></td>
-                  <td className="px-3 py-2"><PctInput label="" value={overrides.cash_pct} onChange={set("cash_pct")} /></td>
-                </tr>
-              </tbody>
-            </table>
+        <div className="p-5 space-y-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <SearchableSelect
+              label="Client (optional)"
+              placeholder="All clients"
+              options={clientOptions}
+              value={selectedQcode}
+              onChange={onClientChange}
+            />
+            <SearchableSelect
+              label="Strategy (optional)"
+              placeholder="All strategies"
+              options={strategyOptions}
+              value={selectedStrategy}
+              onChange={onStrategyChange}
+              disabled={!selectedQcode}
+            />
           </div>
-        </div>
 
-        {/* Equity Book Split (QAW) */}
-        <div>
-          <div className="text-sm font-semibold text-card-text mb-3">Equity Book Split (QAW)</div>
-          <div className="rounded-lg border border-logo-green/10 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-primary-bg/40 text-card-text-secondary text-xs">
-                  <th className="px-3 py-2 text-left font-medium">Gold</th>
-                  <th className="px-3 py-2 text-left font-medium">Low Vol</th>
-                  <th className="px-3 py-2 text-left font-medium">Momentum</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-t border-logo-green/5">
-                  <td className="px-3 py-2"><PctInput label="" value={overrides.gold_pct} onChange={set("gold_pct")} /></td>
-                  <td className="px-3 py-2"><PctInput label="" value={overrides.lowvol_pct} onChange={set("lowvol_pct")} /></td>
-                  <td className="px-3 py-2"><PctInput label="" value={overrides.momentum_pct} onChange={set("momentum_pct")} /></td>
-                </tr>
-              </tbody>
-            </table>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            {/* Account Value Split */}
+            <div>
+              <div className="text-sm font-semibold text-card-text mb-3">Account Value Split</div>
+              <div className="rounded-lg border border-logo-green/10 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-primary-bg/40 text-card-text-secondary text-xs">
+                      <th className="px-3 py-2 text-left font-medium">Equity Book</th>
+                      <th className="px-3 py-2 text-left font-medium">Debt Book</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-t border-logo-green/5">
+                      <td className="px-3 py-2"><PctInput label="" value={overrides.equity_pct} onChange={set("equity_pct")} /></td>
+                      <td className="px-3 py-2"><PctInput label="" value={overrides.debt_pct} onChange={set("debt_pct")} /></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Debt Book Split */}
+            <div>
+              <div className="text-sm font-semibold text-card-text mb-3">Debt Book Split</div>
+              <div className="rounded-lg border border-logo-green/10 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-primary-bg/40 text-card-text-secondary text-xs">
+                      <th className="px-3 py-2 text-left font-medium">Liquid Case</th>
+                      <th className="px-3 py-2 text-left font-medium">Cash</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-t border-logo-green/5">
+                      <td className="px-3 py-2"><PctInput label="" value={overrides.lc_pct} onChange={set("lc_pct")} /></td>
+                      <td className="px-3 py-2"><PctInput label="" value={overrides.cash_pct} onChange={set("cash_pct")} /></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-1 sticky bottom-0 bg-white pb-1">
+            <button
+              type="button" onClick={onClose}
+              className="rounded-lg border border-logo-green/20 px-4 py-2 text-sm text-card-text-secondary hover:bg-primary-bg/40 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => { onApply(); onClose(); }}
+              className="inline-flex items-center gap-2 rounded-lg bg-logo-green px-5 py-2 text-sm font-medium text-button-text hover:bg-logo-green/90 transition-colors"
+            >
+              Apply & Refresh
+            </button>
           </div>
         </div>
       </div>
@@ -391,16 +442,15 @@ export function AccountValueBreakup() {
   const [data, setData] = useState<AccountValueBreakupResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "ideal">("dashboard");
   const [overrides, setOverrides] = useState<SplitOverride>(DEFAULT_OVERRIDES);
   const [exporting, setExporting] = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
 
-  // Client + strategy selectors (same pattern as ClientDashboardsTab)
+  // Client + strategy selectors
   const [clients, setClients] = useState<ClientListItem[]>([]);
   const [selectedQcode, setSelectedQcode] = useState<string | null>(null);
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
 
-  // Load client list on mount
   useEffect(() => {
     fetchClients().then((list) => {
       setClients(list);
@@ -440,7 +490,6 @@ export function AccountValueBreakup() {
       lowvol_pct: parseFloat(overrides.lowvol_pct) / 100,
       momentum_pct: parseFloat(overrides.momentum_pct) / 100,
     };
-    // Only include qcode/strategy if a specific client is selected
     if (selectedQcode && selectedStrategy) {
       return { ...pcts, qcode: selectedQcode, strategy: selectedStrategy };
     }
@@ -456,7 +505,6 @@ export function AccountValueBreakup() {
       .finally(() => setLoading(false));
   }
 
-  // Initial load — no override, just default data
   useEffect(() => { doFetch(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleApply() {
@@ -512,11 +560,6 @@ export function AccountValueBreakup() {
     <div>
       {/* Header row */}
       <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-2.5 border-l-[3px] border-logo-green pl-3.5 py-1">
-          <span className="text-xs font-bold uppercase tracking-wide text-logo-green">
-            Account Value Break-up
-          </span>
-        </div>
         <button
           type="button"
           onClick={handleExport}
@@ -528,62 +571,25 @@ export function AccountValueBreakup() {
         </button>
       </div>
 
-      {/* Tab toggle */}
-      <div className="flex items-center gap-1 rounded-lg bg-primary-bg/60 border border-logo-green/10 p-1 w-fit mb-6">
-        {(["dashboard", "ideal"] as const).map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => setActiveTab(tab)}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              activeTab === tab
-                ? "bg-white text-logo-green shadow-sm"
-                : "text-card-text-secondary hover:text-card-text"
-            }`}
-          >
-            {tab === "dashboard" ? "Dashboard" : "Ideal Split Targets"}
-          </button>
-        ))}
-      </div>
-
-      {/* Ideal Split Targets panel */}
-      {activeTab === "ideal" && (
-        <div className="mb-6">
-          {/* Client + Strategy selectors */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5 max-w-xl">
-            <SearchableSelect
-              label="Client (optional)"
-              placeholder="All clients"
-              options={clientOptions}
-              value={selectedQcode}
-              onChange={handleClientChange}
-            />
-            <SearchableSelect
-              label="Strategy (optional)"
-              placeholder="All strategies"
-              options={strategyOptions}
-              value={selectedStrategy}
-              onChange={setSelectedStrategy}
-              disabled={!selectedClient}
-            />
-          </div>
-
-          <IdealSplitTargets overrides={overrides} onChange={setOverrides} />
-
-          <button
-            type="button"
-            onClick={handleApply}
-            className="mt-2 inline-flex items-center gap-2 rounded-lg bg-logo-green px-5 py-2 text-sm font-medium text-button-text hover:bg-logo-green/90 transition-colors"
-          >
-            Apply & Refresh
-          </button>
-        </div>
-      )}
-
-      {/* Data sections */}
-      <Section1 accounts={data.accounts} />
+      {/* Data sections — no more tab toggle, single unified view; config lives entirely behind the gear icon */}
+      <Section1 accounts={data.accounts} onOpenConfig={() => setConfigOpen(true)} />
       <Section2 accounts={data.accounts} />
       <Section3 rows={data.equity_breakup} />
+
+      {configOpen && (
+        <SplitConfigModal
+          overrides={overrides}
+          onChange={setOverrides}
+          clientOptions={clientOptions}
+          strategyOptions={strategyOptions}
+          selectedQcode={selectedQcode}
+          selectedStrategy={selectedStrategy}
+          onClientChange={handleClientChange}
+          onStrategyChange={setSelectedStrategy}
+          onApply={handleApply}
+          onClose={() => setConfigOpen(false)}
+        />
+      )}
     </div>
   );
 }

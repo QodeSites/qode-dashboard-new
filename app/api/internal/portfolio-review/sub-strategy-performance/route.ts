@@ -10,7 +10,7 @@ export async function POST(req: Request) {
   if (error) return error;
 
   // body is fully optional — an empty/absent body just means "full history"
-  let body: { start_date?: string; end_date?: string } = {};
+  let body: { start_date?: string; end_date?: string; account_type?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -28,7 +28,21 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  if (
+    body.account_type !== undefined &&
+    body.account_type !== "managed" &&
+    body.account_type !== "prop"
+  ) {
+    return NextResponse.json(
+      { error: "account_type must be 'managed' or 'prop'" },
+      { status: 400 },
+    );
+  }
 
-  const data = await computeSubStrategyPerformance(end, start);
+  const data = await computeSubStrategyPerformance(
+    end,
+    start,
+    body.account_type === "prop" ? "prop" : "managed",
+  );
   return NextResponse.json(data);
 }

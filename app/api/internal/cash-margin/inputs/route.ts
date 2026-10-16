@@ -20,10 +20,9 @@ import { parseCashMarginBody } from "@/lib/cash-margin/request-utils";
  * POST /api/internal/cash-margin/inputs
  * body: { qcode: string, overrides?: { [strategy: string]: { longOptPct?, ... } }, asOfDate?: string, globalOverrides?: { niftyLotSize?: number, avgPricePerQty?: number } }
  *
- * `asOfDate` (YYYY-MM-DD) is TEMPORARY -- for verifying against frozen
- * managed_accounts_analysis Excels by pinning the mastersheet read to a
- * historical date instead of always-latest. Remove once done (see
- * lib/cash-margin/mastersheet.ts's loadMastersheet).
+ * `asOfDate` (YYYY-MM-DD) pins the mastersheet read in this response to a
+ * historical date instead of always-latest (see
+ * lib/cash-margin/mastersheet.ts's loadMastersheet). Omit for "latest."
  *
  * `globalOverrides` is a session-scoped override for the two global_config
  * constants (niftyLotSize/avgPricePerQty) this panel's tierReference and

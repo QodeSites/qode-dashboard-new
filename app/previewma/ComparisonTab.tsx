@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { Loader2, Plus, X, ChevronDown } from "lucide-react";
+import { Loader2, Plus, X, ChevronDown, AlertTriangle,Search } from "lucide-react";
 import {
-  LineChart, Line, AreaChart, Area,
+  LineChart, Line, AreaChart, Area, ReferenceArea,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import {
@@ -19,6 +19,9 @@ interface CompareMetrics {
   end_date: string;
   since_inception: number;
   since_inception_pnl: number;
+  since_inception_absolute: number;
+  cagr: number;
+  xirr: number;
   max_drawdown: number;
   current_drawdown: number;
   monthly: { year: number; month: string; return_pct: number; pnl_inr: number }[];
@@ -30,18 +33,30 @@ interface CompareMetrics {
 interface CompareResult {
   qcode: string;
   system_tag: string;
-  metrics: CompareMetrics;
+  metrics: CompareMetrics | null; 
   benchmark_overview: {
     since_inception: number;
     max_drawdown: number;
     current_drawdown: number;
-  };
+  } | null;
+  skip_reason: string | null;
+}
+
+interface PeriodReturns {
+  monthly: { year: number; month: string; return_pct: number }[];
+  quarterly: { year: number; quarter: string; return_pct: number }[];
+  yearly: { year: number; return_pct: number }[];
 }
 
 interface CompareResponse {
+  benchmark_returns?: PeriodReturns | null;
   benchmark_series: { date: string; nav: number; drawdown: number }[];
-  backtest_series: { system_tag: string; series: { date: string; nav: number; drawdown: number }[] }[];
+  backtest_series: ({
+    system_tag: string;
+    series: { date: string; nav: number; drawdown: number }[];
+  } & Partial<PeriodReturns>)[];
   results: CompareResult[];
+  rebase_window: { from: string; to: string } | null;
 }
 
 interface SelectionRow {
@@ -73,7 +88,37 @@ function emptyRow(): SelectionRow {
 function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "2-digit" });
 }
-function fmtPct(v: number) { return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`; }
+function fmtPct(v: number | null | undefined) {
+  if (v === null || v === undefined || !isFinite(v)) return "—";
+  return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
+}
+
+// One block of rows in the Returns table: a client tag, the Nifty 50 benchmark,
+// or a backtest series.
+interface ReturnGroup {
+  key: string;
+  label: string;
+  kind: "client" | "benchmark" | "backtest";
+  tag: string; // small per-cell prefix; empty for Nifty and backtest rows (the label says it)
+  noData: boolean;
+  monthly: PeriodReturns["monthly"];
+  quarterly: PeriodReturns["quarterly"];
+  yearly: PeriodReturns["yearly"];
+  years: number[];
+}
+
+function ReturnCell({
+  v, tag, bold, padClass,
+}: { v: number | null; tag: string; bold?: boolean; padClass: string }) {
+  return (
+    <td className={`${padClass} text-right`}>
+      <div className={`flex items-center justify-end gap-1 ${bold ? "font-semibold " : ""}${v === null ? "text-card-text-secondary/30" : v >= 0 ? "text-green-700" : "text-red-600"}`}>
+        {v !== null && tag && <span className="text-[10px] text-card-text-secondary/60">{tag}</span>}
+        {v === null ? "—" : fmtPct(v)}
+      </div>
+    </td>
+  );
+}
 
 // Derive benchmark drawdown from NAV series
 function deriveDrawdown(series: { date: string; nav: number }[]) {
@@ -82,6 +127,113 @@ function deriveDrawdown(series: { date: string; nav: number }[]) {
     peak = Math.max(peak, p.nav);
     return { date: p.date, dd: ((p.nav - peak) / peak) * 100 };
   });
+}
+
+// ─── Chart zoom (drag across a section of a chart to zoom into it) ───────────
+
+// Works across Recharts versions: prefer activeLabel, fall back to the hovered index
+function labelFromEvent(e: any, rows: { date: string }[]): string | null {
+  if (e?.activeLabel !== undefined && e?.activeLabel !== null) return String(e.activeLabel);
+  const idx = Number(e?.activeTooltipIndex ?? e?.activeIndex);
+  return Number.isFinite(idx) && rows[idx] ? rows[idx].date : null;
+}
+
+
+function drawdownDomain(rows: Record<string, any>[], keys: string[]): [number, number] {
+  let min = 0;
+  rows.forEach((r) =>
+    keys.forEach((k) => {
+      const v = r[k];
+      if (typeof v === "number" && v < min) min = v;
+    })
+  );
+  return [Math.min(min * 1.1, -0.5), 0];
+}
+
+
+const fmtDdTick = (v: number) => `${Number(v.toFixed(2))}%`;
+
+function useChartZoom<T extends { date: string }>(data: T[]) {
+  const [range, setRange] = useState<[number, number] | null>(null);
+  const [drag, setDrag] = useState<{ left: string; right: string | null } | null>(null);
+
+
+  const dataKey = `${data.length}|${data[0]?.date ?? ""}|${data[data.length - 1]?.date ?? ""}`;
+  useEffect(() => {
+    setRange(null);
+    setDrag(null);
+  }, [dataKey]);
+
+  const visible = useMemo(
+    () => (range ? data.slice(range[0], range[1] + 1) : data),
+    [data, range]
+  );
+
+  const chartProps = {
+    onMouseDown: (e: any) => {
+      const l = labelFromEvent(e, visible);
+      if (l) setDrag({ left: l, right: null });
+    },
+    onMouseMove: (e: any) => {
+      if (!drag) return;
+      const l = labelFromEvent(e, visible);
+      if (l) setDrag({ left: drag.left, right: l });
+    },
+    onMouseUp: () => {
+      if (!drag || !drag.right || drag.left === drag.right) {
+        setDrag(null);
+        return;
+      }
+      const i1 = visible.findIndex((p) => p.date === drag.left);
+      const i2 = visible.findIndex((p) => p.date === drag.right);
+      if (i1 < 0 || i2 < 0) {
+        setDrag(null);
+        return;
+      }
+      const [a, b] = i1 < i2 ? [i1, i2] : [i2, i1];
+      const base = range ? range[0] : 0;
+      setRange([base + a, base + b]);
+      setDrag(null);
+    },
+    onMouseLeave: () => setDrag(null),
+  };
+
+  return {
+    data: visible,
+    chartProps,
+    selection: drag && drag.right ? { x1: drag.left, x2: drag.right } : null,
+    isZoomed: range !== null,
+    reset: () => setRange(null),
+  };
+}
+
+
+function ZoomFrame({
+  zoom, children,
+}: {
+  zoom: { isZoomed: boolean; reset: () => void };
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="relative select-none" onDoubleClick={zoom.reset}>
+      <div className="absolute right-2 top-0 z-10">
+        {zoom.isZoomed ? (
+          <button
+            type="button"
+            onClick={zoom.reset}
+            className="rounded-md border border-logo-green/20 bg-white/90 px-2 py-0.5 text-[10px] font-medium text-logo-green hover:bg-primary-bg/60 transition-colors"
+          >
+            Reset zoom
+          </button>
+        ) : (
+          <span className="rounded-md bg-white/70 px-1.5 py-0.5 text-[10px] text-card-text-secondary/60">
+            Drag to zoom
+          </span>
+        )}
+      </div>
+      {children}
+    </div>
+  );
 }
 
 // ─── Multi-select tag dropdown ────────────────────────────────────────────────
@@ -93,8 +245,8 @@ function TagMultiSelect({
   onChange: (v: string[]) => void; disabled?: boolean; loading?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const ref = useRef<HTMLDivElement>(null);
-
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -106,8 +258,29 @@ function TagMultiSelect({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
 
+  // Start fresh each time the dropdown opens
+  useEffect(() => {
+    if (!open) setSearch("");
+  }, [open]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return q ? tags.filter((t) => t.toLowerCase().includes(q)) : tags;
+  }, [tags, search]);
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((t) => selected.includes(t));
+
   function toggle(tag: string) {
     onChange(selected.includes(tag) ? selected.filter((t) => t !== tag) : [...selected, tag]);
+  }
+
+  // Acts on the tags currently visible; selections hidden by the search are untouched
+  function toggleAllFiltered() {
+    if (allFilteredSelected) {
+      onChange(selected.filter((t) => !filtered.includes(t)));
+    } else {
+      onChange([...selected, ...filtered.filter((t) => !selected.includes(t))]);
+    }
   }
 
   return (
@@ -132,20 +305,70 @@ function TagMultiSelect({
         )}
         <ChevronDown className={`h-3.5 w-3.5 text-card-text-secondary ml-auto flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </div>
+
       {open && tags.length > 0 && (
-        <div className="absolute z-30 mt-1 w-full max-h-52 overflow-y-auto rounded-lg border border-logo-green/15 bg-white shadow-lg py-1">
-          {tags.map((tag) => {
-            const checked = selected.includes(tag);
-            return (
-              <button key={tag} type="button" onClick={() => toggle(tag)}
-                className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-sm text-left transition-colors ${checked ? "bg-primary-bg/60 text-logo-green font-medium" : "text-card-text hover:bg-primary-bg/30"}`}>
-                <span className={`h-3.5 w-3.5 rounded border flex-shrink-0 ${checked ? "border-logo-green bg-logo-green" : "border-card-text-secondary/40"}`}>
-                  {checked && <span className="block w-full h-full scale-50 rounded-sm bg-white" />}
-                </span>
-                {tag}
-              </button>
-            );
-          })}
+        <div className="absolute z-30 mt-1 w-full rounded-lg border border-logo-green/15 bg-white shadow-lg">
+          <div className="p-2 border-b border-logo-green/10">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-card-text-secondary" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && filtered.length === 1) {
+                    e.preventDefault();
+                    toggle(filtered[0]);
+                  }
+                  if (e.key === "Escape") setOpen(false);
+                }}
+                placeholder="Search tags…"
+                autoFocus
+                className="w-full rounded-md border border-logo-green/20 pl-8 pr-7 py-1.5 text-sm text-card-text focus:outline-none focus:border-logo-green/40"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-card-text-secondary hover:text-red-600"
+                  aria-label="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {filtered.length > 0 && (
+            <button
+              type="button"
+              onClick={toggleAllFiltered}
+              className="w-full text-left px-3 py-1.5 text-xs font-medium text-logo-green hover:bg-primary-bg/40 border-b border-logo-green/10"
+            >
+              {allFilteredSelected
+                ? search.trim() ? `Deselect ${filtered.length} matching` : "Deselect all"
+                : search.trim() ? `Select ${filtered.length} matching` : "Select all"}
+            </button>
+          )}
+
+          <div className="max-h-52 overflow-y-auto py-1">
+            {filtered.length === 0 ? (
+              <p className="px-3 py-2 text-sm text-card-text-secondary italic">No tags match &quot;{search}&quot;.</p>
+            ) : (
+              filtered.map((tag) => {
+                const checked = selected.includes(tag);
+                return (
+                  <button key={tag} type="button" onClick={() => toggle(tag)}
+                    className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-sm text-left transition-colors ${checked ? "bg-primary-bg/60 text-logo-green font-medium" : "text-card-text hover:bg-primary-bg/30"}`}>
+                    <span className={`h-3.5 w-3.5 rounded border flex-shrink-0 ${checked ? "border-logo-green bg-logo-green" : "border-card-text-secondary/40"}`}>
+                      {checked && <span className="block w-full h-full scale-50 rounded-sm bg-white" />}
+                    </span>
+                    {tag}
+                  </button>
+                );
+              })
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -251,8 +474,12 @@ export function ComparisonTab() {
   const [returnFreq, setReturnFreq] = useState<"monthly" | "quarterly" | "yearly">("monthly");
   const [showBacktest, setShowBacktest] = useState(false);
 
+  // "Normalize base date" — rebases every selected line + the benchmark to
+  // 100 as of rebase_from. Leaving both blank sends full history (unrebased).
+  const [rebaseFrom, setRebaseFrom] = useState("");
+  const [rebaseTo, setRebaseTo] = useState("");
 
-  useEffect(() => { fetchClients().then(setClients).catch(() => { }); }, []);
+  useEffect(() => { fetchClients(undefined, "all").then(setClients).catch(() => { }); }, []);
 
   const updateRow = useCallback((id: string, patch: Partial<SelectionRow>) => {
     setRows((prev) => prev.map((r) => r.id === id ? { ...r, ...patch } : r));
@@ -276,11 +503,15 @@ export function ComparisonTab() {
     setLoading(true);
     setError(null);
     try {
+      const body: Record<string, unknown> = { selections };
+      if (rebaseFrom) body.rebase_from = rebaseFrom;
+      if (rebaseTo) body.rebase_to = rebaseTo;
+
       const res = await fetch("/api/internal/portfolio-review/compare", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ selections }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`Request failed (${res.status})`);
       const data: CompareResponse = await res.json();
@@ -292,12 +523,12 @@ export function ComparisonTab() {
     }
   }
 
-  // Build chart data — one key per result tag
   const chartData = useMemo(() => {
     if (!compareData) return [];
     const dateMap = new Map<string, Record<string, number | null>>();
 
     compareData.results.forEach((r) => {
+      if (!r.metrics) return; // skipped — no series to plot
       r.metrics.series.forEach((p) => {
         if (!dateMap.has(p.date)) dateMap.set(p.date, {});
         const row = dateMap.get(p.date)!;
@@ -336,16 +567,18 @@ export function ComparisonTab() {
       .map(([date, vals]) => ({ date, ...vals }));
   }, [compareData, compareNifty, showBacktest]);
 
-  function lightenHex(hex: string, amount: number) {
-   const num = parseInt(hex.replace("#", ""), 16);
-  const r = (num >> 16) & 0xff;
-  const g = (num >> 8) & 0xff;
-  const b = num & 0xff;
-  const mix = (c: number) => Math.round(c * (1 - amount));
-  return `#${[mix(r), mix(g), mix(b)].map((c) => c.toString(16).padStart(2, "0")).join("")}`;
-}
+  const navZoom = useChartZoom(chartData);
+  const ddZoom = useChartZoom(chartData);
 
-  // All lines for charts
+  function lightenHex(hex: string, amount: number) {
+    const num = parseInt(hex.replace("#", ""), 16);
+    const r = (num >> 16) & 0xff;
+    const g = (num >> 8) & 0xff;
+    const b = num & 0xff;
+    const mix = (c: number) => Math.round(c * (1 - amount));
+    return `#${[mix(r), mix(g), mix(b)].map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+  }
+
   const allLines = useMemo(() => {
     if (!compareData) return [];
     const lines = compareData.results.map((r, i) => {
@@ -353,42 +586,122 @@ export function ComparisonTab() {
       const clientName = client?.account_name || r.qcode;
       return {
         key: `${r.qcode}__${r.system_tag}`,
-        label: `${clientName} ${r.system_tag}`,
+        label: `${clientName} ${r.system_tag}${r.metrics ? "" : " (no data)"}`,
         color: CHART_COLORS[i % CHART_COLORS.length],
         isNifty: false,
         isBacktest: false,
       };
     });
-    if (compareNifty) lines.push({ key: "Nifty50", label: "Nifty50", color: "#6B7280", isNifty: true, isBacktest: false });
-if (showBacktest && compareData.backtest_series) {
-  compareData.backtest_series.forEach((bt, i) => {
-    const matchIdx = compareData.results.findIndex((r) => r.system_tag === bt.system_tag);
-    const baseColor = matchIdx >= 0
-      ? CHART_COLORS[matchIdx % CHART_COLORS.length]
-      : CHART_COLORS[(compareData.results.length + i) % CHART_COLORS.length];
-    lines.push({
-      key: `backtest__${bt.system_tag}`,
-      label: `${bt.system_tag} (Backtest)`,
-      color: lightenHex(baseColor, 0.45), // 45% toward white — distinct but still related to matched line
-      isNifty: false,
-      isBacktest: true,
-    });
-  });
-}
+    if (compareNifty) lines.push({ key: "Nifty50", label: "Nifty50", color: "#f02e2e", isNifty: true, isBacktest: false });
+    if (showBacktest && compareData.backtest_series) {
+      compareData.backtest_series.forEach((bt, i) => {
+        const matchIdx = compareData.results.findIndex((r) => r.system_tag === bt.system_tag);
+        const baseColor = matchIdx >= 0
+          ? CHART_COLORS[matchIdx % CHART_COLORS.length]
+          : CHART_COLORS[(compareData.results.length + i) % CHART_COLORS.length];
+        lines.push({
+          key: `backtest__${bt.system_tag}`,
+          label: `${bt.system_tag} (Backtest)`,
+          color: lightenHex(baseColor, 0.45),
+          isNifty: false,
+          isBacktest: true,
+        });
+      });
+    }
     return lines;
-  }, [compareData, compareNifty, clients]);
+  }, [compareData, compareNifty, showBacktest, clients]);
 
-  // One row-group per tag (client name + tag as label)
-  const monthlyGroups = useMemo(() => {
+  const ddDomain = useMemo(
+    () => drawdownDomain(ddZoom.data, allLines.map((l) => `dd__${l.key}`)),
+    [ddZoom.data, allLines]
+  );
+
+  // Rows for the Returns table: one group per client tag, with each backtest
+  // directly under the live row that shares its system tag, then Nifty 50 last.
+  const returnGroups = useMemo((): ReturnGroup[] => {
     if (!compareData) return [];
-    return compareData.results.map((r) => {
+
+    const yearsOf = (p: Partial<PeriodReturns>) =>
+      Array.from(new Set([
+        ...(p.monthly ?? []).map((m) => m.year),
+        ...(p.yearly ?? []).map((y) => y.year),
+      ])).sort((a, b) => a - b);
+
+    const clientGroups: ReturnGroup[] = compareData.results.map((r) => {
       const client = clients.find((c) => c.qcode === r.qcode);
-      const clientName = client?.account_name || r.qcode;
-      const label = `${clientName} ${r.system_tag}`;
-      const years = Array.from(new Set(r.metrics.monthly.map((m) => m.year))).sort() as number[];
-      return { label, result: r, years };
+      const m = r.metrics;
+      return {
+        key: `${r.qcode}-${r.system_tag}`,
+        label: `${client?.account_name || r.qcode} ${r.system_tag}`,
+        kind: "client" as const,
+        tag: r.system_tag.split(" ").slice(-1)[0],
+        noData: !m,
+        monthly: m?.monthly ?? [],
+        quarterly: m?.quarterly ?? [],
+        yearly: m?.yearly ?? [],
+        years: m ? yearsOf(m) : [],
+      };
     });
-  }, [compareData, clients]);
+
+    // Nifty and backtest rows only list years the selected clients also cover
+    const resultYears = new Set(clientGroups.flatMap((g) => g.years));
+    const alignYears = (p: Partial<PeriodReturns>) => {
+      const all = yearsOf(p);
+      return resultYears.size === 0 ? all : all.filter((y) => resultYears.has(y));
+    };
+
+    const backtestGroups: ReturnGroup[] = showBacktest
+      ? (compareData.backtest_series ?? [])
+          .filter((bt) => bt.monthly || bt.yearly)
+          .map((bt) => ({
+            key: `backtest-${bt.system_tag}`,
+            label: `${bt.system_tag} (Backtest)`,
+            kind: "backtest" as const,
+            tag: "",
+            noData: false,
+            monthly: bt.monthly ?? [],
+            quarterly: bt.quarterly ?? [],
+            yearly: bt.yearly ?? [],
+            years: alignYears(bt),
+          }))
+      : [];
+
+    const benchmarkGroup: ReturnGroup | null =
+      compareNifty && compareData.benchmark_returns
+        ? {
+            key: "benchmark-nifty",
+            label: "Nifty 50",
+            kind: "benchmark" as const,
+            tag: "",
+            noData: false,
+            monthly: compareData.benchmark_returns.monthly ?? [],
+            quarterly: compareData.benchmark_returns.quarterly ?? [],
+            yearly: compareData.benchmark_returns.yearly ?? [],
+            years: alignYears(compareData.benchmark_returns),
+          }
+        : null;
+
+    const ordered: ReturnGroup[] = [];
+    const used = new Set<string>();
+    clientGroups.forEach((g, i) => {
+      ordered.push(g);
+      const tag = compareData.results[i].system_tag;
+      backtestGroups.forEach((b) => {
+        if (!used.has(b.key) && b.label === `${tag} (Backtest)`) {
+          ordered.push(b);
+          used.add(b.key);
+        }
+      });
+    });
+    backtestGroups.forEach((b) => { if (!used.has(b.key)) ordered.push(b); });
+    if (benchmarkGroup) ordered.push(benchmarkGroup);
+    return ordered;
+  }, [compareData, clients, compareNifty, showBacktest]);
+
+  const skippedResults = useMemo(
+    () => compareData?.results.filter((r) => !r.metrics) ?? [],
+    [compareData]
+  );
 
   return (
     <div>
@@ -408,6 +721,34 @@ if (showBacktest && compareData.backtest_series) {
             />
           ))}
         </div>
+
+        {/* Normalize base date — rebase_from / rebase_to */}
+        <div className="flex items-center gap-3 mt-4 pt-4 border-t border-logo-green/10">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold uppercase tracking-wide text-card-text-secondary">Rebase From</label>
+            <input
+              type="date" value={rebaseFrom} onChange={(e) => setRebaseFrom(e.target.value)}
+              className="rounded-lg border border-logo-green/20 bg-white px-3 py-2 text-sm text-card-text focus:outline-none focus:border-logo-green/40"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold uppercase tracking-wide text-card-text-secondary">Rebase To</label>
+            <input
+              type="date" value={rebaseTo} onChange={(e) => setRebaseTo(e.target.value)}
+              className="rounded-lg border border-logo-green/20 bg-white px-3 py-2 text-sm text-card-text focus:outline-none focus:border-logo-green/40"
+            />
+          </div>
+          {(rebaseFrom || rebaseTo) && (
+            <button
+              type="button"
+              onClick={() => { setRebaseFrom(""); setRebaseTo(""); }}
+              className="text-xs text-card-text-secondary hover:text-logo-green self-end pb-2.5"
+            >
+              ✕ Clear (full history)
+            </button>
+          )}
+        </div>
+
         <div className="flex items-center gap-3 mt-4">
           {rows.length < 5 && (
             <button type="button" onClick={() => setRows((p) => [...p, emptyRow()])}
@@ -445,6 +786,31 @@ if (showBacktest && compareData.backtest_series) {
 
       {compareData && (
         <>
+          {compareData.rebase_window && (
+            <p className="text-xs text-card-text-secondary mb-4">
+              Rebased to 100 as of {compareData.rebase_window.from} → {compareData.rebase_window.to}
+            </p>
+          )}
+
+          {skippedResults.length > 0 && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 mb-5">
+              <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium">Some selections have no data in this window:</p>
+                <ul className="mt-1 space-y-0.5">
+                  {skippedResults.map((r) => {
+                    const client = clients.find((c) => c.qcode === r.qcode);
+                    return (
+                      <li key={`${r.qcode}-${r.system_tag}`}>
+                        {client?.account_name || r.qcode} — {r.system_tag} ({r.skip_reason || "no data"})
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            </div>
+          )}
+
           {/* Overview table — one row per tag, grouped by client */}
           <div className="bg-white rounded-lg border border-logo-green/10 mb-6 overflow-x-auto">
             <table className="w-full text-sm">
@@ -455,6 +821,7 @@ if (showBacktest && compareData.backtest_series) {
                   <th className="px-4 py-2.5 text-left font-medium">Start Date</th>
                   <th className="px-4 py-2.5 text-left font-medium">End Date</th>
                   <th className="px-4 py-2.5 text-right font-medium">Since Inception</th>
+                  <th className="px-4 py-2.5 text-right font-medium">XIRR</th>
                   <th className="px-4 py-2.5 text-right font-medium">Since Inception P&L</th>
                   <th className="px-4 py-2.5 text-right font-medium">Max Drawdown</th>
                   <th className="px-4 py-2.5 text-right font-medium">Current Drawdown</th>
@@ -470,6 +837,27 @@ if (showBacktest && compareData.backtest_series) {
                     const color = CHART_COLORS[rowIndex >= 0 ? rowIndex : i % CHART_COLORS.length];
                     const isNewClient = r.qcode !== prevQcode;
                     prevQcode = r.qcode;
+
+                    if (!r.metrics) {
+                      return (
+                        <tr key={`${r.qcode}-${r.system_tag}`}
+                          className={`border-t ${isNewClient && i > 0 ? "border-t-2 border-logo-green/20" : "border-logo-green/5"}`}>
+                          <td className="px-4 py-2.5 font-medium text-card-text whitespace-nowrap">
+                            {isNewClient ? (
+                              <span className="flex items-center gap-2">
+                                <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ background: color }} />
+                                {name}
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-2.5 text-card-text-secondary whitespace-nowrap">{r.system_tag}</td>
+                          <td colSpan={7} className="px-4 py-2.5 text-amber-700 italic text-xs">
+                            No data available ({r.skip_reason || "unknown reason"})
+                          </td>
+                        </tr>
+                      );
+                    }
+
                     return (
                       <tr key={`${r.qcode}-${r.system_tag}`}
                         className={`border-t ${isNewClient && i > 0 ? "border-t-2 border-logo-green/20" : "border-logo-green/5"} hover:bg-primary-bg/20 transition-colors`}>
@@ -486,6 +874,9 @@ if (showBacktest && compareData.backtest_series) {
                         <td className="px-4 py-2.5 text-card-text-secondary">{r.metrics.end_date}</td>
                         <td className={`px-4 py-2.5 text-right font-semibold ${r.metrics.since_inception >= 0 ? "text-green-700 bg-green-50" : "text-red-600 bg-red-50"}`}>
                           {fmtPct(r.metrics.since_inception * 100)}
+                        </td>
+                        <td className={`px-4 py-2.5 text-right font-semibold ${r.metrics.xirr >= 0 ? "text-green-700 bg-green-50" : "text-red-600 bg-red-50"}`}>
+                          {fmtPct(r.metrics.xirr * 100)}
                         </td>
                         <td className={`px-4 py-2.5 text-right font-semibold ${r.metrics.since_inception_pnl >= 0 ? "text-green-700 bg-green-50" : "text-red-600 bg-red-50"}`}>
                           {r.metrics.since_inception_pnl >= 0 ? "+" : ""}₹{Math.abs(r.metrics.since_inception_pnl).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
@@ -507,65 +898,53 @@ if (showBacktest && compareData.backtest_series) {
           {/* NAV Time Series */}
           <div className="bg-white rounded-lg border border-logo-green/10 p-4 mb-5">
             <div className="text-sm font-semibold text-card-text mb-3">NAV Time Series</div>
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={chartData}>
-                <CartesianGrid stroke="#E8E4D4" vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 9, fill: "#555" }} minTickGap={50} tickFormatter={fmtDate} />
-                <YAxis tick={{ fontSize: 9, fill: "#555" }} width={35} domain={["auto", "auto"]} />
-                <Tooltip labelFormatter={fmtDate}
-                  formatter={(v: number, name: string) => [v?.toFixed(2), allLines.find(l => `nav__${l.key}` === name)?.label || name]} />
-                <Legend formatter={(name) => allLines.find(l => `nav__${l.key}` === name)?.label || name} wrapperStyle={{ fontSize: 11 }} />
-                {allLines.map((l) => (
-                  <Line key={l.key} type="monotone" dataKey={`nav__${l.key}`}
-                    stroke={l.color} strokeWidth={l.isNifty || l.isBacktest ? 1.5 : 2}
-                    strokeDasharray={l.isNifty ? "4 2" : l.isBacktest ? "2 3" : undefined}
-                    dot={false} connectNulls />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Cumulative Return */}
-          <div className="bg-white rounded-lg border border-logo-green/10 p-4 mb-5">
-            <div className="text-sm font-semibold text-card-text mb-3">Cumulative Return (%)</div>
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={chartData}>
-                <CartesianGrid stroke="#E8E4D4" vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 9, fill: "#555" }} minTickGap={50} tickFormatter={fmtDate} />
-                <YAxis tick={{ fontSize: 9, fill: "#555" }} width={40} tickFormatter={(v) => `${v.toFixed(1)}%`} />
-                <Tooltip labelFormatter={fmtDate}
-                  formatter={(v: number, name: string) => [`${v?.toFixed(2)}%`, allLines.find(l => `cum__${l.key}` === name)?.label || name]} />
-                <Legend formatter={(name) => allLines.find(l => `cum__${l.key}` === name)?.label || name} wrapperStyle={{ fontSize: 11 }} />
-                {allLines.map((l) => (
-                  <Line key={l.key} type="monotone" dataKey={`cum__${l.key}`}
-                    stroke={l.color} strokeWidth={l.isNifty ? 1.5 : 2}
-                    strokeDasharray={l.isNifty ? "4 2" : undefined} dot={false} connectNulls />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
+            <ZoomFrame zoom={navZoom}>
+              <ResponsiveContainer width="100%" height={280}>
+                <LineChart data={navZoom.data} {...navZoom.chartProps}>
+                  <CartesianGrid stroke="#E8E4D4" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 9, fill: "#555" }} minTickGap={50} tickFormatter={fmtDate} />
+                  <YAxis tick={{ fontSize: 9, fill: "#555" }} width={35} domain={["auto", "auto"]} />
+                  <Tooltip labelFormatter={fmtDate}
+                    formatter={(v: number, name: string) => [v?.toFixed(2), allLines.find(l => `nav__${l.key}` === name)?.label || name]} />
+                  <Legend formatter={(name) => allLines.find(l => `nav__${l.key}` === name)?.label || name} wrapperStyle={{ fontSize: 11 }} />
+                  {navZoom.selection && (
+                    <ReferenceArea x1={navZoom.selection.x1} x2={navZoom.selection.x2} fill="#02422B" fillOpacity={0.12} />
+                  )}
+                  {allLines.map((l) => (
+                    <Line key={l.key} type="monotone" dataKey={`nav__${l.key}`}
+                      stroke={l.color} strokeWidth={l.isNifty || l.isBacktest ? 1.5 : 2}
+                      dot={false} connectNulls isAnimationActive={false} />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </ZoomFrame>
           </div>
 
           {/* Drawdown */}
           <div className="bg-white rounded-lg border border-logo-green/10 p-4 mb-5">
             <div className="text-sm font-semibold text-card-text mb-3">Drawdown (%)</div>
-            <ResponsiveContainer width="100%" height={260}>
-              <AreaChart data={chartData}>
-                <CartesianGrid stroke="#E8E4D4" vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 9, fill: "#555" }} minTickGap={50} tickFormatter={fmtDate} />
-                <YAxis tick={{ fontSize: 9, fill: "#555" }} width={40} tickFormatter={(v) => `${v.toFixed(0)}%`} />
-                <Tooltip labelFormatter={fmtDate}
-                  formatter={(v: number, name: string) => [`${v?.toFixed(2)}%`, allLines.find(l => `dd__${l.key}` === name)?.label || name]} />
-                <Legend formatter={(name) => allLines.find(l => `dd__${l.key}` === name)?.label || name} wrapperStyle={{ fontSize: 11 }} />
-                {allLines.map((l) => (
-                  <Area key={l.key} type="monotone" dataKey={`dd__${l.key}`}
-                    stroke={l.color} fill={l.color}
-                    fillOpacity={l.isNifty || l.isBacktest ? 0.08 : 0.12}
-                    strokeWidth={1.5}
-                    strokeDasharray={l.isNifty ? "4 2" : l.isBacktest ? "2 3" : undefined}
-                    dot={false} connectNulls />
-                ))}
-              </AreaChart>
-            </ResponsiveContainer>
+            <ZoomFrame zoom={ddZoom}>
+              <ResponsiveContainer width="100%" height={260}>
+                <AreaChart data={ddZoom.data} {...ddZoom.chartProps}>
+                  <CartesianGrid stroke="#E8E4D4" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 9, fill: "#555" }} minTickGap={50} tickFormatter={fmtDate} />
+                  <YAxis tick={{ fontSize: 9, fill: "#555" }} width={44} domain={ddDomain} allowDecimals tickFormatter={fmtDdTick} />
+                  <Tooltip labelFormatter={fmtDate}
+                    formatter={(v: number, name: string) => [`${v?.toFixed(2)}%`, allLines.find(l => `dd__${l.key}` === name)?.label || name]} />
+                  <Legend formatter={(name) => allLines.find(l => `dd__${l.key}` === name)?.label || name} wrapperStyle={{ fontSize: 11 }} />
+                  {ddZoom.selection && (
+                    <ReferenceArea x1={ddZoom.selection.x1} x2={ddZoom.selection.x2} fill="#B91C1C" fillOpacity={0.12} />
+                  )}
+                  {allLines.map((l) => (
+                    <Area key={l.key} type="monotone" dataKey={`dd__${l.key}`}
+                      stroke={l.color} fill={l.color}
+                      fillOpacity={l.isNifty || l.isBacktest ? 0.08 : 0.12}
+                      strokeWidth={1.5}
+                      dot={false} connectNulls isAnimationActive={false} />
+                  ))}
+                </AreaChart>
+              </ResponsiveContainer>
+            </ZoomFrame>
           </div>
 
           {/* Returns — Monthly / Quarterly / Yearly tabs */}
@@ -597,60 +976,49 @@ if (showBacktest && compareData.backtest_series) {
                   </tr>
                 </thead>
                 <tbody>
-                  {monthlyGroups.map(({ label, result: r, years }, gi) => (
-                    years.map((yr, yi) => (
-                      <tr key={`${r.qcode}-${r.system_tag}-${yr}`}
-                        className={`border-t ${yi === 0 && gi > 0 ? "border-t-2 border-logo-green/20" : "border-logo-green/5"}`}>
+                  {returnGroups.map((g, gi) => {
+                    const isRef = g.kind !== "client";
+                    const rowBg = isRef ? "bg-primary-bg/30" : "";
+                    const spanAll = returnFreq === "monthly" ? 14 : returnFreq === "quarterly" ? 6 : 3;
+
+                    if (g.noData || g.years.length === 0) {
+                      return (
+                        <tr key={g.key} className={`${gi > 0 ? "border-t-2 border-logo-green/20" : ""} ${rowBg}`}>
+                          <td className="px-3 py-2 font-medium text-card-text whitespace-nowrap" title={g.label}>{g.label}</td>
+                          <td colSpan={spanAll} className="px-3 py-2 text-amber-700 italic text-xs">
+                            No data available
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return g.years.map((yr, yi) => (
+                      <tr key={`${g.key}-${yr}`}
+                        className={`border-t ${yi === 0 && gi > 0 ? "border-t-2 border-logo-green/20" : "border-logo-green/5"} ${rowBg}`}>
                         <td className="px-3 py-2 font-medium text-card-text">
                           {yi === 0 ? (
-                            <span className="block text-xs whitespace-nowrap" title={label}>{label}</span>
+                            <span className={`block text-xs whitespace-nowrap ${isRef ? "italic text-card-text-secondary" : ""}`} title={g.label}>
+                              {g.label}
+                            </span>
                           ) : null}
                         </td>
                         <td className="px-3 py-2 text-card-text-secondary">{yr}</td>
 
-                        {returnFreq === "monthly" && MONTHS.map((mName) => {
-                          const m = r.metrics.monthly.find((m) => m.year === yr && m.month === mName);
-                          const v = m?.return_pct ?? null;
-                          const tagSuffix = r.system_tag.split(" ").slice(-1)[0];
-                          return (
-                            <td key={mName} className="px-2 py-2 text-right">
-                              <div className={`flex items-center justify-end gap-1 ${v === null ? "text-card-text-secondary/30" : v >= 0 ? "text-green-700" : "text-red-600"}`}>
-                                {v !== null && <span className="text-[10px] text-card-text-secondary/60">{tagSuffix}</span>}
-                                {v === null ? "—" : fmtPct(v)}
-                              </div>
-                            </td>
-                          );
-                        })}
+                        {returnFreq === "monthly" && MONTHS.map((mName) => (
+                          <ReturnCell key={mName} padClass="px-2 py-2" tag={g.tag}
+                            v={g.monthly.find((m) => m.year === yr && m.month === mName)?.return_pct ?? null} />
+                        ))}
 
-                        {returnFreq === "quarterly" && ["Q1", "Q2", "Q3", "Q4"].map((q) => {
-                          const qt = r.metrics.quarterly.find((qt) => qt.year === yr && qt.quarter === q);
-                          const v = qt?.return_pct ?? null;
-                          const tagSuffix = r.system_tag.split(" ").slice(-1)[0];
-                          return (
-                            <td key={q} className="px-3 py-2 text-right">
-                              <div className={`flex items-center justify-end gap-1 ${v === null ? "text-card-text-secondary/30" : v >= 0 ? "text-green-700" : "text-red-600"}`}>
-                                {v !== null && <span className="text-[10px] text-card-text-secondary/60">{tagSuffix}</span>}
-                                {v === null ? "—" : fmtPct(v)}
-                              </div>
-                            </td>
-                          );
-                        })}
+                        {returnFreq === "quarterly" && ["Q1", "Q2", "Q3", "Q4"].map((q) => (
+                          <ReturnCell key={q} padClass="px-3 py-2" tag={g.tag}
+                            v={g.quarterly.find((qt) => qt.year === yr && qt.quarter === q)?.return_pct ?? null} />
+                        ))}
 
-                        <td className="px-3 py-2 text-right">
-                          {(() => {
-                            const tot = r.metrics.yearly.find((y) => y.year === yr);
-                            const tagSuffix = r.system_tag.split(" ").slice(-1)[0];
-                            return (
-                              <div className={`flex items-center justify-end gap-1 font-semibold ${!tot ? "text-card-text-secondary/30" : tot.return_pct >= 0 ? "text-green-700" : "text-red-600"}`}>
-                                {tot && <span className="text-[10px] text-card-text-secondary/60">{tagSuffix}</span>}
-                                {tot ? fmtPct(tot.return_pct) : "—"}
-                              </div>
-                            );
-                          })()}
-                        </td>
+                        <ReturnCell padClass="px-3 py-2" tag={g.tag} bold
+                          v={g.yearly.find((y) => y.year === yr)?.return_pct ?? null} />
                       </tr>
-                    ))
-                  ))}
+                    ));
+                  })}
                 </tbody>
               </table>
             </div>
