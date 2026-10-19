@@ -289,8 +289,8 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     config: SSRG_ADVISORY_LLP_CONFIG,
     frozenData: EMPTY_FROZEN_DATA,
     hasNavBasedTotalPortfolio: true,
-    renderMode: "single",
-    broker: "zerodha",
+    // Now multi-scheme (QAW+ inactive + PMS QAW) → default "multi" renderMode
+    // with a PMS-blended Total Portfolio; no longer single-strategy.
   },
   {
     icode: "QUS00113",

@@ -14,6 +14,7 @@ export interface BlendComponentDaily {
   nav: number;
   pnl: number;
   cashIn: number;
+  prevNav?: number | null; // row's own prior nav; read only on the blend's first date
 }
 export interface BlendComponent {
   daily: BlendComponentDaily[];
@@ -77,6 +78,14 @@ export function buildCombinedHistorical(
           const r = point.nav / prevNavs[ci]! - 1;
           weightSum += prevVals[ci]!;
           weightedReturn += prevVals[ci]! * r;
+        } else if (di === 0 && point.prevNav != null && point.prevNav > 0 &&
+                   point.cashIn > 0) {
+          // Blend's first date has no prior state, but the inception row can
+          // still carry a real day-1 move (SSRG QAW+ prev_nav 100 → 93.61).
+          // Weight it by the opening deposit so it isn't dropped.
+          const r = point.nav / point.prevNav - 1;
+          weightSum += point.cashIn;
+          weightedReturn += point.cashIn * r;
         }
         // Advance forward-fill state.
         lastVal[ci] = point.value;
@@ -87,8 +96,8 @@ export function buildCombinedHistorical(
     }
 
     const combinedReturn = weightSum > 0 ? weightedReturn / weightSum : 0;
-    const prevNav = di === 0 ? null : out[di - 1].nav;
-    combinedNav = di === 0 ? 100 : combinedNav * (1 + combinedReturn);
+    const prevNav = di === 0 ? 100 : out[di - 1].nav;
+    combinedNav = (di === 0 ? 100 : combinedNav) * (1 + combinedReturn);
 
     out.push({
       date: new Date(date),
