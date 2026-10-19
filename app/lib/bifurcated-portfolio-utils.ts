@@ -1362,23 +1362,22 @@ class BifurcatedPortfolioEngine {
   private async buildPmsBlendedTotalPortfolio(
     qcode: string
   ): Promise<PortfolioResponse> {
-    // --- Zerodha component: daily value (QAW++ PV + QAW+ PV) + Qode nav curve.
-    const qawPlusPlus = "QAW++ Zerodha Total Portfolio";
-    const qawPlus = "QAW+ Zerodha Total Portfolio";
-    const [ppRows, pRows, qodeRows] = await Promise.all([
-      this.msTable.findMany({
-        where: { qcode, system_tag: qawPlusPlus },
-        select: { date: true, portfolio_value: true, capital_in_out: true, pnl: true },
-        orderBy: { date: "asc" },
-      }),
-      this.msTable.findMany({
-        where: { qcode, system_tag: qawPlus },
-        select: { date: true, portfolio_value: true, capital_in_out: true, pnl: true },
-        orderBy: { date: "asc" },
-      }),
+    // --- Zerodha component: daily value (Σ Zerodha scheme PVs, e.g. QAW++ + QAW+)
+    // + Qode nav curve. Scheme tags come from the client's non-PMS schemes.
+    const zerodhaTags = Object.entries(this.config.portfolioMapping)
+      .filter(([name, pc]) => name !== "Total Portfolio" && !pc.pmsAccountCode)
+      .map(([, pc]) => pc.current);
+    const [schemeRows, qodeRows] = await Promise.all([
+      Promise.all(zerodhaTags.map((tag) =>
+        this.msTable.findMany({
+          where: { qcode, system_tag: tag },
+          select: { date: true, portfolio_value: true, capital_in_out: true, pnl: true },
+          orderBy: { date: "asc" },
+        })
+      )),
       this.msTable.findMany({
         where: { qcode, system_tag: this.config.qodeTotalPortfolioTag, nav: { not: null } },
-        select: { date: true, nav: true },
+        select: { date: true, nav: true, prev_nav: true },
         orderBy: { date: "asc" },
       }),
     ]);
@@ -1388,18 +1387,18 @@ class BifurcatedPortfolioEngine {
       for (const r of rows) m.set(this.normalizeDate(r.date), r);
       return m;
     };
-    const ppMap = byDate(ppRows), pMap = byDate(pRows), qodeMap = byDate(qodeRows);
+    const schemeMaps = schemeRows.map(byDate), qodeMap = byDate(qodeRows);
     const zerodhaDates = Array.from(qodeMap.keys()).sort();
-    const zerodhaDaily = zerodhaDates.map((date) => {
-      const pp = ppMap.get(date), p = pMap.get(date);
-      return {
-        date,
-        value: (Number(pp?.portfolio_value) || 0) + (Number(p?.portfolio_value) || 0),
-        nav: Number(qodeMap.get(date)?.nav) || 0,
-        pnl: (Number(pp?.pnl) || 0) + (Number(p?.pnl) || 0),
-        cashIn: (Number(pp?.capital_in_out) || 0) + (Number(p?.capital_in_out) || 0),
-      };
-    });
+    const sumOn = (date: string, field: string) =>
+      schemeMaps.reduce((s, m) => s + (Number(m.get(date)?.[field]) || 0), 0);
+    const zerodhaDaily = zerodhaDates.map((date) => ({
+      date,
+      value: sumOn(date, "portfolio_value"),
+      nav: Number(qodeMap.get(date)?.nav) || 0,
+      prevNav: qodeMap.get(date)?.prev_nav != null ? Number(qodeMap.get(date).prev_nav) : null,
+      pnl: sumOn(date, "pnl"),
+      cashIn: sumOn(date, "capital_in_out"),
+    }));
 
     // --- PMS components.
     const pmsSeries = await Promise.all(
@@ -1410,6 +1409,7 @@ class BifurcatedPortfolioEngine {
       ...pmsSeries.map((s) => ({
         daily: s.daily.map((d) => ({
           date: d.date, value: d.value, nav: d.nav, pnl: d.pnl, cashIn: d.cashIn,
+          prevNav: d.prevNav,
         })),
       })),
     ];
@@ -1420,10 +1420,17 @@ class BifurcatedPortfolioEngine {
     const equityCurve = historicalData.map((d) => ({
       date: this.normalizeDate(d.date), nav: d.nav,
     }));
+    // A day-1 move (blend's first nav != 100) gets the same NAV=100 baseline
+    // one day earlier that fresh schemes get, so return/MDD include it.
+    if (equityCurve.length > 0 && equityCurve[0].nav !== 100) {
+      const baseline = new Date(equityCurve[0].date);
+      baseline.setDate(baseline.getDate() - 1);
+      equityCurve.unshift({ date: this.normalizeDate(baseline), nav: 100 });
+    }
     const drawdownMetrics = this.calculateDrawdownMetrics(equityCurve);
     const trailingReturns = computeTrailingReturnsFromCurve(equityCurve, 100, drawdownMetrics);
-    const monthlyPnl = this.computeMonthlyPnLFromHistoricalData(historicalData, false);
-    const quarterlyPnl = this.computeQuarterlyPnLFromHistoricalData(historicalData, false);
+    const monthlyPnl = this.computeMonthlyPnLFromHistoricalData(historicalData, true);
+    const quarterlyPnl = this.computeQuarterlyPnLFromHistoricalData(historicalData, true);
 
     const firstNav = equityCurve.length ? equityCurve[0].nav : 100;
     const lastNav = equityCurve.length ? equityCurve[equityCurve.length - 1].nav : 100;
@@ -1435,9 +1442,8 @@ class BifurcatedPortfolioEngine {
       : (Math.pow(lastNav / firstNav, 365 / days) - 1) * 100;
 
     // --- Cards (additive): Zerodha + all PMS.
-    const zerodhaCurrent =
-      (Number(ppRows.at(-1)?.portfolio_value) || 0) +
-      (Number(pRows.at(-1)?.portfolio_value) || 0);
+    const zerodhaCurrent = schemeRows.reduce(
+      (s, rows) => s + (Number(rows.at(-1)?.portfolio_value) || 0), 0);
     const currentValue = zerodhaCurrent + pmsSeries.reduce((s, x) => s + x.currentValue, 0);
     const totalProfit =
       historicalData.reduce((s, d) => s + d.pnl, 0); // Σ component pnl == Qode pnl + Σ PMS pnl
