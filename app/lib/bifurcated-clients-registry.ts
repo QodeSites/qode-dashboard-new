@@ -134,6 +134,7 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     config: DINESH_GOEL_CONFIG,
     frozenData: EMPTY_FROZEN_DATA,
     hasNavBasedTotalPortfolio: true,
+    showPmsBlendedNav: true,
   },
   {
     icode: "QUS00106",
@@ -203,8 +204,9 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     config: DEEPTI_PARIKH_CONFIG,
     frozenData: EMPTY_FROZEN_DATA,
     hasNavBasedTotalPortfolio: true,
-    renderMode: "single",
-    broker: "zerodha",
+    // Now multi-scheme (QYE++ inactive + PMS QGF) → default "multi" renderMode
+    // with a PMS-blended Total Portfolio; no longer single-strategy.
+    showPmsBlendedNav: true,
   },
   {
     icode: "QUS00111",
@@ -344,8 +346,9 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     config: JONA_FASHIONS_LIFESTYLE_LLP_CONFIG,
     frozenData: EMPTY_FROZEN_DATA,
     hasNavBasedTotalPortfolio: true,
-    renderMode: "single",
-    broker: "zerodha",
+    // Now multi-scheme (QAW++ + two PMS QAW accounts) → default "multi"
+    // renderMode with a PMS-blended Total Portfolio; no longer single-strategy.
+    showPmsBlendedNav: true,
   },
   {
     icode: "QUS00126",
@@ -485,8 +488,9 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     config: KRISH_COMMODITIES_INDIA_LLP_CONFIG,
     frozenData: EMPTY_FROZEN_DATA,
     hasNavBasedTotalPortfolio: true,
-    renderMode: "single",
-    broker: "zerodha",
+    // Now multi-scheme (QAW++ inactive + PMS QAW) → default "multi" renderMode
+    // with a PMS-blended Total Portfolio; no longer single-strategy.
+    showPmsBlendedNav: true,
   },
   {
     icode: "QUS00146",

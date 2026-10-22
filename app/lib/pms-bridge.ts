@@ -49,6 +49,12 @@ export async function getPmsAccountSeries(
     pnl: Number(r.pnl) || 0,
     cashIn: Number(r.cash_in_out) || 0,
   }));
+  // Some inception rows are booked with prev_nav = nav ≠ 10 (e.g. Dinesh
+  // QAW00356 opens at 9.8938), which drops the day-one move. PMS units start
+  // at 10, so restore that as the first row's base.
+  if (daily.length && daily[0].prevNav === daily[0].nav && daily[0].nav !== 10) {
+    daily[0].prevNav = 10;
+  }
 
   const deposited = daily.reduce((s, d) => s + d.cashIn, 0);
   const totalProfit = daily.reduce((s, d) => s + d.pnl, 0);

@@ -1293,8 +1293,9 @@ class BifurcatedPortfolioEngine {
       };
     }
 
-    // Rebase unit NAV (base ~10) to display base 100.
-    const navBase = series.daily[0].nav || 1;
+    // Rebase unit NAV (base ~10) to display base 100. Base on the first row's
+    // prevNav so a day-one move (first nav ≠ 10) is kept.
+    const navBase = series.daily[0].prevNav || series.daily[0].nav || 1;
     const factor = 100 / navBase;
     const historicalData = series.daily.map((d, i) => ({
       date: new Date(d.date),
@@ -1309,6 +1310,12 @@ class BifurcatedPortfolioEngine {
       date: this.normalizeDate(d.date),
       nav: d.nav,
     }));
+    // Same NAV=100 baseline one day earlier as the blended Total Portfolio.
+    if (equityCurve[0].nav !== 100) {
+      const baseline = new Date(equityCurve[0].date);
+      baseline.setDate(baseline.getDate() - 1);
+      equityCurve.unshift({ date: this.normalizeDate(baseline), nav: 100 });
+    }
     const drawdownMetrics = this.calculateDrawdownMetrics(equityCurve);
 
     const firstNav = equityCurve[0].nav;   // == 100 after rebasing
