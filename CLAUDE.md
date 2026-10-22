@@ -42,6 +42,8 @@ Uses **NextAuth.js** with two credential providers:
 
 Auth configuration: `app/api/auth/[...nextauth]/route.ts`
 
+**QAP sign-in (SSO)**: a third provider, `qap-sso`, lets a user coming from the Qode Algo Platform sign in without a password. QAP redirects the browser to `/sso?code=<one-time code>`; `app/sso/page.tsx` strips the code from the URL and calls `signIn("qap-sso", { code })`. The server verifies the code with `POST $QAP_SSO_VERIFY_URL` (header `X-SSO-Secret: $QAP_SSO_SECRET`, body `{"code"}`), maps the returned qcode to an icode via `pooled_account_users` (bifurcated registry as fallback), applies `BLOCKED_ICODES`, and issues the normal client session. Env keys: `QAP_SSO_VERIFY_URL`, `QAP_SSO_SECRET`.
+
 Session contains: `user.icode`, `user.name`, `user.email`, `user.accessType`
 
 ### Account Types and Data Strategies

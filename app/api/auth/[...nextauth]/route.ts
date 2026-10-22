@@ -3,6 +3,30 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
 import { BLOCKED_ICODES } from "@/lib/blocked-icodes";
 
+// Resolve a QAP account code (qcode) to a client icode. The DB link table
+// pooled_account_users is the source of truth (covers every account); the
+// static bifurcated registry is only a fallback. When a qcode is shared by
+// several clients, the QAP email disambiguates; otherwise we refuse.
+async function resolveIcodeFromQcode(
+  qcode: string,
+  email: string | null,
+): Promise<string | null> {
+  const links = await prisma.pooled_account_users.findMany({
+    where: { qcode },
+    select: { icode: true, clients: { select: { email: true } } },
+  });
+  if (links.length === 1) return links[0].icode;
+  if (links.length > 1) {
+    if (!email) return null;
+    const matches = links.filter(
+      (l) => l.clients.email.trim().toLowerCase() === email,
+    );
+    return matches.length === 1 ? matches[0].icode : null;
+  }
+  const { findByQcode } = await import("@/app/lib/bifurcated-clients-registry");
+  return findByQcode(qcode)?.icode ?? null;
+}
+
 export const authOptions = {
   trustHost: true,
   providers: [
@@ -116,6 +140,66 @@ export const authOptions = {
           email: user.email,
           accessType: "client",
         };
+      },
+    }),
+    CredentialsProvider({
+      id: "qap-sso",
+      name: "QAP",
+      credentials: {
+        code: { label: "Code", type: "text" },
+      },
+      async authorize(credentials) {
+        const code = credentials?.code;
+        if (typeof code !== "string" || !code || code.length > 200) {
+          return null;
+        }
+        const verifyUrl = process.env.QAP_SSO_VERIFY_URL;
+        const secret = process.env.QAP_SSO_SECRET;
+        if (!verifyUrl || !secret) return null;
+
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        try {
+          const res = await fetch(verifyUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-SSO-Secret": secret,
+            },
+            body: JSON.stringify({ code }),
+            signal: controller.signal,
+            cache: "no-store",
+          });
+          if (res.status !== 200) return null;
+
+          const data = await res.json();
+          if (!data || typeof data.qcode !== "string" || !data.qcode) {
+            return null;
+          }
+          const qapEmail =
+            typeof data.email === "string"
+              ? data.email.trim().toLowerCase()
+              : null;
+
+          const icode = await resolveIcodeFromQcode(data.qcode, qapEmail);
+          if (!icode) return null;
+
+          const user = await prisma.clients.findFirst({ where: { icode } });
+          if (!user) return null;
+          if (user.icode && BLOCKED_ICODES.has(user.icode)) return null;
+
+          return {
+            id: user.id.toString(),
+            icode: user.icode,
+            name: user.user_name,
+            email: user.email,
+            accessType: "client",
+          };
+        } catch {
+          return null;
+        } finally {
+          clearTimeout(timer);
+        }
       },
     }),
   ],
