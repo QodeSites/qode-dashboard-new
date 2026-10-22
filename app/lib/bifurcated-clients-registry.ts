@@ -72,6 +72,10 @@ export interface BifurcatedClientEntry {
   // broker label, since these clients bypass /api/accounts (which is where
   // multi-account/regular clients get their broker from).
   broker?: string;
+  // PMS-blended clients render Total Portfolio cash-only by default (Ashok).
+  // true = show the full combined-NAV view instead (% returns, NAV curve,
+  // trailing table, monthly/quarterly %), on screen and in exports.
+  showPmsBlendedNav?: boolean;
 }
 
 export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
@@ -291,6 +295,7 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     hasNavBasedTotalPortfolio: true,
     // Now multi-scheme (QAW+ inactive + PMS QAW) → default "multi" renderMode
     // with a PMS-blended Total Portfolio; no longer single-strategy.
+    showPmsBlendedNav: true,
   },
   {
     icode: "QUS00113",

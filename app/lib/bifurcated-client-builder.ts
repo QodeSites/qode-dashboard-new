@@ -50,6 +50,9 @@ export interface ClientConfig {
   // PMS accounts blended into this client (Ashok). Empty/undefined for everyone
   // else. Presence of entries is what flips the engine's hasPms gate.
   pmsSchemes?: PmsSchemeInput[];
+  // PMS blend weighting: true = start-of-day capital (prev value + same-day
+  // inflow), so money counts on the day it lands (SSRG). Default = prev value.
+  pmsBlendStartOfDayWeights?: boolean;
 }
 
 export interface DefineBifurcatedClientInput {
@@ -88,6 +91,8 @@ export interface DefineBifurcatedClientInput {
   // Optional PMS accounts to surface as extra schemes + fold into Total
   // Portfolio. Sourced from pms_master_sheet by account_code.
   pms?: PmsSchemeInput[];
+  // See ClientConfig.pmsBlendStartOfDayWeights.
+  pmsBlendStartOfDayWeights?: boolean;
 }
 
 export function defineBifurcatedClient(
@@ -153,6 +158,7 @@ export function defineBifurcatedClient(
       input.qodeTotalPortfolioTag ?? "Qode Total Portfolio",
     portfolioMapping,
     pmsSchemes: input.pms ?? [],
+    pmsBlendStartOfDayWeights: input.pmsBlendStartOfDayWeights,
   };
 }
 

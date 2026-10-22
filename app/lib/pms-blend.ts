@@ -29,7 +29,11 @@ export interface CombinedHistoricalPoint {
 }
 
 export function buildCombinedHistorical(
-  components: BlendComponent[]
+  components: BlendComponent[],
+  // true = weight by start-of-day capital (prior value + same-day inflow), and
+  // a component's first row joins via its own prevNav on any date — matching
+  // how both sources book inflows (they earn from the day they land).
+  startOfDayWeights = false
 ): CombinedHistoricalPoint[] {
   // Per-component lookup by date.
   const maps = components.map((c) => {
@@ -72,9 +76,17 @@ export function buildCombinedHistorical(
       if (point) {
         dayPnl += point.pnl;
         dayCashIn += point.cashIn;
-        // Component daily return needs a prior nav AND a positive prior value.
-        if (prevNavs[ci] != null && prevNavs[ci]! > 0 &&
+        if (startOfDayWeights) {
+          const hasPrev = prevNavs[ci] != null && prevNavs[ci]! > 0;
+          const base = hasPrev ? prevNavs[ci]! : point.prevNav;
+          const w = (hasPrev ? prevVals[ci] ?? 0 : 0) + Math.max(point.cashIn, 0);
+          if (base != null && base > 0 && w > 0) {
+            weightSum += w;
+            weightedReturn += w * (point.nav / base - 1);
+          }
+        } else if (prevNavs[ci] != null && prevNavs[ci]! > 0 &&
             prevVals[ci] != null && prevVals[ci]! > 0) {
+          // Component daily return needs a prior nav AND a positive prior value.
           const r = point.nav / prevNavs[ci]! - 1;
           weightSum += prevVals[ci]!;
           weightedReturn += prevVals[ci]! * r;

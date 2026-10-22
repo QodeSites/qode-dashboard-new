@@ -1414,7 +1414,9 @@ class BifurcatedPortfolioEngine {
       })),
     ];
 
-    const historicalData = buildCombinedHistorical(components);
+    const historicalData = buildCombinedHistorical(
+      components, this.config.pmsBlendStartOfDayWeights ?? false
+    );
 
     // --- Reuse engine calc helpers on the combined curve.
     const equityCurve = historicalData.map((d) => ({
