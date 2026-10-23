@@ -48,6 +48,7 @@ import { KRISH_COMMODITIES_INDIA_LLP_CONFIG } from "./clients/krish_commodities_
 import { VINEET_TIBREWALA_CONFIG } from "./clients/vineet_tibrewala_single";
 import { ANANTROOP_FINANCIAL_ADVISORY_SERVICES_CONFIG } from "./clients/anantroop_single";
 import { ASIO_INDIA_FUND_CONFIG } from "./clients/asio_single";
+import { RAHUL_JAIN_CONFIG } from "./clients/rahul_jain_single";
 
 // Single source of truth for clients whose data lives in
 // bifurcated_master_sheet_test. Add a new entry here when onboarding a new
@@ -346,9 +347,8 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     config: JONA_FASHIONS_LIFESTYLE_LLP_CONFIG,
     frozenData: EMPTY_FROZEN_DATA,
     hasNavBasedTotalPortfolio: true,
-    // Now multi-scheme (QAW++ + two PMS QAW accounts) → default "multi"
-    // renderMode with a PMS-blended Total Portfolio; no longer single-strategy.
-    showPmsBlendedNav: true,
+    renderMode: "single",
+    broker: "zerodha",
   },
   {
     icode: "QUS00126",
@@ -465,7 +465,9 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     config: CHANDANMAL_JAIN_CONFIG,
     frozenData: EMPTY_FROZEN_DATA,
     hasNavBasedTotalPortfolio: true,
-    renderMode: "single",
+    // Multi-scheme (QAW+ inactive + PMS QAW) → default "multi" renderMode
+    // with a PMS-blended Total Portfolio; no longer single-strategy.
+    showPmsBlendedNav: true,
     broker: "zerodha",
   },
   {
@@ -521,6 +523,16 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     hasNavBasedTotalPortfolio: true,
     renderMode: "single",
     broker: "zerodha",
+  },
+  {
+    icode: "QUS00150",
+    qcode: "QAC00135",
+    displayName: "Rahul Jain",
+    config: RAHUL_JAIN_CONFIG,
+    frozenData: EMPTY_FROZEN_DATA,
+    hasNavBasedTotalPortfolio: true,
+    renderMode: "single",
+    broker: "nuvama",
   },
 ];
 

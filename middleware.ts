@@ -18,6 +18,13 @@ const VISIBILITY_GATED_PATHS = [
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // QAP sign-in handoff page: public, must not leak the one-time code via Referer.
+  if (pathname === "/sso") {
+    const res = NextResponse.next();
+    res.headers.set("Referrer-Policy", "no-referrer");
+    return res;
+  }
+
   // Behind a reverse proxy the internal connection is plain http, so derive
   // the real protocol/host from the forwarded headers (falls back to nextUrl).
   const proto =

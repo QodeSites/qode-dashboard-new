@@ -28,6 +28,9 @@ export const DINESH_GOEL_CONFIG = defineBifurcatedClient({
       inactive: true,
     },
   },
+  // NAV curve for the Total Portfolio / PMS blend comes from "Zerodha Total
+  // Portfolio" (was the default "Qode Total Portfolio").
+  qodeTotalPortfolioTag: "Zerodha Total Portfolio",
   // pms_master_sheet also carries this series as 73060 / 14411570 — use QAW00356 only.
   pms: [{ schemeName: "Scheme PMS QAW", accountCode: "QAW00356" }],
   pmsBlendStartOfDayWeights: true,
