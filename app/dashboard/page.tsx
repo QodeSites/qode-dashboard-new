@@ -1340,8 +1340,11 @@ const [returnViewType, setReturnViewType] = useState<"percent" | "cash">("percen
 
     // PMS-blended clients (Ashok) render their Total Portfolio Sarla/Satidham-style:
     // absolute ₹ only, no NAV curve, no trailing table — but keep monthly.
+    // Clients with showPmsBlendedNav (SSRG) keep the full combined-NAV view.
     const pmsBlendedTP =
-      isTotalPortfolio && (bifurcatedClient?.config?.pmsSchemes?.length ?? 0) > 0;
+      isTotalPortfolio &&
+      (bifurcatedClient?.config?.pmsSchemes?.length ?? 0) > 0 &&
+      !bifurcatedClient?.showPmsBlendedNav;
     const effectiveNavBased = hasNavBasedTotalPortfolio && !pmsBlendedTP;
 
     return (

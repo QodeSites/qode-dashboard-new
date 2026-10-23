@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Decimal } from "@prisma/client/runtime/library";
 import { EMPTY_FROZEN_DATA } from "./bifurcated-portfolio-data";
-import { getPmsAccountSeries } from "./pms-bridge";
+import { getPmsAccountSeries, getChainedPmsSeries } from "./pms-bridge";
 import { buildCombinedHistorical, type BlendComponent } from "./pms-blend";
 // Re-export types and builder from the cycle-free builder module so callers
 // that import from bifurcated-portfolio-utils keep working unchanged.
@@ -1267,9 +1267,12 @@ class BifurcatedPortfolioEngine {
   private async buildPmsSchemeData(
     accountCode: string,
     scheme: string,
-    isActive: boolean
+    isActive: boolean,
+    pageAccountCodes?: string[]
   ): Promise<PortfolioResponse> {
-    const series = await getPmsAccountSeries(accountCode);
+    const series = pageAccountCodes && pageAccountCodes.length > 1
+      ? await getChainedPmsSeries(pageAccountCodes)
+      : await getPmsAccountSeries(accountCode);
 
     if (series.daily.length === 0) {
       // Defensive empty render — should not happen for Ashok's live accounts.
@@ -1293,8 +1296,9 @@ class BifurcatedPortfolioEngine {
       };
     }
 
-    // Rebase unit NAV (base ~10) to display base 100.
-    const navBase = series.daily[0].nav || 1;
+    // Rebase unit NAV (base ~10) to display base 100. Base on the first row's
+    // prevNav so a day-one move (first nav ≠ 10) is kept.
+    const navBase = series.daily[0].prevNav || series.daily[0].nav || 1;
     const factor = 100 / navBase;
     const historicalData = series.daily.map((d, i) => ({
       date: new Date(d.date),
@@ -1309,6 +1313,12 @@ class BifurcatedPortfolioEngine {
       date: this.normalizeDate(d.date),
       nav: d.nav,
     }));
+    // Same NAV=100 baseline one day earlier as the blended Total Portfolio.
+    if (equityCurve[0].nav !== 100) {
+      const baseline = new Date(equityCurve[0].date);
+      baseline.setDate(baseline.getDate() - 1);
+      equityCurve.unshift({ date: this.normalizeDate(baseline), nav: 100 });
+    }
     const drawdownMetrics = this.calculateDrawdownMetrics(equityCurve);
 
     const firstNav = equityCurve[0].nav;   // == 100 after rebasing
@@ -1414,7 +1424,9 @@ class BifurcatedPortfolioEngine {
       })),
     ];
 
-    const historicalData = buildCombinedHistorical(components);
+    const historicalData = buildCombinedHistorical(
+      components, this.config.pmsBlendStartOfDayWeights ?? false
+    );
 
     // --- Reuse engine calc helpers on the combined curve.
     const equityCurve = historicalData.map((d) => ({
@@ -1521,7 +1533,8 @@ class BifurcatedPortfolioEngine {
           results[scheme] = await this.buildPmsSchemeData(
             portfolioNames.pmsAccountCode,
             scheme,
-            portfolioNames.isActive
+            portfolioNames.isActive,
+            portfolioNames.pmsPageAccountCodes
           );
           continue;
         }

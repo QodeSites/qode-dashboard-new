@@ -18,6 +18,13 @@ export interface PmsSchemeInput {
   schemeName: string;   // dropdown label, e.g. "Scheme PMS QAW"
   accountCode: string;  // pms_master_sheet.account_code, e.g. "QAW00158"
   inactive?: boolean;   // default false
+  // Keep this account in the Total Portfolio blend but don't give it its own
+  // dropdown page (its history is shown via another scheme's pageAccountCodes).
+  hidePage?: boolean;
+  // PMS page only: chain these account codes in date order into one TWRR series
+  // (e.g. a closed PMS account followed by its successor). Total Portfolio is
+  // unaffected — it still blends each pmsSchemes entry by its own accountCode.
+  pageAccountCodes?: string[];
 }
 
 export interface PortfolioConfig {
@@ -31,6 +38,8 @@ export interface PortfolioConfig {
   // account_code (NOT from bifurcated_master_sheet_test). The engine routes it
   // through the PMS bridge instead of msTable.
   pmsAccountCode?: string;
+  // When set, the PMS page chains these accounts instead of only pmsAccountCode.
+  pmsPageAccountCodes?: string[];
 }
 
 export interface ClientConfig {
@@ -50,6 +59,9 @@ export interface ClientConfig {
   // PMS accounts blended into this client (Ashok). Empty/undefined for everyone
   // else. Presence of entries is what flips the engine's hasPms gate.
   pmsSchemes?: PmsSchemeInput[];
+  // PMS blend weighting: true = start-of-day capital (prev value + same-day
+  // inflow), so money counts on the day it lands (SSRG). Default = prev value.
+  pmsBlendStartOfDayWeights?: boolean;
 }
 
 export interface DefineBifurcatedClientInput {
@@ -88,6 +100,8 @@ export interface DefineBifurcatedClientInput {
   // Optional PMS accounts to surface as extra schemes + fold into Total
   // Portfolio. Sourced from pms_master_sheet by account_code.
   pms?: PmsSchemeInput[];
+  // See ClientConfig.pmsBlendStartOfDayWeights.
+  pmsBlendStartOfDayWeights?: boolean;
 }
 
 export function defineBifurcatedClient(
@@ -127,6 +141,7 @@ export function defineBifurcatedClient(
     };
   }
   for (const pms of input.pms ?? []) {
+    if (pms.hidePage) continue;
     portfolioMapping[pms.schemeName] = {
       current: pms.accountCode,
       metrics: pms.accountCode,
@@ -134,6 +149,7 @@ export function defineBifurcatedClient(
       isActive: !pms.inactive,
       displayAmountInvestedAsZero: !!pms.inactive,
       pmsAccountCode: pms.accountCode,
+      pmsPageAccountCodes: pms.pageAccountCodes,
     };
   }
 
@@ -153,6 +169,7 @@ export function defineBifurcatedClient(
       input.qodeTotalPortfolioTag ?? "Qode Total Portfolio",
     portfolioMapping,
     pmsSchemes: input.pms ?? [],
+    pmsBlendStartOfDayWeights: input.pmsBlendStartOfDayWeights,
   };
 }
 

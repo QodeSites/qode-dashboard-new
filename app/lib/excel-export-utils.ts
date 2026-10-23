@@ -114,7 +114,8 @@ export async function fetchStrategies(
     // PMS-blended clients (e.g. Ashok) render Total Portfolio Sarla/Satidham-style
     // (absolute ₹ only, no NAV curve) even if hasNavBasedTotalPortfolio is set —
     // mirrors the `pmsBlendedTP` check in app/dashboard/page.tsx.
-    const pmsBlendedTP = (bifurcated.config?.pmsSchemes?.length ?? 0) > 0;
+    const pmsBlendedTP =
+      (bifurcated.config?.pmsSchemes?.length ?? 0) > 0 && !bifurcated.showPmsBlendedNav;
     const navBased = bifurcated.hasNavBasedTotalPortfolio && !pmsBlendedTP;
     return Object.entries(data).map(([strategyName, portRes]: [string, any]) => ({
       strategyName,

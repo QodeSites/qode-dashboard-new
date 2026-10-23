@@ -49,6 +49,12 @@ export async function getPmsAccountSeries(
     pnl: Number(r.pnl) || 0,
     cashIn: Number(r.cash_in_out) || 0,
   }));
+  // Some inception rows are booked with prev_nav = nav ≠ 10 (e.g. Dinesh
+  // QAW00356 opens at 9.8938), which drops the day-one move. PMS units start
+  // at 10, so restore that as the first row's base.
+  if (daily.length && daily[0].prevNav === daily[0].nav && daily[0].nav !== 10) {
+    daily[0].prevNav = 10;
+  }
 
   const deposited = daily.reduce((s, d) => s + d.cashIn, 0);
   const totalProfit = daily.reduce((s, d) => s + d.pnl, 0);
@@ -58,4 +64,46 @@ export async function getPmsAccountSeries(
     .map((d) => ({ date: d.date, amount: d.cashIn, dividend: 0 }));
 
   return { accountCode, daily, deposited, currentValue, totalProfit, cashFlows };
+}
+
+// Chains several PMS accounts that ran one after another (e.g. a closed account
+// and its successor) into a single TWRR series for one PMS page. Each later
+// account's unit NAV is scaled so its first day continues from the previous
+// account's last NAV: chained = anchor × nav / firstBase. Values, pnl and cash
+// pass through unchanged. Assumes the accounts' date ranges do not overlap.
+export async function getChainedPmsSeries(
+  accountCodes: string[]
+): Promise<PmsAccountSeries> {
+  const parts = (await Promise.all(accountCodes.map(getPmsAccountSeries)))
+    .filter((s) => s.daily.length > 0)
+    .sort((a, b) => a.daily[0].date.localeCompare(b.daily[0].date));
+
+  const daily: PmsDailyPoint[] = [];
+  for (const part of parts) {
+    const anchor = daily.length ? daily[daily.length - 1].nav : null;
+    const firstBase = part.daily[0].prevNav || part.daily[0].nav || 1;
+    const scale = anchor != null ? anchor / firstBase : 1;
+    part.daily.forEach((d, i) => {
+      daily.push({
+        ...d,
+        nav: d.nav * scale,
+        prevNav:
+          i === 0
+            ? anchor ?? d.prevNav
+            : d.prevNav != null ? d.prevNav * scale : null,
+      });
+    });
+  }
+
+  const deposited = daily.reduce((s, d) => s + d.cashIn, 0);
+  const totalProfit = daily.reduce((s, d) => s + d.pnl, 0);
+  const currentValue = daily.length ? daily[daily.length - 1].value : 0;
+  const cashFlows: CashFlow[] = daily
+    .filter((d) => d.cashIn !== 0)
+    .map((d) => ({ date: d.date, amount: d.cashIn, dividend: 0 }));
+
+  return {
+    accountCode: accountCodes.join("+"),
+    daily, deposited, currentValue, totalProfit, cashFlows,
+  };
 }
