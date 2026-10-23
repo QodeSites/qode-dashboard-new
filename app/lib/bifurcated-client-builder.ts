@@ -18,6 +18,13 @@ export interface PmsSchemeInput {
   schemeName: string;   // dropdown label, e.g. "Scheme PMS QAW"
   accountCode: string;  // pms_master_sheet.account_code, e.g. "QAW00158"
   inactive?: boolean;   // default false
+  // Keep this account in the Total Portfolio blend but don't give it its own
+  // dropdown page (its history is shown via another scheme's pageAccountCodes).
+  hidePage?: boolean;
+  // PMS page only: chain these account codes in date order into one TWRR series
+  // (e.g. a closed PMS account followed by its successor). Total Portfolio is
+  // unaffected — it still blends each pmsSchemes entry by its own accountCode.
+  pageAccountCodes?: string[];
 }
 
 export interface PortfolioConfig {
@@ -31,6 +38,8 @@ export interface PortfolioConfig {
   // account_code (NOT from bifurcated_master_sheet_test). The engine routes it
   // through the PMS bridge instead of msTable.
   pmsAccountCode?: string;
+  // When set, the PMS page chains these accounts instead of only pmsAccountCode.
+  pmsPageAccountCodes?: string[];
 }
 
 export interface ClientConfig {
@@ -132,6 +141,7 @@ export function defineBifurcatedClient(
     };
   }
   for (const pms of input.pms ?? []) {
+    if (pms.hidePage) continue;
     portfolioMapping[pms.schemeName] = {
       current: pms.accountCode,
       metrics: pms.accountCode,
@@ -139,6 +149,7 @@ export function defineBifurcatedClient(
       isActive: !pms.inactive,
       displayAmountInvestedAsZero: !!pms.inactive,
       pmsAccountCode: pms.accountCode,
+      pmsPageAccountCodes: pms.pageAccountCodes,
     };
   }
 

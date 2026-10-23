@@ -347,8 +347,9 @@ export const BIFURCATED_CLIENTS: BifurcatedClientEntry[] = [
     config: JONA_FASHIONS_LIFESTYLE_LLP_CONFIG,
     frozenData: EMPTY_FROZEN_DATA,
     hasNavBasedTotalPortfolio: true,
-    renderMode: "single",
-    broker: "zerodha",
+    // Now multi-scheme (QAW++ + two PMS QAW accounts) → default "multi"
+    // renderMode with a PMS-blended Total Portfolio; no longer single-strategy.
+    showPmsBlendedNav: true,
   },
   {
     icode: "QUS00126",

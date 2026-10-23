@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Decimal } from "@prisma/client/runtime/library";
 import { EMPTY_FROZEN_DATA } from "./bifurcated-portfolio-data";
-import { getPmsAccountSeries } from "./pms-bridge";
+import { getPmsAccountSeries, getChainedPmsSeries } from "./pms-bridge";
 import { buildCombinedHistorical, type BlendComponent } from "./pms-blend";
 // Re-export types and builder from the cycle-free builder module so callers
 // that import from bifurcated-portfolio-utils keep working unchanged.
@@ -1267,9 +1267,12 @@ class BifurcatedPortfolioEngine {
   private async buildPmsSchemeData(
     accountCode: string,
     scheme: string,
-    isActive: boolean
+    isActive: boolean,
+    pageAccountCodes?: string[]
   ): Promise<PortfolioResponse> {
-    const series = await getPmsAccountSeries(accountCode);
+    const series = pageAccountCodes && pageAccountCodes.length > 1
+      ? await getChainedPmsSeries(pageAccountCodes)
+      : await getPmsAccountSeries(accountCode);
 
     if (series.daily.length === 0) {
       // Defensive empty render — should not happen for Ashok's live accounts.
@@ -1530,7 +1533,8 @@ class BifurcatedPortfolioEngine {
           results[scheme] = await this.buildPmsSchemeData(
             portfolioNames.pmsAccountCode,
             scheme,
-            portfolioNames.isActive
+            portfolioNames.isActive,
+            portfolioNames.pmsPageAccountCodes
           );
           continue;
         }
