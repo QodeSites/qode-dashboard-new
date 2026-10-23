@@ -33,7 +33,7 @@ function SsoInner() {
           setFailed(true);
           return;
         }
-        router.replace("/");
+        router.replace("/dashboard");
       } catch {
         setFailed(true);
       }
